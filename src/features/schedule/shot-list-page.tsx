@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
  import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import {
@@ -719,6 +719,9 @@ function ShotRow({
   )
 }
 
+const HOLD_DELAY_MS = 1000
+const REPEAT_INTERVAL_MS = 125
+
 function DurationEditor({
   value,
   onChange,
@@ -732,6 +735,57 @@ function DurationEditor({
   onCancel: () => void
   disabled?: boolean
 }) {
+  const valueRef = useRef(value)
+  valueRef.current = value
+  const repeatRef = useRef<{
+    timeoutId: ReturnType<typeof setTimeout>
+    intervalId: ReturnType<typeof setInterval>
+  } | null>(null)
+
+  const clearRepeat = useCallback(() => {
+    if (repeatRef.current) {
+      clearTimeout(repeatRef.current.timeoutId)
+      if (repeatRef.current.intervalId) clearInterval(repeatRef.current.intervalId)
+      repeatRef.current = null
+    }
+  }, [])
+
+  const stepUp = useCallback(() => {
+    const v = valueRef.current
+    const sec = parseDurationMmSs(v)
+    if (sec !== null && sec < 86400) onChange(formatDuration(sec + 1))
+    else if (sec === null) onChange('0:01')
+  }, [onChange])
+
+  const stepDown = useCallback(() => {
+    const v = valueRef.current
+    const sec = parseDurationMmSs(v)
+    if (sec !== null && sec > 0) onChange(formatDuration(sec - 1))
+    else if (sec === null) onChange('0:00')
+  }, [onChange])
+
+  const handlePlusMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (disabled) return
+    stepUp()
+    const timeoutId = setTimeout(() => {
+      const intervalId = setInterval(stepUp, REPEAT_INTERVAL_MS)
+      if (repeatRef.current) repeatRef.current.intervalId = intervalId
+    }, HOLD_DELAY_MS)
+    repeatRef.current = { timeoutId, intervalId: 0 }
+  }
+
+  const handleMinusMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (disabled) return
+    stepDown()
+    const timeoutId = setTimeout(() => {
+      const intervalId = setInterval(stepDown, REPEAT_INTERVAL_MS)
+      if (repeatRef.current) repeatRef.current.intervalId = intervalId
+    }, HOLD_DELAY_MS)
+    repeatRef.current = { timeoutId, intervalId: 0 }
+  }
+
   const sec = parseDurationMmSs(value)
 
   return (
@@ -754,10 +808,12 @@ function DurationEditor({
         variant="ghost"
         size="icon"
         className="h-7 w-7 shrink-0"
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => {
-          if (sec !== null && sec < 86400) onChange(formatDuration(sec + 1))
-          else if (sec === null) onChange('0:01')
+        onMouseDown={handlePlusMouseDown}
+        onMouseUp={clearRepeat}
+        onMouseLeave={clearRepeat}
+        onClick={(e) => {
+          e.preventDefault()
+          // Step already done on mousedown; click would duplicate it
         }}
       >
         +
@@ -767,10 +823,12 @@ function DurationEditor({
         variant="ghost"
         size="icon"
         className="h-7 w-7 shrink-0"
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => {
-          if (sec !== null && sec > 0) onChange(formatDuration(sec - 1))
-          else if (sec === null) onChange('0:00')
+        onMouseDown={handleMinusMouseDown}
+        onMouseUp={clearRepeat}
+        onMouseLeave={clearRepeat}
+        onClick={(e) => {
+          e.preventDefault()
+          // Step already done on mousedown; click would duplicate it
         }}
       >
         −
