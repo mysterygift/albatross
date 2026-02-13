@@ -326,3 +326,34 @@ export type OutboxRow = {
   payload_json: string | null
   created_at: string
 }
+
+// ─── Calendar (Schedule view) ───────────────────────────────────────────────
+
+/** Unit key for calendar display; derived from unit name. */
+export type CalendarUnitKey = 'main' | 'second'
+
+export type CalendarShootDayEvent = {
+  shootDayId: string
+  shootDayUnitId: string
+  date: string
+  unitId: string
+  unitName: string
+  unitKey: CalendarUnitKey
+  callTime: string | null
+  lunchTime: string | null
+  wrapTime: string | null
+  primaryLocationName: string | null
+  primaryLocationId: string | null
+  shotCount: number
+  estMinutes: number
+}
+
+export type CalendarDateRange = {
+  start: string
+  end: string
+}
+
+export type CalendarEventFilters = {
+  /** When set, only include events for this unit. */
+  unitId?: string | null
+}

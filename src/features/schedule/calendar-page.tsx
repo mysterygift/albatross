@@ -1,16 +1,14 @@
 /**
- * Schedule Calendar — view shoot days in a month grid.
+ * Schedule Calendar — month view of shoot day events (one per shoot_day_unit).
  *
- * Data model: shoot_days (shoot_date), shoot_day_units belongs to shoot_days,
- * stripboard_strips reference SHOTs and are assigned to shoot_day + shoot_day_unit.
- *
- * Offline-first: uses listShootDaysByProduction from schedule repository.
+ * Uses listCalendarShootDayEvents(); events show unit, call–wrap, runtime, location, shot count.
+ * Main Unit = mint (--unit-main), Second Unit = complementary (--unit-second).
  */
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
-import { listShootDaysByProduction } from '@/lib/db/repositories/schedule'
-import type { ShootDay } from '@/lib/db/types'
+import { listCalendarShootDayEvents } from '@/lib/db/repositories/calendar'
+import type { CalendarShootDayEvent } from '@/lib/db/types'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -23,21 +21,53 @@ function toYyyyMmDd(year: number, month: number, day: number): string {
 function getMonthGrid(year: number, month: number) {
   const start = new Date(year, month, 1)
   const end = new Date(year, month + 1, 0)
-  const startDay = start.getDay()
-  const daysInMonth = end.getDate()
-  const leadingBlanks = startDay
-  const cells = leadingBlanks + daysInMonth
-  return { leadingBlanks, daysInMonth, cells }
+  return {
+    leadingBlanks: start.getDay(),
+    daysInMonth: end.getDate(),
+  }
 }
 
-function getShootDaysForDate(
-  shootDays: ShootDay[],
-  year: number,
-  month: number,
-  day: number
-): ShootDay[] {
-  const dateStr = toYyyyMmDd(year, month, day)
-  return shootDays.filter((sd) => sd.shoot_date === dateStr)
+/** Format call–wrap range; omit missing parts. */
+function formatCallWrap(callTime: string | null, wrapTime: string | null): string {
+  if (callTime && wrapTime) return `${callTime} – ${wrapTime}`
+  if (callTime) return `Call ${callTime}`
+  if (wrapTime) return `Wrap ${wrapTime}`
+  return '—'
+}
+
+/** Format estimated runtime (minutes). */
+function formatRuntime(minutes: number): string {
+  if (minutes <= 0) return '—'
+  if (minutes < 60) return `${minutes} min`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m ? `${h}h ${m}m` : `${h}h`
+}
+
+function CalendarEventCard({ event }: { event: CalendarShootDayEvent }) {
+  const isMain = event.unitKey === 'main'
+  const bgVar = isMain ? 'var(--unit-main)' : 'var(--unit-second)'
+  const fgVar = isMain ? 'var(--unit-main-foreground)' : 'var(--unit-second-foreground)'
+
+  return (
+    <div
+      className="rounded-md px-1.5 py-1 text-xs"
+      style={{
+        backgroundColor: bgVar,
+        color: fgVar,
+      }}
+    >
+      <div className="font-medium">{event.unitName}</div>
+      <div className="mt-0.5 opacity-90">
+        {formatCallWrap(event.callTime, event.wrapTime)}
+      </div>
+      <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 opacity-90">
+        <span>{formatRuntime(event.estMinutes)}</span>
+        <span>{event.primaryLocationName ?? '—'}</span>
+        <span>{event.shotCount} shots</span>
+      </div>
+    </div>
+  )
 }
 
 export function ScheduleCalendarPage() {
@@ -51,11 +81,28 @@ export function ScheduleCalendarPage() {
     year: 'numeric',
   })
 
-  const { data: shootDays = [] } = useQuery({
-    queryKey: ['shoot-days', currentProductionId],
-    queryFn: () => listShootDaysByProduction(currentProductionId ?? ''),
+  const dateRange = useMemo(() => {
+    const start = toYyyyMmDd(year, month, 1)
+    const end = toYyyyMmDd(year, month, new Date(year, month + 1, 0).getDate())
+    return { start, end }
+  }, [year, month])
+
+  const { data: events = [] } = useQuery({
+    queryKey: ['calendar-events', currentProductionId, dateRange.start, dateRange.end],
+    queryFn: () =>
+      listCalendarShootDayEvents(currentProductionId ?? '', dateRange),
     enabled: !!currentProductionId,
   })
+
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, CalendarShootDayEvent[]>()
+    for (const e of events) {
+      const list = map.get(e.date) ?? []
+      list.push(e)
+      map.set(e.date, list)
+    }
+    return map
+  }, [events])
 
   const { leadingBlanks, daysInMonth } = useMemo(
     () => getMonthGrid(year, month),
@@ -78,7 +125,6 @@ export function ScheduleCalendarPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header + month nav */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Schedule — Calendar</h1>
         <div className="flex items-center gap-2">
@@ -94,7 +140,6 @@ export function ScheduleCalendarPage() {
         </div>
       </div>
 
-      {/* Calendar grid — placeholder for rebuild */}
       <div className="grid grid-cols-7 gap-1 text-center text-sm text-muted-foreground">
         {WEEKDAY_LABELS.map((label) => (
           <div key={label} className="py-2 font-medium">
@@ -102,29 +147,22 @@ export function ScheduleCalendarPage() {
           </div>
         ))}
         {Array.from({ length: leadingBlanks }).map((_, i) => (
-          <div key={`blank-${i}`} className="min-h-[80px] rounded border p-2" />
+          <div key={`blank-${i}`} className="min-h-[100px] rounded border border-border bg-card/30 p-2" />
         ))}
         {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
-          const dayShootDays = getShootDaysForDate(shootDays, year, month, day)
+          const dateStr = toYyyyMmDd(year, month, day)
+          const dayEvents = eventsByDate.get(dateStr) ?? []
           return (
             <div
               key={day}
-              className="min-h-[80px] rounded border p-2 text-left"
+              className="min-h-[100px] rounded border border-border bg-card/30 p-2 text-left"
             >
               <span className="text-foreground font-medium">{day}</span>
-              {dayShootDays.length > 0 && (
-                <div className="mt-1 space-y-1">
-                  {dayShootDays.map((sd) => (
-                    <div
-                      key={sd.id}
-                      className="rounded bg-muted px-1.5 py-0.5 text-xs"
-                    >
-                      Day {sd.day_number ?? '—'}
-                      {sd.call_time ? ` · ${sd.call_time}` : ''}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="mt-1 space-y-1">
+                {dayEvents.map((event) => (
+                  <CalendarEventCard key={event.shootDayUnitId} event={event} />
+                ))}
+              </div>
             </div>
           )
         })}

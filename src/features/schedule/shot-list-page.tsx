@@ -786,8 +786,6 @@ function DurationEditor({
     repeatRef.current = { timeoutId, intervalId: 0 }
   }
 
-  const sec = parseDurationMmSs(value)
-
   return (
     <div className="flex items-center gap-1 pr-0">
       <Input
