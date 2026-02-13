@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
  import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import {
@@ -732,24 +732,16 @@ function DurationEditor({
   onCancel: () => void
   disabled?: boolean
 }) {
-  const wrapperRef = useRef<HTMLDivElement>(null)
-
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    // Don't commit when focus moves to +/- buttons (stays inside editor)
-    if (e.relatedTarget && wrapperRef.current?.contains(e.relatedTarget as Node)) return
-    onCommit()
-  }
-
   const sec = parseDurationMmSs(value)
 
   return (
-    <div ref={wrapperRef} className="flex items-center gap-1 pr-0">
+    <div className="flex items-center gap-1 pr-0">
       <Input
         className="h-8 w-24 bg-background border-zinc-600 focus-visible:ring-emerald-500/50"
         placeholder="m:ss"
         value={value}
         onChange={(e) => onChange(e.target.value.replace(/[^\d:]/g, ''))}
-        onBlur={handleBlur}
+        onBlur={onCommit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') onCommit()
           if (e.key === 'Escape') onCancel()
@@ -762,6 +754,7 @@ function DurationEditor({
         variant="ghost"
         size="icon"
         className="h-7 w-7 shrink-0"
+        onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
           if (sec !== null && sec < 86400) onChange(formatDuration(sec + 1))
           else if (sec === null) onChange('0:01')
@@ -774,6 +767,7 @@ function DurationEditor({
         variant="ghost"
         size="icon"
         className="h-7 w-7 shrink-0"
+        onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
           if (sec !== null && sec > 0) onChange(formatDuration(sec - 1))
           else if (sec === null) onChange('0:00')
