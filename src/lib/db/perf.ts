@@ -43,6 +43,19 @@ const entries: DbPerfEntry[] = []
 const lockErrors: LockErrorEntry[] = []
 let correlationCounter = 0
 
+/** When false, no recording or HUD (can be toggled in Settings → Developer tools). Only applies in DEV build. */
+let perfLoggingEnabled = true
+
+/** Whether DB perf logging is active (dev build only, and not disabled in settings). */
+export function isPerfLoggingEnabled(): boolean {
+  return import.meta.env.DEV && perfLoggingEnabled
+}
+
+/** Set from Settings when user toggles "DB Perf logging". */
+export function setPerfLoggingEnabled(enabled: boolean): void {
+  perfLoggingEnabled = enabled
+}
+
 function sanitizeSql(sql: string, maxLen: number = 120): string {
   return sql.replace(/\s+/g, ' ').trim().slice(0, maxLen)
 }
@@ -76,7 +89,7 @@ export function startCorrelation(): string {
 
 /** Record a lock error for diagnostics. */
 export function recordLockError(sql: string, kind: DbOpKind, message: string): void {
-  if (!import.meta.env.DEV) return
+  if (!isPerfLoggingEnabled()) return
   lockErrors.push({
     timestamp: Date.now(),
     message,
@@ -88,13 +101,13 @@ export function recordLockError(sql: string, kind: DbOpKind, message: string): v
 
 /** Record a retry attempt for SQLITE_BUSY (for diagnostics). */
 export function recordRetryAttempt(sql: string, kind: DbOpKind, attempt: number, errorMessage: string): void {
-  if (!import.meta.env.DEV) return
+  if (!isPerfLoggingEnabled()) return
   console.warn(`[DB retry] attempt ${attempt} [${kind}] ${sanitizeSql(sql)} | ${errorMessage}`)
 }
 
-/** Record a DB operation. No-op when not in DEV. */
+/** Record a DB operation. No-op when perf logging is disabled. */
 export function recordDbOp(entry: Omit<DbPerfEntry, 'id' | 'timestamp'>): void {
-  if (!import.meta.env.DEV) return
+  if (!isPerfLoggingEnabled()) return
   const isWrite = entry.kind === 'execute' ? isWriteSql(entry.sql) : false
   const full: DbPerfEntry = {
     ...entry,
@@ -117,7 +130,7 @@ export function recordDbOp(entry: Omit<DbPerfEntry, 'id' | 'timestamp'>): void {
 
 /** Rolling average duration (ms) over last N execute/select calls. */
 export function getRollingAverageMs(n: number = 50): number {
-  if (!import.meta.env.DEV || entries.length === 0) return 0
+  if (!isPerfLoggingEnabled() || entries.length === 0) return 0
   const slice = entries.slice(-n)
   const sum = slice.reduce((a, e) => a + e.durationMs, 0)
   return sum / slice.length
@@ -125,7 +138,7 @@ export function getRollingAverageMs(n: number = 50): number {
 
 /** Top N slowest queries (by duration). */
 export function getTopSlow(n: number = TOP_N): DbPerfEntry[] {
-  if (!import.meta.env.DEV) return []
+  if (!isPerfLoggingEnabled()) return []
   return [...entries]
     .sort((a, b) => b.durationMs - a.durationMs)
     .slice(0, n)
@@ -133,17 +146,17 @@ export function getTopSlow(n: number = TOP_N): DbPerfEntry[] {
 
 /** All entries (for external HUD). */
 export function getEntries(): DbPerfEntry[] {
-  return import.meta.env.DEV ? [...entries] : []
+  return isPerfLoggingEnabled() ? [...entries] : []
 }
 
 /** Lock errors captured so far. */
 export function getLockErrors(): LockErrorEntry[] {
-  return import.meta.env.DEV ? [...lockErrors] : []
+  return isPerfLoggingEnabled() ? [...lockErrors] : []
 }
 
 /** Clear stored entries and lock errors. */
 export function clearPerfLog(): void {
-  if (import.meta.env.DEV) {
+  if (isPerfLoggingEnabled()) {
     entries.length = 0
     lockErrors.length = 0
   }
@@ -197,7 +210,7 @@ export function dumpLogsToConsole(n: number = DUMP_DEFAULT_N): { count: number; 
 
 /** Log to console: rolling avg and top slow. Kept for backward compat. */
 export function logPerfSummary(): void {
-  if (!import.meta.env.DEV) return
+  if (!isPerfLoggingEnabled()) return
   const avg = getRollingAverageMs(50)
   const top = getTopSlow(20)
   console.group('[DB Perf] Summary')
@@ -234,7 +247,7 @@ export function getPerfSummary(): {
   lockErrorCount: number
   topSlow: Array<{ sql: string; durationMs: number; kind: string }>
 } {
-  if (!import.meta.env.DEV) {
+  if (!isPerfLoggingEnabled()) {
     return { rollingAvgMs: 0, totalCalls: 0, slowCount: 0, lockErrorCount: 0, topSlow: [] }
   }
   const avg = getRollingAverageMs(50)

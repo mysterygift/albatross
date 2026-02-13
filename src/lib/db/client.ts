@@ -14,7 +14,7 @@
  */
 import Database from '@tauri-apps/plugin-sql'
 import type { QueryResult } from '@tauri-apps/plugin-sql'
-import { recordDbOp, recordRetryAttempt, isLockError } from './perf'
+import { recordDbOp, recordRetryAttempt, isLockError, isPerfLoggingEnabled } from './perf'
 
 const DB_URL = 'sqlite:albatross.db'
 const BUSY_TIMEOUT_MS = 8000
@@ -123,7 +123,7 @@ function wrapWithPerf(raw: Database): Database {
       const isCommit = upper.startsWith('COMMIT')
       const isRollback = upper.startsWith('ROLLBACK')
       // #region agent log
-      if (import.meta.env.DEV && isBegin) {
+      if (isPerfLoggingEnabled() && isBegin) {
         txnDepth += 1
         fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61', {
           method: 'POST',
@@ -137,7 +137,7 @@ function wrapWithPerf(raw: Database): Database {
           }),
         }).catch(() => {})
       }
-      if (import.meta.env.DEV && isCommit) {
+      if (isPerfLoggingEnabled() && isCommit) {
         const payload = { inSerializedTransaction, txnDepth }
         console.warn('[DB txn] COMMIT about to run', payload)
         fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61', {
@@ -156,7 +156,7 @@ function wrapWithPerf(raw: Database): Database {
       const run = () =>
         withRetry(() => raw.execute(query, bindValues), query, 'execute').then((result) => {
           const durationMs = performance.now() - start
-          if (import.meta.env.DEV) {
+          if (isPerfLoggingEnabled()) {
             if (isCommit || isRollback) txnDepth = Math.max(0, txnDepth - 1)
             recordDbOp({
               kind: 'execute',
@@ -174,7 +174,7 @@ function wrapWithPerf(raw: Database): Database {
       } catch (e) {
         const durationMs = performance.now() - start
         // #region agent log
-        if (import.meta.env.DEV && (isCommit || isRollback)) {
+        if (isPerfLoggingEnabled() && (isCommit || isRollback)) {
           const payload = { txnDepth, error: getErrorMessage(e), inSerializedTransaction }
           console.warn('[DB txn]', isCommit ? 'COMMIT failed' : 'ROLLBACK failed', payload)
           fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61', {
@@ -191,7 +191,7 @@ function wrapWithPerf(raw: Database): Database {
           if (isCommit || isRollback) txnDepth = Math.max(0, txnDepth - 1)
         }
         // #endregion
-        if (import.meta.env.DEV) {
+        if (isPerfLoggingEnabled()) {
           recordDbOp({
             kind: 'execute',
             sql,
@@ -208,7 +208,7 @@ function wrapWithPerf(raw: Database): Database {
       try {
         const result = await withRetry(() => raw.select<T>(query, bindValues), query, 'select')
         const durationMs = performance.now() - start
-        if (import.meta.env.DEV) {
+        if (isPerfLoggingEnabled()) {
           recordDbOp({
             kind: 'select',
             sql,
@@ -219,7 +219,7 @@ function wrapWithPerf(raw: Database): Database {
         return result
       } catch (e) {
         const durationMs = performance.now() - start
-        if (import.meta.env.DEV) {
+        if (isPerfLoggingEnabled()) {
           recordDbOp({
             kind: 'select',
             sql,

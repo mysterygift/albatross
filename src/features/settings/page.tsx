@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Plus, Trash2, Wrench, AlertTriangle } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   ensureDemoData,
   resetDemoData,
@@ -45,8 +45,11 @@ import {
 } from '@/lib/db/seed/demoProductionSeed'
 import { getProductionBySlug } from '@/lib/db/repositories/production'
 import { getSetting, setSetting } from '@/lib/db/repositories/settings'
+import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { getRate } from '@/lib/money/exchangeRates'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
+
+const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 
 export function SettingsPage() {
   const { currentProductionId, setCurrentProductionId, refetchProductions } = useCurrentProduction()
@@ -60,10 +63,32 @@ export function SettingsPage() {
   const [open, setOpen] = useState(false)
   const [cascadeResult, setCascadeResult] = useState<{ ok: boolean; message: string; details?: string } | null>(null)
   const [cascadeLoading, setCascadeLoading] = useState(false)
+  const queryClient = useQueryClient()
+
+  const { data: dbPerfEnabledSetting } = useQuery({
+    queryKey: ['settings', DB_PERF_SETTING_KEY],
+    queryFn: () => getSetting(DB_PERF_SETTING_KEY),
+  })
+  const dbPerfEnabled = dbPerfEnabledSetting !== 'false'
+  useEffect(() => {
+    if (dbPerfEnabledSetting !== undefined) {
+      setPerfLoggingEnabled(dbPerfEnabledSetting !== 'false')
+    }
+  }, [dbPerfEnabledSetting])
+
+  const setDbPerfEnabledMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      setSetting(DB_PERF_SETTING_KEY, enabled ? 'true' : 'false'),
+    onMutate: (enabled) => {
+      setPerfLoggingEnabled(enabled)
+    },
+    onSuccess: (_, enabled) => {
+      queryClient.invalidateQueries({ queryKey: ['settings', DB_PERF_SETTING_KEY] })
+    },
+  })
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [phase, setPhase] = useState<'pre' | 'production' | 'post'>('pre')
-  const queryClient = useQueryClient()
 
   const { data: categories = [] } = useQuery({
     queryKey: ['budget-categories', currentProductionId],
@@ -229,6 +254,19 @@ export function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="db-perf-toggle"
+                  checked={dbPerfEnabled}
+                  onChange={(e) => setDbPerfEnabledMutation.mutate(e.target.checked)}
+                  disabled={setDbPerfEnabledMutation.isPending}
+                  className="rounded border-amber-600"
+                />
+                <Label htmlFor="db-perf-toggle" className="font-medium text-amber-800 dark:text-amber-200">
+                  DB Perf logging (HUD + Log to console)
+                </Label>
+              </div>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"

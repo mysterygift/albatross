@@ -1,9 +1,8 @@
 /**
- * Dev-only DB performance HUD. Single source of truth with perf.ts: rolling avg, slow count,
- * lock errors, and "Log to console" dumps last N DB ops + lock errors. Only rendered when DEV.
+ * Dev-only DB performance HUD. Rendered when DEV and "DB Perf logging" is enabled in Settings.
  */
 import { useEffect, useState, useCallback } from 'react'
-import { getPerfSummary, dumpLogsToConsole, clearPerfLog } from '@/lib/db/perf'
+import { getPerfSummary, dumpLogsToConsole, clearPerfLog, isPerfLoggingEnabled } from '@/lib/db/perf'
 
 const POLL_MS = 2000
 const TOAST_MS = 3000
@@ -12,10 +11,13 @@ export function DevPerfHud() {
   const [summary, setSummary] = useState(getPerfSummary())
   const [collapsed, setCollapsed] = useState(true)
   const [toast, setToast] = useState<string | null>(null)
+  const [enabled, setEnabled] = useState(isPerfLoggingEnabled())
 
   useEffect(() => {
-    if (!import.meta.env.DEV) return
-    const interval = setInterval(() => setSummary(getPerfSummary()), POLL_MS)
+    const interval = setInterval(() => {
+      setEnabled(isPerfLoggingEnabled())
+      if (isPerfLoggingEnabled()) setSummary(getPerfSummary())
+    }, POLL_MS)
     return () => clearInterval(interval)
   }, [])
 
@@ -33,7 +35,7 @@ export function DevPerfHud() {
     setTimeout(() => setToast(null), TOAST_MS)
   }, [])
 
-  if (!import.meta.env.DEV) return null
+  if (!import.meta.env.DEV || !enabled) return null
 
   return (
     <div
