@@ -20,6 +20,7 @@ import {
   SheetTitle,
   SheetFooter,
 } from '@/components/ui/sheet'
+import { cn } from '@/lib/utils'
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 
@@ -116,41 +117,88 @@ function DaySummaryDrawer({
   if (!event) return null
 
   const runtimeWarning = event.estMinutes > RUNTIME_WARNING_THRESHOLD_MINUTES
-
-  const row = (label: string, value: string | null | undefined) => (
-    <div className="flex justify-between gap-4 border-b border-border/60 py-2 last:border-0">
-      <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className="text-foreground text-right">{value ?? '—'}</span>
-    </div>
-  )
+  const unitColor =
+    event.unitKey === 'main' ? 'var(--unit-main)' : 'var(--unit-second)'
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex flex-col sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle className="text-foreground">
-            {formatDateLabel(event.date)}
-          </SheetTitle>
-          <p className="text-muted-foreground text-sm">{event.unitName}</p>
-        </SheetHeader>
-        <div className="flex-1 overflow-y-auto px-1 py-2">
-          {row('Call time', event.callTime)}
-          {row('Lunch time', event.lunchTime)}
-          {row('Wrap time', event.wrapTime)}
-          {row('Location', event.primaryLocationName)}
-          {row('Shot count', `${event.shotCount} shots`)}
-          {row('Estimated runtime', formatRuntime(event.estMinutes))}
-          {runtimeWarning && (
-            <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-amber-600 dark:text-amber-400 text-xs">
-              Estimated runtime over 10h 30min. Consider splitting the day.
+      <SheetContent
+        side="right"
+        className={cn(
+          'top-4 right-4 bottom-4 left-[auto] h-[calc(100vh-2rem)] w-[420px] max-w-[90vw] flex flex-col gap-0 rounded-2xl border border-border shadow-xl overflow-hidden',
+          'transition-[transform] duration-300 ease-out',
+          'data-[state=open]:duration-300 data-[state=closed]:duration-300'
+        )}
+      >
+        <SheetHeader className="px-7 pt-6 pb-3">
+          <div className="pr-8">
+            <SheetTitle className="text-foreground text-lg font-semibold leading-tight">
+              {formatDateLabel(event.date)}
+            </SheetTitle>
+            <p
+              className="mt-2 font-medium text-sm"
+              style={{ color: unitColor }}
+            >
+              {event.unitName}
             </p>
-          )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="rounded-md bg-muted/80 px-2 py-0.5 text-muted-foreground text-xs">
+                {event.shotCount} shots
+              </span>
+              <span className="rounded-md bg-muted/80 px-2 py-0.5 text-muted-foreground text-xs">
+                {formatRuntime(event.estMinutes)}
+              </span>
+            </div>
+          </div>
+        </SheetHeader>
+
+        <div className="flex-1 overflow-y-auto px-7 py-4">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <div>
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Call time
+                </p>
+                <p className="text-foreground mt-0.5 text-sm">
+                  {event.callTime ?? '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Lunch
+                </p>
+                <p className="text-foreground mt-0.5 text-sm">
+                  {event.lunchTime ?? '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Wrap time
+                </p>
+                <p className="text-foreground mt-0.5 text-sm">
+                  {event.wrapTime ?? '—'}
+                </p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Location
+                </p>
+                <p className="text-foreground mt-0.5 text-sm">
+                  {event.primaryLocationName ?? '—'}
+                </p>
+              </div>
+            </div>
+
+            {runtimeWarning && (
+              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-600 dark:text-amber-400 text-xs">
+                Estimated runtime over 10h 30min. Consider splitting the day.
+              </p>
+            )}
+          </div>
         </div>
-        <SheetFooter className="flex flex-col gap-2 sm:flex-col">
-          <Button
-            className="w-full gap-2"
-            onClick={onOpenStripboard}
-          >
+
+        <SheetFooter className="flex flex-col gap-3 px-7 pb-6 pt-4 border-t border-border/60">
+          <Button className="w-full gap-2" onClick={onOpenStripboard}>
             <LayoutGrid className="size-4" />
             Open Stripboard
           </Button>
