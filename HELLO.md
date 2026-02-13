@@ -113,4 +113,4 @@ Exact paths for Windows and Linux are in the [README](README.md).
 - **README.md** — Full setup from scratch, migrations, data model, DOOD rules, strip types, tech stack, and architecture.  
 - **Sidebar** — Use the app’s navigation to explore each area; the top bar always shows which production is active.
 
-Enjoy Albatross.
+Enjoy Albatross. If you have any feedback, reach out to Aran at aran@noholdsbarred.pictures

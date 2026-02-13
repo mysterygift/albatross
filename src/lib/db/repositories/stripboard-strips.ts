@@ -6,6 +6,10 @@ import { listScenesByProduction, listShootDaysByProduction } from './schedule'
 const TABLE = 'stripboard_strips'
 export const SORT_GAP = 1000
 
+// Strip state transitions: SCHEDULED ↔ UNSCHEDULED ↔ BONEYARD. No hard deletes;
+// use moveStripToUnscheduled / moveStripToBoneyard (UPDATE strip_status). TanStack
+// Query invalidates: stripboard, unscheduled-scenes, boneyard-strips.
+
 function rowToStrip(r: Record<string, unknown>): StripboardStrip {
   return {
     id: r.id as string,

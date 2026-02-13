@@ -9,7 +9,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { X, Film, Truck, Phone, Utensils, Moon, StickyNote, Clock } from 'lucide-react'
+import { X, Film, Truck, Phone, Utensils, Moon, StickyNote, Clock, Skull } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { StripboardStrip, StripType } from '@/lib/db/types'
 import type { Scene } from '@/lib/db/types'
 
@@ -29,6 +30,7 @@ export function StripItem({
   onUpdateEstimatedMinutes,
   isOverlay,
   onRemove,
+  onSendToBoneyard,
   disabled,
   className,
 }: {
@@ -37,7 +39,10 @@ export function StripItem({
   estimatedMinutesDefault?: number
   onUpdateEstimatedMinutes?: (stripId: string, minutes: number | null) => void
   isOverlay?: boolean
+  /** Boneyard: permanent delete. Only in Boneyard panel. */
   onRemove?: (strip: StripboardStrip) => void
+  /** Scheduled strips only: send to Boneyard (amber skull). Unscheduled strips do not show this. */
+  onSendToBoneyard?: (strip: StripboardStrip) => void
   disabled?: boolean
   className?: string
 }) {
@@ -84,6 +89,7 @@ export function StripItem({
       onUpdateEstimatedMinutes={onUpdateEstimatedMinutes}
       disabled={disabled}
       onRemove={onRemove}
+      onSendToBoneyard={onSendToBoneyard}
       label={label}
       className={className}
     />
@@ -96,6 +102,7 @@ function SortableStripInner({
   onUpdateEstimatedMinutes,
   disabled,
   onRemove,
+  onSendToBoneyard,
   label,
   className,
 }: {
@@ -104,6 +111,7 @@ function SortableStripInner({
   onUpdateEstimatedMinutes?: (stripId: string, minutes: number | null) => void
   disabled?: boolean
   onRemove?: (strip: StripboardStrip) => void
+  onSendToBoneyard?: (strip: StripboardStrip) => void
   label: React.ReactNode
   className?: string
 }) {
@@ -172,18 +180,22 @@ function SortableStripInner({
             if (!open) commitEstMin()
           }}
         >
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0 h-7 w-7 text-muted-foreground hover:text-foreground"
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-              title="Set duration override"
-            >
-              <Clock className="size-3.5" />
-            </Button>
-          </PopoverTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0 h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <Clock className="size-3.5" />
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="left">Set shot duration</TooltipContent>
+          </Tooltip>
           <PopoverContent
             align="end"
             className="w-56"
@@ -213,7 +225,22 @@ function SortableStripInner({
           </PopoverContent>
         </Popover>
       )}
-      {onRemove && !disabled && (
+      {onSendToBoneyard && !disabled && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0 h-7 w-7 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:scale-110 transition-transform"
+              onClick={(e) => { e.stopPropagation(); onSendToBoneyard(strip) }}
+            >
+              <Skull className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Send to Boneyard</TooltipContent>
+        </Tooltip>
+      )}
+      {onRemove && !onSendToBoneyard && !disabled && (
         <Button
           variant="ghost"
           size="icon"

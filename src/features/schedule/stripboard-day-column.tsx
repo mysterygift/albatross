@@ -25,7 +25,7 @@ export function StripboardDayColumn({
   onUpdateStripEstimatedMinutes,
   columnId,
   pageEighthsTarget,
-  onRemoveStrip,
+  onSendToBoneyard,
   onToggleLock,
   columnFilters,
   onColumnFilterChange,
@@ -40,7 +40,8 @@ export function StripboardDayColumn({
   columnId: (shootDayId: string, shootDayUnitId: string) => string
   isLocked: boolean
   pageEighthsTarget: number
-  onRemoveStrip: (strip: StripboardStrip) => void
+  /** Send scheduled strip to Boneyard (amber skull). Only scheduled strips show this; unscheduled do not. */
+  onSendToBoneyard: (strip: StripboardStrip) => void
   onToggleLock?: (shootDayUnitId: string, isLocked: boolean) => void
   columnFilters?: Record<string, ColumnFilter>
   onColumnFilterChange?: (colId: string, key: keyof ColumnFilter, value: boolean) => void
@@ -71,7 +72,7 @@ export function StripboardDayColumn({
             columnId={columnId(day.id, shootDayUnit.id)}
             isLocked={shootDayUnit.is_locked !== 0}
             pageEighthsTarget={pageEighthsTarget}
-            onRemoveStrip={onRemoveStrip}
+            onSendToBoneyard={onSendToBoneyard}
             onToggleLock={onToggleLock}
             columnFilter={columnFilters?.[columnId(day.id, shootDayUnit.id)] ?? DEFAULT_COLUMN_FILTER}
             onColumnFilterChange={onColumnFilterChange ? (key, value) => onColumnFilterChange(columnId(day.id, shootDayUnit.id), key, value) : undefined}
@@ -98,7 +99,7 @@ function UnitColumn({
   columnId: colId,
   isLocked,
   pageEighthsTarget,
-  onRemoveStrip,
+  onSendToBoneyard,
   onToggleLock,
   columnFilter,
   onColumnFilterChange,
@@ -113,7 +114,7 @@ function UnitColumn({
   columnId: string
   isLocked: boolean
   pageEighthsTarget: number
-  onRemoveStrip: (strip: StripboardStrip) => void
+  onSendToBoneyard: (strip: StripboardStrip) => void
   onToggleLock?: (shootDayUnitId: string, isLocked: boolean) => void
   columnFilter: ColumnFilter
   onColumnFilterChange?: (key: keyof ColumnFilter, value: boolean) => void
@@ -280,7 +281,7 @@ function UnitColumn({
                     : undefined
                 }
                 onUpdateEstimatedMinutes={onUpdateStripEstimatedMinutes}
-                onRemove={onRemoveStrip}
+                onSendToBoneyard={onSendToBoneyard}
                 disabled={isLocked}
                 className={filtersActive && strip.strip_type !== 'SCENE' ? 'opacity-60' : undefined}
               />

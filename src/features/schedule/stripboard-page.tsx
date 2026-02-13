@@ -187,6 +187,7 @@ export function StripboardPage() {
   const [activeData, setActiveData] = useState<{ type: 'strip'; strip: StripboardStrip } | { type: 'unscheduled-scene'; scene: Scene } | null>(null)
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({})
   const [unscheduleToast, setUnscheduleToast] = useState(false)
+  const [boneyardToast, setBoneyardToast] = useState(false)
 
   const stripboard = useStripboard(currentProductionId ?? null)
   const filters = { search: search || undefined, locationId }
@@ -256,12 +257,11 @@ export function StripboardPage() {
     return () => clearTimeout(t)
   }, [unscheduleToast])
 
-  // #region agent log
   useEffect(() => {
-    const len = unscheduled.unscheduledScenes.length
-    fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-page.tsx:useEffect',message:'unscheduledScenes length',data:{length:len},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
-  }, [unscheduled.unscheduledScenes])
-  // #endregion
+    if (!boneyardToast) return
+    const t = setTimeout(() => setBoneyardToast(false), 3000)
+    return () => clearTimeout(t)
+  }, [boneyardToast])
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveData(null)
@@ -284,8 +284,8 @@ export function StripboardPage() {
     }
 
     if (overStr === 'boneyard-panel' && (data?.type === 'strip' || data?.type === 'boneyard-strip')) {
-      if (data.strip.strip_type !== 'SCENE') return
       await moveToBoneyardMutation.mutateAsync(data.strip.id)
+      setBoneyardToast(true)
       return
     }
 
@@ -393,6 +393,11 @@ export function StripboardPage() {
           Scene moved to Unscheduled.
         </div>
       )}
+      {boneyardToast && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-700 dark:text-amber-400">
+          Moved to Boneyard.
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Schedule — Stripboard</h1>
         <AddStripPopover
@@ -436,16 +441,9 @@ export function StripboardPage() {
             isAssigning={unscheduled.bulkAssignMutation.isPending}
           />
 
-          <BoneyardPanel
-            droppableId="boneyard-panel"
-            strips={boneyard.boneyardStrips}
-            scenes={scenes}
-            estimatedShootMinutesBySceneId={estimatedShootMinutesBySceneId}
-            onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
-          />
-
-          <div className="flex-1 overflow-auto">
-            <div className="flex gap-4 pb-4">
+          {/* Scroll area: day columns + Boneyard column fixed at far right (final resting place for strips). */}
+          <div className="flex-1 overflow-auto min-w-0">
+            <div className="flex gap-4 pb-4 min-h-full">
               {shootDays.map((day) => {
                 const dayUnitsList = dayUnitsByDayId.get(day.id) ?? []
                 const stripsByUnit = dayUnitsList.map((shootDayUnit) => ({
@@ -469,9 +467,9 @@ export function StripboardPage() {
                     columnId={columnId}
                     isLocked={false}
                     pageEighthsTarget={PAGE_EIGHTHS_TARGET}
-                    onRemoveStrip={(strip) => {
-                      moveToUnscheduledMutation.mutate(strip.id)
-                      if (strip.strip_type === 'SCENE') setUnscheduleToast(true)
+                    onSendToBoneyard={(strip) => {
+                      moveToBoneyardMutation.mutate(strip.id)
+                      setBoneyardToast(true)
                     }}
                     onToggleLock={(shootDayUnitId, isLocked) =>
                       setLockedMutation.mutate({ shootDayUnitId, isLocked })
@@ -487,10 +485,17 @@ export function StripboardPage() {
                 )
               })}
               {shootDays.length === 0 && (
-                <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground text-sm">
+                <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground text-sm shrink-0">
                   No shoot days. Add shoot days from the Schedule calendar or settings.
                 </div>
               )}
+              <BoneyardPanel
+                droppableId="boneyard-panel"
+                strips={boneyard.boneyardStrips}
+                scenes={scenes}
+                estimatedShootMinutesBySceneId={estimatedShootMinutesBySceneId}
+                onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
+              />
             </div>
           </div>
         </div>
