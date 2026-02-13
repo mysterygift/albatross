@@ -115,6 +115,7 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'script_documents',
     'equipment_terms',
   ]
+  let committed = false
   try {
     await db.execute('BEGIN IMMEDIATE')
     try {
@@ -139,8 +140,16 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
         ['b0000000-0000-4000-8000-000000000005', VERIFY_PID, '2025-01-01', ts, ts]
       )
       await db.execute(`DELETE FROM productions WHERE id = $1`, [VERIFY_PID])
-    } finally {
       await db.execute('COMMIT')
+      committed = true
+    } finally {
+      if (!committed) {
+        try {
+          await db.execute('ROLLBACK')
+        } catch {
+          /* ignore */
+        }
+      }
     }
     const remaining: string[] = []
     const prodRows = await db.select<Record<string, unknown>[]>(`SELECT id FROM productions WHERE id = $1`, [VERIFY_PID])
@@ -161,10 +170,15 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     }
     return { ok: true, message: 'Cascades verified: hard delete removed production and all child rows.' }
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    const isBusy =
+      /database is locked|sqlite_busy|sqlite_locked|code: 5|code: 6/i.test(msg)
     return {
       ok: false,
-      message: 'Cascade verification threw.',
-      details: err instanceof Error ? err.message : String(err),
+      message: isBusy
+        ? 'Database is busy (SQLITE_BUSY). Try again in a moment.'
+        : 'Cascade verification threw.',
+      details: msg,
     }
   }
 }

@@ -1,18 +1,31 @@
 /**
  * Schedule Calendar — month view of shoot day events (one per shoot_day_unit).
  *
- * Uses listCalendarShootDayEvents(); events show unit, call–wrap, runtime, location, shot count.
- * Main Unit = mint (--unit-main), Second Unit = complementary (--unit-second).
- * Day Summary Drawer opens on event click; Open Stripboard / Generate Call Sheet (placeholder).
+ * Drag any event to another date to move the entire shoot day to that date.
+ * If the target date already has a shoot, you can swap the two days. Day Summary Drawer on click.
  */
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  closestCenter,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
 import { useCurrentProduction } from '@/features/productions/context'
 import { listCalendarShootDayEvents } from '@/lib/db/repositories/calendar'
+import { moveShootDayToDate, swapShootDays } from '@/lib/db/repositories/schedule'
+import { stripboardQueryKeys } from '@/features/schedule/stripboard-hooks'
 import type { CalendarShootDayEvent } from '@/lib/db/types'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, LayoutGrid, FileText } from 'lucide-react'
+import { ChevronLeft, ChevronRight, LayoutGrid, FileText, GripVertical } from 'lucide-react'
 import {
   Sheet,
   SheetContent,
@@ -20,6 +33,14 @@ import {
   SheetTitle,
   SheetFooter,
 } from '@/components/ui/sheet'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
@@ -67,22 +88,29 @@ function formatDateLabel(dateStr: string): string {
 
 const RUNTIME_WARNING_THRESHOLD_MINUTES = 630 // 10.5h
 
-function CalendarEventCard({
+function CalendarEventCardBody({
   event,
   onClick,
+  isOverlay,
 }: {
   event: CalendarShootDayEvent
   onClick: () => void
+  isOverlay?: boolean
 }) {
   const isMain = event.unitKey === 'main'
   const bgVar = isMain ? 'var(--unit-main)' : 'var(--unit-second)'
   const fgVar = isMain ? 'var(--unit-main-foreground)' : 'var(--unit-second-foreground)'
 
   return (
-    <button
-      type="button"
+    <div
+      role={isOverlay ? undefined : 'button'}
+      tabIndex={isOverlay ? undefined : 0}
       onClick={onClick}
-      className="w-full rounded-md px-1.5 py-1 text-left text-xs transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
+      onKeyDown={(e) => !isOverlay && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onClick())}
+      className={cn(
+        'rounded-md px-1.5 py-1 text-left text-xs transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
+        !isOverlay && 'cursor-pointer flex-1 min-w-0'
+      )}
       style={{
         backgroundColor: bgVar,
         color: fgVar,
@@ -97,7 +125,64 @@ function CalendarEventCard({
         <span>{event.primaryLocationName ?? '—'}</span>
         <span>{event.shotCount} shots</span>
       </div>
-    </button>
+    </div>
+  )
+}
+
+function DraggableEventCard({
+  event,
+  onClick,
+}: {
+  event: CalendarShootDayEvent
+  onClick: () => void
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: event.shootDayUnitId,
+    data: {
+      shootDayUnitId: event.shootDayUnitId,
+      shootDayId: event.shootDayId,
+      date: event.date,
+    },
+  })
+  return (
+    <div
+      className={cn(
+        'flex items-stretch gap-0.5 rounded-md overflow-hidden',
+        isDragging && 'opacity-50'
+      )}
+    >
+      <div
+        ref={setNodeRef}
+        {...listeners}
+        {...attributes}
+        className="cursor-grab active:cursor-grabbing touch-none flex items-center shrink-0 px-0.5 text-muted-foreground hover:text-foreground"
+        aria-label="Drag to reschedule"
+      >
+        <GripVertical className="size-3.5" />
+      </div>
+      <CalendarEventCardBody event={event} onClick={onClick} isOverlay={false} />
+    </div>
+  )
+}
+
+function DroppableDayCell({
+  dateStr,
+  children,
+}: {
+  dateStr: string
+  children: ReactNode
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `date-${dateStr}` })
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        'min-h-[100px] rounded border border-border bg-card/30 p-2 text-left',
+        isOver && 'ring-2 ring-primary/50 ring-offset-2 ring-offset-background'
+      )}
+    >
+      {children}
+    </div>
   )
 }
 
@@ -222,10 +307,70 @@ function generateCallSheetPlaceholder(): void {
 
 export function ScheduleCalendarPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { currentProductionId } = useCurrentProduction()
   const [viewDate, setViewDate] = useState(() => new Date())
   const [selectedEvent, setSelectedEvent] = useState<CalendarShootDayEvent | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+
+  const [activeEvent, setActiveEvent] = useState<CalendarShootDayEvent | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [conflictModal, setConflictModal] = useState<{
+    sourceShootDayId: string
+    existingShootDayId: string
+  } | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 4000)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  const invalidateScheduleQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
+    queryClient.invalidateQueries({ queryKey: ['shoot-days'] })
+    queryClient.invalidateQueries({ queryKey: stripboardQueryKeys.all })
+  }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  )
+
+  const moveMutation = useMutation({
+    mutationFn: (vars: { shootDayId: string; newDate: string }) =>
+      moveShootDayToDate(vars.shootDayId, vars.newDate),
+  })
+
+  const handleDragStart = (ev: DragStartEvent) => {
+    const { active } = ev
+    const found = events.find((e) => e.shootDayUnitId === active.id)
+    setActiveEvent(found ?? null)
+  }
+
+  const handleDragEnd = (ev: DragEndEvent) => {
+    setActiveEvent(null)
+    const { active, over } = ev
+    const overId = over?.id
+    if (overId == null || typeof overId !== 'string' || !overId.startsWith('date-')) return
+    const targetDate = overId.slice(5)
+    if (targetDate.length !== 10) return
+    const data = active.data.current as { shootDayUnitId?: string; shootDayId?: string; date?: string } | undefined
+    if (!data?.shootDayId || !data?.date || data.date === targetDate) return
+    if (moveMutation.isPending) return
+    const variables = { shootDayId: data.shootDayId, newDate: targetDate }
+    moveMutation.mutateAsync(variables).then((result) => {
+      if (result.success) {
+        invalidateScheduleQueries()
+      } else if ('existingShootDayId' in result && result.existingShootDayId) {
+        setConflictModal({
+          sourceShootDayId: variables.shootDayId,
+          existingShootDayId: result.existingShootDayId,
+        })
+      } else {
+        setToast('A shoot already exists on that date.')
+      }
+    }).catch(() => setToast('Move failed.'))
+  }
 
   const year = viewDate.getFullYear()
   const month = viewDate.getMonth()
@@ -294,6 +439,9 @@ export function ScheduleCalendarPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Schedule — Calendar</h1>
         <div className="flex items-center gap-2">
+          {moveMutation.isPending && (
+            <span className="text-muted-foreground text-sm">Moving…</span>
+          )}
           <Button variant="outline" size="icon" onClick={goPrevMonth}>
             <ChevronLeft className="size-4" />
           </Button>
@@ -306,37 +454,93 @@ export function ScheduleCalendarPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 text-center text-sm text-muted-foreground">
-        {WEEKDAY_LABELS.map((label) => (
-          <div key={label} className="py-2 font-medium">
-            {label}
-          </div>
-        ))}
-        {Array.from({ length: leadingBlanks }).map((_, i) => (
-          <div key={`blank-${i}`} className="min-h-[100px] rounded border border-border bg-card/30 p-2" />
-        ))}
-        {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
-          const dateStr = toYyyyMmDd(year, month, day)
-          const dayEvents = eventsByDate.get(dateStr) ?? []
-          return (
-            <div
-              key={day}
-              className="min-h-[100px] rounded border border-border bg-card/30 p-2 text-left"
-            >
-              <span className="text-foreground font-medium">{day}</span>
-              <div className="mt-1 space-y-1">
-                {dayEvents.map((event) => (
-                  <CalendarEventCard
-                    key={event.shootDayUnitId}
-                    event={event}
-                    onClick={() => openDrawer(event)}
-                  />
-                ))}
-              </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="grid grid-cols-7 gap-1 text-center text-sm text-muted-foreground">
+          {WEEKDAY_LABELS.map((label) => (
+            <div key={label} className="py-2 font-medium">
+              {label}
             </div>
-          )
-        })}
-      </div>
+          ))}
+          {Array.from({ length: leadingBlanks }).map((_, i) => (
+            <div key={`blank-${i}`} className="min-h-[100px] rounded border border-border bg-card/30 p-2" />
+          ))}
+          {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+            const dateStr = toYyyyMmDd(year, month, day)
+            const dayEvents = eventsByDate.get(dateStr) ?? []
+            return (
+              <DroppableDayCell key={day} dateStr={dateStr}>
+                <span className="text-foreground font-medium">{day}</span>
+                <div className="mt-1 space-y-1">
+                  {dayEvents.map((event) => (
+                    <DraggableEventCard
+                      key={event.shootDayUnitId}
+                      event={event}
+                      onClick={() => openDrawer(event)}
+                    />
+                  ))}
+                </div>
+              </DroppableDayCell>
+            )
+          })}
+        </div>
+
+        <DragOverlay dropAnimation={null}>
+          {activeEvent ? (
+            <div className="w-[min(100%,220px)] rounded-md shadow-lg ring-1 ring-border opacity-95">
+              <CalendarEventCardBody
+                event={activeEvent}
+                onClick={() => {}}
+                isOverlay
+              />
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+
+      {toast && (
+        <div
+          role="alert"
+          className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground shadow-lg"
+        >
+          {toast}
+        </div>
+      )}
+
+      <Dialog open={!!conflictModal} onOpenChange={(open) => !open && setConflictModal(null)}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>That date already has a shoot day.</DialogTitle>
+            <DialogDescription>
+              Swap the two days so each shoot moves to the other&apos;s date?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter showCloseButton={false} className="flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!conflictModal) return
+                swapShootDays(conflictModal.sourceShootDayId, conflictModal.existingShootDayId)
+                  .then(() => {
+                    invalidateScheduleQueries()
+                    setConflictModal(null)
+                  })
+                  .catch(() => setToast('Swap failed.'))
+              }}
+            >
+              Swap
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setConflictModal(null)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <DaySummaryDrawer
         event={selectedEvent}

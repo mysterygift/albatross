@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
 import { TopBar } from '@/components/top-bar'
+import { DevPerfHud } from '@/components/dev/DevPerfHud'
 
 export function AppLayout() {
   return (
@@ -13,6 +14,7 @@ export function AppLayout() {
           <Outlet />
         </main>
       </SidebarInset>
+      <DevPerfHud />
     </SidebarProvider>
   )
 }

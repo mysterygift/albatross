@@ -59,6 +59,7 @@ export function SettingsPage() {
   } = useCurrency()
   const [open, setOpen] = useState(false)
   const [cascadeResult, setCascadeResult] = useState<{ ok: boolean; message: string; details?: string } | null>(null)
+  const [cascadeLoading, setCascadeLoading] = useState(false)
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [phase, setPhase] = useState<'pre' | 'production' | 'post'>('pre')
@@ -250,11 +251,18 @@ export function SettingsPage() {
                 variant="outline"
                 size="sm"
                 onClick={async () => {
-                  await ensureDemoData()
-                  queryClient.invalidateQueries({ queryKey: ['productions'] })
-                  await refetchProductions()
-                  const prod = await getProductionBySlug(DEMO_SLUG)
-                  if (prod) setCurrentProductionId(prod.id)
+                  try {
+                    await ensureDemoData()
+                    queryClient.invalidateQueries({ queryKey: ['productions'] })
+                    await refetchProductions()
+                    const prod = await getProductionBySlug(DEMO_SLUG)
+                    if (prod) setCurrentProductionId(prod.id)
+                  } catch (e) {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings/page.tsx:Create Demo',message:'demo creation error',data:{err:String((e as Error)?.message ?? e),stack:(e as Error)?.stack?.slice(0,500)},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+                    // #endregion
+                    throw e
+                  }
                 }}
               >
                 Create Demo Production
@@ -285,12 +293,19 @@ export function SettingsPage() {
               <Button
                 variant="outline"
                 size="sm"
+                disabled={cascadeLoading}
                 onClick={async () => {
-                  const result = await verifyCascades()
-                  setCascadeResult(result)
+                  setCascadeLoading(true)
+                  setCascadeResult(null)
+                  try {
+                    const result = await verifyCascades()
+                    setCascadeResult(result)
+                  } finally {
+                    setCascadeLoading(false)
+                  }
                 }}
               >
-                Verify Cascades
+                {cascadeLoading ? 'Verifying…' : 'Verify Cascades'}
               </Button>
               <Button
                 variant="outline"
