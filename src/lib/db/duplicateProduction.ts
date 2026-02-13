@@ -175,6 +175,7 @@ export async function duplicateProduction(
       }
     }
 
+    const shotIdMap = new Map<string, string>()
     const shots = await db.select<Record<string, unknown>[]>(
       `SELECT s.* FROM shots s INNER JOIN scenes sc ON sc.id = s.scene_id AND sc.production_id = $1 AND sc.deleted_at IS NULL WHERE s.deleted_at IS NULL`,
       [sourceProductionId]
@@ -183,11 +184,12 @@ export async function duplicateProduction(
       const sceneId = sceneIdMap.get(r.scene_id as string)
       if (sceneId) {
         const id = newId()
+        shotIdMap.set(r.id as string, id)
         await db.execute(
-          `INSERT INTO shots (id, scene_id, shot_number, description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          `INSERT INTO shots (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
           [
-            id, sceneId, r.shot_number, r.description, r.subject, r.action_description, r.shot_size, r.support, r.lens,
+            id, sceneId, r.shot_number, r.description, r.shot_description ?? null, r.subject, r.action_description, r.shot_size, r.support, r.lens,
             r.duration_seconds, r.estimated_shoot_minutes, r.camera_movement, r.notes, ts, ts,
           ]
         )
@@ -218,10 +220,12 @@ export async function duplicateProduction(
       if (!dayId) continue
       const sduId = mapId(shootDayUnitIdMap, r.shoot_day_unit_id as string | null)
       const sceneId = mapId(sceneIdMap, r.scene_id as string | null)
+      const shotId = mapId(shotIdMap, r.shot_id as string | null)
+      const stripStatus = (r.strip_status as string) ?? 'SCHEDULED'
       await db.execute(
-        `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, title, description, estimated_minutes, sort_index, color_tag, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-        [newId(), newProdId, dayId, sduId, r.strip_type ?? 'SCENE', sceneId, r.title, r.description, r.estimated_minutes ?? null, r.sort_index ?? 0, r.color_tag, ts, ts]
+        `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+        [newId(), newProdId, dayId, sduId, r.strip_type ?? 'SHOT', sceneId, shotId, r.title, r.description, r.estimated_minutes ?? null, r.sort_index ?? 0, r.color_tag, stripStatus, ts, ts]
       )
     }
 

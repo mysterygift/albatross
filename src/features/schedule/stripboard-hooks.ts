@@ -7,14 +7,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listShootDaysByProduction,
   listScenesByProduction,
-  getEstimatedShootMinutesBySceneIds,
+  listShotsByProduction,
+  getEstimatedShootMinutesByShotIds,
 } from '@/lib/db/repositories/schedule'
 import {
   listStripsByProduction,
-  listUnscheduledScenes,
-  bulkAssignScenesToDay,
+  listUnscheduledShots,
+  bulkAssignShotsToDay,
   createStrip,
-  createSceneStrip,
+  createShotStrip,
   moveStrip,
   moveStripToUnscheduled,
   moveStripToBoneyard,
@@ -23,7 +24,7 @@ import {
   reorderStrip,
   updateStripEstimatedMinutes,
   type CreateStripData,
-  type UnscheduledScenesFilters,
+  type UnscheduledShotsFilters,
 } from '@/lib/db/repositories/stripboard-strips'
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import { listShootDayUnitsByProduction, setShootDayUnitLocked } from '@/lib/db/repositories/shoot-day-units'
@@ -39,12 +40,11 @@ export const stripboardQueryKeys = {
   estimatedMinutes: (productionId: string) => [...stripboardQueryKeys.all, productionId, 'estimated-minutes'] as const,
 }
 
-export const unscheduledScenesQueryKeys = {
-  all: ['unscheduled-scenes'] as const,
-  /** Stable key: primitives only. Use sentinel when no production so we never share cache with key ['']. */
-  list: (productionId: string | null, filters?: UnscheduledScenesFilters) =>
+export const unscheduledShotsQueryKeys = {
+  all: ['unscheduled-shots'] as const,
+  list: (productionId: string | null, filters?: UnscheduledShotsFilters) =>
     [
-      ...unscheduledScenesQueryKeys.all,
+      ...unscheduledShotsQueryKeys.all,
       productionId || 'no-production',
       filters?.search?.trim() || null,
       filters?.locationId === undefined || filters?.locationId === '' ? null : filters?.locationId,
@@ -93,15 +93,21 @@ export function useStripboard(productionId: string | null) {
     enabled: !!productionId,
   })
 
-  const sceneIds = useMemo(
-    () => (scenesQuery.data ?? []).map((s) => s.id),
-    [scenesQuery.data]
+  const shotsQuery = useQuery({
+    queryKey: ['shots', productionId ?? ''],
+    queryFn: () => listShotsByProduction(productionId!),
+    enabled: !!productionId,
+  })
+
+  const shotIdsFromStrips = useMemo(
+    () => [...new Set((stripsQuery.data ?? []).map((s) => s.shot_id).filter(Boolean) as string[])],
+    [stripsQuery.data]
   )
 
   const estimatedMinutesQuery = useQuery({
-    queryKey: stripboardQueryKeys.estimatedMinutes(productionId ?? ''),
-    queryFn: () => getEstimatedShootMinutesBySceneIds(sceneIds),
-    enabled: !!productionId && sceneIds.length >= 0,
+    queryKey: [...stripboardQueryKeys.estimatedMinutes(productionId ?? ''), shotIdsFromStrips],
+    queryFn: () => getEstimatedShootMinutesByShotIds(shotIdsFromStrips),
+    enabled: !!productionId,
   })
 
   const units = unitsQuery.data ?? []
@@ -109,7 +115,8 @@ export function useStripboard(productionId: string | null) {
   const dayUnits = dayUnitsQuery.data ?? []
   const strips = stripsQuery.data ?? []
   const scenes = scenesQuery.data ?? []
-  const estimatedShootMinutesBySceneId = estimatedMinutesQuery.data ?? new Map<string, number>()
+  const shots = shotsQuery.data ?? []
+  const estimatedShootMinutesByShotId = estimatedMinutesQuery.data ?? new Map<string, number>()
 
   const dayUnitsByDayId = useMemo(() => {
     const map = new Map<string, typeof dayUnits>()
@@ -139,8 +146,9 @@ export function useStripboard(productionId: string | null) {
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: stripboardQueryKeys.all })
-    queryClient.invalidateQueries({ queryKey: unscheduledScenesQueryKeys.all })
+    queryClient.invalidateQueries({ queryKey: unscheduledShotsQueryKeys.all })
     queryClient.invalidateQueries({ queryKey: boneyardStripsQueryKeys.all })
+    queryClient.invalidateQueries({ queryKey: ['shots'] })
   }
 
   const setLockedMutation = useMutation({
@@ -163,8 +171,23 @@ export function useStripboard(productionId: string | null) {
 
   /** Move a single strip to Boneyard (discarded). Does not delete; strip can be recovered or deleted from Boneyard. */
   const moveToBoneyardMutation = useMutation({
-    mutationFn: (stripId: string) => moveStripToBoneyard(stripId),
-    onSuccess: () => invalidate(),
+    mutationFn: (stripId: string) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-hooks.ts:moveToBoneyardMutation',message:'mutationFn start',data:{stripId},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
+      return moveStripToBoneyard(stripId)
+    },
+    onSuccess: () => {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-hooks.ts:moveToBoneyardMutation',message:'onSuccess invalidate',timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
+      invalidate()
+    },
+    onError: (err) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-hooks.ts:moveToBoneyardMutation',message:'onError',data:{error:String(err)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
+    },
   })
 
   /** Permanently soft-delete a strip. Only for Boneyard delete action. */
@@ -199,18 +222,18 @@ export function useStripboard(productionId: string | null) {
     onSuccess: () => invalidate(),
   })
 
-  const createSceneStripMutation = useMutation({
+  const createShotStripMutation = useMutation({
     mutationFn: ({
       productionId,
-      sceneId,
+      shotId,
       shootDayId,
       shootDayUnitId,
     }: {
       productionId: string
-      sceneId: string
+      shotId: string
       shootDayId: string
       shootDayUnitId: string
-    }) => createSceneStrip(productionId, sceneId, shootDayId, shootDayUnitId),
+    }) => createShotStrip(productionId, shotId, shootDayId, shootDayUnitId),
     onSuccess: () => invalidate(),
   })
 
@@ -222,7 +245,8 @@ export function useStripboard(productionId: string | null) {
     strips,
     stripsByDayUnit,
     scenes,
-    estimatedShootMinutesBySceneId,
+    shots,
+    estimatedShootMinutesByShotId,
     isLoading:
       unitsQuery.isLoading ||
       shootDaysQuery.isLoading ||
@@ -238,47 +262,42 @@ export function useStripboard(productionId: string | null) {
     moveStripMutation,
     reorderStripMutation,
     createStripMutation,
-    createSceneStripMutation,
+    createShotStripMutation,
   }
 }
 
-export function useUnscheduledScenes(
+export function useUnscheduledShots(
   productionId: string | null,
-  filters?: UnscheduledScenesFilters
+  filters?: UnscheduledShotsFilters
 ) {
   const queryClient = useQueryClient()
   const query = useQuery({
-    queryKey: unscheduledScenesQueryKeys.list(productionId, filters),
-    queryFn: async () => {
-      const list = await listUnscheduledScenes(productionId!, filters)
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-hooks.ts:useUnscheduledScenes',message:'queryFn result',data:{count:list.length},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      return list
-    },
+    queryKey: unscheduledShotsQueryKeys.list(productionId, filters),
+    queryFn: () => listUnscheduledShots(productionId!, filters),
     enabled: !!productionId,
   })
 
   const bulkAssignMutation = useMutation({
     mutationFn: ({
-      sceneIds,
+      shotIds,
       shootDayId,
       shootDayUnitId,
     }: {
-      sceneIds: string[]
+      shotIds: string[]
       shootDayId: string
       shootDayUnitId: string
     }) =>
-      bulkAssignScenesToDay(productionId!, sceneIds, shootDayId, shootDayUnitId),
+      bulkAssignShotsToDay(productionId!, shotIds, shootDayId, shootDayUnitId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: stripboardQueryKeys.all })
-      queryClient.invalidateQueries({ queryKey: unscheduledScenesQueryKeys.all })
+      queryClient.invalidateQueries({ queryKey: unscheduledShotsQueryKeys.all })
       queryClient.invalidateQueries({ queryKey: boneyardStripsQueryKeys.all })
+      queryClient.invalidateQueries({ queryKey: ['shots'] })
     },
   })
 
   return {
-    unscheduledScenes: query.data ?? [],
+    unscheduledShots: query.data ?? [],
     isLoading: query.isLoading,
     refetch: query.refetch,
     bulkAssignMutation,

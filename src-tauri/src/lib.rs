@@ -63,6 +63,12 @@ pub fn run() {
       sql: include_str!("../migrations/0010_stripboard_strip_status_boneyard.sql"),
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 11,
+      description: "stripboard_shots_and_shot_description",
+      sql: include_str!("../migrations/0011_stripboard_shots_and_shot_description.sql"),
+      kind: MigrationKind::Up,
+    },
   ];
 
   tauri::Builder::default()

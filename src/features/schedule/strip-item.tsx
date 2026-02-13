@@ -9,12 +9,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { X, Film, Truck, Phone, Utensils, Moon, StickyNote, Clock, Skull } from 'lucide-react'
+import { X, Film, Truck, Phone, Utensils, Moon, StickyNote, Clock, Skull, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { StripboardStrip, StripType } from '@/lib/db/types'
-import type { Scene } from '@/lib/db/types'
+import type { Scene, Shot } from '@/lib/db/types'
 
 const STRIP_ICONS: Record<StripType, typeof Film> = {
+  SHOT: Film,
   SCENE: Film,
   MOVE: Truck,
   CALL: Phone,
@@ -26,49 +27,74 @@ const STRIP_ICONS: Record<StripType, typeof Film> = {
 export function StripItem({
   strip,
   scenes,
+  shots,
   estimatedMinutesDefault,
   onUpdateEstimatedMinutes,
   isOverlay,
   onRemove,
   onSendToBoneyard,
+  onDeleteStrip,
   disabled,
   className,
 }: {
   strip: StripboardStrip
   scenes: Scene[]
+  shots: Shot[]
   estimatedMinutesDefault?: number
   onUpdateEstimatedMinutes?: (stripId: string, minutes: number | null) => void
   isOverlay?: boolean
   /** Boneyard: permanent delete. Only in Boneyard panel. */
   onRemove?: (strip: StripboardStrip) => void
-  /** Scheduled strips only: send to Boneyard (amber skull). Unscheduled strips do not show this. */
+  /** Scheduled SHOT/SCENE strips only: send to Boneyard (amber skull). */
   onSendToBoneyard?: (strip: StripboardStrip) => void
+  /** Scheduled MOVE/CALL/LUNCH/WRAP/NOTE strips: delete (grey trash). */
+  onDeleteStrip?: (strip: StripboardStrip) => void
   disabled?: boolean
   className?: string
 }) {
-  const scene = strip.scene_id ? scenes.find((s) => s.id === strip.scene_id) : null
+  const shot = strip.shot_id ? shots.find((sh) => sh.id === strip.shot_id) : null
+  const scene = shot ? scenes.find((s) => s.id === shot.scene_id) : (strip.scene_id ? scenes.find((s) => s.id === strip.scene_id) : null)
   const Icon = STRIP_ICONS[strip.strip_type]
 
   const label = (
-    <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
-      <Icon className="size-4 shrink-0 text-primary" />
-      {strip.strip_type === 'SCENE' && scene ? (
-        <>
-          <span className="font-medium shrink-0">Scene {scene.scene_number}</span>
-          <span className="text-muted-foreground text-sm min-w-0 truncate">
-            {scene.title ?? scene.heading ?? ''}
-          </span>
-          <div className="flex gap-1 shrink-0 flex-wrap">
-            {scene.int_ext && <Badge variant="secondary" className="text-[10px]">{scene.int_ext}</Badge>}
-            {scene.day_night && <Badge variant="outline" className="text-[10px]">{scene.day_night}</Badge>}
-            {scene.page_eighths != null && <Badge variant="outline" className="text-[10px]">{scene.page_eighths}/8</Badge>}
-          </div>
-        </>
-      ) : (
-        <>
-          <span className="font-medium shrink-0">{strip.strip_type}</span>
-          {strip.title && <span className="text-muted-foreground text-sm min-w-0 truncate">{strip.title}</span>}
-        </>
+    <div className="flex flex-col gap-0 min-w-0 flex-1">
+      <div className="flex items-center gap-2 min-w-0 flex-wrap">
+        <Icon className="size-4 shrink-0 text-primary" />
+        {strip.strip_type === 'SHOT' && scene && shot ? (
+          <>
+            <span className="font-medium shrink-0">Scene {scene.scene_number} / Shot {shot.shot_number}</span>
+            <div className="flex gap-1 shrink-0 flex-wrap">
+              {scene.int_ext && <Badge variant="secondary" className="text-[10px]">{scene.int_ext}</Badge>}
+              {scene.day_night && <Badge variant="outline" className="text-[10px]">{scene.day_night}</Badge>}
+              {scene.page_eighths != null && <Badge variant="outline" className="text-[10px]">{scene.page_eighths}/8</Badge>}
+            </div>
+          </>
+        ) : strip.strip_type === 'SCENE' && scene ? (
+          <>
+            <span className="font-medium shrink-0">Scene {scene.scene_number}</span>
+            <span className="text-muted-foreground text-sm min-w-0 truncate">
+              {scene.title ?? scene.heading ?? ''}
+            </span>
+            <div className="flex gap-1 shrink-0 flex-wrap">
+              {scene.int_ext && <Badge variant="secondary" className="text-[10px]">{scene.int_ext}</Badge>}
+              {scene.day_night && <Badge variant="outline" className="text-[10px]">{scene.day_night}</Badge>}
+              {scene.page_eighths != null && <Badge variant="outline" className="text-[10px]">{scene.page_eighths}/8</Badge>}
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="font-medium shrink-0">{strip.strip_type}</span>
+            {strip.title && <span className="text-muted-foreground text-sm min-w-0 truncate">{strip.title}</span>}
+          </>
+        )}
+      </div>
+      {strip.strip_type === 'SHOT' && shot && (
+        <div className="flex items-start gap-2 pt-2 min-w-0">
+          <span className="size-4 shrink-0" aria-hidden />
+          <p className="text-muted-foreground text-xs min-w-0 truncate flex-1">
+            {shot.shot_description ?? shot.subject ?? '(No shot description)'}
+          </p>
+        </div>
       )}
     </div>
   )
@@ -90,11 +116,14 @@ export function StripItem({
       disabled={disabled}
       onRemove={onRemove}
       onSendToBoneyard={onSendToBoneyard}
+      onDeleteStrip={onDeleteStrip}
       label={label}
       className={className}
     />
   )
 }
+
+const NON_SHOT_STRIP_TYPES = ['MOVE', 'CALL', 'LUNCH', 'WRAP', 'NOTE'] as const
 
 function SortableStripInner({
   strip,
@@ -103,6 +132,7 @@ function SortableStripInner({
   disabled,
   onRemove,
   onSendToBoneyard,
+  onDeleteStrip,
   label,
   className,
 }: {
@@ -112,9 +142,13 @@ function SortableStripInner({
   disabled?: boolean
   onRemove?: (strip: StripboardStrip) => void
   onSendToBoneyard?: (strip: StripboardStrip) => void
+  onDeleteStrip?: (strip: StripboardStrip) => void
   label: React.ReactNode
   className?: string
 }) {
+  const isShotOrScene = strip.strip_type === 'SHOT' || strip.strip_type === 'SCENE'
+  const showBoneyard = isShotOrScene && onSendToBoneyard
+  const showDelete = NON_SHOT_STRIP_TYPES.includes(strip.strip_type as (typeof NON_SHOT_STRIP_TYPES)[number]) && onDeleteStrip
   const [localMinutes, setLocalMinutes] = useState<string>(
     strip.estimated_minutes != null ? String(strip.estimated_minutes) : ''
   )
@@ -141,7 +175,7 @@ function SortableStripInner({
   }
 
   const showEstMin =
-    strip.strip_type === 'SCENE' &&
+    (strip.strip_type === 'SHOT' || strip.strip_type === 'SCENE') &&
     onUpdateEstimatedMinutes &&
     !disabled
 
@@ -225,14 +259,14 @@ function SortableStripInner({
           </PopoverContent>
         </Popover>
       )}
-      {onSendToBoneyard && !disabled && (
+      {showBoneyard && !disabled && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
               className="shrink-0 h-7 w-7 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:scale-110 transition-transform"
-              onClick={(e) => { e.stopPropagation(); onSendToBoneyard(strip) }}
+              onClick={(e) => { e.stopPropagation(); onSendToBoneyard!(strip) }}
             >
               <Skull className="size-3.5" />
             </Button>
@@ -240,7 +274,22 @@ function SortableStripInner({
           <TooltipContent side="left">Send to Boneyard</TooltipContent>
         </Tooltip>
       )}
-      {onRemove && !onSendToBoneyard && !disabled && (
+      {showDelete && !disabled && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0 h-7 w-7 text-muted-foreground hover:text-destructive"
+              onClick={(e) => { e.stopPropagation(); onDeleteStrip!(strip) }}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Delete strip</TooltipContent>
+        </Tooltip>
+      )}
+      {onRemove && !showBoneyard && !showDelete && !disabled && (
         <Button
           variant="ghost"
           size="icon"

@@ -1,6 +1,6 @@
 /**
- * Left panel: Unscheduled Scenes — scenes not on the stripboard.
- * Search, location filter, multi-select, Assign to Day (Shoot Day + Unit).
+ * Left panel: Unscheduled Shots — shots not on the stripboard.
+ * Search, location filter (by scene), multi-select, Assign to Day (Shoot Day + Unit).
  */
 import { useState } from 'react'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
@@ -22,13 +22,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Search, Plus } from 'lucide-react'
-import type { Scene } from '@/lib/db/types'
 import type { Location } from '@/lib/db/types'
 import type { ShootDay } from '@/lib/db/types'
 import type { ShootDayUnit } from '@/lib/db/types'
+import type { ShotWithScene } from '@/lib/db/repositories/stripboard-strips'
 
-export type UnscheduledScenesPanelProps = {
-  scenes: Scene[]
+export type UnscheduledShotsPanelProps = {
+  unscheduledShots: ShotWithScene[]
   locations: Location[]
   shootDays: ShootDay[]
   dayUnits: ShootDayUnit[]
@@ -36,20 +36,19 @@ export type UnscheduledScenesPanelProps = {
   onSearchChange: (v: string) => void
   locationId: string | null | undefined
   onLocationChange: (v: string | null | undefined) => void
-  selectedSceneIds: Set<string>
-  onToggleScene: (sceneId: string) => void
+  selectedShotIds: Set<string>
+  onToggleShot: (shotId: string) => void
   onSelectAll: () => void
   onDeselectAll: () => void
-  onAssignToDay: (sceneIds: string[], shootDayId: string, shootDayUnitId: string) => void
-  onAddSingle: (sceneId: string, shootDayId: string, shootDayUnitId: string) => void
+  onAssignToDay: (shotIds: string[], shootDayId: string, shootDayUnitId: string) => void
+  onAddSingle: (shotId: string, shootDayId: string, shootDayUnitId: string) => void
   getUnitName: (unitId: string) => string
   isAssigning?: boolean
-  /** Id for dnd-kit droppable (e.g. "unscheduled-panel") to allow dropping SCENE strips to unschedule. */
   droppableId?: string
 }
 
-export function UnscheduledScenesPanel({
-  scenes,
+export function UnscheduledShotsPanel({
+  unscheduledShots,
   locations,
   shootDays,
   dayUnits,
@@ -57,8 +56,8 @@ export function UnscheduledScenesPanel({
   onSearchChange,
   locationId,
   onLocationChange,
-  selectedSceneIds,
-  onToggleScene,
+  selectedShotIds,
+  onToggleShot,
   onSelectAll,
   onDeselectAll,
   onAssignToDay,
@@ -66,7 +65,7 @@ export function UnscheduledScenesPanel({
   getUnitName,
   isAssigning,
   droppableId = 'unscheduled-panel',
-}: UnscheduledScenesPanelProps) {
+}: UnscheduledShotsPanelProps) {
   const [assignDayId, setAssignDayId] = useState<string | null>(null)
   const [assignUnitId, setAssignUnitId] = useState<string | null>(null)
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({ id: droppableId })
@@ -74,7 +73,7 @@ export function UnscheduledScenesPanel({
   const dayUnitsForDay = assignDayId
     ? dayUnits.filter((du) => du.shoot_day_id === assignDayId)
     : []
-  const selectedList = [...selectedSceneIds]
+  const selectedList = [...selectedShotIds]
 
   const handleBulkAssign = () => {
     if (!assignDayId || !assignUnitId || selectedList.length === 0) return
@@ -92,13 +91,13 @@ export function UnscheduledScenesPanel({
       {isOver && (
         <p className="text-center text-sm font-medium text-primary">Drop here to unschedule</p>
       )}
-      <h2 className="font-semibold text-foreground">Unscheduled Scenes</h2>
+      <h2 className="font-semibold text-foreground">Unscheduled Shots</h2>
       <div className="space-y-2">
         <Label className="text-xs text-muted-foreground">Search</Label>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Scene number, heading..."
+            placeholder="Scene, shot number, description..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             className="pl-8 h-9"
@@ -138,21 +137,21 @@ export function UnscheduledScenesPanel({
       </div>
 
       <div className="flex flex-1 flex-col gap-2 overflow-auto min-h-0">
-        {scenes.length === 0 ? (
-          <p className="text-muted-foreground text-sm py-4 text-center">No unscheduled scenes.</p>
+        {unscheduledShots.length === 0 ? (
+          <p className="text-muted-foreground text-sm py-4 text-center">No unscheduled shots.</p>
         ) : (
-          scenes.map((scene) => (
-            <DraggableUnscheduledScene key={scene.id} scene={scene}>
-              <UnscheduledSceneRow
-                scene={scene}
-                selected={selectedSceneIds.has(scene.id)}
-                onToggle={() => onToggleScene(scene.id)}
-                onAdd={(shootDayId, shootDayUnitId) => onAddSingle(scene.id, shootDayId, shootDayUnitId)}
+          unscheduledShots.map((item) => (
+            <DraggableUnscheduledShot key={item.shot.id} item={item}>
+              <UnscheduledShotRow
+                item={item}
+                selected={selectedShotIds.has(item.shot.id)}
+                onToggle={() => onToggleShot(item.shot.id)}
+                onAdd={(shootDayId, shootDayUnitId) => onAddSingle(item.shot.id, shootDayId, shootDayUnitId)}
                 shootDays={shootDays}
                 dayUnits={dayUnits}
                 getUnitName={getUnitName}
               />
-            </DraggableUnscheduledScene>
+            </DraggableUnscheduledShot>
           ))
         )}
       </div>
@@ -204,8 +203,8 @@ export function UnscheduledScenesPanel({
   )
 }
 
-function UnscheduledSceneRow({
-  scene,
+function UnscheduledShotRow({
+  item,
   selected,
   onToggle,
   onAdd,
@@ -213,7 +212,7 @@ function UnscheduledSceneRow({
   dayUnits,
   getUnitName,
 }: {
-  scene: Scene
+  item: ShotWithScene
   selected: boolean
   onToggle: () => void
   onAdd: (shootDayId: string, shootDayUnitId: string) => void
@@ -222,6 +221,7 @@ function UnscheduledSceneRow({
   getUnitName: (id: string) => string
 }) {
   const dayUnitsForDay = (dayId: string) => dayUnits.filter((du) => du.shoot_day_id === dayId)
+  const { shot, scene } = item
 
   return (
     <div className="flex items-start gap-2 rounded-md border border-border bg-background/50 px-2 py-2">
@@ -233,7 +233,7 @@ function UnscheduledSceneRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="font-medium text-sm">Scene {scene.scene_number}</span>
+          <span className="font-medium text-sm">Scene {scene.scene_number} / Shot {shot.shot_number}</span>
           {(scene.int_ext || scene.day_night) && (
             <>
               {scene.int_ext && <Badge variant="secondary" className="text-[10px]">{scene.int_ext}</Badge>}
@@ -242,7 +242,7 @@ function UnscheduledSceneRow({
           )}
         </div>
         <p className="text-muted-foreground text-xs truncate">
-          {scene.heading ?? scene.title ?? '—'}
+          {shot.shot_description ?? shot.subject ?? '(No shot description)'}
         </p>
       </div>
       <DropdownMenu>
@@ -271,17 +271,16 @@ function UnscheduledSceneRow({
   )
 }
 
-/** Draggable wrapper for a scene (used when dragging from unscheduled into a column). */
-export function DraggableUnscheduledScene({
-  scene,
+export function DraggableUnscheduledShot({
+  item,
   children,
 }: {
-  scene: Scene
+  item: ShotWithScene
   children: React.ReactNode
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `unscheduled:${scene.id}`,
-    data: { type: 'unscheduled-scene' as const, scene },
+    id: `unscheduled:${item.shot.id}`,
+    data: { type: 'unscheduled-shot' as const, item },
   })
 
   return (

@@ -56,6 +56,7 @@ function rowToShot(r: Record<string, unknown>): Shot {
     scene_id: r.scene_id as string,
     shot_number: r.shot_number as string,
     description: r.description as string | null,
+    shot_description: (r.shot_description as string | null) ?? null,
     subject: (r.subject as string | null) ?? null,
     action_description: (r.action_description as string | null) ?? null,
     shot_size: (r.shot_size as Shot['shot_size']) ?? null,
@@ -301,6 +302,43 @@ export async function listShotsByScene(sceneId: string): Promise<Shot[]> {
   return rows.map(rowToShot)
 }
 
+/** All shots for a production (for Shot List and stripboard unscheduled). */
+export async function listShotsByProduction(productionId: string): Promise<Shot[]> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT s.* FROM ${SHOT_TABLE} s INNER JOIN ${SCENE_TABLE} sc ON sc.id = s.scene_id AND sc.production_id = $1 AND sc.deleted_at IS NULL WHERE s.deleted_at IS NULL ORDER BY sc.scene_number, s.shot_number`,
+    [productionId]
+  )
+  return rows.map(rowToShot)
+}
+
+export async function getShotById(id: string): Promise<Shot | null> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${SHOT_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
+    [id]
+  )
+  return rows.length ? rowToShot(rows[0]!) : null
+}
+
+/** Per-shot estimated minutes (shot.estimated_shoot_minutes). Used for stripboard day totals. */
+export async function getEstimatedShootMinutesByShotIds(shotIds: string[]): Promise<Map<string, number>> {
+  if (shotIds.length === 0) return new Map()
+  const db = await getDb()
+  const placeholders = shotIds.map((_, i) => `$${i + 1}`).join(', ')
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT id, COALESCE(estimated_shoot_minutes, 0) AS mins FROM ${SHOT_TABLE} WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+    shotIds
+  )
+  const map = new Map<string, number>()
+  for (const r of rows) {
+    const id = r.id as string
+    const mins = Number(r.mins) || 0
+    map.set(id, mins)
+  }
+  return map
+}
+
 /** Sum of estimated_shoot_minutes per scene (time to get shots in practice). Used for stripboard day duration. */
 export async function getEstimatedShootMinutesBySceneIds(sceneIds: string[]): Promise<Map<string, number>> {
   if (sceneIds.length === 0) return new Map()
@@ -324,6 +362,7 @@ export async function createShot(data: {
   scene_id: string
   shot_number: string
   description?: string | null
+  shot_description?: string | null
   subject?: string | null
   action_description?: string | null
   shot_size?: Shot['shot_size']
@@ -338,13 +377,14 @@ export async function createShot(data: {
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${SHOT_TABLE} (id, scene_id, shot_number, description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+    `INSERT INTO ${SHOT_TABLE} (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
     [
       id,
       data.scene_id,
       data.shot_number,
       data.description ?? null,
+      data.shot_description ?? null,
       data.subject ?? null,
       data.action_description ?? null,
       data.shot_size ?? null,
@@ -364,7 +404,7 @@ export async function createShot(data: {
 }
 
 const SHOT_UPDATE_KEYS = [
-  'shot_number', 'description', 'subject', 'action_description', 'shot_size',
+  'shot_number', 'description', 'shot_description', 'subject', 'action_description', 'shot_size',
   'support', 'lens', 'duration_seconds', 'estimated_shoot_minutes', 'camera_movement', 'notes',
 ] as const
 

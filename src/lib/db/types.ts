@@ -113,7 +113,8 @@ export type ShootDayUnit = {
   is_locked: number
 } & SoftDeletable
 
-export type StripType = 'SCENE' | 'MOVE' | 'CALL' | 'LUNCH' | 'WRAP' | 'NOTE'
+/** SHOT = one shot from Shot List (stripboard is shot-based). SCENE kept for legacy/display fallback. */
+export type StripType = 'SHOT' | 'SCENE' | 'MOVE' | 'CALL' | 'LUNCH' | 'WRAP' | 'NOTE'
 
 /** Strip state: on a day (SCHEDULED), in Unscheduled panel (UNSCHEDULED), or discarded (BONEYARD). Only BONEYARD strips can be permanently deleted. */
 export type StripStatus = 'SCHEDULED' | 'UNSCHEDULED' | 'BONEYARD'
@@ -125,10 +126,13 @@ export type StripboardStrip = {
   shoot_day_id: string | null
   shoot_day_unit_id: string | null
   strip_type: StripType
+  /** Legacy/fallback; for SHOT strips prefer shot_id and derive scene via shot.scene_id. */
   scene_id: string | null
+  /** Required for SHOT strips (one strip = one shot). Null for non-SHOT or legacy. */
+  shot_id: string | null
   title: string | null
   description: string | null
-  /** Override for time to cover this strip (minutes). When null, use sum of shot estimated_shoot_minutes for scene. */
+  /** Override for time to cover this strip (minutes). When null, use shot estimated_shoot_minutes. */
   estimated_minutes: number | null
   sort_index: number
   color_tag: string | null
@@ -209,6 +213,8 @@ export type Shot = {
   scene_id: string
   shot_number: string
   description: string | null
+  /** Brief under-title line on stripboard; distinct from subject and notes. */
+  shot_description: string | null
   subject: string | null
   action_description: string | null
   shot_size: ShotSize | null

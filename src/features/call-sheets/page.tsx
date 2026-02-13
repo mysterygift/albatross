@@ -167,7 +167,7 @@ export function CallSheetsPage() {
     const unit = dayUnit ? units.find((u) => u.id === dayUnit.unit_id) : null
     const unitName = unit?.name ?? 'Main Unit'
     const schedule = unitStrips.map((s) => {
-      if (s.strip_type === 'SCENE' && s.scene_id) {
+      if ((s.strip_type === 'SHOT' || s.strip_type === 'SCENE') && s.scene_id) {
         const scene = scenes.find((c) => c.id === s.scene_id)
         return {
           strip_type: 'SCENE' as const,
@@ -181,7 +181,7 @@ export function CallSheetsPage() {
         }
       }
       return {
-        strip_type: s.strip_type,
+        strip_type: s.strip_type === 'SHOT' ? 'SCENE' as const : s.strip_type,
         scene_number: null,
         scene_title: null,
         int_ext: null,

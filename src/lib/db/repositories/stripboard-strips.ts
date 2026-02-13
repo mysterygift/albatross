@@ -1,7 +1,7 @@
 import { getDb, now, uuid } from '../client'
 import { outboxPush } from '../outbox'
-import type { Scene, StripboardStrip, StripStatus, StripType } from '../types'
-import { listScenesByProduction, listShootDaysByProduction } from './schedule'
+import type { Scene, Shot, StripboardStrip, StripStatus, StripType } from '../types'
+import { listScenesByProduction, listShootDaysByProduction, listShotsByProduction } from './schedule'
 
 const TABLE = 'stripboard_strips'
 export const SORT_GAP = 1000
@@ -18,6 +18,7 @@ function rowToStrip(r: Record<string, unknown>): StripboardStrip {
     shoot_day_unit_id: (r.shoot_day_unit_id as string | null) ?? null,
     strip_type: r.strip_type as StripType,
     scene_id: (r.scene_id as string | null) ?? null,
+    shot_id: (r.shot_id as string | null) ?? null,
     title: (r.title as string | null) ?? null,
     description: (r.description as string | null) ?? null,
     estimated_minutes: (r.estimated_minutes as number | null) ?? null,
@@ -77,16 +78,16 @@ export async function getScheduledSceneIdsByShootDay(
   return map
 }
 
-/** Set of scene ids that have at least one SCHEDULED (on-board) SCENE strip for this production. */
-async function getScheduledSceneIds(productionId: string): Promise<Set<string>> {
+/** Set of shot ids that have at least one SCHEDULED (on-board) SHOT strip for this production. */
+export async function getScheduledShotIds(productionId: string): Promise<Set<string>> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT DISTINCT scene_id FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL AND strip_status = 'SCHEDULED' AND scene_id IS NOT NULL`,
+    `SELECT DISTINCT shot_id FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL AND strip_status = 'SCHEDULED' AND shot_id IS NOT NULL`,
     [productionId]
   )
   const set = new Set<string>()
   for (const r of rows) {
-    const id = r?.scene_id as string | undefined
+    const id = r?.shot_id as string | undefined
     if (id) set.add(id)
   }
   return set
@@ -107,6 +108,7 @@ export type CreateStripData = {
   shoot_day_unit_id: string | null
   strip_type: StripType
   scene_id?: string | null
+  shot_id?: string | null
   title?: string | null
   description?: string | null
   estimated_minutes?: number | null
@@ -123,11 +125,11 @@ export async function createStrip(data: CreateStripData): Promise<StripboardStri
     ? await getMaxSortIndex(db, data.shoot_day_id, shootDayUnitId) + SORT_GAP
     : 0
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'SCHEDULED', $12, $13)`,
+    `INSERT INTO ${TABLE} (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'SCHEDULED', $13, $14)`,
     [
       id, data.production_id, data.shoot_day_id, data.shoot_day_unit_id ?? null,
-      data.strip_type, data.scene_id ?? null, data.title ?? null, data.description ?? null,
+      data.strip_type, data.scene_id ?? null, data.shot_id ?? null, data.title ?? null, data.description ?? null,
       data.estimated_minutes ?? null, sortIndex, data.color_tag ?? null, ts, ts,
     ]
   )
@@ -136,10 +138,10 @@ export async function createStrip(data: CreateStripData): Promise<StripboardStri
   return rowToStrip(rows[0]!)
 }
 
-/** Create a SCENE strip for the given scene at the end of the day/unit. */
-export async function createSceneStrip(
+/** Create a SHOT strip for the given shot at the end of the day/unit. */
+export async function createShotStrip(
   productionId: string,
-  sceneId: string,
+  shotId: string,
   shootDayId: string,
   shootDayUnitId: string
 ): Promise<StripboardStrip> {
@@ -147,8 +149,8 @@ export async function createSceneStrip(
     production_id: productionId,
     shoot_day_id: shootDayId,
     shoot_day_unit_id: shootDayUnitId,
-    strip_type: 'SCENE',
-    scene_id: sceneId,
+    strip_type: 'SHOT',
+    shot_id: shotId,
   })
 }
 
@@ -187,6 +189,9 @@ export async function moveStripToUnscheduled(stripId: string): Promise<Stripboar
 
 /** Move a single strip to Boneyard (discarded). Strip remains in DB; can be recovered or permanently deleted from Boneyard. Single-strip update by id. */
 export async function moveStripToBoneyard(stripId: string): Promise<StripboardStrip> {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-strips.ts:moveStripToBoneyard',message:'entry',data:{stripId},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
   const db = await getDb()
   const ts = now()
   await db.execute(
@@ -195,6 +200,9 @@ export async function moveStripToBoneyard(stripId: string): Promise<StripboardSt
   )
   await outboxPush(TABLE, stripId, 'update', JSON.stringify({ strip_status: 'BONEYARD', shoot_day_id: null, shoot_day_unit_id: null }))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL`, [stripId])
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-strips.ts:moveStripToBoneyard',message:'after SELECT',data:{stripId,rowCount:rows.length,stripStatus:rows[0]?.strip_status},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
   if (rows.length === 0) throw new Error('Strip not found')
   return rowToStrip(rows[0]!)
 }
@@ -264,50 +272,57 @@ export async function deleteStrip(stripId: string): Promise<void> {
   await outboxPush(TABLE, stripId, 'delete', null)
 }
 
-/** Assign multiple scenes to a day/unit; creates SCENE strips at the end in order. */
-export async function bulkAssignScenesToDay(
+/** Assign multiple shots to a day/unit; creates SHOT strips at the end in order. */
+export async function bulkAssignShotsToDay(
   productionId: string,
-  sceneIds: string[],
+  shotIds: string[],
   shootDayId: string,
   shootDayUnitId: string
 ): Promise<StripboardStrip[]> {
   const result: StripboardStrip[] = []
-  for (const sceneId of sceneIds) {
-    const strip = await createSceneStrip(productionId, sceneId, shootDayId, shootDayUnitId)
+  for (const shotId of shotIds) {
+    const strip = await createShotStrip(productionId, shotId, shootDayId, shootDayUnitId)
     result.push(strip)
   }
   return result
 }
 
-export type UnscheduledScenesFilters = {
+export type UnscheduledShotsFilters = {
   search?: string
   locationId?: string | null
 }
 
-/** Scenes that do not have a SCENE strip on the stripboard. Optional search (scene_number, heading, title) and locationId filter. */
-export async function listUnscheduledScenes(
+export type ShotWithScene = { shot: Shot; scene: Scene }
+
+/** Shots that do not have a SCHEDULED SHOT strip on the stripboard. Optional search and locationId (scene) filter. */
+export async function listUnscheduledShots(
   productionId: string,
-  filters?: UnscheduledScenesFilters
-): Promise<Scene[]> {
-  const scheduledIds = await getScheduledSceneIds(productionId)
-  const allScenes = await listScenesByProduction(productionId)
-  let list = allScenes.filter((s) => !scheduledIds.has(s.id))
+  filters?: UnscheduledShotsFilters
+): Promise<ShotWithScene[]> {
+  const scheduledShotIds = await getScheduledShotIds(productionId)
+  const allShots = await listShotsByProduction(productionId)
+  const scenes = await listScenesByProduction(productionId)
+  const sceneMap = new Map(scenes.map((s) => [s.id, s]))
+  let list: ShotWithScene[] = allShots
+    .filter((shot) => !scheduledShotIds.has(shot.id))
+    .map((shot) => ({ shot, scene: sceneMap.get(shot.scene_id)! }))
+    .filter((x) => x.scene != null)
   const search = filters?.search?.trim().toLowerCase()
   if (search) {
     list = list.filter(
-      (s) =>
-        s.scene_number.toLowerCase().includes(search) ||
-        (s.heading ?? '').toLowerCase().includes(search) ||
-        (s.title ?? '').toLowerCase().includes(search)
+      (x) =>
+        x.scene.scene_number.toLowerCase().includes(search) ||
+        x.shot.shot_number.toLowerCase().includes(search) ||
+        (x.scene.heading ?? '').toLowerCase().includes(search) ||
+        (x.scene.title ?? '').toLowerCase().includes(search) ||
+        (x.shot.shot_description ?? '').toLowerCase().includes(search) ||
+        (x.shot.subject ?? '').toLowerCase().includes(search)
     )
   }
   if (filters?.locationId !== undefined && filters?.locationId !== null) {
-    list = list.filter((s) => s.location_id === filters.locationId)
+    list = list.filter((x) => x.scene.location_id === filters.locationId)
   } else if (filters?.locationId === null) {
-    list = list.filter((s) => !s.location_id)
+    list = list.filter((x) => !x.scene.location_id)
   }
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-strips.ts:listUnscheduledScenes',message:'return list',data:{scheduledCount:scheduledIds.size,allScenesCount:allScenes.length,listCount:list.length,sceneIds:list.map(s=>s.id)},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
   return list
 }

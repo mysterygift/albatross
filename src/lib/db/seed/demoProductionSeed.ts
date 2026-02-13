@@ -361,6 +361,7 @@ async function runFullSeed(): Promise<void> {
     scene_id: string
     shot_number: string
     description: string | null
+    shot_description: string | null
     subject: string | null
     action_description: string | null
     shot_size: ShotSize | null
@@ -371,6 +372,18 @@ async function runFullSeed(): Promise<void> {
     camera_movement: CameraMovement | null
     notes: string | null
   }> = []
+  const SHOT_DESCRIPTIONS = [
+    'Wide establishing the space.',
+    'Jade enters frame.',
+    'CU hands on lockpick.',
+    'Insert: vault door.',
+    'Guard turns at the sound.',
+    'A reacts to the alarm.',
+    'B crosses frame and exits left.',
+    'Jade picks the lock under tension.',
+    'Wide on the keypad.',
+    'Vault door swings open.',
+  ]
 
   for (let sceneIdx = 0; sceneIdx < 45; sceneIdx++) {
     const sceneNum = sceneIdx + 1
@@ -434,11 +447,13 @@ async function runFullSeed(): Promise<void> {
       const support = isNullTest && globalShotIndex % 5 === 2 ? null : SUPPORTS[globalShotIndex % SUPPORTS.length]!
       const notes = longNoteIdx ?? (SHORT_NOTES[globalShotIndex % SHORT_NOTES.length] ?? null)
 
+      const shot_description = SHOT_DESCRIPTIONS[globalShotIndex % SHOT_DESCRIPTIONS.length] ?? (action_description ? `${action_description.slice(0, 40)}…` : null)
       shotRows.push({
         id: shotId,
         scene_id: sceneId,
         shot_number: shotNumber,
         description: `Shot ${globalShotIndex}`,
+        shot_description: globalShotIndex <= 10 ? null : shot_description,
         subject,
         action_description,
         shot_size,
@@ -452,15 +467,18 @@ async function runFullSeed(): Promise<void> {
     }
   }
 
+  const firstShotIdBySceneId = new Map<string, string>()
   for (const row of shotRows) {
+    if (!firstShotIdBySceneId.has(row.scene_id)) firstShotIdBySceneId.set(row.scene_id, row.id)
     await db.execute(
-      `INSERT INTO shots (id, scene_id, shot_number, description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      `INSERT INTO shots (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         row.id,
         row.scene_id,
         row.shot_number,
         row.description,
+        row.shot_description,
         row.subject,
         row.action_description,
         row.shot_size,
@@ -699,31 +717,33 @@ async function runFullSeed(): Promise<void> {
       const sduId = sduRows[0]?.id as string | null
       let sortIndex = 0
       await db.execute(
-        `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, sort_index, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, sort_index, strip_status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'SCHEDULED', $8, $9)`,
         [IDS.strip(stripIdx++), pid, dayId, sduId, 'CALL', 'Call 07:00', sortIndex++, ts, ts]
       )
       for (let sc = 1; sc <= 5; sc++) {
-        const sceneId = IDS.scene((day - 1) * 4 + sc)
+        const sceneNum = (day - 1) * 4 + sc
+        const sceneId = IDS.scene(sceneNum)
+        const shotId = firstShotIdBySceneId.get(sceneId) ?? null
         await db.execute(
-          `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, sort_index, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [IDS.strip(stripIdx++), pid, dayId, sduId, 'SCENE', sceneId, sortIndex++, ts, ts]
+          `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, sort_index, strip_status, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 'SHOT', $5, $6, $7, 'SCHEDULED', $8, $9)`,
+          [IDS.strip(stripIdx++), pid, dayId, sduId, sceneId, shotId, sortIndex++, ts, ts]
         )
       }
       await db.execute(
-        `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, sort_index, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, sort_index, strip_status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'SCHEDULED', $8, $9)`,
         [IDS.strip(stripIdx++), pid, dayId, sduId, 'LUNCH', 'Lunch 13:00', sortIndex++, ts, ts]
       )
       await db.execute(
-        `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, sort_index, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, sort_index, strip_status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'SCHEDULED', $8, $9)`,
         [IDS.strip(stripIdx++), pid, dayId, sduId, 'WRAP', 'Wrap 18:00', sortIndex++, ts, ts]
       )
       await db.execute(
-        `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, description, sort_index, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, description, sort_index, strip_status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'SCHEDULED', $9, $10)`,
         [IDS.strip(stripIdx++), pid, dayId, sduId, 'NOTE', 'Unit note', 'Demo note', sortIndex++, ts, ts]
       )
     }
@@ -883,7 +903,7 @@ async function buildCallSheetDataForSeed(
   const day = dayRows[0] as Record<string, unknown>
   const shootDate = (day?.shoot_date as string) ?? '2025-03-01'
   const schedule: import('@/lib/pdf/callSheet').CallSheetStrip[] = strips.map((s) => {
-    if (s.strip_type === 'SCENE' && s.scene_id) {
+    if ((s.strip_type === 'SHOT' || s.strip_type === 'SCENE') && s.scene_id) {
       const sc = sceneMap.get(s.scene_id as string) as Record<string, unknown> | undefined
       return {
         strip_type: 'SCENE',

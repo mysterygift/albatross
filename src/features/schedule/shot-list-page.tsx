@@ -25,6 +25,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Label } from '@/components/ui/label'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 function formatDuration(sec: number | null): string {
   if (sec == null) return '—'
@@ -97,6 +98,7 @@ export function ShotListPage() {
               <TableRow>
                 <TableHead>Scene / Shot #</TableHead>
                 <TableHead>Subject</TableHead>
+                <TableHead>Shot Description</TableHead>
                 <TableHead>Shot size</TableHead>
                 <TableHead>Duration</TableHead>
                 <TableHead>Est. min</TableHead>
@@ -109,7 +111,7 @@ export function ShotListPage() {
             <TableBody>
               {shots.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-muted-foreground text-center py-8">
+                  <TableCell colSpan={10} className="text-muted-foreground text-center py-8">
                     No shots. Add shots to this scene to see them here and on the stripboard.
                   </TableCell>
                 </TableRow>
@@ -120,6 +122,20 @@ export function ShotListPage() {
                       {selectedScene?.scene_number ?? ''} / {shot.shot_number}
                     </TableCell>
                     <TableCell>{shot.subject ?? '—'}</TableCell>
+                    <TableCell className="max-w-[180px]">
+                      {shot.shot_description ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="block truncate">{shot.shot_description}</span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-sm">
+                            {shot.shot_description}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
                     <TableCell>{shot.shot_size ?? '—'}</TableCell>
                     <TableCell>{formatDuration(shot.duration_seconds)}</TableCell>
                     <TableCell>

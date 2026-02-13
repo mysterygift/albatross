@@ -7,14 +7,15 @@
 import { useDroppable, useDraggable } from '@dnd-kit/core'
 import { Skull } from 'lucide-react'
 import type { StripboardStrip } from '@/lib/db/types'
-import type { Scene } from '@/lib/db/types'
+import type { Scene, Shot } from '@/lib/db/types'
 import { StripItem } from './strip-item'
 
 export type BoneyardPanelProps = {
   droppableId?: string
   strips: StripboardStrip[]
   scenes: Scene[]
-  estimatedShootMinutesBySceneId: Map<string, number>
+  shots: Shot[]
+  estimatedShootMinutesByShotId: Map<string, number>
   /** Optional: permanently delete a strip from Boneyard. Only in Boneyard. */
   onDeleteStrip?: (strip: StripboardStrip) => void
 }
@@ -41,7 +42,8 @@ export function BoneyardPanel({
   droppableId = 'boneyard-panel',
   strips,
   scenes,
-  estimatedShootMinutesBySceneId,
+  shots,
+  estimatedShootMinutesByShotId,
   onDeleteStrip,
 }: BoneyardPanelProps) {
   const { setNodeRef, isOver } = useDroppable({ id: droppableId })
@@ -77,9 +79,10 @@ export function BoneyardPanel({
                 <StripItem
                   strip={strip}
                   scenes={scenes}
+                  shots={shots}
                   estimatedMinutesDefault={
-                    strip.strip_type === 'SCENE' && strip.scene_id
-                      ? estimatedShootMinutesBySceneId.get(strip.scene_id) ?? 0
+                    strip.strip_type === 'SHOT' && strip.shot_id
+                      ? estimatedShootMinutesByShotId.get(strip.shot_id) ?? 0
                       : undefined
                   }
                   onRemove={onDeleteStrip ? () => onDeleteStrip(strip) : undefined}

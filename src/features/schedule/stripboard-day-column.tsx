@@ -10,7 +10,7 @@ import type { ShootDay } from '@/lib/db/types'
 import type { Unit } from '@/lib/db/types'
 import type { ShootDayUnit } from '@/lib/db/types'
 import type { StripboardStrip } from '@/lib/db/types'
-import type { Scene } from '@/lib/db/types'
+import type { Scene, Shot } from '@/lib/db/types'
 
 export type ColumnFilter = { int: boolean; ext: boolean; day: boolean; night: boolean }
 
@@ -21,11 +21,13 @@ export function StripboardDayColumn({
   units,
   stripsByUnit,
   scenes,
-  estimatedShootMinutesBySceneId,
+  shots,
+  estimatedShootMinutesByShotId,
   onUpdateStripEstimatedMinutes,
   columnId,
   pageEighthsTarget,
   onSendToBoneyard,
+  onDeleteStrip,
   onToggleLock,
   columnFilters,
   onColumnFilterChange,
@@ -35,13 +37,16 @@ export function StripboardDayColumn({
   dayUnits: ShootDayUnit[]
   stripsByUnit: { shootDayUnit: ShootDayUnit; strips: StripboardStrip[] }[]
   scenes: Scene[]
-  estimatedShootMinutesBySceneId: Map<string, number>
+  shots: Shot[]
+  estimatedShootMinutesByShotId: Map<string, number>
   onUpdateStripEstimatedMinutes?: (stripId: string, minutes: number | null) => void
   columnId: (shootDayId: string, shootDayUnitId: string) => string
   isLocked: boolean
   pageEighthsTarget: number
-  /** Send scheduled strip to Boneyard (amber skull). Only scheduled strips show this; unscheduled do not. */
+  /** Send scheduled SHOT/SCENE strip to Boneyard (amber skull). */
   onSendToBoneyard: (strip: StripboardStrip) => void
+  /** Delete scheduled MOVE/CALL/LUNCH/WRAP/NOTE strip (grey trash). */
+  onDeleteStrip?: (strip: StripboardStrip) => void
   onToggleLock?: (shootDayUnitId: string, isLocked: boolean) => void
   columnFilters?: Record<string, ColumnFilter>
   onColumnFilterChange?: (colId: string, key: keyof ColumnFilter, value: boolean) => void
@@ -67,12 +72,14 @@ export function StripboardDayColumn({
             unit={unit}
             strips={unitStrips}
             scenes={scenes}
-            estimatedShootMinutesBySceneId={estimatedShootMinutesBySceneId}
+            shots={shots}
+            estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
             onUpdateStripEstimatedMinutes={onUpdateStripEstimatedMinutes}
             columnId={columnId(day.id, shootDayUnit.id)}
             isLocked={shootDayUnit.is_locked !== 0}
             pageEighthsTarget={pageEighthsTarget}
             onSendToBoneyard={onSendToBoneyard}
+            onDeleteStrip={onDeleteStrip}
             onToggleLock={onToggleLock}
             columnFilter={columnFilters?.[columnId(day.id, shootDayUnit.id)] ?? DEFAULT_COLUMN_FILTER}
             onColumnFilterChange={onColumnFilterChange ? (key, value) => onColumnFilterChange(columnId(day.id, shootDayUnit.id), key, value) : undefined}
@@ -94,12 +101,14 @@ function UnitColumn({
   unit,
   strips,
   scenes,
-  estimatedShootMinutesBySceneId,
+  shots,
+  estimatedShootMinutesByShotId,
   onUpdateStripEstimatedMinutes,
   columnId: colId,
   isLocked,
   pageEighthsTarget,
   onSendToBoneyard,
+  onDeleteStrip,
   onToggleLock,
   columnFilter,
   onColumnFilterChange,
@@ -109,12 +118,14 @@ function UnitColumn({
   unit: Unit
   strips: StripboardStrip[]
   scenes: Scene[]
-  estimatedShootMinutesBySceneId: Map<string, number>
+  shots: Shot[]
+  estimatedShootMinutesByShotId: Map<string, number>
   onUpdateStripEstimatedMinutes?: (stripId: string, minutes: number | null) => void
   columnId: string
   isLocked: boolean
   pageEighthsTarget: number
   onSendToBoneyard: (strip: StripboardStrip) => void
+  onDeleteStrip?: (strip: StripboardStrip) => void
   onToggleLock?: (shootDayUnitId: string, isLocked: boolean) => void
   columnFilter: ColumnFilter
   onColumnFilterChange?: (key: keyof ColumnFilter, value: boolean) => void
@@ -124,8 +135,9 @@ function UnitColumn({
   const filtersActive = columnFilter.int || columnFilter.ext || columnFilter.day || columnFilter.night
 
   const displayStrips = strips.filter((strip) => {
-    if (strip.strip_type !== 'SCENE') return true
-    const scene = strip.scene_id ? scenes.find((s) => s.id === strip.scene_id) : null
+    if (strip.strip_type !== 'SHOT') return true
+    const shot = strip.shot_id ? shots.find((sh) => sh.id === strip.shot_id) : null
+    const scene = shot ? scenes.find((s) => s.id === shot.scene_id) : (strip.scene_id ? scenes.find((s) => s.id === strip.scene_id) : null)
     if (!scene) return true
     const intExtMatch =
       !columnFilter.int && !columnFilter.ext
@@ -138,12 +150,11 @@ function UnitColumn({
     return intExtMatch && dayNightMatch
   })
 
-  const sceneStrips = strips.filter((s) => s.strip_type === 'SCENE')
-  // Estimated runtime: strip override (estimated_minutes) if set, else sum of shot estimated_shoot_minutes for that scene.
-  const estimatedRuntimeMinutes = sceneStrips.reduce((sum, s) => {
+  const shotStrips = strips.filter((s) => s.strip_type === 'SHOT')
+  const estimatedRuntimeMinutes = shotStrips.reduce((sum, s) => {
     const override = s.estimated_minutes
-    const fromShots = s.scene_id ? estimatedShootMinutesBySceneId.get(s.scene_id) ?? 0 : 0
-    return sum + (override ?? fromShots)
+    const fromShot = s.shot_id ? estimatedShootMinutesByShotId.get(s.shot_id) ?? 0 : 0
+    return sum + (override ?? fromShot)
   }, 0)
   const runtimeHours = Math.floor(estimatedRuntimeMinutes / 60)
   const runtimeMins = estimatedRuntimeMinutes % 60
@@ -151,30 +162,36 @@ function UnitColumn({
   const over10h = estimatedRuntimeMinutes > 600
   const over10_5h = estimatedRuntimeMinutes > 630
 
-  const totalEighths = sceneStrips.reduce((sum, s) => {
-    const scene = s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null
+  const totalEighths = shotStrips.reduce((sum, s) => {
+    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
+    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
     return sum + (scene?.page_eighths ?? 0)
   }, 0)
   const overPages = totalEighths > pageEighthsTarget
-  const noLocation = sceneStrips.some((s) => {
-    const scene = s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null
+  const noLocation = shotStrips.some((s) => {
+    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
+    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
     return scene && !scene.location_id
   })
 
-  const intCount = sceneStrips.filter((s) => {
-    const scene = s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null
+  const intCount = shotStrips.filter((s) => {
+    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
+    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
     return scene?.int_ext === 'INT'
   }).length
-  const extCount = sceneStrips.filter((s) => {
-    const scene = s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null
+  const extCount = shotStrips.filter((s) => {
+    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
+    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
     return scene?.int_ext === 'EXT'
   }).length
-  const dayCount = sceneStrips.filter((s) => {
-    const scene = s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null
+  const dayCount = shotStrips.filter((s) => {
+    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
+    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
     return scene?.day_night === 'DAY'
   }).length
-  const nightCount = sceneStrips.filter((s) => {
-    const scene = s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null
+  const nightCount = shotStrips.filter((s) => {
+    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
+    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
     return scene?.day_night === 'NIGHT'
   }).length
 
@@ -198,7 +215,7 @@ function UnitColumn({
             </Button>
           )}
           <div className="flex gap-1 flex-wrap justify-end">
-            <Badge variant="outline" className="text-[10px]">{sceneStrips.length} scenes</Badge>
+            <Badge variant="outline" className="text-[10px]">{shotStrips.length} shots</Badge>
             <Badge variant="outline" className="text-[10px]">{totalEighths}/8 pgs</Badge>
           </div>
         </div>
@@ -275,15 +292,17 @@ function UnitColumn({
                 key={strip.id}
                 strip={strip}
                 scenes={scenes}
+                shots={shots}
                 estimatedMinutesDefault={
-                  strip.strip_type === 'SCENE' && strip.scene_id
-                    ? estimatedShootMinutesBySceneId.get(strip.scene_id) ?? 0
+                  strip.strip_type === 'SHOT' && strip.shot_id
+                    ? estimatedShootMinutesByShotId.get(strip.shot_id) ?? 0
                     : undefined
                 }
                 onUpdateEstimatedMinutes={onUpdateStripEstimatedMinutes}
                 onSendToBoneyard={onSendToBoneyard}
+                onDeleteStrip={onDeleteStrip}
                 disabled={isLocked}
-                className={filtersActive && strip.strip_type !== 'SCENE' ? 'opacity-60' : undefined}
+                className={filtersActive && strip.strip_type !== 'SHOT' ? 'opacity-60' : undefined}
               />
             ))}
             {displayStrips.length === 0 && (
