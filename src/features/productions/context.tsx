@@ -15,10 +15,14 @@ type ProductionContextValue = {
 
 const ProductionContext = createContext<ProductionContextValue | null>(null)
 
+let settingsDefaultsEnsured = false
+
 export function ProductionProvider({ children }: { children: ReactNode }) {
   const [currentProductionId, setCurrentProductionId] = useState<string | null>(null)
 
   useEffect(() => {
+    if (settingsDefaultsEnsured) return
+    settingsDefaultsEnsured = true
     getDb()
       .then(() => ensureSettingsDefaults())
       .catch(console.error)

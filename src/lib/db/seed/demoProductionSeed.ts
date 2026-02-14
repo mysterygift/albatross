@@ -10,7 +10,7 @@
  * - equipment_terms: LENS (18mm, 24mm, 35mm, 50mm, 85mm, 100mm Macro, 24–70mm, 70–200mm) and SUPPORT terms.
  * - Verify: Schedule → Shot lists, pick a scene; check columns, lens/support dropdowns, null handling, long notes.
  */
-import { getDb, now } from '../client'
+import { executeBatch, getDb, now, runInSerializedTransaction } from '../client'
 import { getProductionBySlug, hardDeleteProduction } from '../repositories/production'
 import { listDocumentsByProduction } from '../repositories/document'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
@@ -86,6 +86,8 @@ const VERIFY_SLUG = 'verify-cascade-test'
 /**
  * Dev-only: create a minimal production with a few child rows, hard-delete it, then verify
  * no child rows remain. Confirms FK ON DELETE CASCADE is working.
+ * Uses runInSerializedTransaction + executeBatch so the whole create/delete runs in one
+ * write-queue task and one execute() (single connection), avoiding SQLITE_BUSY with concurrent writes.
  */
 export async function verifyCascades(): Promise<{ ok: boolean; message: string; details?: string }> {
   const db = await getDb()
@@ -115,42 +117,35 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'script_documents',
     'equipment_terms',
   ]
-  let committed = false
   try {
-    await db.execute('BEGIN IMMEDIATE')
-    try {
-      await db.execute(
-        `INSERT INTO productions (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [VERIFY_PID, 'Verify cascades', VERIFY_SLUG, 'GBP', null, ts, ts]
-      )
-      await db.execute(
-        `INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-        ['b0000000-0000-4000-8000-000000000002', VERIFY_PID, 'Unit', ts, ts]
-      )
-      await db.execute(
-        `INSERT INTO people (id, production_id, name, is_cast, created_at, updated_at) VALUES ($1, $2, $3, 0, $4, $5)`,
-        ['b0000000-0000-4000-8000-000000000003', VERIFY_PID, 'Person', 0, ts, ts]
-      )
-      await db.execute(
-        `INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-        ['b0000000-0000-4000-8000-000000000004', VERIFY_PID, '1', ts, ts]
-      )
-      await db.execute(
-        `INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-        ['b0000000-0000-4000-8000-000000000005', VERIFY_PID, '2025-01-01', ts, ts]
-      )
-      await db.execute(`DELETE FROM productions WHERE id = $1`, [VERIFY_PID])
-      await db.execute('COMMIT')
-      committed = true
-    } finally {
-      if (!committed) {
-        try {
-          await db.execute('ROLLBACK')
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+    await runInSerializedTransaction(async () => {
+      const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+        { sql: 'BEGIN IMMEDIATE', bindValues: [] },
+        {
+          sql: `INSERT INTO productions (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          bindValues: [VERIFY_PID, 'Verify cascades', VERIFY_SLUG, 'GBP', null, ts, ts],
+        },
+        {
+          sql: `INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000002', VERIFY_PID, 'Unit', ts, ts],
+        },
+        {
+          sql: `INSERT INTO people (id, production_id, name, is_cast, created_at, updated_at) VALUES ($1, $2, $3, 0, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000003', VERIFY_PID, 'Person', 0, ts, ts],
+        },
+        {
+          sql: `INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000004', VERIFY_PID, '1', ts, ts],
+        },
+        {
+          sql: `INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000005', VERIFY_PID, '2025-01-01', ts, ts],
+        },
+        { sql: `DELETE FROM productions WHERE id = $1`, bindValues: [VERIFY_PID] },
+        { sql: 'COMMIT', bindValues: [] },
+      ]
+      await executeBatch(db, statements)
+    })
     const remaining: string[] = []
     const prodRows = await db.select<Record<string, unknown>[]>(`SELECT id FROM productions WHERE id = $1`, [VERIFY_PID])
     if (prodRows.length > 0) remaining.push('productions')
@@ -176,9 +171,9 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     return {
       ok: false,
       message: isBusy
-        ? 'Database is busy (SQLITE_BUSY). Try again in a moment.'
+        ? 'Database was busy (another write in progress). Try again.'
         : 'Cascade verification threw.',
-      details: msg,
+      details: import.meta.env.DEV ? `[Verify Cascades] ${msg}` : msg,
     }
   }
 }
