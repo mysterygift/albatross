@@ -189,9 +189,6 @@ export async function moveStripToUnscheduled(stripId: string): Promise<Stripboar
 
 /** Move a single strip to Boneyard (discarded). Strip remains in DB; can be recovered or permanently deleted from Boneyard. Single-strip update by id. */
 export async function moveStripToBoneyard(stripId: string): Promise<StripboardStrip> {
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-strips.ts:moveStripToBoneyard',message:'entry',data:{stripId},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-  // #endregion
   const db = await getDb()
   const ts = now()
   await db.execute(
@@ -200,9 +197,6 @@ export async function moveStripToBoneyard(stripId: string): Promise<StripboardSt
   )
   await outboxPush(TABLE, stripId, 'update', JSON.stringify({ strip_status: 'BONEYARD', shoot_day_id: null, shoot_day_unit_id: null }))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL`, [stripId])
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-strips.ts:moveStripToBoneyard',message:'after SELECT',data:{stripId,rowCount:rows.length,stripStatus:rows[0]?.strip_status},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-  // #endregion
   if (rows.length === 0) throw new Error('Strip not found')
   return rowToStrip(rows[0]!)
 }

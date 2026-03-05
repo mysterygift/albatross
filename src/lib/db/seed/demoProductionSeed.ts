@@ -10,7 +10,7 @@
  * - equipment_terms: LENS (18mm, 24mm, 35mm, 50mm, 85mm, 100mm Macro, 24–70mm, 70–200mm) and SUPPORT terms.
  * - Verify: Schedule → Shot lists, pick a scene; check columns, lens/support dropdowns, null handling, long notes.
  */
-import { getDb, now } from '../client'
+import { executeBatch, getDb, now, runInSerializedTransaction } from '../client'
 import { getProductionBySlug, hardDeleteProduction } from '../repositories/production'
 import { listDocumentsByProduction } from '../repositories/document'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
@@ -21,6 +21,25 @@ import { DEMO_EXCHANGE_RATE_ID, DEMO_SLUG, IDS, SEED_VERSION } from './constants
 import { getLastSeededAt, getSeedVersion, setSeedMeta } from './seedMeta'
 
 const ATTACHMENTS = 'attachments'
+
+/** Today's date in local time as YYYY-MM-DD (uses OS clock via Date). */
+function todayLocalYYYYMMDD(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Add days to a YYYY-MM-DD string using local date math; returns YYYY-MM-DD. */
+function addDaysLocal(yyyyMmDd: string, days: number): string {
+  const [y, m, d] = yyyyMmDd.split('-').map(Number)
+  const date = new Date(y!, m! - 1, d! + days)
+  const yy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
+}
 
 /** Collect document file paths for a production (for filesystem cleanup after cascade delete). */
 async function getDocumentFilePathsForProduction(productionId: string): Promise<string[]> {
@@ -86,6 +105,8 @@ const VERIFY_SLUG = 'verify-cascade-test'
 /**
  * Dev-only: create a minimal production with a few child rows, hard-delete it, then verify
  * no child rows remain. Confirms FK ON DELETE CASCADE is working.
+ * Uses runInSerializedTransaction + executeBatch so the whole create/delete runs in one
+ * write-queue task and one execute() (single connection), avoiding SQLITE_BUSY with concurrent writes.
  */
 export async function verifyCascades(): Promise<{ ok: boolean; message: string; details?: string }> {
   const db = await getDb()
@@ -116,32 +137,34 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'equipment_terms',
   ]
   try {
-    await db.execute('BEGIN IMMEDIATE')
-    try {
-      await db.execute(
-        `INSERT INTO productions (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [VERIFY_PID, 'Verify cascades', VERIFY_SLUG, 'GBP', null, ts, ts]
-      )
-      await db.execute(
-        `INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-        ['b0000000-0000-4000-8000-000000000002', VERIFY_PID, 'Unit', ts, ts]
-      )
-      await db.execute(
-        `INSERT INTO people (id, production_id, name, is_cast, created_at, updated_at) VALUES ($1, $2, $3, 0, $4, $5)`,
-        ['b0000000-0000-4000-8000-000000000003', VERIFY_PID, 'Person', 0, ts, ts]
-      )
-      await db.execute(
-        `INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-        ['b0000000-0000-4000-8000-000000000004', VERIFY_PID, '1', ts, ts]
-      )
-      await db.execute(
-        `INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-        ['b0000000-0000-4000-8000-000000000005', VERIFY_PID, '2025-01-01', ts, ts]
-      )
-      await db.execute(`DELETE FROM productions WHERE id = $1`, [VERIFY_PID])
-    } finally {
-      await db.execute('COMMIT')
-    }
+    await runInSerializedTransaction(async () => {
+      const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+        { sql: 'BEGIN IMMEDIATE', bindValues: [] },
+        {
+          sql: `INSERT INTO productions (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          bindValues: [VERIFY_PID, 'Verify cascades', VERIFY_SLUG, 'GBP', null, ts, ts],
+        },
+        {
+          sql: `INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000002', VERIFY_PID, 'Unit', ts, ts],
+        },
+        {
+          sql: `INSERT INTO people (id, production_id, name, is_cast, created_at, updated_at) VALUES ($1, $2, $3, 0, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000003', VERIFY_PID, 'Person', 0, ts, ts],
+        },
+        {
+          sql: `INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000004', VERIFY_PID, '1', ts, ts],
+        },
+        {
+          sql: `INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000005', VERIFY_PID, '2025-01-01', ts, ts],
+        },
+        { sql: `DELETE FROM productions WHERE id = $1`, bindValues: [VERIFY_PID] },
+        { sql: 'COMMIT', bindValues: [] },
+      ]
+      await executeBatch(db, statements)
+    })
     const remaining: string[] = []
     const prodRows = await db.select<Record<string, unknown>[]>(`SELECT id FROM productions WHERE id = $1`, [VERIFY_PID])
     if (prodRows.length > 0) remaining.push('productions')
@@ -161,10 +184,15 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     }
     return { ok: true, message: 'Cascades verified: hard delete removed production and all child rows.' }
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    const isBusy =
+      /database is locked|sqlite_busy|sqlite_locked|code: 5|code: 6/i.test(msg)
     return {
       ok: false,
-      message: 'Cascade verification threw.',
-      details: err instanceof Error ? err.message : String(err),
+      message: isBusy
+        ? 'Database was busy (another write in progress). Try again.'
+        : 'Cascade verification threw.',
+      details: import.meta.env.DEV ? `[Verify Cascades] ${msg}` : msg,
     }
   }
 }
@@ -206,11 +234,9 @@ async function runFullSeed(): Promise<void> {
     [IDS.unitMain, pid, 'Main Unit', ts, ts, IDS.unitSecond, pid, 'Second Unit', ts, ts]
   )
 
-  const startDate = '2025-03-01'
+  const startDate = todayLocalYYYYMMDD()
   for (let d = 0; d < 12; d++) {
-    const date = new Date(startDate)
-    date.setDate(date.getDate() + d)
-    const shootDate = date.toISOString().slice(0, 10)
+    const shootDate = addDaysLocal(startDate, d)
     await db.execute(
       `INSERT INTO shoot_days (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
@@ -573,7 +599,7 @@ async function runFullSeed(): Promise<void> {
     }
   }
 
-  const clashDates = ['2025-03-03', '2025-03-05', '2025-03-07', '2025-03-10', '2025-03-12']
+  const clashDates = [2, 4, 6, 9, 11].map((off) => addDaysLocal(startDate, off))
   for (let i = 0; i < 5; i++) {
     await db.execute(
       `INSERT INTO cast_availability (id, production_id, person_id, start_date, end_date, availability, notes, created_at, updated_at)
@@ -669,8 +695,6 @@ async function runFullSeed(): Promise<void> {
     }),
   ]
   for (let i = 1; i <= 60; i++) {
-    const d = new Date(startDate)
-    d.setDate(d.getDate() + (i % 15))
     const amount = expenseAmounts[i - 1] ?? 200 + (i % 10) * 100
     await db.execute(
       `INSERT INTO expenses (id, production_id, category_id, amount, date, vendor, notes, expense_type, created_at, updated_at)
@@ -680,7 +704,7 @@ async function runFullSeed(): Promise<void> {
         pid,
         IDS.budgetCat((i % 14) + 1),
         amount,
-        d.toISOString().slice(0, 10),
+        addDaysLocal(startDate, i % 15),
         null,
         i % 3 === 0 ? 'Per diem' : null,
         i % 3 === 0 ? 'per_diem' : 'other',
@@ -779,7 +803,7 @@ async function runFullSeed(): Promise<void> {
   const { generateCallSheetPdf } = await import('@/lib/pdf/callSheet')
   const shootDay = await db.select<Record<string, unknown>[]>(`SELECT * FROM shoot_days WHERE id = $1`, [IDS.shootDay(1)])
   if (shootDay.length) {
-    const data = await buildCallSheetDataForSeed(pid, IDS.shootDay(1))
+    const data = await buildCallSheetDataForSeed(pid, IDS.shootDay(1), startDate)
     const callPdfBytes = await generateCallSheetPdf(data)
     await writeFile(callSheetPath, new Uint8Array(callPdfBytes), { baseDir: BaseDirectory.AppData })
   }
@@ -801,12 +825,10 @@ async function runFullSeed(): Promise<void> {
   }
 
   for (let i = 1; i <= 12; i++) {
-    const due = new Date(startDate)
-    due.setDate(due.getDate() + 60 + i * 7)
     await db.execute(
       `INSERT INTO deliverables (id, production_id, name, due_date, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [IDS.deliverable(i), pid, `Deliverable ${i}`, due.toISOString().slice(0, 10), i % 3 === 0 ? 'done' : 'pending', ts, ts]
+      [IDS.deliverable(i), pid, `Deliverable ${i}`, addDaysLocal(startDate, 60 + i * 7), i % 3 === 0 ? 'done' : 'pending', ts, ts]
     )
   }
 
@@ -872,7 +894,8 @@ async function runFullSeed(): Promise<void> {
 
 async function buildCallSheetDataForSeed(
   productionId: string,
-  shootDayId: string
+  shootDayId: string,
+  fallbackShootDate: string
 ): Promise<import('@/lib/pdf/callSheet').CallSheetData> {
   const db = await getDb()
   const prodRows = await db.select<Record<string, unknown>[]>(`SELECT name FROM productions WHERE id = $1`, [productionId])
@@ -901,7 +924,7 @@ async function buildCallSheetDataForSeed(
 
   const productionName = (prodRows[0]?.name as string) ?? 'Demo'
   const day = dayRows[0] as Record<string, unknown>
-  const shootDate = (day?.shoot_date as string) ?? '2025-03-01'
+  const shootDate = (day?.shoot_date as string) ?? fallbackShootDate
   const schedule: import('@/lib/pdf/callSheet').CallSheetStrip[] = strips.map((s) => {
     if ((s.strip_type === 'SHOT' || s.strip_type === 'SCENE') && s.scene_id) {
       const sc = sceneMap.get(s.scene_id as string) as Record<string, unknown> | undefined

@@ -1,8 +1,18 @@
-import { getDb, now, uuid } from '../client'
-import { outboxPush } from '../outbox'
+import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import {
+  outboxInsert,
+  outboxInsertMany,
+  outboxPush,
+  outboxStatementForRow,
+  outboxStatementForRows,
+  type OutboxRow,
+} from '../outbox'
 import type { ShootDay, Scene, Shot, StripboardItem } from '../types'
+import { getShootDayUnitById, listShootDayUnitsByShootDay } from './shoot-day-units'
 
 const DAY_TABLE = 'shoot_days'
+const SDU_TABLE = 'shoot_day_units'
+const STRIPBOARD_STRIPS_TABLE = 'stripboard_strips'
 const SCENE_TABLE = 'scenes'
 const SHOT_TABLE = 'shots'
 const STRIP_TABLE = 'stripboard_items'
@@ -84,11 +94,11 @@ function rowToStripboardItem(r: Record<string, unknown>): StripboardItem {
   }
 }
 
-// Shoot days
+// Shoot days. Order by shoot_date (YYYY-MM-DD string) then id for stable order; no Date parsing to avoid UTC edge cases.
 export async function listShootDaysByProduction(productionId: string): Promise<ShootDay[]> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${DAY_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY shoot_date`,
+    `SELECT * FROM ${DAY_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY shoot_date ASC, id ASC`,
     [productionId]
   )
   return rows.map(rowToShootDay)
@@ -156,6 +166,7 @@ export async function createShootDay(data: {
   }
   const day = await getShootDayById(id)
   if (!day) throw new Error('Shoot day not found after create')
+  await resequenceShootDays(data.production_id)
   return day
 }
 
@@ -189,6 +200,7 @@ export async function updateShootDay(
 }
 
 export async function deleteShootDay(id: string): Promise<void> {
+  const day = await getShootDayById(id)
   const db = await getDb()
   const ts = now()
   await db.execute(
@@ -196,6 +208,393 @@ export async function deleteShootDay(id: string): Promise<void> {
     [ts, ts, id]
   )
   await outboxPush(DAY_TABLE, id, 'delete', null)
+  if (day) await resequenceShootDays(day.production_id)
+}
+
+/**
+ * Resequence day_number for all shoot days in a production so that numbering
+ * reflects chronological order by shoot_date. Use after any change that reorders
+ * dates (move, swap, create, delete). shoot_date is DATE-only "YYYY-MM-DD"
+ * (local calendar); sorting by string ASC is safe and avoids timezone/UTC edge cases.
+ * Tie-breaker: id ASC for stable order when two days share the same date.
+ */
+export async function resequenceShootDays(productionId: string): Promise<void> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT id FROM ${DAY_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY shoot_date ASC, id ASC`,
+    [productionId]
+  )
+  if (rows.length === 0) return
+  const ts = now()
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+    { sql: 'BEGIN', bindValues: [] },
+  ]
+  for (let i = 0; i < rows.length; i++) {
+    const id = rows[i]!.id as string
+    const dayNumber = i + 1
+    statements.push({
+      sql: `UPDATE ${DAY_TABLE} SET day_number = $1, updated_at = $2 WHERE id = $3`,
+      bindValues: [dayNumber, ts, id],
+    })
+    statements.push(
+      outboxStatementForRow({
+        entity: DAY_TABLE,
+        entityId: id,
+        operation: 'update',
+        payloadJson: JSON.stringify({ day_number: dayNumber }),
+      })
+    )
+  }
+  statements.push({ sql: 'COMMIT', bindValues: [] })
+  await runInSerializedTransaction(async () => {
+    const conn = await getDb()
+    await executeBatch(conn, statements)
+  })
+}
+
+/**
+ * Move a shoot day to a new date. Transactional: if target date already has
+ * a shoot day for this production, no change is made and returns { success: false, existingShootDayId }.
+ * On success, updates shoot_date and pushes to outbox.
+ */
+export async function moveShootDayToDate(
+  shootDayId: string,
+  newDate: string
+): Promise<{ success: true } | { success: false; existingShootDayId?: string }> {
+  const day = await getShootDayById(shootDayId)
+  if (!day) return { success: false }
+  if (day.shoot_date === newDate) return { success: true }
+
+  const db = await getDb()
+  const ts = now()
+
+  const existing = await db.select<Record<string, unknown>[]>(
+    `SELECT id FROM ${DAY_TABLE} WHERE production_id = $1 AND shoot_date = $2 AND deleted_at IS NULL`,
+    [day.production_id, newDate]
+  )
+  if (existing.length > 0) {
+    return { success: false, existingShootDayId: existing[0]!.id as string }
+  }
+
+  const result = await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const statements = [
+      { sql: 'BEGIN', bindValues: [] as unknown[] },
+      {
+        sql: `UPDATE ${DAY_TABLE} SET shoot_date = $1, updated_at = $2 WHERE id = $3`,
+        bindValues: [newDate, ts, shootDayId],
+      },
+      outboxStatementForRow({
+        entity: DAY_TABLE,
+        entityId: shootDayId,
+        operation: 'update',
+        payloadJson: JSON.stringify({ shoot_date: newDate }),
+      }),
+      { sql: 'COMMIT', bindValues: [] as unknown[] },
+    ]
+    await executeBatch(db, statements)
+    return { success: true } as const
+  })
+  if (result.success) await resequenceShootDays(day.production_id)
+  return result
+}
+
+export type MoveShootDayUnitResult =
+  | { success: true }
+  | { success: false; reason: 'not_found' }
+  | { success: false; reason: 'conflict'; existingShootDayId: string }
+
+/**
+ * Move a single shoot day unit to a new date. If the shoot day has only one unit,
+ * updates the shoot_day date. If it has multiple units, creates a new shoot_day
+ * on newDate and moves only this unit (and its strips) there.
+ * Returns { success: false, reason: 'conflict', existingShootDayId } if newDate already has a shoot.
+ */
+export async function moveShootDayUnitToDate(
+  shootDayUnitId: string,
+  newDate: string
+): Promise<MoveShootDayUnitResult> {
+  const unit = await getShootDayUnitById(shootDayUnitId)
+  if (!unit) return { success: false, reason: 'not_found' }
+
+  const day = await getShootDayById(unit.shoot_day_id)
+  if (!day) return { success: false, reason: 'not_found' }
+  if (day.shoot_date === newDate) return { success: true }
+
+  const db = await getDb()
+  const ts = now()
+
+  const unitsOnDay = await listShootDayUnitsByShootDay(day.id)
+  const isSingleUnit = unitsOnDay.length === 1
+
+  const existing = await db.select<Record<string, unknown>[]>(
+    `SELECT id FROM ${DAY_TABLE} WHERE production_id = $1 AND shoot_date = $2 AND deleted_at IS NULL`,
+    [day.production_id, newDate]
+  )
+  if (existing.length > 0) {
+    return { success: false, reason: 'conflict', existingShootDayId: existing[0]!.id as string }
+  }
+
+  const result = await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    if (isSingleUnit) {
+      const statements = [
+        { sql: 'BEGIN', bindValues: [] as unknown[] },
+        {
+          sql: `UPDATE ${DAY_TABLE} SET shoot_date = $1, updated_at = $2 WHERE id = $3`,
+          bindValues: [newDate, ts, day.id],
+        },
+        outboxStatementForRow({
+          entity: DAY_TABLE,
+          entityId: day.id,
+          operation: 'update',
+          payloadJson: JSON.stringify({ shoot_date: newDate }),
+        }),
+        { sql: 'COMMIT', bindValues: [] as unknown[] },
+      ]
+      await executeBatch(db, statements)
+    } else {
+      const newShootDayId = uuid()
+      const stripsToMove = await db.select<Record<string, unknown>[]>(
+        `SELECT id FROM ${STRIPBOARD_STRIPS_TABLE} WHERE shoot_day_unit_id = $1 AND deleted_at IS NULL`,
+        [shootDayUnitId]
+      )
+      const unitsLeft = await db.select<Record<string, unknown>[]>(
+        `SELECT id FROM ${SDU_TABLE} WHERE shoot_day_id = $1 AND deleted_at IS NULL`,
+        [day.id]
+      )
+      const stripOutboxRows: OutboxRow[] = stripsToMove.map((row) => ({
+        entity: STRIPBOARD_STRIPS_TABLE,
+        entityId: row.id as string,
+        operation: 'update' as const,
+        payloadJson: JSON.stringify({ shoot_day_id: newShootDayId }),
+      }))
+      const stripOutboxStmt = outboxStatementForRows(stripOutboxRows)
+      const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+        { sql: 'BEGIN', bindValues: [] },
+        {
+          sql: `INSERT INTO ${DAY_TABLE} (id, production_id, shoot_date, day_number, call_time, wrap_time, notes, weather_manual, meal_times_json, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          bindValues: [
+            newShootDayId,
+            day.production_id,
+            newDate,
+            day.day_number ?? null,
+            day.call_time ?? null,
+            day.wrap_time ?? null,
+            day.notes ?? null,
+            day.weather_manual ?? null,
+            day.meal_times_json ?? null,
+            ts,
+            ts,
+          ],
+        },
+        outboxStatementForRow({
+          entity: DAY_TABLE,
+          entityId: newShootDayId,
+          operation: 'create',
+          payloadJson: JSON.stringify({
+            production_id: day.production_id,
+            shoot_date: newDate,
+            day_number: day.day_number,
+            call_time: day.call_time,
+            wrap_time: day.wrap_time,
+            notes: day.notes,
+            weather_manual: day.weather_manual,
+            meal_times_json: day.meal_times_json,
+            id: newShootDayId,
+          }),
+        }),
+        {
+          sql: `UPDATE ${SDU_TABLE} SET shoot_day_id = $1, updated_at = $2 WHERE id = $3`,
+          bindValues: [newShootDayId, ts, shootDayUnitId],
+        },
+        outboxStatementForRow({
+          entity: SDU_TABLE,
+          entityId: shootDayUnitId,
+          operation: 'update',
+          payloadJson: JSON.stringify({ shoot_day_id: newShootDayId }),
+        }),
+        {
+          sql: `UPDATE ${STRIPBOARD_STRIPS_TABLE} SET shoot_day_id = $1, updated_at = $2 WHERE shoot_day_unit_id = $3 AND deleted_at IS NULL`,
+          bindValues: [newShootDayId, ts, shootDayUnitId],
+        },
+      ]
+      if (stripOutboxStmt) statements.push(stripOutboxStmt)
+      // unitsLeft is queried before we move the unit; the only unit on the source day is the one we're moving.
+      if (unitsLeft.length === 1) {
+        statements.push(
+          {
+            sql: `UPDATE ${DAY_TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+            bindValues: [ts, ts, day.id],
+          },
+          outboxStatementForRow({
+            entity: DAY_TABLE,
+            entityId: day.id,
+            operation: 'delete',
+            payloadJson: null,
+          })
+        )
+      }
+      statements.push({ sql: 'COMMIT', bindValues: [] })
+      await executeBatch(db, statements)
+    }
+    return { success: true }
+  })
+  if (result.success) await resequenceShootDays(day.production_id)
+  return result
+}
+
+/**
+ * Merge the dragged unit (and its strips) into the existing shoot day.
+ * Existing day's call/lunch/wrap times are preserved. If existing day has a unit
+ * with the same unit_id, strips are moved to that unit and the dragged unit is deleted.
+ * Otherwise the dragged unit is reassigned to the existing day. Source day is
+ * soft-deleted if it has no units left.
+ */
+export async function mergeShootDayUnitIntoDay(
+  shootDayUnitId: string,
+  existingShootDayId: string
+): Promise<void> {
+  const unit = await getShootDayUnitById(shootDayUnitId)
+  if (!unit) throw new Error('Shoot day unit not found')
+  const sourceShootDayId = unit.shoot_day_id
+  if (sourceShootDayId === existingShootDayId) return
+
+  const existingUnits = await listShootDayUnitsByShootDay(existingShootDayId)
+  const existingByUnitId = new Map(existingUnits.map((u) => [u.unit_id, u]))
+  const ts = now()
+
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const existingUnit = existingByUnitId.get(unit.unit_id)
+    const strips = await db.select<Record<string, unknown>[]>(
+      `SELECT id FROM ${STRIPBOARD_STRIPS_TABLE} WHERE shoot_day_unit_id = $1 AND deleted_at IS NULL`,
+      [shootDayUnitId]
+    )
+    const unitsLeft = await db.select<Record<string, unknown>[]>(
+      `SELECT id FROM ${SDU_TABLE} WHERE shoot_day_id = $1 AND deleted_at IS NULL`,
+      [sourceShootDayId]
+    )
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN', bindValues: [] }]
+    if (existingUnit) {
+      const stripOutboxRowsA: OutboxRow[] = strips.map((row) => ({
+        entity: STRIPBOARD_STRIPS_TABLE,
+        entityId: row.id as string,
+        operation: 'update' as const,
+        payloadJson: JSON.stringify({ shoot_day_id: existingShootDayId, shoot_day_unit_id: existingUnit.id }),
+      }))
+      statements.push(
+        {
+          sql: `UPDATE ${STRIPBOARD_STRIPS_TABLE} SET shoot_day_id = $1, shoot_day_unit_id = $2, updated_at = $3 WHERE shoot_day_unit_id = $4 AND deleted_at IS NULL`,
+          bindValues: [existingShootDayId, existingUnit.id, ts, shootDayUnitId],
+        }
+      )
+      const stripStmtA = outboxStatementForRows(stripOutboxRowsA)
+      if (stripStmtA) statements.push(stripStmtA)
+      statements.push(
+        {
+          sql: `UPDATE ${SDU_TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+          bindValues: [ts, ts, shootDayUnitId],
+        },
+        outboxStatementForRow({
+          entity: SDU_TABLE,
+          entityId: shootDayUnitId,
+          operation: 'delete',
+          payloadJson: null,
+        })
+      )
+    } else {
+      statements.push(
+        {
+          sql: `UPDATE ${SDU_TABLE} SET shoot_day_id = $1, updated_at = $2 WHERE id = $3`,
+          bindValues: [existingShootDayId, ts, shootDayUnitId],
+        },
+        outboxStatementForRow({
+          entity: SDU_TABLE,
+          entityId: shootDayUnitId,
+          operation: 'update',
+          payloadJson: JSON.stringify({ shoot_day_id: existingShootDayId }),
+        }),
+        {
+          sql: `UPDATE ${STRIPBOARD_STRIPS_TABLE} SET shoot_day_id = $1, updated_at = $2 WHERE shoot_day_unit_id = $3 AND deleted_at IS NULL`,
+          bindValues: [existingShootDayId, ts, shootDayUnitId],
+        }
+      )
+      const stripStmt = outboxStatementForRows(
+        strips.map((row) => ({
+          entity: STRIPBOARD_STRIPS_TABLE,
+          entityId: row.id as string,
+          operation: 'update' as const,
+          payloadJson: JSON.stringify({ shoot_day_id: existingShootDayId }),
+        }))
+      )
+      if (stripStmt) statements.push(stripStmt)
+    }
+    // unitsLeft is queried before we move/delete the unit; the only unit on the source day is the one we're merging.
+    if (unitsLeft.length === 1) {
+      statements.push(
+        {
+          sql: `UPDATE ${DAY_TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+          bindValues: [ts, ts, sourceShootDayId],
+        },
+        outboxStatementForRow({
+          entity: DAY_TABLE,
+          entityId: sourceShootDayId,
+          operation: 'delete',
+          payloadJson: null,
+        })
+      )
+    }
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+    await executeBatch(db, statements)
+  })
+  const existingDay = await getShootDayById(existingShootDayId)
+  if (existingDay) await resequenceShootDays(existingDay.production_id)
+}
+
+/**
+ * Swap shoot_date of two shoot days. Each day's call/lunch/wrap times are preserved.
+ */
+export async function swapShootDays(shootDayIdA: string, shootDayIdB: string): Promise<void> {
+  if (shootDayIdA === shootDayIdB) return
+  const dayA = await getShootDayById(shootDayIdA)
+  const dayB = await getShootDayById(shootDayIdB)
+  if (!dayA || !dayB) throw new Error('Shoot day not found')
+  const dateA = dayA.shoot_date
+  const dateB = dayB.shoot_date
+  if (dateA === dateB) return
+
+  const ts = now()
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const statements = [
+      { sql: 'BEGIN', bindValues: [] as unknown[] },
+      {
+        sql: `UPDATE ${DAY_TABLE} SET shoot_date = $1, updated_at = $2 WHERE id = $3`,
+        bindValues: [dateB, ts, shootDayIdA],
+      },
+      outboxStatementForRow({
+        entity: DAY_TABLE,
+        entityId: shootDayIdA,
+        operation: 'update',
+        payloadJson: JSON.stringify({ shoot_date: dateB }),
+      }),
+      {
+        sql: `UPDATE ${DAY_TABLE} SET shoot_date = $1, updated_at = $2 WHERE id = $3`,
+        bindValues: [dateA, ts, shootDayIdB],
+      },
+      outboxStatementForRow({
+        entity: DAY_TABLE,
+        entityId: shootDayIdB,
+        operation: 'update',
+        payloadJson: JSON.stringify({ shoot_date: dateA }),
+      }),
+      { sql: 'COMMIT', bindValues: [] as unknown[] },
+    ]
+    await executeBatch(db, statements)
+  })
+  await resequenceShootDays(dayA.production_id)
 }
 
 // Scenes

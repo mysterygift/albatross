@@ -63,6 +63,9 @@ export function ProductionsPage() {
   const [duplicateName, setDuplicateName] = useState('')
   const [duplicateSuccessResult, setDuplicateSuccessResult] = useState<{ name: string; slug: string } | null>(null)
   const [duplicateError, setDuplicateError] = useState<string | null>(null)
+  const [deleteToast, setDeleteToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [verifyDeleteResult, setVerifyDeleteResult] = useState<string | null>(null)
+  const [verifyDeletePending, setVerifyDeletePending] = useState(false)
   const queryClient = useQueryClient()
   const { currentProductionId, setCurrentProductionId, refetchProductions } = useCurrentProduction()
   const { data: productions = [] } = useQuery({
@@ -90,8 +93,16 @@ export function ProductionsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteProduction,
-    onSuccess: () => {
+    onSuccess: (_, id) => {
+      if (currentProductionId === id) setCurrentProductionId(null)
       queryClient.invalidateQueries({ queryKey: ['productions'] })
+      refetchProductions()
+      setDeleteToast({ type: 'success', message: 'Production deleted.' })
+      setTimeout(() => setDeleteToast(null), 4000)
+    },
+    onError: (err) => {
+      setDeleteToast({ type: 'error', message: err instanceof Error ? err.message : 'Delete failed' })
+      setTimeout(() => setDeleteToast(null), 5000)
     },
   })
 
@@ -102,8 +113,47 @@ export function ProductionsPage() {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
       setPermanentDeleteProduction(null)
+      setDeleteToast({ type: 'success', message: 'Production permanently deleted.' })
+      setTimeout(() => setDeleteToast(null), 4000)
+    },
+    onError: (err) => {
+      setDeleteToast({ type: 'error', message: err instanceof Error ? err.message : 'Permanent delete failed' })
+      setTimeout(() => setDeleteToast(null), 5000)
     },
   })
+
+  async function runVerifyProductionDelete() {
+    setVerifyDeletePending(true)
+    setVerifyDeleteResult(null)
+    try {
+      const list = await listProductions()
+      const source = list[0]
+      if (!source) {
+        setVerifyDeleteResult('Failed: no production to duplicate')
+        return
+      }
+      const { id } = await duplicateProduction(source.id, 'Verify Delete Temp')
+      await deleteProduction(id)
+      const afterSoft = await listProductions()
+      if (afterSoft.some((p) => p.id === id)) {
+        setVerifyDeleteResult('Failed at soft delete: production still in list')
+        return
+      }
+      await permanentlyDeleteProduction(id)
+      const afterHard = await listProductions()
+      if (afterHard.some((p) => p.id === id)) {
+        setVerifyDeleteResult('Failed at hard delete: production still in list')
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: ['productions'] })
+      refetchProductions()
+      setVerifyDeleteResult('Verify Production Delete: success')
+    } catch (e) {
+      setVerifyDeleteResult('Verify Production Delete: failed — ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setVerifyDeletePending(false)
+    }
+  }
 
   const duplicateMutation = useMutation({
     mutationFn: ({ sourceId, newName }: { sourceId: string; newName: string }) =>
@@ -213,6 +263,17 @@ export function ProductionsPage() {
       {duplicateError && (
         <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-400 text-sm">
           {duplicateError}
+        </p>
+      )}
+      {deleteToast && (
+        <p
+          className={
+            deleteToast.type === 'success'
+              ? 'rounded-lg border border-mint-500/30 bg-mint-500/10 px-4 py-3 text-mint-700 dark:text-mint-400 text-sm'
+              : 'rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-400 text-sm'
+          }
+        >
+          {deleteToast.message}
         </p>
       )}
 
@@ -351,6 +412,30 @@ export function ProductionsPage() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      {import.meta.env.DEV && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm">
+          <p className="font-medium text-amber-700 dark:text-amber-400">Developer: Verify Production Delete</p>
+          <p className="mt-1 text-muted-foreground">
+            Duplicates the first production, soft-deletes it, then permanently deletes it, and reports success or the first failing step.
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={verifyDeletePending || productions.length === 0}
+              onClick={() => runVerifyProductionDelete()}
+            >
+              {verifyDeletePending ? 'Running…' : 'Run verify'}
+            </Button>
+            {verifyDeleteResult && (
+              <span className={verifyDeleteResult.includes('success') ? 'text-mint-600 dark:text-mint-400' : 'text-red-600 dark:text-red-400'}>
+                {verifyDeleteResult}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

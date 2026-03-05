@@ -77,7 +77,7 @@ export async function ensureUniqueSlug(baseSlug: string): Promise<string> {
 
 /** Serialize slug allocation + production INSERT so concurrent create/duplicate don't get the same slug. */
 let slugLock: Promise<void> = Promise.resolve()
-async function withSlugLock<T>(fn: () => Promise<T>): Promise<T> {
+export async function withSlugLock<T>(fn: () => Promise<T>): Promise<T> {
   const prev = slugLock
   let resolve: () => void
   slugLock = new Promise<void>((r) => {
