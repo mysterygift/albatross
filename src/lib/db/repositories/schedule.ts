@@ -94,11 +94,11 @@ function rowToStripboardItem(r: Record<string, unknown>): StripboardItem {
   }
 }
 
-// Shoot days
+// Shoot days. Order by shoot_date (YYYY-MM-DD string) then id for stable order; no Date parsing to avoid UTC edge cases.
 export async function listShootDaysByProduction(productionId: string): Promise<ShootDay[]> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${DAY_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY shoot_date`,
+    `SELECT * FROM ${DAY_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY shoot_date ASC, id ASC`,
     [productionId]
   )
   return rows.map(rowToShootDay)
@@ -166,6 +166,7 @@ export async function createShootDay(data: {
   }
   const day = await getShootDayById(id)
   if (!day) throw new Error('Shoot day not found after create')
+  await resequenceShootDays(data.production_id)
   return day
 }
 
@@ -199,6 +200,7 @@ export async function updateShootDay(
 }
 
 export async function deleteShootDay(id: string): Promise<void> {
+  const day = await getShootDayById(id)
   const db = await getDb()
   const ts = now()
   await db.execute(
@@ -206,6 +208,48 @@ export async function deleteShootDay(id: string): Promise<void> {
     [ts, ts, id]
   )
   await outboxPush(DAY_TABLE, id, 'delete', null)
+  if (day) await resequenceShootDays(day.production_id)
+}
+
+/**
+ * Resequence day_number for all shoot days in a production so that numbering
+ * reflects chronological order by shoot_date. Use after any change that reorders
+ * dates (move, swap, create, delete). shoot_date is DATE-only "YYYY-MM-DD"
+ * (local calendar); sorting by string ASC is safe and avoids timezone/UTC edge cases.
+ * Tie-breaker: id ASC for stable order when two days share the same date.
+ */
+export async function resequenceShootDays(productionId: string): Promise<void> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT id FROM ${DAY_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY shoot_date ASC, id ASC`,
+    [productionId]
+  )
+  if (rows.length === 0) return
+  const ts = now()
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+    { sql: 'BEGIN', bindValues: [] },
+  ]
+  for (let i = 0; i < rows.length; i++) {
+    const id = rows[i]!.id as string
+    const dayNumber = i + 1
+    statements.push({
+      sql: `UPDATE ${DAY_TABLE} SET day_number = $1, updated_at = $2 WHERE id = $3`,
+      bindValues: [dayNumber, ts, id],
+    })
+    statements.push(
+      outboxStatementForRow({
+        entity: DAY_TABLE,
+        entityId: id,
+        operation: 'update',
+        payloadJson: JSON.stringify({ day_number: dayNumber }),
+      })
+    )
+  }
+  statements.push({ sql: 'COMMIT', bindValues: [] })
+  await runInSerializedTransaction(async () => {
+    const conn = await getDb()
+    await executeBatch(conn, statements)
+  })
 }
 
 /**
@@ -232,7 +276,7 @@ export async function moveShootDayToDate(
     return { success: false, existingShootDayId: existing[0]!.id as string }
   }
 
-  return runInSerializedTransaction(async () => {
+  const result = await runInSerializedTransaction(async () => {
     const db = await getDb()
     const statements = [
       { sql: 'BEGIN', bindValues: [] as unknown[] },
@@ -249,8 +293,10 @@ export async function moveShootDayToDate(
       { sql: 'COMMIT', bindValues: [] as unknown[] },
     ]
     await executeBatch(db, statements)
-    return { success: true }
+    return { success: true } as const
   })
+  if (result.success) await resequenceShootDays(day.production_id)
+  return result
 }
 
 export type MoveShootDayUnitResult =
@@ -294,7 +340,7 @@ export async function moveShootDayUnitToDate(
     return { success: false, reason: 'conflict', existingShootDayId: existing[0]!.id as string }
   }
 
-  return runInSerializedTransaction(async () => {
+  const result = await runInSerializedTransaction(async () => {
     const db = await getDb()
     if (isSingleUnit) {
       const statements = [
@@ -399,6 +445,8 @@ export async function moveShootDayUnitToDate(
     }
     return { success: true }
   })
+  if (result.success) await resequenceShootDays(day.production_id)
+  return result
 }
 
 /**
@@ -504,6 +552,8 @@ export async function mergeShootDayUnitIntoDay(
     statements.push({ sql: 'COMMIT', bindValues: [] })
     await executeBatch(db, statements)
   })
+  const existingDay = await getShootDayById(existingShootDayId)
+  if (existingDay) await resequenceShootDays(existingDay.production_id)
 }
 
 /**
@@ -547,6 +597,7 @@ export async function swapShootDays(shootDayIdA: string, shootDayIdB: string): P
     ]
     await executeBatch(db, statements)
   })
+  await resequenceShootDays(dayA.production_id)
 }
 
 // Scenes
