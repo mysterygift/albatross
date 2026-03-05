@@ -74,6 +74,9 @@ export type BudgetAccount = {
   parent_account_id: string | null
   sort_order: number
   is_postable: boolean
+  /** Optional custom band colour for rollup accounts (UI only). 6-digit hex e.g. #9DBBAA. */
+  color_hex: string | null
+  archived_at: string | null
   created_at: string
   updated_at: string
   deleted_at: string | null

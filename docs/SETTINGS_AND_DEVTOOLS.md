@@ -17,8 +17,9 @@ The Settings page provides:
 
 1. **Currency** — Display currency and optional conversion API toggle.
 2. **Cost report groups** — Per-production groups when a production is selected. Add/edit/delete groups; map accounts (header or leaf) to groups for reporting and exports. Groups do not affect accounting totals.
-3. **Data location** — Informational card pointing to app data directory (README paths).
-4. **Developer tools** (dev build only) — Demo production seed, DB perf logging, cascade verification, and experimental toggles.
+3. **Chart of accounts** — Per-production when a production is selected. Tree view of accounts; add account (code, name, parent, postable); edit name; archive/unarchive; hard delete only when account is unused.
+4. **Data location** — Informational card pointing to app data directory (README paths).
+5. **Developer tools** (dev build only) — Demo production seed, DB perf logging, cascade verification, and experimental toggles.
 
 ### 1.2 Developer tools
 
@@ -69,10 +70,11 @@ Defaults are applied by `ensureSettingsDefaults()` in `settings.ts` (called from
 1. **Title** — “Settings” (h1).
 2. **Currency card** — Display currency dropdown; optional conversion banner from `useCurrency().conversionBanner`.
 3. **Cost report groups card** — Only when `currentProductionId` is set. Table: Name, Code, Accounts count, Actions (Edit, Delete). “Add group” opens a dialog (name, optional code, multi-select accounts). Edit opens same form with current name, code, and mapped accounts. Description: “Organise accounts for reporting and exports. Groups do not affect accounting totals.”
-4. **Data location card** — Text only: “SQLite database and attachments are stored in the app data directory. See README for paths per platform.”
-5. **Developer tools card** — Only when `import.meta.env.DEV`. See §3.3.
+4. **Chart of accounts card** — Only when `currentProductionId` is set. Tree of accounts (code, name, indented); archived accounts shown with "Archived" badge. Add account, edit name, archive/unarchive, hard delete when eligible.
+5. **Data location card** — Text only: “SQLite database and attachments are stored in the app data directory. See README for paths per platform.”
+6. **Developer tools card** — Only when `import.meta.env.DEV`. See §3.3.
 
-When no production is selected, a message is shown: “Select a production to manage cost report groups and other settings.”
+When no production is selected, a message is shown: “Select a production to manage cost report groups, chart of accounts, and other settings.”
 
 ### 3.2 Currency card
 

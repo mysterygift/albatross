@@ -99,6 +99,18 @@ pub fn run() {
       sql: include_str!("../migrations/0016_cost_report_groups.sql"),
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 17,
+      description: "budget_accounts_archived_at",
+      sql: include_str!("../migrations/0017_budget_accounts_archived_at.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 18,
+      description: "budget_accounts_color_hex",
+      sql: include_str!("../migrations/0018_budget_accounts_color_hex.sql"),
+      kind: MigrationKind::Up,
+    },
   ];
 
   tauri::Builder::default()

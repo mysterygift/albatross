@@ -52,7 +52,7 @@ Categories, accounts, items, expenses, and rule tables are soft-deleted where ap
 
 **BudgetAccount**
 
-- `id`, `production_id`, `code`, `name`, `parent_account_id` (nullable), `sort_order`, `is_postable`, timestamps. Leaf accounts have `is_postable === true` and may have budget items and expenses; non-postable accounts are headers for rollup only.
+- `id`, `production_id`, `code`, `name`, `parent_account_id` (nullable), `sort_order`, `is_postable`, `archived_at` (nullable), timestamps. Leaf accounts have `is_postable === true` and may have budget items and expenses; non-postable accounts are headers for rollup only. Archived accounts remain in `listAccounts()` for correct rollups but are excluded from `listPostableAccounts()` so no new posting.
 
 **BudgetItem**
 
@@ -183,11 +183,14 @@ New productions get default categories via `seedDefaultBudgetCategories(producti
 
 ### 4.2 Budget accounts — `src/lib/db/repositories/budgetAccounts.ts`
 
-- `listAccounts(productionId)` — All accounts for production (sort_order, code).
-- `listPostableAccounts(productionId)` — Leaf accounts only; used for Add line item and Quick-add spend dropdowns.
-- `getAccountById(id)` — Single account.
-- `createAccount({ production_id, code, name, parent_account_id?, sort_order?, is_postable? })` — Parent must exist and be non-postable.
-- `updateAccount`, `deleteAccount` (soft) — Available for future UI.
+- `listAccounts(productionId)` — All non-deleted accounts (includes archived); used for tree and rollups. Order: sort_order, code.
+- `listPostableAccounts(productionId)` — Non-archived, postable (leaf) accounts only; used for Add line item and Quick-add spend dropdowns.
+- `getAccountById(id)` — Single account (includes archived).
+- `createAccount({ production_id, code, name, parent_account_id?, sort_order?, is_postable? })` — Code unique per production; parent must exist and be non-postable.
+- `updateAccountName(accountId, name)`, `updateAccountSortOrder(accountId, sort_order)` — Safe updates.
+- `archiveAccount(accountId)` — Sets `archived_at`; disallowed if account has children or is in derived rule scopes.
+- `unarchiveAccount(accountId)` — Clears `archived_at`.
+- `hardDeleteAccount(accountId)` — Soft-delete only when no children, no budget_items/expenses, not in rule scopes or cost report groups.
 - `seedDefaultBudgetAccounts(productionId)` — Default chart of accounts; called when creating a new production.
 
 ### 4.3 Derived rules — `src/lib/db/repositories/budgetDerived.ts`
