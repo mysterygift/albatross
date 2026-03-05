@@ -34,16 +34,16 @@ export function outboxStatementForRows(rows: OutboxRow[]): { sql: string; bindVa
   if (rows.length === 0) return null
   const ts = now()
   const placeholders: string[] = []
-  const bind: unknown[] = []
+  const bindValues: unknown[] = []
   let i = 1
   for (const r of rows) {
     placeholders.push(`($${i}, $${i + 1}, $${i + 2}, $${i + 3}, $${i + 4}, $${i + 5})`)
-    bind.push(uuid(), r.entity, r.entityId, r.operation, r.payloadJson, ts)
+    bindValues.push(uuid(), r.entity, r.entityId, r.operation, r.payloadJson, ts)
     i += 6
   }
   return {
     sql: `INSERT INTO outbox (id, entity, entity_id, operation, payload_json, created_at) VALUES ${placeholders.join(', ')}`,
-    bind,
+    bindValues,
   }
 }
 

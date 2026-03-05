@@ -331,11 +331,6 @@ export async function moveShootDayUnitToDate(
     `SELECT id FROM ${DAY_TABLE} WHERE production_id = $1 AND shoot_date = $2 AND deleted_at IS NULL`,
     [day.production_id, newDate]
   )
-  // #region agent log
-  if (typeof fetch !== 'undefined') {
-    fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'schedule.ts:moveShootDayUnitToDate',message:'conflict check',data:{newDate,production_id:day.production_id,existingCount:existing.length,existingId:existing[0]?.id ?? null},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-  }
-  // #endregion
   if (existing.length > 0) {
     return { success: false, reason: 'conflict', existingShootDayId: existing[0]!.id as string }
   }
@@ -426,7 +421,8 @@ export async function moveShootDayUnitToDate(
         },
       ]
       if (stripOutboxStmt) statements.push(stripOutboxStmt)
-      if (unitsLeft.length === 0) {
+      // unitsLeft is queried before we move the unit; the only unit on the source day is the one we're moving.
+      if (unitsLeft.length === 1) {
         statements.push(
           {
             sql: `UPDATE ${DAY_TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
@@ -535,7 +531,8 @@ export async function mergeShootDayUnitIntoDay(
       )
       if (stripStmt) statements.push(stripStmt)
     }
-    if (unitsLeft.length === 0) {
+    // unitsLeft is queried before we move/delete the unit; the only unit on the source day is the one we're merging.
+    if (unitsLeft.length === 1) {
       statements.push(
         {
           sql: `UPDATE ${DAY_TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,

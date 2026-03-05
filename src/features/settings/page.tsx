@@ -296,9 +296,6 @@ export function SettingsPage() {
                     const prod = await getProductionBySlug(DEMO_SLUG)
                     if (prod) setCurrentProductionId(prod.id)
                   } catch (e) {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings/page.tsx:Create Demo',message:'demo creation error',data:{err:String((e as Error)?.message ?? e),stack:(e as Error)?.stack?.slice(0,500)},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-                    // #endregion
                     throw e
                   }
                 }}

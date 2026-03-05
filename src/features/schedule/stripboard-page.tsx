@@ -470,9 +470,6 @@ export function StripboardPage() {
                     isLocked={false}
                     pageEighthsTarget={PAGE_EIGHTHS_TARGET}
                     onSendToBoneyard={(strip) => {
-                      // #region agent log
-                      fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-page.tsx:onSendToBoneyard',message:'click boneyard',data:{stripId:strip?.id,stripType:strip?.strip_type,shootDayId:strip?.shoot_day_id,hasId:!!strip?.id},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-                      // #endregion
                       moveToBoneyardMutation.mutate(strip.id)
                       setBoneyardToast(true)
                     }}

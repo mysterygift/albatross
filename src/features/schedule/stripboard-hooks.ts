@@ -171,23 +171,8 @@ export function useStripboard(productionId: string | null) {
 
   /** Move a single strip to Boneyard (discarded). Does not delete; strip can be recovered or deleted from Boneyard. */
   const moveToBoneyardMutation = useMutation({
-    mutationFn: (stripId: string) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-hooks.ts:moveToBoneyardMutation',message:'mutationFn start',data:{stripId},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
-      return moveStripToBoneyard(stripId)
-    },
-    onSuccess: () => {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-hooks.ts:moveToBoneyardMutation',message:'onSuccess invalidate',timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
-      invalidate()
-    },
-    onError: (err) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stripboard-hooks.ts:moveToBoneyardMutation',message:'onError',data:{error:String(err)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
-    },
+    mutationFn: (stripId: string) => moveStripToBoneyard(stripId),
+    onSuccess: () => invalidate(),
   })
 
   /** Permanently soft-delete a strip. Only for Boneyard delete action. */

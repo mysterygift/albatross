@@ -122,37 +122,7 @@ function wrapWithPerf(raw: Database): Database {
       const isBegin = upper.startsWith('BEGIN')
       const isCommit = upper.startsWith('COMMIT')
       const isRollback = upper.startsWith('ROLLBACK')
-      // #region agent log
-      if (isPerfLoggingEnabled() && isBegin) {
-        txnDepth += 1
-        fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'client.ts:execute',
-            message: 'BEGIN sent',
-            data: { inSerializedTransaction, txnDepthAfter: txnDepth },
-            timestamp: Date.now(),
-            hypothesisId: 'H1',
-          }),
-        }).catch(() => {})
-      }
-      if (isPerfLoggingEnabled() && isCommit) {
-        const payload = { inSerializedTransaction, txnDepth }
-        console.warn('[DB txn] COMMIT about to run', payload)
-        fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'client.ts:execute',
-            message: 'COMMIT about to run',
-            data: payload,
-            timestamp: Date.now(),
-            hypothesisId: 'H2',
-          }),
-        }).catch(() => {})
-      }
-      // #endregion
+      if (isBegin) txnDepth += 1
       const run = () =>
         withRetry(() => raw.execute(query, bindValues), query, 'execute').then((result) => {
           const durationMs = performance.now() - start
@@ -173,24 +143,7 @@ function wrapWithPerf(raw: Database): Database {
         return await run()
       } catch (e) {
         const durationMs = performance.now() - start
-        // #region agent log
-        if (isPerfLoggingEnabled() && (isCommit || isRollback)) {
-          const payload = { txnDepth, error: getErrorMessage(e), inSerializedTransaction }
-          console.warn('[DB txn]', isCommit ? 'COMMIT failed' : 'ROLLBACK failed', payload)
-          fetch('http://127.0.0.1:7243/ingest/76cef4f5-a1f0-453f-b82a-14d185be1b61', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'client.ts:execute',
-              message: isCommit ? 'COMMIT failed' : 'ROLLBACK failed',
-              data: payload,
-              timestamp: Date.now(),
-              hypothesisId: 'H1',
-            }),
-          }).catch(() => {})
-          if (isCommit || isRollback) txnDepth = Math.max(0, txnDepth - 1)
-        }
-        // #endregion
+        if (isCommit || isRollback) txnDepth = Math.max(0, txnDepth - 1)
         if (isPerfLoggingEnabled()) {
           recordDbOp({
             kind: 'execute',
