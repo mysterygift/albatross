@@ -13,6 +13,8 @@ export type Production = {
   /** ISO 4217 code; all stored budget numbers are in this currency. Default GBP. */
   currency_code: string
   notes: string | null
+  /** When set, production is archived (hidden from default list); reversible. */
+  archived_at: string | null
 } & SoftDeletable
 
 export type Person = {

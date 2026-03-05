@@ -69,6 +69,12 @@ pub fn run() {
       sql: include_str!("../migrations/0011_stripboard_shots_and_shot_description.sql"),
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 12,
+      description: "productions_archived_at",
+      sql: include_str!("../migrations/0012_productions_archived_at.sql"),
+      kind: MigrationKind::Up,
+    },
   ];
 
   tauri::Builder::default()

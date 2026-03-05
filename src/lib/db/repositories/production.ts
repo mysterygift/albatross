@@ -30,15 +30,49 @@ function rowToProduction(r: Record<string, unknown>): Production {
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
+    archived_at: (r.archived_at as string | null) ?? null,
   }
 }
 
-export async function listProductions(): Promise<Production[]> {
+export type ListProductionsOptions = { includeArchived?: boolean }
+
+/**
+ * List productions (non-deleted). Default: active only (archived_at IS NULL).
+ * Use includeArchived: true to include archived productions in the list (e.g. Projects view toggle).
+ */
+export async function listProductions(options?: ListProductionsOptions): Promise<Production[]> {
   const db = await getDb()
+  const includeArchived = options?.includeArchived === true
+  const where =
+    includeArchived
+      ? 'deleted_at IS NULL'
+      : 'deleted_at IS NULL AND archived_at IS NULL'
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE deleted_at IS NULL ORDER BY name`
+    `SELECT * FROM ${TABLE} WHERE ${where} ORDER BY archived_at IS NOT NULL, name`
   )
   return rows.map(rowToProduction)
+}
+
+/** Archive a production (reversible). Sets archived_at and updated_at. */
+export async function archiveProduction(id: string): Promise<void> {
+  const db = await getDb()
+  const ts = now()
+  await db.execute(
+    `UPDATE ${TABLE} SET archived_at = $1, updated_at = $2 WHERE id = $3`,
+    [ts, ts, id]
+  )
+  await outboxPush(TABLE, id, 'update', JSON.stringify({ archived_at: ts }))
+}
+
+/** Unarchive a production. Clears archived_at and updates updated_at. */
+export async function unarchiveProduction(id: string): Promise<void> {
+  const db = await getDb()
+  const ts = now()
+  await db.execute(
+    `UPDATE ${TABLE} SET archived_at = NULL, updated_at = $1 WHERE id = $2`,
+    [ts, id]
+  )
+  await outboxPush(TABLE, id, 'update', JSON.stringify({ archived_at: null }))
 }
 
 export async function getProductionById(id: string): Promise<Production | null> {

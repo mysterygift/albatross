@@ -7,6 +7,8 @@ import {
   permanentlyDeleteProduction,
   duplicateProduction,
   deleteProduction,
+  archiveProduction,
+  unarchiveProduction,
 } from '@/lib/db/repositories/production'
 import {
   useReactTable,
@@ -44,7 +46,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Pencil, Trash2, Copy } from 'lucide-react'
+import { Plus, Pencil, Trash2, Copy, Archive, PackageOpen } from 'lucide-react'
 import type { Production } from '@/lib/db/types'
 import { useCurrentProduction } from './context'
 
@@ -63,15 +65,32 @@ export function ProductionsPage() {
   const [duplicateName, setDuplicateName] = useState('')
   const [duplicateSuccessResult, setDuplicateSuccessResult] = useState<{ name: string; slug: string } | null>(null)
   const [duplicateError, setDuplicateError] = useState<string | null>(null)
-  const [deleteToast, setDeleteToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [actionToast, setActionToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [verifyDeleteResult, setVerifyDeleteResult] = useState<string | null>(null)
   const [verifyDeletePending, setVerifyDeletePending] = useState(false)
+  const [showArchived, setShowArchived] = useState(() => {
+    try {
+      return localStorage.getItem('showArchivedProductions') === 'true'
+    } catch {
+      return false
+    }
+  })
   const queryClient = useQueryClient()
   const { currentProductionId, setCurrentProductionId, refetchProductions } = useCurrentProduction()
   const { data: productions = [] } = useQuery({
-    queryKey: ['productions'],
-    queryFn: listProductions,
+    queryKey: ['productions', { includeArchived: showArchived }],
+    queryFn: () => listProductions({ includeArchived: showArchived }),
   })
+
+  function toggleShowArchived() {
+    const next = !showArchived
+    setShowArchived(next)
+    try {
+      localStorage.setItem('showArchivedProductions', String(next))
+    } catch {
+      /* ignore */
+    }
+  }
 
   const createMutation = useMutation({
     mutationFn: (data: ProductionForm) =>
@@ -98,12 +117,41 @@ export function ProductionsPage() {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
       setProductionToHardDelete(null)
-      setDeleteToast({ type: 'success', message: 'Production permanently deleted.' })
-      setTimeout(() => setDeleteToast(null), 4000)
+      setActionToast({ type: 'success', message: 'Production permanently deleted.' })
+      setTimeout(() => setActionToast(null), 4000)
     },
     onError: (err) => {
-      setDeleteToast({ type: 'error', message: err instanceof Error ? err.message : 'Delete failed' })
-      setTimeout(() => setDeleteToast(null), 5000)
+      setActionToast({ type: 'error', message: err instanceof Error ? err.message : 'Delete failed' })
+      setTimeout(() => setActionToast(null), 5000)
+    },
+  })
+
+  const archiveMutation = useMutation({
+    mutationFn: archiveProduction,
+    onSuccess: (_, id) => {
+      if (currentProductionId === id) setCurrentProductionId(null)
+      queryClient.invalidateQueries({ queryKey: ['productions'] })
+      refetchProductions()
+      setActionToast({ type: 'success', message: 'Project archived.' })
+      setTimeout(() => setActionToast(null), 4000)
+    },
+    onError: (err) => {
+      setActionToast({ type: 'error', message: err instanceof Error ? err.message : 'Archive failed' })
+      setTimeout(() => setActionToast(null), 5000)
+    },
+  })
+
+  const unarchiveMutation = useMutation({
+    mutationFn: unarchiveProduction,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['productions'] })
+      refetchProductions()
+      setActionToast({ type: 'success', message: 'Project restored.' })
+      setTimeout(() => setActionToast(null), 4000)
+    },
+    onError: (err) => {
+      setActionToast({ type: 'error', message: err instanceof Error ? err.message : 'Unarchive failed' })
+      setTimeout(() => setActionToast(null), 5000)
     },
   })
 
@@ -162,46 +210,90 @@ export function ProductionsPage() {
     {
       accessorKey: 'name',
       header: 'Name',
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <span className={row.original.archived_at ? 'text-muted-foreground' : ''}>
+            {row.original.name}
+          </span>
+          {row.original.archived_at && (
+            <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-400 text-xs font-medium">
+              Archived
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       accessorKey: 'notes',
       header: 'Notes',
-      cell: ({ getValue }) => (getValue() as string)?.slice(0, 50) ?? '—',
+      cell: ({ getValue, row }) => (
+        <span className={row.original.archived_at ? 'text-muted-foreground' : ''}>
+          {(getValue() as string)?.slice(0, 50) ?? '—'}
+        </span>
+      ),
     },
     {
       id: 'actions',
-      cell: ({ row }) => (
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setEditingId(row.original.id)}
-            title="Edit"
-          >
-            <Pencil className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              setDuplicateSource(row.original)
-              setDuplicateName(`${row.original.name} (Copy)`)
-              setDuplicateError(null)
-            }}
-            title="Duplicate production"
-          >
-            <Copy className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setProductionToHardDelete(row.original)}
-            title="Delete permanently"
-          >
-            <Trash2 className="size-4 text-destructive" />
-          </Button>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const isArchived = !!row.original.archived_at
+        return (
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setEditingId(row.original.id)}
+              title="Edit"
+            >
+              <Pencil className="size-4" />
+            </Button>
+            {!isArchived && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setDuplicateSource(row.original)
+                  setDuplicateName(`${row.original.name} (Copy)`)
+                  setDuplicateError(null)
+                }}
+                title="Duplicate production"
+              >
+                <Copy className="size-4" />
+              </Button>
+            )}
+            {isArchived ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => unarchiveMutation.mutate(row.original.id)}
+                disabled={unarchiveMutation.isPending}
+                title="Unarchive project"
+                className="text-mint-600 hover:bg-mint-500/10 hover:text-mint-700 dark:text-mint-400 dark:hover:text-mint-300"
+              >
+                <Archive className="size-4" />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => archiveMutation.mutate(row.original.id)}
+                disabled={archiveMutation.isPending}
+                title="Archive project"
+                className="text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+              >
+                <Archive className="size-4" />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setProductionToHardDelete(row.original)}
+              title="Delete permanently"
+            >
+              <Trash2 className="size-4 text-destructive" />
+            </Button>
+          </div>
+        )
+      },
     },
   ]
 
@@ -215,13 +307,23 @@ export function ProductionsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Productions</h1>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 size-4" />
-              New production
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showArchived ? 'secondary' : 'outline'}
+            size="icon"
+            onClick={toggleShowArchived}
+            title={showArchived ? 'Hide archived projects' : 'Show archived projects'}
+            aria-label={showArchived ? 'Hide archived projects' : 'Show archived projects'}
+          >
+            <PackageOpen className="size-4" />
+          </Button>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 size-4" />
+                New production
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <ProductionFormDialog
               onSubmit={(data) => createMutation.mutate(data)}
@@ -229,7 +331,8 @@ export function ProductionsPage() {
               isLoading={createMutation.isPending}
             />
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       {duplicateSuccessResult && (
@@ -242,15 +345,15 @@ export function ProductionsPage() {
           {duplicateError}
         </p>
       )}
-      {deleteToast && (
+      {actionToast && (
         <p
           className={
-            deleteToast.type === 'success'
+            actionToast.type === 'success'
               ? 'rounded-lg border border-mint-500/30 bg-mint-500/10 px-4 py-3 text-mint-700 dark:text-mint-400 text-sm'
               : 'rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-400 text-sm'
           }
         >
-          {deleteToast.message}
+          {actionToast.message}
         </p>
       )}
 
@@ -276,7 +379,10 @@ export function ProductionsPage() {
               </TableRow>
             ) : (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  className={row.original.archived_at ? 'bg-muted/40 text-muted-foreground' : ''}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
