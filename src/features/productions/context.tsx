@@ -29,9 +29,16 @@ export function ProductionProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const { data: productions = [], refetch: refetchProductions } = useQuery({
-    queryKey: ['productions'],
-    queryFn: listProductions,
+    queryKey: ['productions', { includeArchived: false }],
+    queryFn: () => listProductions({ includeArchived: false }),
   })
+
+  // If current production was archived (or deleted), it won't be in the active list; clear selection to avoid stale state.
+  useEffect(() => {
+    if (currentProductionId && productions.length >= 0 && !productions.some((p) => p.id === currentProductionId)) {
+      setCurrentProductionId(null)
+    }
+  }, [currentProductionId, productions, setCurrentProductionId])
 
   const currentProduction = useMemo(
     () => productions.find((p) => p.id === currentProductionId) ?? null,

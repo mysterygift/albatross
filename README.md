@@ -47,6 +47,8 @@ Then run `npm run tauri:dev` to confirm dev works and `npm run tauri:build` to b
 - **Rust** 1.77.2+ (for Tauri)
 - **Platform deps**: [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) per OS
 
+**New to the project?** See **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** for a full guide: cloning, environment setup, running the app, lint/tests, making a first change, and gotchas.
+
 ## Development
 
 ```bash
