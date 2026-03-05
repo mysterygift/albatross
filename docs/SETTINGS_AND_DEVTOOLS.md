@@ -11,12 +11,12 @@ This document describes the Settings page and the Developer tools section so the
 - **Route:** `/settings` (see `src/app/router.tsx`).
 - **Entry point:** `src/features/settings/page.tsx` — single file containing `SettingsPage` and the inline `DemoSeedMeta` component.
 - **Navigation:** Linked from the app nav as “Settings” (Settings icon) in `src/app/navigation.ts`.
-- **Context:** Uses `useCurrentProduction()` for production-scoped sections (e.g. budget categories). Currency and global settings do not require a production.
+- **Context:** Uses `useCurrentProduction()` for production-scoped sections (e.g. legacy categories panel). Currency and global settings do not require a production.
 
 The Settings page provides:
 
 1. **Currency** — Display currency and optional conversion API toggle.
-2. **Budget categories** — Per-production category CRUD (code, name, phase); only shown when a production is selected.
+2. **Cost report groups** — Per-production groups when a production is selected. Add/edit/delete groups; map accounts (header or leaf) to groups for reporting and exports. Groups do not affect accounting totals.
 3. **Data location** — Informational card pointing to app data directory (README paths).
 4. **Developer tools** (dev build only) — Demo production seed, DB perf logging, cascade verification, and experimental toggles.
 
@@ -57,7 +57,8 @@ Defaults are applied by `ensureSettingsDefaults()` in `settings.ts` (called from
 
 - **Exchange rates:** `exchange_rates` (migration 0009) — cache for conversion API; see `src/lib/money/exchangeRates.ts`.
 - **Productions:** `productions.currency_code` — per-production base currency; budget values are stored in this currency.
-- **Budget categories:** `budget_categories` — production-scoped; managed in Settings when a production is selected.
+- **Budget categories:** `budget_categories` — production-scoped; legacy-only, not shown in Settings (see Budget feature docs).
+- **Cost report groups:** `cost_report_groups`, `cost_report_group_accounts` — production-scoped; managed in Settings (Cost report groups card). Presentation/reporting only.
 
 ---
 
@@ -67,11 +68,11 @@ Defaults are applied by `ensureSettingsDefaults()` in `settings.ts` (called from
 
 1. **Title** — “Settings” (h1).
 2. **Currency card** — Display currency dropdown; optional conversion banner from `useCurrency().conversionBanner`.
-3. **Budget categories card** — Only when `currentProductionId` is set. “Add category” dialog; table of code, name, phase, delete. Description: “Define budget codes for this production.”
+3. **Cost report groups card** — Only when `currentProductionId` is set. Table: Name, Code, Accounts count, Actions (Edit, Delete). “Add group” opens a dialog (name, optional code, multi-select accounts). Edit opens same form with current name, code, and mapped accounts. Description: “Organise accounts for reporting and exports. Groups do not affect accounting totals.”
 4. **Data location card** — Text only: “SQLite database and attachments are stored in the app data directory. See README for paths per platform.”
 5. **Developer tools card** — Only when `import.meta.env.DEV`. See §3.3.
 
-When no production is selected, a message is shown: “Select a production to manage budget categories and other settings.”
+When no production is selected, a message is shown: “Select a production to manage cost report groups and other settings.”
 
 ### 3.2 Currency card
 
@@ -118,7 +119,7 @@ When no production is selected, a message is shown: “Select a production to ma
 
 | Query key | Used in | Purpose |
 |-----------|---------|--------|
-| `['budget-categories', currentProductionId]` | Settings page | List categories for the current production; invalidate after create/delete category. |
+| `['cost-report-groups', currentProductionId]` | Settings page | List cost report groups with account count; invalidate after create/update/delete group or mapping changes. |
 | `['productions']` | After demo ensure/reset, Open Demo | Refetch production list. |
 | `['seed-meta', 'last_seeded_at']` | DemoSeedMeta | Last seeded timestamp. |
 | `['seed-meta', 'seed_version']` | DemoSeedMeta | Seed version. |
@@ -155,11 +156,14 @@ When adding new settings-backed features, use a key pattern like `['settings', k
 - **Reset behavior:** Does not delete user productions; only the demo production and its related data (by id/slug) are removed or reset. User settings (e.g. display currency, conversion API) are not reset (see comment in demo seed).
 - **Cascade verification:** `verifyCascades()` checks FK/cascade behavior; result shown in Developer tools.
 
-### 5.5 Budget categories in Settings
+### 5.5 Cost report groups in Settings
 
-- **Scope:** Production-scoped; requires `currentProductionId`. Categories are created/deleted via `createBudgetCategory` and `deleteBudgetCategory` from `src/lib/db/repositories/budget.ts`.
-- **No edit in UI** — Only add and delete; edit could be added with an update mutation and a small form/dialog.
-- **Used by:** Budget page (dropdowns), quick-add spend; see `docs/BUDGET_FEATURE.md`.
+- **Scope:** Production-scoped; requires `currentProductionId`. Repository: `src/lib/db/repositories/costReportGroups.ts`. Add/edit/delete groups; map accounts to groups via multi-select (header or leaf accounts allowed). Groups are presentation-only and do not affect Budget page totals or posting.
+- **Query key:** `['cost-report-groups', currentProductionId]`. Invalidate after create, update, delete, or when group account mappings change. Account list for the multi-select uses `['budget-accounts', currentProductionId]` when the Add/Edit dialog is open.
+
+### 5.6 Legacy categories
+
+- Budget categories are **legacy-only** and are not shown or managed in Settings. They remain in the DB for legacy item display and backfill on the Budget page. See `docs/BUDGET_FEATURE.md`.
 
 ---
 

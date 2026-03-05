@@ -33,7 +33,7 @@ Currency for the production comes from `Production.currency_code`; display can b
 
 | Entity              | Table                    | Purpose |
 |---------------------|--------------------------|--------|
-| **BudgetCategory**  | `budget_categories`       | Budget codes (e.g. ATL, BTL, POST). Created in **Settings**; used for legacy items and backfill. |
+| **BudgetCategory**  | `budget_categories`       | **Legacy-only.** Budget codes (e.g. ATL, BTL, POST). Not part of the primary budgeting flow; retained for older projects, legacy item display, and backfill. Read-only in Settings (no add/edit/delete). New items and expenses always set `category_id` to NULL. |
 | **BudgetAccount**   | `budget_accounts`        | Chart of accounts: code, name, parent_account_id, sort_order, is_postable. Hierarchical; only postable (leaf) accounts receive items/expenses. |
 | **BudgetItem**      | `budget_items`           | Line items: account_id (nullable for legacy), category_id (nullable), description, estimated_cost, actual_cost, vendor, status. |
 | **Expense**         | `expenses`               | Individual spends: account_id (nullable for uncoded), category_id (nullable), amount, date, vendor, notes, expense_type. |
@@ -83,16 +83,11 @@ Categories, accounts, items, expenses, and rule tables are soft-deleted where ap
 
 **Rule for Stage 5 and beyond:** Legacy items are **not** included in account rollup totals or in any “budget base” used for derived calculations (e.g. fringes, contingency) until they are recoded (assigned an account) or backfilled via `backfillAccountIdsFromLegacyCategories`. If future features need legacy items to participate in such bases, the options are: (1) require recode/backfill first, or (2) include them via a synthetic “Legacy budget” pseudo-account or extended backfill. Document the chosen rule in the feature that consumes the base.
 
-### 2.5 Default categories
+### 2.5 Budget categories (legacy-only)
 
-New productions get default categories via `seedDefaultBudgetCategories(productionId)` (called from production creation in `src/lib/db/repositories/production.ts`):
+**Budget categories are frozen from the primary flow.** They exist in the DB and are used only for legacy item display and backfill. New budget items and new expenses are created with `category_id: null` and `account_id` set (chart of accounts).
 
-- ATL — Above the line (phase: pre)
-- BTL — Below the line (phase: production)
-- POST — Post-production (phase: post)
-- OTHER — Other (phase: production)
-
-Category **create/update/delete** is only exposed in **Settings** (`src/features/settings/page.tsx`), not on the Budget page. The Budget page only **lists** categories for legacy display.
+New productions get default categories via `seedDefaultBudgetCategories(productionId)` (called from production creation in `src/lib/db/repositories/production.ts`): ATL, BTL, POST, OTHER. **Settings** shows a read-only “Legacy categories (read-only)” panel (no add/edit/delete). The Budget page lists categories only for labelling legacy items (`account_id IS NULL`).
 
 ### 2.6 Chart of accounts
 
@@ -107,6 +102,12 @@ Category **create/update/delete** is only exposed in **Settings** (`src/features
 - **Rules:** Name, rate (decimal 0–1), base_kind (`budget` or `actual`), scope_mode (`include_subtrees`), is_enabled. Scopes define which account ids (and their subtrees) form the base. Only enabled, non-deleted rules are applied.
 - **Calculation:** `computeFringeTotals` / `computeContingencyTotals` in `src/lib/budget/calculations.ts` expand scopes to account sets, sum base totals from `computeAccountTotals`, and multiply by rate. Derived amounts are **display-only** (no writes to budget_items). Legacy items are excluded from rollups and thus from any derived base.
 - **Optional seed:** On new production create, one default Contingency rule (10%, scoped to all root accounts) may be seeded; see `production.ts`.
+
+### 2.8 Cost report groups (presentation/reporting only)
+
+- **Tables:** `cost_report_groups`, `cost_report_group_accounts` (migration 0016). Repository: `src/lib/db/repositories/costReportGroups.ts`.
+- **Purpose:** Presentation and reporting only. Groups organise accounts (e.g. “Above the line”, “Below the line”) for reports and exports. They **do not** affect posting rules, totals, or derived calculations.
+- **Many-to-many:** An account can belong to multiple groups. Header or leaf accounts may be mapped. Managed in **Settings** (Cost report groups card); not used on the Budget page for calculations.
 
 ---
 

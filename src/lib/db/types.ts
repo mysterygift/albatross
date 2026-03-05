@@ -143,6 +143,21 @@ export type ContingencyRuleScope = {
   include_children: number
 }
 
+/** Presentation/reporting group for accounts. Does not affect posting or totals. */
+export type CostReportGroup = {
+  id: string
+  production_id: string
+  code: string | null
+  name: string
+  sort_order: number
+} & SoftDeletable
+
+export type CostReportGroupAccount = {
+  id: string
+  group_id: string
+  account_id: string
+}
+
 export type ShootDay = {
   id: string
   production_id: string

@@ -93,6 +93,12 @@ pub fn run() {
       sql: include_str!("../migrations/0015_fringe_contingency_rules.sql"),
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 16,
+      description: "cost_report_groups",
+      sql: include_str!("../migrations/0016_cost_report_groups.sql"),
+      kind: MigrationKind::Up,
+    },
   ];
 
   tauri::Builder::default()

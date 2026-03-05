@@ -1,11 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
+import { listAccounts } from '@/lib/db/repositories/budgetAccounts'
 import {
-  listBudgetCategoriesByProduction,
-  createBudgetCategory,
-  deleteBudgetCategory,
-} from '@/lib/db/repositories/budget'
+  listCostReportGroups,
+  createCostReportGroup,
+  updateCostReportGroup,
+  deleteCostReportGroup,
+  listGroupAccountIds,
+  setGroupAccountIds,
+  type CostReportGroupWithCount,
+} from '@/lib/db/repositories/costReportGroups'
 import { CURRENCY_OPTIONS } from '@/lib/money/formatMoney'
 import {
   Table,
@@ -16,15 +21,6 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -33,8 +29,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Plus, Trash2, Wrench, AlertTriangle } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Wrench, AlertTriangle, Plus, Pencil, Trash2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import {
   ensureDemoData,
@@ -48,6 +53,7 @@ import { getSetting, setSetting } from '@/lib/db/repositories/settings'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { getRate } from '@/lib/money/exchangeRates'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
+import type { BudgetAccount } from '@/lib/db/types'
 
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 
@@ -60,10 +66,11 @@ export function SettingsPage() {
     setConversionApiEnabled,
     conversionBanner,
   } = useCurrency()
-  const [open, setOpen] = useState(false)
   const [cascadeResult, setCascadeResult] = useState<{ ok: boolean; message: string; details?: string } | null>(null)
   const [cascadeLoading, setCascadeLoading] = useState(false)
   const [demoError, setDemoError] = useState<string | null>(null)
+  const [addGroupOpen, setAddGroupOpen] = useState(false)
+  const [editGroup, setEditGroup] = useState<CostReportGroupWithCount | null>(null)
   const queryClient = useQueryClient()
 
   const { data: dbPerfEnabledSetting } = useQuery({
@@ -87,36 +94,55 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['settings', DB_PERF_SETTING_KEY] })
     },
   })
-  const [code, setCode] = useState('')
-  const [name, setName] = useState('')
-  const [phase, setPhase] = useState<'pre' | 'production' | 'post'>('pre')
-
-  const { data: categories = [] } = useQuery({
-    queryKey: ['budget-categories', currentProductionId],
-    queryFn: () => listBudgetCategoriesByProduction(currentProductionId ?? ''),
+  const { data: costReportGroups = [] } = useQuery({
+    queryKey: ['cost-report-groups', currentProductionId],
+    queryFn: () => listCostReportGroups(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
 
-  const createMutation = useMutation({
-    mutationFn: () =>
-      createBudgetCategory({
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['budget-accounts', currentProductionId],
+    queryFn: () => listAccounts(currentProductionId ?? ''),
+    enabled: !!currentProductionId && (addGroupOpen || editGroup != null),
+  })
+
+  const { data: editGroupAccountIds = [] } = useQuery({
+    queryKey: ['cost-report-group-accounts', editGroup?.id],
+    queryFn: () => listGroupAccountIds(editGroup!.id),
+    enabled: !!editGroup?.id,
+  })
+
+  const createGroupMutation = useMutation({
+    mutationFn: (data: { name: string; code: string; accountIds: string[] }) =>
+      createCostReportGroup({
         production_id: currentProductionId!,
-        code,
-        name,
-        phase,
+        name: data.name.trim(),
+        code: data.code.trim() || null,
+        accountIds: data.accountIds,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['budget-categories'] })
-      setOpen(false)
-      setCode('')
-      setName('')
-      setPhase('pre')
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
+      setAddGroupOpen(false)
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: deleteBudgetCategory,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['budget-categories'] }),
+  const updateGroupMutation = useMutation({
+    mutationFn: (data: { name: string; code: string; accountIds: string[] }) =>
+      Promise.all([
+        updateCostReportGroup(editGroup!.id, { name: data.name.trim(), code: data.code.trim() || null }),
+        setGroupAccountIds(editGroup!.id, data.accountIds),
+      ]),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
+      setEditGroup(null)
+    },
+  })
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: (groupId: string) => deleteCostReportGroup(groupId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
+    },
   })
 
   return (
@@ -160,68 +186,66 @@ export function SettingsPage() {
       {currentProductionId && (
         <Card>
           <CardHeader>
-            <CardTitle>Budget categories</CardTitle>
+            <CardTitle>Cost report groups</CardTitle>
             <CardDescription>
-              Define budget codes for this production. Used in Budget and quick-add spend.
+              Organise accounts for reporting and exports. Groups do not affect accounting totals.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="mb-4 flex justify-end">
-              <Dialog open={open} onOpenChange={setOpen}>
-                <DialogTrigger asChild>
-                  <Button><Plus className="mr-2 size-4" />Add category</Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader><DialogTitle>New budget category</DialogTitle></DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label>Code</Label>
-                      <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. ART" />
-                    </div>
-                    <div>
-                      <Label>Name</Label>
-                      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Art Department" />
-                    </div>
-                    <div>
-                      <Label>Phase</Label>
-                      <Select value={phase} onValueChange={(v) => setPhase(v as typeof phase)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pre">Pre-production</SelectItem>
-                          <SelectItem value="production">Production</SelectItem>
-                          <SelectItem value="post">Post-production</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                    <Button onClick={() => createMutation.mutate()} disabled={!code.trim() || !name.trim() || createMutation.isPending}>Add</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+              <Button onClick={() => setAddGroupOpen(true)}>
+                <Plus className="mr-2 size-4" />
+                Add group
+              </Button>
             </div>
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Code</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead>Phase</TableHead>
-                    <TableHead className="w-[100px]">Actions</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead className="w-[100px]">Accounts</TableHead>
+                    <TableHead className="w-[120px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {categories.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell>{c.code}</TableCell>
-                      <TableCell>{c.name}</TableCell>
-                      <TableCell>{c.phase}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(c.id)}><Trash2 className="size-4 text-destructive" /></Button>
-                      </TableCell>
+                  {costReportGroups.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-muted-foreground text-sm">No groups yet.</TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    costReportGroups.map((g) => (
+                      <TableRow key={g.id}>
+                        <TableCell>{g.name}</TableCell>
+                        <TableCell>{g.code ?? '—'}</TableCell>
+                        <TableCell>{g.accountCount}</TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setEditGroup(g)}
+                            aria-label="Edit"
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive"
+                            onClick={() => {
+                              if (window.confirm(`Delete group "${g.name}"?`)) {
+                                deleteGroupMutation.mutate(g.id)
+                              }
+                            }}
+                            aria-label="Delete"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -229,8 +253,42 @@ export function SettingsPage() {
         </Card>
       )}
 
+      <Dialog open={addGroupOpen} onOpenChange={setAddGroupOpen}>
+        <DialogContent className="max-w-lg">
+          {addGroupOpen && currentProductionId && (
+            <CostReportGroupForm
+              accounts={accounts}
+              initialName=""
+              initialCode=""
+              initialAccountIds={[]}
+              onSubmit={(data) => createGroupMutation.mutate(data)}
+              onCancel={() => setAddGroupOpen(false)}
+              isLoading={createGroupMutation.isPending}
+              submitLabel="Add"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editGroup != null} onOpenChange={(open) => !open && setEditGroup(null)}>
+        <DialogContent className="max-w-lg">
+          {editGroup && currentProductionId && (
+            <CostReportGroupForm
+              accounts={accounts}
+              initialName={editGroup.name}
+              initialCode={editGroup.code ?? ''}
+              initialAccountIds={editGroup.id ? editGroupAccountIds : []}
+              onSubmit={(data) => updateGroupMutation.mutate(data)}
+              onCancel={() => setEditGroup(null)}
+              isLoading={updateGroupMutation.isPending}
+              submitLabel="Save"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       {!currentProductionId && (
-        <p className="text-muted-foreground">Select a production to manage budget categories and other settings.</p>
+        <p className="text-muted-foreground">Select a production to manage cost report groups and other settings.</p>
       )}
 
       <Card>
@@ -386,6 +444,104 @@ export function SettingsPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+function CostReportGroupForm({
+  accounts,
+  initialName,
+  initialCode,
+  initialAccountIds,
+  onSubmit,
+  onCancel,
+  isLoading,
+  submitLabel,
+}: {
+  accounts: BudgetAccount[]
+  initialName: string
+  initialCode: string
+  initialAccountIds: string[]
+  onSubmit: (data: { name: string; code: string; accountIds: string[] }) => void
+  onCancel: () => void
+  isLoading: boolean
+  submitLabel: string
+}) {
+  const [name, setName] = useState(initialName)
+  const [code, setCode] = useState(initialCode)
+  const [accountIds, setAccountIds] = useState<string[]>(initialAccountIds)
+
+  useEffect(() => {
+    setName(initialName)
+    setCode(initialCode)
+  }, [initialName, initialCode])
+
+  useEffect(() => {
+    setAccountIds(initialAccountIds)
+  }, [initialAccountIds.join(',')])
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    onSubmit({ name: name.trim(), code: code.trim(), accountIds })
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>{submitLabel === 'Add' ? 'Add group' : 'Edit group'}</DialogTitle>
+      </DialogHeader>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <Label htmlFor="crg-name">Name</Label>
+          <Input
+            id="crg-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Above the line"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="crg-code">Code (optional)</Label>
+          <Input
+            id="crg-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="e.g. ATL"
+            maxLength={10}
+          />
+        </div>
+        <div>
+          <Label>Accounts</Label>
+          <p className="text-muted-foreground text-xs mb-2">Select accounts to include. Header accounts are allowed.</p>
+          <div className="max-h-40 overflow-auto space-y-2 rounded border border-border p-2">
+            {accounts.map((acc) => (
+              <label key={acc.id} className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={accountIds.includes(acc.id)}
+                  onCheckedChange={(checked) => {
+                    setAccountIds((prev) =>
+                      checked ? [...prev, acc.id] : prev.filter((id) => id !== acc.id)
+                    )
+                  }}
+                />
+                <span className="text-sm">
+                  {acc.code} — {acc.name}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isLoading || !name.trim()}>
+            {submitLabel}
+          </Button>
+        </DialogFooter>
+      </form>
+    </>
   )
 }
 
