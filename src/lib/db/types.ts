@@ -60,12 +60,35 @@ export type BudgetCategory = {
   phase: 'pre' | 'production' | 'post'
 } & SoftDeletable
 
+/**
+ * Hierarchical Chart of Accounts for film/TV production budgets.
+ * Account codes are stored as TEXT (e.g. '1000', '2513') for future flexibility.
+ * Leaf-only posting rule: only accounts with is_postable = true may receive
+ * budget line items or expenses; parent accounts are for rollups only.
+ */
+export type BudgetAccount = {
+  id: string
+  production_id: string
+  code: string
+  name: string
+  parent_account_id: string | null
+  sort_order: number
+  is_postable: boolean
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
 export type BudgetItem = {
   id: string
   production_id: string
-  category_id: string
+  /** Legacy; may be null when row uses account_id (chart of accounts). */
+  category_id: string | null
+  /** Optional link to chart of accounts (budget_accounts.id). Leaf accounts only. */
+  account_id: string | null
   description: string
   estimated_cost: number
+  /** Deprecated for actual calculations. Actuals come from expenses. May be repurposed as "committed" in future. */
   actual_cost: number
   vendor: string | null
   status: string
@@ -75,12 +98,50 @@ export type Expense = {
   id: string
   production_id: string
   category_id: string | null
+  /** Optional link to chart of accounts (budget_accounts.id). Leaf accounts only. */
+  account_id: string | null
   amount: number
   date: string
   vendor: string | null
   notes: string | null
   expense_type: 'petty_cash' | 'per_diem' | 'other'
 } & SoftDeletable
+
+/** Derived budget layer: percentage applied to a scoped base (budget or actual). */
+export type FringeRule = {
+  id: string
+  production_id: string
+  name: string
+  rate: number
+  base_kind: 'budget' | 'actual'
+  scope_mode: string
+  is_enabled: boolean
+} & SoftDeletable
+
+export type FringeRuleScope = {
+  id: string
+  rule_id: string
+  account_id: string
+  include_children: number
+}
+
+/** Derived budget layer: contingency percentage applied to scoped base. */
+export type ContingencyRule = {
+  id: string
+  production_id: string
+  name: string
+  rate: number
+  base_kind: 'budget' | 'actual'
+  scope_mode: string
+  is_enabled: boolean
+} & SoftDeletable
+
+export type ContingencyRuleScope = {
+  id: string
+  rule_id: string
+  account_id: string
+  include_children: number
+}
 
 export type ShootDay = {
   id: string

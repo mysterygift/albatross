@@ -11,6 +11,7 @@
  * - Verify: Schedule → Shot lists, pick a scene; check columns, lens/support dropdowns, null handling, long notes.
  */
 import { executeBatch, getDb, now, runInSerializedTransaction } from '../client'
+import { seedDefaultBudgetAccounts } from '../repositories/budgetAccounts'
 import { getProductionBySlug, hardDeleteProduction } from '../repositories/production'
 import { listDocumentsByProduction } from '../repositories/document'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
@@ -119,6 +120,7 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'shoot_days',
     'documents',
     'budget_categories',
+    'budget_accounts',
     'budget_items',
     'expenses',
     'stripboard_strips',
@@ -647,6 +649,8 @@ async function runFullSeed(): Promise<void> {
       [IDS.budgetCat(i), pid, catCodes[i - 1], catNames[i - 1], catPhase[i - 1], ts, ts]
     )
   }
+
+  await seedDefaultBudgetAccounts(pid)
 
   const estimatedCosts: number[] = [
     125000, 25000, 500000, 1000, 500, 1234.56, 987.65, 14250.75, 5, 12.99, 25000, 1000, 500, 14250.75,

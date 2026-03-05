@@ -17,6 +17,7 @@
  */
 import { BaseDirectory, mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs'
 import { executeBatch, getDb, now, uuid } from './client'
+import { seedDefaultBudgetAccounts } from './repositories/budgetAccounts'
 import { ensureUniqueSlug, slugify, withSlugLock } from './repositories/production'
 
 const ATTACHMENTS = 'attachments'
@@ -214,19 +215,17 @@ export async function duplicateProduction(
     })
   }
   for (const r of budgetItems) {
-    const catId = categoryIdMap.get(r.category_id as string)
-    if (catId) {
-      statements.push({
-        sql: `INSERT INTO budget_items (id, production_id, category_id, description, estimated_cost, actual_cost, vendor, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        bindValues: [newId(), newProdId, catId, r.description, r.estimated_cost ?? 0, r.actual_cost ?? 0, r.vendor, r.status ?? 'draft', ts, ts],
-      })
-    }
+    const catId = r.category_id != null ? categoryIdMap.get(r.category_id as string) ?? null : null
+    statements.push({
+      sql: `INSERT INTO budget_items (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      bindValues: [newId(), newProdId, catId, null, r.description, r.estimated_cost ?? 0, r.actual_cost ?? 0, r.vendor, r.status ?? 'draft', ts, ts],
+    })
   }
   for (const r of expRows) {
     const catId = mapId(categoryIdMap, r.category_id as string | null)
     statements.push({
-      sql: `INSERT INTO expenses (id, production_id, category_id, amount, date, vendor, notes, expense_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      bindValues: [newId(), newProdId, catId, r.amount, r.date, r.vendor, r.notes, r.expense_type ?? 'other', ts, ts],
+      sql: `INSERT INTO expenses (id, production_id, category_id, account_id, amount, date, vendor, notes, expense_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      bindValues: [newId(), newProdId, catId, null, r.amount, r.date, r.vendor, r.notes, r.expense_type ?? 'other', ts, ts],
     })
   }
   for (const r of keyContacts) {
@@ -304,6 +303,8 @@ export async function duplicateProduction(
       // File may not exist (e.g. demo); leave doc row with new path
     }
   }
+
+  await seedDefaultBudgetAccounts(newProdId)
 
   return { id: newProdId, name: newName, slug }
 }
