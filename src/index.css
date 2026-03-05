@@ -146,3 +146,29 @@
 [data-dragging-over] {
   @apply bg-primary/10 border-primary/50;
 }
+
+/* Cost Report print: white background, readable text, hide interactive elements */
+@media print {
+  .cost-report-print,
+  .cost-report-print * {
+    background: white !important;
+    color: #1a1a1a !important;
+  }
+  .cost-report-print th,
+  .cost-report-print td {
+    border-color: #e5e5e5 !important;
+  }
+  .cost-report-print .text-muted-foreground {
+    color: #525252 !important;
+  }
+  .cost-report-print .text-destructive {
+    color: #b91c1c !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .cost-report-print table {
+    border-collapse: collapse;
+  }
+  /* Row left border (band) keeps inline colour in print */
+}

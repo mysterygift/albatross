@@ -67,9 +67,13 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, Printer } from 'lucide-react'
 import { saveFileWithDialog } from '@/lib/files'
+import { getAccountBandColor } from '@/lib/budget/accountBandColor'
 import type { BudgetItem, BudgetAccount } from '@/lib/db/types'
+
+const BUDGET_VIEW_MODE_KEY = 'budgetViewMode'
+type BudgetViewMode = 'budget' | 'cost_report'
 
 // Actuals are derived from expenses only. budget_item.actual_cost is deprecated/committed and not used for actual calculations.
 
@@ -113,6 +117,16 @@ export function BudgetPage() {
   const [addItemForAccountId, setAddItemForAccountId] = useState<string | null>(null)
   const [recodeToast, setRecodeToast] = useState<string | null>(null)
   const [manageDerivedOpen, setManageDerivedOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<BudgetViewMode>(() => {
+    if (typeof window === 'undefined') return 'budget'
+    const stored = localStorage.getItem(BUDGET_VIEW_MODE_KEY)
+    return (stored === 'cost_report' ? 'cost_report' : 'budget') as BudgetViewMode
+  })
+  const [costReportExpandedLeafId, setCostReportExpandedLeafId] = useState<string | null>(null)
+
+  useEffect(() => {
+    localStorage.setItem(BUDGET_VIEW_MODE_KEY, viewMode)
+  }, [viewMode])
   const queryClient = useQueryClient()
   const backfillRanForProduction = useRef<Set<string>>(new Set())
 
@@ -330,17 +344,32 @@ export function BudgetPage() {
       )}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Budget</h1>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setManageDerivedOpen(true)}
-            className="border-border bg-background"
+        <div className="flex flex-wrap items-center gap-3">
+          <Tabs
+            value={viewMode}
+            onValueChange={(v) => setViewMode(v as BudgetViewMode)}
+            className="w-auto"
           >
-            <Settings2 className="mr-2 size-4" />
-            Manage derived costs
-          </Button>
-          <Button variant="outline" size="sm" onClick={exportCsv}>
+            <TabsList className="h-9 border border-border bg-muted/30">
+              <TabsTrigger value="budget" className="px-3 text-sm data-[state=active]:bg-background">
+                Budget
+              </TabsTrigger>
+              <TabsTrigger value="cost_report" className="px-3 text-sm data-[state=active]:bg-background">
+                Cost Report
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setManageDerivedOpen(true)}
+              className="border-border bg-background no-print"
+            >
+              <Settings2 className="mr-2 size-4" />
+              Manage derived costs
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportCsv} className="no-print">
             <Download className="mr-2 size-4" />
             Export CSV
           </Button>
@@ -349,7 +378,7 @@ export function BudgetPage() {
             onOpenChange={setAddExpenseOpen}
           >
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" className="no-print">
                 <Plus className="mr-2 size-4" />
                 Quick-add spend
               </Button>
@@ -367,7 +396,7 @@ export function BudgetPage() {
           </Dialog>
           <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button className="no-print">
                 <Plus className="mr-2 size-4" />
                 Add line item
               </Button>
@@ -383,173 +412,194 @@ export function BudgetPage() {
               )}
             </DialogContent>
           </Dialog>
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-lg border p-4">
-          <p className="text-muted-foreground text-sm">Total estimated</p>
-          <p className="text-2xl font-semibold">{format(totalEstimated, productionCurrency).formatted}</p>
-        </div>
-        <div className="rounded-lg border p-4">
-          <p className="text-muted-foreground text-sm">Total actual</p>
-          <p className="text-2xl font-semibold">{format(totalActual, productionCurrency).formatted}</p>
-          {uncodedTotal > 0 && (
-            <p className="text-muted-foreground mt-1 text-xs">
-              Uncoded spend: {format(uncodedTotal, productionCurrency).formatted}
-            </p>
-          )}
-        </div>
-        <div className="rounded-lg border p-4">
-          <p className="text-muted-foreground text-sm">Variance</p>
-          <p className={`text-2xl font-semibold ${variance < 0 ? 'text-destructive' : ''}`}>
-            {format(variance, productionCurrency).formatted}
-          </p>
-        </div>
-      </div>
-
-      {(fringeTotals.totalFringesAmount > 0 || contingencyTotals.totalContingencyAmount > 0) && (
-        <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2">
-          <p className="text-muted-foreground text-sm font-medium">Derived (budget overlays)</p>
-          <div className="flex flex-wrap gap-6">
-            <div>
-              <span className="text-muted-foreground text-sm">Fringes (derived): </span>
-              <span className="font-medium">{format(fringeTotals.totalFringesAmount, productionCurrency).formatted}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground text-sm">Contingency (derived): </span>
-              <span className="font-medium">{format(contingencyTotals.totalContingencyAmount, productionCurrency).formatted}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground text-sm">Estimated + derived: </span>
-              <span className="font-medium">
-                {format(
-                  totalEstimated + fringeTotals.totalFringesAmount + contingencyTotals.totalContingencyAmount,
-                  productionCurrency
-                ).formatted}
-              </span>
-            </div>
           </div>
         </div>
-      )}
-
-      {recodeToast && (
-        <p className="text-muted-foreground rounded-md border border-border bg-muted/50 px-3 py-2 text-sm">
-          {recodeToast}
-        </p>
-      )}
-
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[80px]">Code</TableHead>
-              <TableHead>Account / Description</TableHead>
-              <TableHead className="text-right">Budget</TableHead>
-              <TableHead className="text-right">Actual</TableHead>
-              <TableHead className="text-right">Variance</TableHead>
-              <TableHead className="text-right w-[70px]">% Spent</TableHead>
-              <TableHead className="w-[80px]">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {accountTree.map((node) =>
-              renderAccountRow(node, 0, {
-                accountTotals,
-                expandedAccountIds,
-                toggleAccountExpanded,
-                items,
-                format,
-                productionCurrency,
-                setAddItemForAccountId,
-                addItemForAccountId,
-                createInlineItemMutation,
-                postableAccounts,
-              })
-            )}
-            {uncodedTotal > 0 && (
-              <>
-                <TableRow
-                  className="bg-muted/30 font-medium cursor-pointer"
-                  onClick={() => setUncodedExpanded((e) => !e)}
-                >
-                  <TableCell>
-                    {uncodedExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                  </TableCell>
-                  <TableCell colSpan={2}>Uncoded spend</TableCell>
-                  <TableCell className="text-right font-medium">
-                    {format(uncodedTotal, productionCurrency).formatted}
-                  </TableCell>
-                  <TableCell colSpan={3} />
-                </TableRow>
-                {uncodedExpanded &&
-                  uncodedList.map((exp) => (
-                    <TableRow key={exp.id} className="bg-muted/10">
-                      <TableCell />
-                      <TableCell>
-                        <span className="text-muted-foreground text-sm">
-                          {exp.date}
-                          {exp.vendor ? ` · ${exp.vendor}` : ''}
-                          {exp.notes ? ` · ${exp.notes}` : ''}
-                        </span>
-                      </TableCell>
-                      <TableCell />
-                      <TableCell className="text-right">{format(exp.amount, productionCurrency).formatted}</TableCell>
-                      <TableCell />
-                      <TableCell />
-                      <TableCell>
-                        <Select
-                          value=""
-                          onValueChange={(value) => {
-                            if (value) recodeExpenseMutation.mutate({ expenseId: exp.id, newAccountId: value })
-                          }}
-                        >
-                          <SelectTrigger className="h-8 w-[180px]">
-                            <SelectValue placeholder="Recode…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {postableAccounts.map((a) => (
-                              <SelectItem key={a.id} value={a.id}>
-                                {a.code} — {a.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-              </>
-            )}
-            {legacyItems.length > 0 && (
-              <>
-                <TableRow className="bg-muted/20 font-medium">
-                  <TableCell colSpan={7} className="text-muted-foreground py-2">
-                    Legacy uncoded budget items
-                  </TableCell>
-                </TableRow>
-                {legacyItems.map((i) => {
-                  const cat = i.category_id ? categories.find((c) => c.id === i.category_id) : null
-                  return (
-                    <TableRow key={i.id} className="text-muted-foreground">
-                      <TableCell />
-                      <TableCell className="pl-8">{i.description}</TableCell>
-                      <TableCell className="text-right">{format(i.estimated_cost, productionCurrency).formatted}</TableCell>
-                      <TableCell colSpan={4}>{cat ? `${cat.code}` : '—'}</TableCell>
-                    </TableRow>
-                  )
-                })}
-              </>
-            )}
-            {accountTree.length === 0 && uncodedList.length === 0 && legacyItems.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                  No accounts yet. Add a line item or quick-add spend to get started.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
       </div>
+
+      {viewMode === 'cost_report' ? (
+        <CostReportView
+          accountTree={accountTree}
+          accountTotals={accountTotals}
+          items={items}
+          format={format}
+          productionCurrency={productionCurrency}
+          totalEstimated={totalEstimated}
+          totalActual={totalActual}
+          variance={variance}
+          uncodedTotal={uncodedTotal}
+          fringeTotals={fringeTotals}
+          contingencyTotals={contingencyTotals}
+          expandedLeafId={costReportExpandedLeafId}
+          onToggleLeafDetail={setCostReportExpandedLeafId}
+        />
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-lg border p-4">
+              <p className="text-muted-foreground text-sm">Total estimated</p>
+              <p className="text-2xl font-semibold">{format(totalEstimated, productionCurrency).formatted}</p>
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="text-muted-foreground text-sm">Total actual</p>
+              <p className="text-2xl font-semibold">{format(totalActual, productionCurrency).formatted}</p>
+              {uncodedTotal > 0 && (
+                <p className="text-muted-foreground mt-1 text-xs">
+                  Uncoded spend: {format(uncodedTotal, productionCurrency).formatted}
+                </p>
+              )}
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="text-muted-foreground text-sm">Variance</p>
+              <p className={`text-2xl font-semibold ${variance < 0 ? 'text-destructive' : ''}`}>
+                {format(variance, productionCurrency).formatted}
+              </p>
+            </div>
+          </div>
+
+          {(fringeTotals.totalFringesAmount > 0 || contingencyTotals.totalContingencyAmount > 0) && (
+            <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2">
+              <p className="text-muted-foreground text-sm font-medium">Derived (budget overlays)</p>
+              <div className="flex flex-wrap gap-6">
+                <div>
+                  <span className="text-muted-foreground text-sm">Fringes (derived): </span>
+                  <span className="font-medium">{format(fringeTotals.totalFringesAmount, productionCurrency).formatted}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-sm">Contingency (derived): </span>
+                  <span className="font-medium">{format(contingencyTotals.totalContingencyAmount, productionCurrency).formatted}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-sm">Estimated + derived: </span>
+                  <span className="font-medium">
+                    {format(
+                      totalEstimated + fringeTotals.totalFringesAmount + contingencyTotals.totalContingencyAmount,
+                      productionCurrency
+                    ).formatted}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {recodeToast && (
+            <p className="text-muted-foreground rounded-md border border-border bg-muted/50 px-3 py-2 text-sm">
+              {recodeToast}
+            </p>
+          )}
+
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[80px]">Code</TableHead>
+                  <TableHead>Account / Description</TableHead>
+                  <TableHead className="text-right">Budget</TableHead>
+                  <TableHead className="text-right">Actual</TableHead>
+                  <TableHead className="text-right">Variance</TableHead>
+                  <TableHead className="text-right w-[70px]">% Spent</TableHead>
+                  <TableHead className="w-[80px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {accountTree.map((node) =>
+                  renderAccountRow(node, 0, {
+                    accountTotals,
+                    expandedAccountIds,
+                    toggleAccountExpanded,
+                    items,
+                    format,
+                    productionCurrency,
+                    setAddItemForAccountId,
+                    addItemForAccountId,
+                    createInlineItemMutation,
+                    postableAccounts,
+                  })
+                )}
+                {uncodedTotal > 0 && (
+                  <>
+                    <TableRow
+                      className="bg-muted/30 font-medium cursor-pointer"
+                      onClick={() => setUncodedExpanded((e) => !e)}
+                    >
+                      <TableCell>
+                        {uncodedExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                      </TableCell>
+                      <TableCell colSpan={2}>Uncoded spend</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {format(uncodedTotal, productionCurrency).formatted}
+                      </TableCell>
+                      <TableCell colSpan={3} />
+                    </TableRow>
+                    {uncodedExpanded &&
+                      uncodedList.map((exp) => (
+                        <TableRow key={exp.id} className="bg-muted/10">
+                          <TableCell />
+                          <TableCell>
+                            <span className="text-muted-foreground text-sm">
+                              {exp.date}
+                              {exp.vendor ? ` · ${exp.vendor}` : ''}
+                              {exp.notes ? ` · ${exp.notes}` : ''}
+                            </span>
+                          </TableCell>
+                          <TableCell />
+                          <TableCell className="text-right">{format(exp.amount, productionCurrency).formatted}</TableCell>
+                          <TableCell />
+                          <TableCell />
+                          <TableCell>
+                            <Select
+                              value=""
+                              onValueChange={(value) => {
+                                if (value) recodeExpenseMutation.mutate({ expenseId: exp.id, newAccountId: value })
+                              }}
+                            >
+                              <SelectTrigger className="h-8 w-[180px]">
+                                <SelectValue placeholder="Recode…" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {postableAccounts.map((a) => (
+                                  <SelectItem key={a.id} value={a.id}>
+                                    {a.code} — {a.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </>
+                )}
+                {legacyItems.length > 0 && (
+                  <>
+                    <TableRow className="bg-muted/20 font-medium">
+                      <TableCell colSpan={7} className="text-muted-foreground py-2">
+                        Legacy uncoded budget items
+                      </TableCell>
+                    </TableRow>
+                    {legacyItems.map((i) => {
+                      const cat = i.category_id ? categories.find((c) => c.id === i.category_id) : null
+                      return (
+                        <TableRow key={i.id} className="text-muted-foreground">
+                          <TableCell />
+                          <TableCell className="pl-8">{i.description}</TableCell>
+                          <TableCell className="text-right">{format(i.estimated_cost, productionCurrency).formatted}</TableCell>
+                          <TableCell colSpan={4}>{cat ? `${cat.code}` : '—'}</TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </>
+                )}
+                {accountTree.length === 0 && uncodedList.length === 0 && legacyItems.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                      No accounts yet. Add a line item or quick-add spend to get started.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
 
       {addItemForAccountId && (
         <Dialog open={!!addItemForAccountId} onOpenChange={(open) => !open && setAddItemForAccountId(null)}>
@@ -593,6 +643,265 @@ export function BudgetPage() {
       </Dialog>
     </div>
   )
+}
+
+/** Hex to CSS color with alpha (e.g. #9DBBAA -> rgba(..., 0.06)). */
+function hexWithAlpha(hex: string, alpha: number): string {
+  const m = hex.match(/^#?([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/)
+  if (!m) return `rgba(0,0,0,${alpha})`
+  const r = parseInt(m[1], 16)
+  const g = parseInt(m[2], 16)
+  const b = parseInt(m[3], 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
+function CostReportView({
+  accountTree,
+  accountTotals,
+  items,
+  format,
+  productionCurrency,
+  totalEstimated,
+  totalActual,
+  variance,
+  uncodedTotal,
+  fringeTotals,
+  contingencyTotals,
+  expandedLeafId,
+  onToggleLeafDetail,
+}: {
+  accountTree: AccountTreeNode[]
+  accountTotals: Map<string, { budgetTotal: number; actualTotal: number; variance: number; percentSpent: number | null }>
+  items: BudgetItem[]
+  format: (n: number, currency: string) => { formatted: string }
+  productionCurrency: string
+  totalEstimated: number
+  totalActual: number
+  variance: number
+  uncodedTotal: number
+  fringeTotals: { totalFringesAmount: number }
+  contingencyTotals: { totalContingencyAmount: number }
+  expandedLeafId: string | null
+  onToggleLeafDetail: (id: string | null) => void
+}) {
+  const totalDerived = fringeTotals.totalFringesAmount + contingencyTotals.totalContingencyAmount
+  const estimatedPlusDerived = totalEstimated + totalDerived
+  const hasDerived = totalDerived > 0
+
+  return (
+    <div className="cost-report-print space-y-6">
+      <div className="flex justify-end no-print">
+        <Button variant="outline" size="sm" onClick={() => window.print()}>
+          <Printer className="mr-2 size-4" />
+          Print
+        </Button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3 print:grid-cols-3">
+        <div className="rounded-lg border border-border p-4">
+          <p className="text-muted-foreground text-sm">Total estimated</p>
+          <p className="text-2xl font-semibold">{format(totalEstimated, productionCurrency).formatted}</p>
+        </div>
+        <div className="rounded-lg border border-border p-4">
+          <p className="text-muted-foreground text-sm">Total actual</p>
+          <p className="text-2xl font-semibold">{format(totalActual, productionCurrency).formatted}</p>
+          {uncodedTotal > 0 && (
+            <p className="text-muted-foreground mt-1 text-xs">
+              Uncoded spend: {format(uncodedTotal, productionCurrency).formatted}
+            </p>
+          )}
+        </div>
+        <div className="rounded-lg border border-border p-4">
+          <p className="text-muted-foreground text-sm">Variance</p>
+          <p className={`text-2xl font-semibold ${variance < 0 ? 'text-destructive' : ''}`}>
+            {format(variance, productionCurrency).formatted}
+          </p>
+        </div>
+      </div>
+
+      {hasDerived && (
+        <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2">
+          <p className="text-muted-foreground text-sm font-medium">Derived (budget overlays)</p>
+          <div className="flex flex-wrap gap-6">
+            {fringeTotals.totalFringesAmount > 0 && (
+              <div>
+                <span className="text-muted-foreground text-sm">Fringes (derived): </span>
+                <span className="font-medium">{format(fringeTotals.totalFringesAmount, productionCurrency).formatted}</span>
+              </div>
+            )}
+            {contingencyTotals.totalContingencyAmount > 0 && (
+              <div>
+                <span className="text-muted-foreground text-sm">Contingency (derived): </span>
+                <span className="font-medium">{format(contingencyTotals.totalContingencyAmount, productionCurrency).formatted}</span>
+              </div>
+            )}
+            <div>
+              <span className="text-muted-foreground text-sm">Estimated + derived: </span>
+              <span className="font-medium">{format(estimatedPlusDerived, productionCurrency).formatted}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-md border border-border overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-border">
+              <TableHead className="w-[72px] border-border">Code</TableHead>
+              <TableHead className="border-border">Account</TableHead>
+              <TableHead className="text-right border-border">Budget</TableHead>
+              <TableHead className="text-right border-border">Actual</TableHead>
+              <TableHead className="text-right border-border">Variance</TableHead>
+              <TableHead className="text-right w-[64px] border-border">%</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {accountTree.map((node) =>
+              renderCostReportRows(node, 0, {
+                accountTotals,
+                items,
+                format,
+                productionCurrency,
+                expandedLeafId,
+                onToggleLeafDetail,
+              })
+            )}
+            {uncodedTotal > 0 && (
+              <TableRow className="border-border bg-muted/20">
+                <TableCell className="border-border font-medium">—</TableCell>
+                <TableCell className="border-border font-medium">Uncoded spend</TableCell>
+                <TableCell className="border-border text-right">—</TableCell>
+                <TableCell className="border-border text-right">{format(uncodedTotal, productionCurrency).formatted}</TableCell>
+                <TableCell colSpan={2} className="border-border" />
+              </TableRow>
+            )}
+            {accountTree.length === 0 && uncodedTotal === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-8 border-border">
+                  No accounts yet.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  )
+}
+
+function renderCostReportRows(
+  node: AccountTreeNode,
+  depth: number,
+  ctx: {
+    accountTotals: Map<string, { budgetTotal: number; actualTotal: number; variance: number; percentSpent: number | null }>
+    items: BudgetItem[]
+    format: (n: number, currency: string) => { formatted: string }
+    productionCurrency: string
+    expandedLeafId: string | null
+    onToggleLeafDetail: (id: string | null) => void
+  }
+): ReactNode {
+  const { account } = node
+  const totals = ctx.accountTotals.get(account.id)
+  const isRollup = !account.is_postable
+  const bandColor = getAccountBandColor(account)
+  const tintBg = hexWithAlpha(bandColor, 0.06)
+  const lineItems = account.is_postable ? ctx.items.filter((i) => i.account_id === account.id) : []
+  const isExpanded = ctx.expandedLeafId === account.id
+
+  const rows: ReactNode[] = []
+  rows.push(
+    <TableRow
+      key={account.id}
+      className={isRollup ? 'border-border' : 'border-border'}
+      style={
+        isRollup
+          ? { backgroundColor: tintBg, borderLeft: `3px solid ${bandColor}` }
+          : { borderLeft: `3px solid ${bandColor}` }
+      }
+    >
+      <TableCell
+        className={`w-[72px] align-top border-border ${isRollup ? 'font-semibold text-foreground' : 'text-foreground'}`}
+      >
+        {account.code}
+      </TableCell>
+      <TableCell
+        className={`align-top border-border ${isRollup ? 'font-semibold text-foreground' : ''}`}
+        style={{ paddingLeft: 8 + depth * 14 }}
+      >
+        {account.is_postable ? (
+          <>
+            <button
+              type="button"
+              className="text-left w-full cursor-pointer hover:opacity-90 print:hidden"
+              onClick={() => ctx.onToggleLeafDetail(isExpanded ? null : account.id)}
+            >
+              {account.name}
+              {lineItems.length > 0 && (
+                <span className="text-muted-foreground text-sm font-normal block mt-0.5">
+                  {lineItems.length} line item{lineItems.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </button>
+            <span className="hidden print:inline">
+              {account.name}
+              {lineItems.length > 0 && ` (${lineItems.length} line items)`}
+            </span>
+          </>
+        ) : (
+          <span>{account.name}</span>
+        )}
+      </TableCell>
+      <TableCell className="text-right align-top border-border">
+        {totals ? ctx.format(totals.budgetTotal, ctx.productionCurrency).formatted : '—'}
+      </TableCell>
+      <TableCell className="text-right align-top border-border">
+        {totals ? ctx.format(totals.actualTotal, ctx.productionCurrency).formatted : '—'}
+      </TableCell>
+      <TableCell className="text-right align-top border-border">
+        {totals && (
+          <span className={totals.variance < 0 ? 'text-destructive' : ''}>
+            {ctx.format(totals.variance, ctx.productionCurrency).formatted}
+          </span>
+        )}
+      </TableCell>
+      <TableCell className="text-right w-[64px] align-top border-border">
+        {totals?.percentSpent != null ? `${Math.round(totals.percentSpent * 100)}%` : '—'}
+      </TableCell>
+    </TableRow>
+  )
+
+  if (account.is_postable && isExpanded) {
+    if (lineItems.length > 0) {
+      lineItems.forEach((item) => {
+        rows.push(
+          <TableRow key={item.id} className="border-border bg-muted/10">
+            <TableCell className="border-border" />
+            <TableCell className="border-border pl-6 text-muted-foreground text-sm" style={{ paddingLeft: 8 + depth * 14 + 24 }}>
+              {item.description}
+            </TableCell>
+            <TableCell className="text-right border-border text-sm">
+              {ctx.format(item.estimated_cost, ctx.productionCurrency).formatted}
+            </TableCell>
+            <TableCell colSpan={3} className="border-border" />
+          </TableRow>
+        )
+      })
+    } else {
+      rows.push(
+        <TableRow key={`${account.id}-empty`} className="border-border bg-muted/10">
+          <TableCell colSpan={6} className="border-border text-muted-foreground text-sm italic py-2" style={{ paddingLeft: 8 + depth * 14 + 24 }}>
+            No line items yet
+          </TableCell>
+        </TableRow>
+      )
+    }
+  }
+
+  node.children.forEach((child) => {
+    rows.push(renderCostReportRows(child, depth + 1, ctx))
+  })
+  return <>{rows}</>
 }
 
 function renderAccountRow(
@@ -967,8 +1276,8 @@ function ManageDerivedCostsDialog({
   accounts,
   fringeRules,
   contingencyRules,
-  format,
-  productionCurrency,
+  format: _format,
+  productionCurrency: _productionCurrency,
   onClose,
   invalidateDerived,
 }: {
