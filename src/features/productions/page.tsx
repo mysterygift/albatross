@@ -307,19 +307,25 @@ export function ProductionsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Productions</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-none items-center justify-end gap-2">
           <Button
-            variant={showArchived ? 'secondary' : 'outline'}
-            size="icon"
+            variant="outline"
+            size="sm"
             onClick={toggleShowArchived}
             title={showArchived ? 'Hide archived projects' : 'Show archived projects'}
             aria-label={showArchived ? 'Hide archived projects' : 'Show archived projects'}
+            className={`flex max-w-[260px] flex-none items-center overflow-hidden transition-colors duration-200 ease-out focus-visible:ring-mint-500 ${showArchived ? 'border-mint-500/40 bg-mint-500/5 pr-2 text-mint-700 hover:bg-mint-500/15 hover:text-foreground dark:text-mint-400 dark:hover:bg-mint-500/20 dark:hover:text-foreground' : ''}`}
           >
-            <PackageOpen className="size-4" />
+            <PackageOpen className="size-4 shrink-0" />
+            <span
+              className={`inline-block shrink-0 whitespace-nowrap overflow-hidden transition-all duration-200 ease-out max-[900px]:!max-w-0 max-[900px]:!opacity-0 max-[900px]:!ml-0 ${showArchived ? 'max-w-[220px] opacity-100 ml-2' : 'max-w-0 opacity-0 ml-0'}`}
+            >
+              Hide archived projects
+            </span>
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button className="flex-none shrink-0">
                 <Plus className="mr-2 size-4" />
                 New production
               </Button>
