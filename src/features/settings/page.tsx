@@ -63,6 +63,7 @@ export function SettingsPage() {
   const [open, setOpen] = useState(false)
   const [cascadeResult, setCascadeResult] = useState<{ ok: boolean; message: string; details?: string } | null>(null)
   const [cascadeLoading, setCascadeLoading] = useState(false)
+  const [demoError, setDemoError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const { data: dbPerfEnabledSetting } = useQuery({
@@ -289,6 +290,7 @@ export function SettingsPage() {
                 variant="outline"
                 size="sm"
                 onClick={async () => {
+                  setDemoError(null)
                   try {
                     await ensureDemoData()
                     queryClient.invalidateQueries({ queryKey: ['productions'] })
@@ -296,12 +298,18 @@ export function SettingsPage() {
                     const prod = await getProductionBySlug(DEMO_SLUG)
                     if (prod) setCurrentProductionId(prod.id)
                   } catch (e) {
-                    throw e
+                    setDemoError(e instanceof Error ? e.message : String(e))
+                    setTimeout(() => setDemoError(null), 5000)
                   }
                 }}
               >
                 Create Demo Production
               </Button>
+              {demoError && (
+                <p className="w-full text-sm text-destructive">
+                  {demoError}
+                </p>
+              )}
               <Button
                 variant="outline"
                 size="sm"

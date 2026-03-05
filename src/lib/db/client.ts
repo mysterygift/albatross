@@ -126,8 +126,8 @@ function wrapWithPerf(raw: Database): Database {
       const run = () =>
         withRetry(() => raw.execute(query, bindValues), query, 'execute').then((result) => {
           const durationMs = performance.now() - start
+          if (isCommit || isRollback) txnDepth = Math.max(0, txnDepth - 1)
           if (isPerfLoggingEnabled()) {
-            if (isCommit || isRollback) txnDepth = Math.max(0, txnDepth - 1)
             recordDbOp({
               kind: 'execute',
               sql,
