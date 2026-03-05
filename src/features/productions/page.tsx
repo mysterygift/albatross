@@ -4,9 +4,9 @@ import {
   listProductions,
   createProduction,
   updateProduction,
-  deleteProduction,
   permanentlyDeleteProduction,
   duplicateProduction,
+  deleteProduction,
 } from '@/lib/db/repositories/production'
 import {
   useReactTable,
@@ -44,7 +44,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Pencil, Trash2, AlertTriangle, Copy } from 'lucide-react'
+import { Plus, Pencil, Trash2, Copy } from 'lucide-react'
 import type { Production } from '@/lib/db/types'
 import { useCurrentProduction } from './context'
 
@@ -58,7 +58,7 @@ type ProductionForm = z.infer<typeof productionSchema>
 export function ProductionsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
-  const [permanentDeleteProduction, setPermanentDeleteProduction] = useState<Production | null>(null)
+  const [productionToHardDelete, setProductionToHardDelete] = useState<Production | null>(null)
   const [duplicateSource, setDuplicateSource] = useState<Production | null>(null)
   const [duplicateName, setDuplicateName] = useState('')
   const [duplicateSuccessResult, setDuplicateSuccessResult] = useState<{ name: string; slug: string } | null>(null)
@@ -91,33 +91,18 @@ export function ProductionsPage() {
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: deleteProduction,
-    onSuccess: (_, id) => {
-      if (currentProductionId === id) setCurrentProductionId(null)
-      queryClient.invalidateQueries({ queryKey: ['productions'] })
-      refetchProductions()
-      setDeleteToast({ type: 'success', message: 'Production deleted.' })
-      setTimeout(() => setDeleteToast(null), 4000)
-    },
-    onError: (err) => {
-      setDeleteToast({ type: 'error', message: err instanceof Error ? err.message : 'Delete failed' })
-      setTimeout(() => setDeleteToast(null), 5000)
-    },
-  })
-
-  const permanentDeleteMutation = useMutation({
+  const hardDeleteMutation = useMutation({
     mutationFn: permanentlyDeleteProduction,
     onSuccess: (_, id) => {
       if (currentProductionId === id) setCurrentProductionId(null)
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
-      setPermanentDeleteProduction(null)
+      setProductionToHardDelete(null)
       setDeleteToast({ type: 'success', message: 'Production permanently deleted.' })
       setTimeout(() => setDeleteToast(null), 4000)
     },
     onError: (err) => {
-      setDeleteToast({ type: 'error', message: err instanceof Error ? err.message : 'Permanent delete failed' })
+      setDeleteToast({ type: 'error', message: err instanceof Error ? err.message : 'Delete failed' })
       setTimeout(() => setDeleteToast(null), 5000)
     },
   })
@@ -210,18 +195,10 @@ export function ProductionsPage() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => deleteMutation.mutate(row.original.id)}
-            title="Delete"
-          >
-            <Trash2 className="size-4 text-destructive" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setPermanentDeleteProduction(row.original)}
+            onClick={() => setProductionToHardDelete(row.original)}
             title="Delete permanently"
           >
-            <AlertTriangle className="size-4 text-muted-foreground" />
+            <Trash2 className="size-4 text-destructive" />
           </Button>
         </div>
       ),
@@ -374,8 +351,8 @@ export function ProductionsPage() {
       </Dialog>
 
       <Sheet
-        open={!!permanentDeleteProduction}
-        onOpenChange={(open) => !open && setPermanentDeleteProduction(null)}
+        open={!!productionToHardDelete}
+        onOpenChange={(open) => !open && setProductionToHardDelete(null)}
       >
         <SheetContent
           side="bottom"
@@ -387,24 +364,24 @@ export function ProductionsPage() {
               Delete production permanently?
             </SheetTitle>
             <p className="text-zinc-400 text-sm">
-              {permanentDeleteProduction
-                ? `"${permanentDeleteProduction.name}" and all its data (scenes, people, documents, etc.) will be removed and cannot be undone.`
+              {productionToHardDelete
+                ? `"${productionToHardDelete.name}" and all its data (scenes, people, documents, etc.) will be removed and cannot be undone.`
                 : ''}
             </p>
           </SheetHeader>
           <SheetFooter className="flex-row gap-3 justify-center sm:justify-center">
             <button
               type="button"
-              onClick={() => permanentDeleteMutation.mutate(permanentDeleteProduction!.id)}
-              disabled={permanentDeleteMutation.isPending}
+              onClick={() => productionToHardDelete && hardDeleteMutation.mutate(productionToHardDelete.id)}
+              disabled={hardDeleteMutation.isPending}
               className="rounded-full border-2 border-red-500 bg-transparent px-6 py-2.5 text-red-500 transition-colors hover:bg-red-500/10 disabled:opacity-50"
             >
               Yes, Delete
             </button>
             <button
               type="button"
-              onClick={() => setPermanentDeleteProduction(null)}
-              disabled={permanentDeleteMutation.isPending}
+              onClick={() => setProductionToHardDelete(null)}
+              disabled={hardDeleteMutation.isPending}
               className="rounded-full border-2 border-white bg-transparent px-6 py-2.5 text-white transition-colors hover:bg-white/10 disabled:opacity-50"
             >
               Cancel
