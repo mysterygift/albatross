@@ -161,6 +161,20 @@ export type CostReportGroupAccount = {
   account_id: string
 }
 
+/** User-defined rollup total for Cost Report (e.g. Above the line, Below the line). Reporting only; does not affect accounting. */
+export type ProductionTotal = {
+  id: string
+  production_id: string
+  name: string
+  sort_order: number
+} & SoftDeletable
+
+export type ProductionTotalAccount = {
+  id: string
+  production_total_id: string
+  account_id: string
+}
+
 export type ShootDay = {
   id: string
   production_id: string

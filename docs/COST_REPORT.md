@@ -19,11 +19,12 @@ Cost Report functionality has two parts:
 
 - **Location:** `src/features/budget/page.tsx`. The Budget page has two tabs: **Budget** and **Cost Report** (same page, same data).
 - **View mode state:** `BudgetViewMode`: `'budget' | 'cost_report'`. Persisted in `localStorage` under key `BUDGET_VIEW_MODE_KEY` (`'budgetViewMode'`) so the user’s last tab is restored.
-- **Data:** The Cost Report view receives the same computed data as the Budget tab: `accountTree`, `accountTotals`, `items`, `totalEstimated`, `totalActual`, `variance`, `uncodedTotal`, `fringeTotals`, `contingencyTotals`. No extra queries; it is a different presentation of the same budget state.
+- **Data:** The Cost Report view receives the same computed data as the Budget tab: `accountTree`, `accountTotals`, `items`, `totalEstimated`, `totalActual`, `variance`, `uncodedTotal`, `fringeTotals`, `contingencyTotals`. It also receives **production total amounts** (see §2.5) and an optional **configure** button for the Production totals modal. Production totals are loaded via `listProductionTotals(productionId)`; amounts are computed from `accountTotals` only (no direct item/expense queries).
 
 ### 2.2 Layout and behaviour
 
-- **Print button:** Top-right of the Cost Report content; calls `window.print()`. Wrapped in `no-print` so it is hidden when printing.
+- **Header actions:** “Configure production totals” (opens modal; see §2.5) and “Print”. Both are in a `no-print` block so they are hidden when printing.
+- **Print button:** Calls `window.print()`.
 - **Summary cards:** Three cards — Total estimated, Total actual (with optional “Uncoded spend: £X”), Variance. Same values and formatting as the Budget tab.
 - **Derived section:** When fringes or contingency exist: “Derived (budget overlays)” with Fringes (derived), Contingency (derived), and Estimated + derived. Same logic as Budget tab; derived amounts are not included in Total actual.
 - **Table:** Columns — Code, Account, Budget, Actual, Variance, %. Rows are the **same hierarchical account tree** as the Budget tab (built from `buildAccountTree`), with:
@@ -31,6 +32,7 @@ Cost Report functionality has two parts:
   - **Leaf (postable) accounts:** Code, name, and totals. **Expandable:** clicking the account name toggles a detail section showing that account’s **line items** (description + estimated cost); only one leaf can be expanded at a time (`costReportExpandedLeafId`). In print, the expanded state is not used; line item count is shown as “(N line items)” next to the name.
 - **Uncoded spend row:** When `uncodedTotal > 0`, a single table row “Uncoded spend” with the uncoded amount in the Actual column.
 - **Empty state:** When there are no accounts and no uncoded spend: “No accounts yet.”
+- **Production totals section:** When the user has defined production totals (see §2.5), a “Production totals” block is rendered **after** the account table and **before** the Derived section. It lists each total’s name and budget rollup (sum of `accountTotals` for the total’s header accounts), then a “Production subtotal” line (sum of those rollups). Styling: slightly heavier font, right-aligned currency, light separator above the block. Reporting only; does not affect accounting or derived calculations.
 
 ### 2.3 Rendering implementation
 
@@ -45,6 +47,14 @@ Cost Report functionality has two parts:
   - `.no-print` is hidden (Print button and other interactive elements use this class).
   - Table borders collapsed for a clean print layout.
 - The rest of the page (nav, other tabs, dialogs) is outside this wrapper; the user typically prints with the Cost Report tab active so only that content is printed.
+
+### 2.5 Production totals (Cost Report only)
+
+- **Purpose:** User-defined rollup totals for the Cost Report (e.g. “Above the line”, “Below the line”, “Production subtotal before fringes”). Reporting only; they do **not** affect accounting, posting, or derived totals.
+- **Data model:** Tables `production_totals` (id, production_id, name, sort_order, timestamps, deleted_at) and `production_total_accounts` (production_total_id, account_id). Only **header** accounts (`is_postable === false`) may be attached; each total can reference multiple header accounts. Repository: `src/lib/db/repositories/productionTotals.ts`. Types: `ProductionTotal`, `ProductionTotalAccount` in `src/lib/db/types.ts`.
+- **Calculation:** For each production total, **budgetTotal** = sum of `accountTotals.get(accountId).budgetTotal` over its account ids; **actualTotal** = sum of `accountTotals.get(accountId).actualTotal`; **variance** = budgetTotal − actualTotal. No direct queries to items or expenses; all from the existing `accountTotals` map produced by `computeAccountTotals`.
+- **Configuration:** “Configure production totals” in the Cost Report tab header opens a modal titled “Production totals”. The modal lists existing totals (Name, Edit, Delete), a “Create production total” button, and a form (Name + checklist of header accounts) for create/edit. Only header (non-postable), non-archived accounts appear in the checklist. Saving create/update replaces the total’s account mappings. Delete is soft delete (`deleted_at`). Query key: `['production-totals', productionId]`; invalidate after create/update/delete.
+- **Transactions:** Create and update use `runInSerializedTransaction` + `executeBatch` (BEGIN, writes, outbox, COMMIT) per `docs/DATABASE_LAYER.md`. Delete is a single UPDATE so `db.execute` is used.
 
 ---
 
@@ -101,14 +111,14 @@ Cost Report functionality has two parts:
 
 ## 4. Summary
 
-| Aspect | Cost Report view (Budget tab) | Cost report groups |
-|--------|--------------------------------|--------------------|
-| **Where** | Budget page, “Cost Report” tab | Settings, “Cost report groups” card |
-| **Data** | Same as Budget tab (account tree, totals, items) | Own tables: groups + group–account mappings |
-| **Structure** | Chart-of-accounts hierarchy | User-defined groups; many-to-many with accounts |
-| **Affects totals?** | No (display only) | No |
-| **Print** | Yes; print-friendly layout and CSS | N/A |
-| **Used by Cost Report tab?** | This is the Cost Report tab | Not yet; reserved for future group-based reports/exports |
+| Aspect | Cost Report view (Budget tab) | Production totals | Cost report groups |
+|--------|--------------------------------|-------------------|--------------------|
+| **Where** | Budget page, “Cost Report” tab | Cost Report tab (section + Configure modal) | Settings, “Cost report groups” card |
+| **Data** | Same as Budget tab (account tree, totals, items) | Totals + account ids from `production_totals`; amounts from `accountTotals` | Own tables: groups + group–account mappings |
+| **Structure** | Chart-of-accounts hierarchy | User-defined totals; each references header accounts only | User-defined groups; many-to-many with accounts |
+| **Affects totals?** | No (display only) | No (reporting only) | No |
+| **Print** | Yes; print-friendly layout and CSS | Shown in Cost Report print | N/A |
+| **Used by Cost Report tab?** | This is the Cost Report tab | Yes (section + configure) | Not yet; reserved for future group-based reports/exports |
 
 ---
 

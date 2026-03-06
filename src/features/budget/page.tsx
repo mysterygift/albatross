@@ -13,6 +13,13 @@ import {
 } from '@/lib/db/repositories/budget'
 import { listAccounts, listPostableAccounts } from '@/lib/db/repositories/budgetAccounts'
 import {
+  listProductionTotals,
+  createProductionTotal,
+  updateProductionTotal,
+  deleteProductionTotal,
+  type ProductionTotalWithAccountIds,
+} from '@/lib/db/repositories/productionTotals'
+import {
   listFringeRules,
   listContingencyRules,
   createFringeRule,
@@ -67,7 +74,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, Printer } from 'lucide-react'
+import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, Printer, SlidersHorizontal } from 'lucide-react'
 import { saveFileWithDialog } from '@/lib/files'
 import { getAccountBandColor } from '@/lib/budget/accountBandColor'
 import type { BudgetItem, BudgetAccount } from '@/lib/db/types'
@@ -123,6 +130,9 @@ export function BudgetPage() {
     return (stored === 'cost_report' ? 'cost_report' : 'budget') as BudgetViewMode
   })
   const [costReportExpandedLeafId, setCostReportExpandedLeafId] = useState<string | null>(null)
+  const [productionTotalsModalOpen, setProductionTotalsModalOpen] = useState(false)
+  const [productionTotalToEdit, setProductionTotalToEdit] = useState<ProductionTotalWithAccountIds | null>(null)
+  const [productionTotalCreateOpen, setProductionTotalCreateOpen] = useState(false)
 
   useEffect(() => {
     localStorage.setItem(BUDGET_VIEW_MODE_KEY, viewMode)
@@ -195,6 +205,12 @@ export function BudgetPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: productionTotals = [] } = useQuery({
+    queryKey: ['production-totals', currentProductionId],
+    queryFn: () => listProductionTotals(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
   const createItemMutation = useMutation({
     mutationFn: (data: z.infer<typeof itemSchema>) =>
       createBudgetItem({
@@ -258,6 +274,35 @@ export function BudgetPage() {
     },
   })
 
+  const createProductionTotalMutation = useMutation({
+    mutationFn: (data: { name: string; account_ids: string[] }) =>
+      createProductionTotal({
+        production_id: currentProductionId!,
+        name: data.name,
+        account_ids: data.account_ids,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['production-totals', currentProductionId!] })
+      setProductionTotalCreateOpen(false)
+    },
+  })
+
+  const updateProductionTotalMutation = useMutation({
+    mutationFn: (data: { id: string; name: string; account_ids: string[] }) =>
+      updateProductionTotal(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['production-totals', currentProductionId!] })
+      setProductionTotalToEdit(null)
+    },
+  })
+
+  const deleteProductionTotalMutation = useMutation({
+    mutationFn: (id: string) => deleteProductionTotal(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['production-totals', currentProductionId!] })
+    },
+  })
+
   const accountTree = useMemo(() => buildAccountTree(accounts), [accounts])
   const accountTotals = useMemo(
     () => computeAccountTotals(accounts, items, expenses),
@@ -279,6 +324,48 @@ export function BudgetPage() {
   const totalEstimated = items.reduce((s, i) => s + i.estimated_cost, 0)
   const totalActual = expenses.reduce((s, e) => s + e.amount, 0)
   const variance = totalEstimated - totalActual
+
+  // Production totals: rollups from accountTotals only (reporting); only header accounts.
+  const productionTotalAmounts = useMemo(() => {
+    return productionTotals.map((t) => {
+      let budgetTotal = 0
+      let actualTotal = 0
+      for (const accountId of t.account_ids) {
+        const tot = accountTotals.get(accountId)
+        if (tot) {
+          budgetTotal += tot.budgetTotal
+          actualTotal += tot.actualTotal
+        }
+      }
+      return {
+        id: t.id,
+        name: t.name,
+        sort_order: t.sort_order,
+        budgetTotal,
+        actualTotal,
+        variance: budgetTotal - actualTotal,
+      }
+    })
+  }, [productionTotals, accountTotals])
+
+  // Production subtotal: sum over unique account IDs to avoid double-counting when multiple totals share header accounts.
+  const productionSubtotal = useMemo(() => {
+    const uniqueAccountIds = new Set<string>()
+    for (const t of productionTotals) {
+      for (const accountId of t.account_ids) uniqueAccountIds.add(accountId)
+    }
+    let sum = 0
+    for (const accountId of uniqueAccountIds) {
+      const tot = accountTotals.get(accountId)
+      if (tot) sum += tot.budgetTotal
+    }
+    return sum
+  }, [productionTotals, accountTotals])
+
+  const headerAccounts = useMemo(
+    () => accounts.filter((a) => !a.is_postable && !a.archived_at),
+    [accounts]
+  )
 
   // Export reflects line item detail; hierarchical rollup export may be added later.
   // Total actual = sum(expenses.amount) only; do not use budget_items.actual_cost.
@@ -415,21 +502,47 @@ export function BudgetPage() {
       </div>
 
       {viewMode === 'cost_report' ? (
-        <CostReportView
-          accountTree={accountTree}
-          accountTotals={accountTotals}
-          items={items}
-          format={format}
-          productionCurrency={productionCurrency}
-          totalEstimated={totalEstimated}
-          totalActual={totalActual}
-          variance={variance}
-          uncodedTotal={uncodedTotal}
-          fringeTotals={fringeTotals}
-          contingencyTotals={contingencyTotals}
-          expandedLeafId={costReportExpandedLeafId}
-          onToggleLeafDetail={setCostReportExpandedLeafId}
-        />
+        <>
+          <CostReportView
+            accountTree={accountTree}
+            accountTotals={accountTotals}
+            items={items}
+            format={format}
+            productionCurrency={productionCurrency}
+            totalEstimated={totalEstimated}
+            totalActual={totalActual}
+            variance={variance}
+            uncodedTotal={uncodedTotal}
+            fringeTotals={fringeTotals}
+            contingencyTotals={contingencyTotals}
+            productionTotalAmounts={productionTotalAmounts}
+            productionSubtotal={productionSubtotal}
+            expandedLeafId={costReportExpandedLeafId}
+            onToggleLeafDetail={setCostReportExpandedLeafId}
+            configureButton={
+              <Button variant="outline" size="sm" onClick={() => setProductionTotalsModalOpen(true)} className="no-print">
+                <SlidersHorizontal className="mr-2 size-4" />
+                Configure production totals
+              </Button>
+            }
+          />
+          <ProductionTotalsModal
+            open={productionTotalsModalOpen}
+            onOpenChange={setProductionTotalsModalOpen}
+            productionTotals={productionTotals}
+            headerAccounts={headerAccounts}
+            editTotal={productionTotalToEdit}
+            onEdit={setProductionTotalToEdit}
+            createOpen={productionTotalCreateOpen}
+            onCreateOpen={setProductionTotalCreateOpen}
+            onCreate={createProductionTotalMutation.mutate}
+            onUpdate={updateProductionTotalMutation.mutate}
+            onDelete={deleteProductionTotalMutation.mutate}
+            createPending={createProductionTotalMutation.isPending}
+            updatePending={updateProductionTotalMutation.isPending}
+            deletePending={deleteProductionTotalMutation.isPending}
+          />
+        </>
       ) : (
         <>
           <div className="grid gap-4 md:grid-cols-3">
@@ -653,6 +766,15 @@ function hexWithAlpha(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
+type ProductionTotalAmount = {
+  id: string
+  name: string
+  sort_order: number
+  budgetTotal: number
+  actualTotal: number
+  variance: number
+}
+
 function CostReportView({
   accountTree,
   accountTotals,
@@ -665,8 +787,11 @@ function CostReportView({
   uncodedTotal,
   fringeTotals,
   contingencyTotals,
+  productionTotalAmounts,
+  productionSubtotal,
   expandedLeafId,
   onToggleLeafDetail,
+  configureButton,
 }: {
   accountTree: AccountTreeNode[]
   accountTotals: Map<string, { budgetTotal: number; actualTotal: number; variance: number; percentSpent: number | null }>
@@ -679,8 +804,11 @@ function CostReportView({
   uncodedTotal: number
   fringeTotals: { totalFringesAmount: number }
   contingencyTotals: { totalContingencyAmount: number }
+  productionTotalAmounts: ProductionTotalAmount[]
+  productionSubtotal: number
   expandedLeafId: string | null
   onToggleLeafDetail: (id: string | null) => void
+  configureButton?: ReactNode
 }) {
   const totalDerived = fringeTotals.totalFringesAmount + contingencyTotals.totalContingencyAmount
   const estimatedPlusDerived = totalEstimated + totalDerived
@@ -688,7 +816,8 @@ function CostReportView({
 
   return (
     <div className="cost-report-print space-y-6">
-      <div className="flex justify-end no-print">
+      <div className="flex justify-end gap-2 no-print">
+        {configureButton}
         <Button variant="outline" size="sm" onClick={() => window.print()}>
           <Printer className="mr-2 size-4" />
           Print
@@ -716,30 +845,6 @@ function CostReportView({
           </p>
         </div>
       </div>
-
-      {hasDerived && (
-        <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2">
-          <p className="text-muted-foreground text-sm font-medium">Derived (budget overlays)</p>
-          <div className="flex flex-wrap gap-6">
-            {fringeTotals.totalFringesAmount > 0 && (
-              <div>
-                <span className="text-muted-foreground text-sm">Fringes (derived): </span>
-                <span className="font-medium">{format(fringeTotals.totalFringesAmount, productionCurrency).formatted}</span>
-              </div>
-            )}
-            {contingencyTotals.totalContingencyAmount > 0 && (
-              <div>
-                <span className="text-muted-foreground text-sm">Contingency (derived): </span>
-                <span className="font-medium">{format(contingencyTotals.totalContingencyAmount, productionCurrency).formatted}</span>
-              </div>
-            )}
-            <div>
-              <span className="text-muted-foreground text-sm">Estimated + derived: </span>
-              <span className="font-medium">{format(estimatedPlusDerived, productionCurrency).formatted}</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="rounded-md border border-border overflow-hidden">
         <Table>
@@ -783,7 +888,232 @@ function CostReportView({
           </TableBody>
         </Table>
       </div>
+
+      {productionTotalAmounts.length > 0 && (
+        <div className="border-t border-border pt-4">
+          <p className="text-muted-foreground text-sm font-medium mb-3">Production totals</p>
+          <div className="space-y-1.5">
+            {productionTotalAmounts.map((t) => (
+              <div key={t.id} className="flex justify-between items-baseline gap-4 font-medium">
+                <span>{t.name}</span>
+                <span className="text-right tabular-nums">{format(t.budgetTotal, productionCurrency).formatted}</span>
+              </div>
+            ))}
+            <div className="flex justify-between items-baseline gap-4 font-semibold pt-2 mt-2 border-t border-border">
+              <span>Production subtotal</span>
+              <span className="text-right tabular-nums">{format(productionSubtotal, productionCurrency).formatted}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hasDerived && (
+        <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2">
+          <p className="text-muted-foreground text-sm font-medium">Derived (budget overlays)</p>
+          <div className="flex flex-wrap gap-6">
+            {fringeTotals.totalFringesAmount > 0 && (
+              <div>
+                <span className="text-muted-foreground text-sm">Fringes (derived): </span>
+                <span className="font-medium">{format(fringeTotals.totalFringesAmount, productionCurrency).formatted}</span>
+              </div>
+            )}
+            {contingencyTotals.totalContingencyAmount > 0 && (
+              <div>
+                <span className="text-muted-foreground text-sm">Contingency (derived): </span>
+                <span className="font-medium">{format(contingencyTotals.totalContingencyAmount, productionCurrency).formatted}</span>
+              </div>
+            )}
+            <div>
+              <span className="text-muted-foreground text-sm">Estimated + derived: </span>
+              <span className="font-medium">{format(estimatedPlusDerived, productionCurrency).formatted}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+function ProductionTotalsModal({
+  open,
+  onOpenChange,
+  productionTotals,
+  headerAccounts,
+  editTotal,
+  onEdit,
+  createOpen,
+  onCreateOpen,
+  onCreate,
+  onUpdate,
+  onDelete,
+  createPending,
+  updatePending,
+  deletePending,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  productionTotals: ProductionTotalWithAccountIds[]
+  headerAccounts: BudgetAccount[]
+  editTotal: ProductionTotalWithAccountIds | null
+  onEdit: (t: ProductionTotalWithAccountIds | null) => void
+  createOpen: boolean
+  onCreateOpen: (open: boolean) => void
+  onCreate: (data: { name: string; account_ids: string[] }) => void
+  onUpdate: (data: { id: string; name: string; account_ids: string[] }) => void
+  onDelete: (id: string) => void
+  createPending: boolean
+  updatePending: boolean
+  deletePending: boolean
+}) {
+  const showForm = createOpen || editTotal != null
+  const [formName, setFormName] = useState('')
+  const [formAccountIds, setFormAccountIds] = useState<string[]>([])
+
+  useEffect(() => {
+    if (editTotal) {
+      setFormName(editTotal.name)
+      setFormAccountIds([...editTotal.account_ids])
+    } else if (createOpen) {
+      setFormName('')
+      setFormAccountIds([])
+    }
+  }, [editTotal, createOpen])
+
+  const handleSave = () => {
+    const name = formName.trim()
+    if (!name) return
+    if (editTotal) {
+      onUpdate({ id: editTotal.id, name, account_ids: formAccountIds })
+    } else {
+      onCreate({ name, account_ids: formAccountIds })
+    }
+  }
+
+  const handleCancel = () => {
+    onEdit(null)
+    onCreateOpen(false)
+  }
+
+  const handleOpenChange = (next: boolean) => {
+    if (!next) {
+      onEdit(null)
+      onCreateOpen(false)
+    }
+    onOpenChange(next)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Production totals</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead className="w-[120px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {productionTotals.length === 0 && !showForm ? (
+                  <TableRow>
+                    <TableCell colSpan={2} className="text-muted-foreground text-sm">
+                      No production totals yet.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  productionTotals.map((t) => (
+                    <TableRow key={t.id}>
+                      <TableCell>{t.name}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => {
+                            onEdit(t)
+                            onCreateOpen(false)
+                          }}
+                          aria-label="Edit"
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => {
+                            if (window.confirm(`Delete "${t.name}"?`)) onDelete(t.id)
+                          }}
+                          disabled={deletePending}
+                          aria-label="Delete"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          {!showForm && (
+            <Button onClick={() => onCreateOpen(true)}>
+              <Plus className="mr-2 size-4" />
+              Create production total
+            </Button>
+          )}
+          {showForm && (
+            <div className="rounded-md border border-border p-4 space-y-4">
+              <div>
+                <Label htmlFor="pt-name">Name</Label>
+                <Input
+                  id="pt-name"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="e.g. Above the line"
+                />
+              </div>
+              <div>
+                <Label>Accounts</Label>
+                <p className="text-muted-foreground text-xs mb-2">Select header accounts. Leaf totals are included automatically.</p>
+                <div className="max-h-40 overflow-auto space-y-2 rounded border border-border p-2">
+                  {headerAccounts.map((acc) => (
+                    <label key={acc.id} className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={formAccountIds.includes(acc.id)}
+                        onCheckedChange={(checked) => {
+                          setFormAccountIds((prev) =>
+                            checked ? [...prev, acc.id] : prev.filter((id) => id !== acc.id)
+                          )
+                        }}
+                      />
+                      <span className="text-sm">
+                        {acc.code} — {acc.name}
+                      </span>
+                    </label>
+                  ))}
+                  {headerAccounts.length === 0 && (
+                    <p className="text-muted-foreground text-sm">No header accounts. Add accounts in Settings.</p>
+                  )}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={handleCancel}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSave} disabled={createPending || updatePending || !formName.trim()}>
+                  Save
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

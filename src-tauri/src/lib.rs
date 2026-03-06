@@ -111,6 +111,12 @@ pub fn run() {
       sql: include_str!("../migrations/0018_budget_accounts_color_hex.sql"),
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 19,
+      description: "production_totals",
+      sql: include_str!("../migrations/0019_production_totals.sql"),
+      kind: MigrationKind::Up,
+    },
   ];
 
   tauri::Builder::default()
