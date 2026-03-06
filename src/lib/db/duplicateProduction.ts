@@ -83,6 +83,7 @@ export async function duplicateProduction(
     db.select<Record<string, unknown>[]>(`SELECT * FROM documents WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
   ])
 
+  const taskIdMap: IdMap = new Map()
   const unitIdMap: IdMap = new Map()
   const personIdMap: IdMap = new Map()
   const locationIdMap: IdMap = new Map()
@@ -274,11 +275,42 @@ export async function duplicateProduction(
       bindValues: [newId(), newProdId, r.department, r.name, r.phone, r.email, r.notes, ts, ts],
     })
   }
-  for (const r of tasks) {
+  // Topological order: parents before children (for parent_task_id mapping)
+  const taskRows = tasks as Array<Record<string, unknown> & { id: string; parent_task_id?: string | null }>
+  const taskIds = new Set(taskRows.map((t) => t.id))
+  const sortedTasks: typeof taskRows = []
+  const seen = new Set<string>()
+  while (sortedTasks.length < taskRows.length) {
+    let added = false
+    for (const t of taskRows) {
+      if (seen.has(t.id)) continue
+      const parentId = t.parent_task_id ?? null
+      const parentInList = parentId == null || taskIds.has(parentId)
+      if (parentInList && (parentId == null || seen.has(parentId))) {
+        sortedTasks.push(t)
+        seen.add(t.id)
+        added = true
+      }
+    }
+    if (!added) {
+      // Orphaned or cyclic refs: add remaining as top-level
+      for (const t of taskRows) {
+        if (!seen.has(t.id)) {
+          sortedTasks.push({ ...t, parent_task_id: null })
+          seen.add(t.id)
+        }
+      }
+      break
+    }
+  }
+  for (const r of sortedTasks) {
+    const id = newId()
+    taskIdMap.set(r.id, id)
+    const newParentId = mapId(taskIdMap, r.parent_task_id ?? null)
     statements.push({
-      sql: `INSERT INTO production_tasks (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      sql: `INSERT INTO production_tasks (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       bindValues: [
-        newId(),
+        id,
         newProdId,
         r.description,
         r.is_complete ?? 0,
@@ -286,6 +318,7 @@ export async function duplicateProduction(
         r.due_date ?? null,
         r.assigned_department ?? null,
         r.priority ?? null,
+        newParentId,
         ts,
         ts,
       ],

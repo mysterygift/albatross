@@ -17,6 +17,12 @@ import type { DashboardBudgetHealthData } from '@/lib/dashboard/budgetHealth'
 import type { DashboardNextShootDayData } from '@/lib/dashboard/nextShootDay'
 import type { ProductionTask } from '@/lib/db/types'
 
+const TASK_PRIORITY_LABELS: Record<1 | 2 | 3, string> = {
+  1: 'High',
+  2: 'Medium',
+  3: 'Low',
+}
+
 const STRIP_ICONS: Record<StripType, typeof Film> = {
   SHOT: Film,
   SCENE: Film,
@@ -448,9 +454,14 @@ function TasksDueSoonCard({
             <ul className="space-y-2">
               {tasksDueSoon.map((task) => (
                 <li key={task.id} className="flex items-center gap-2 text-sm">
-                  <Badge variant={task.priority === 1 ? 'destructive' : 'secondary'} className="shrink-0">
-                    {task.priority === 1 ? 'Required' : 'Optional'}
-                  </Badge>
+                  {task.priority ? (
+                    <Badge
+                      variant={task.priority === 1 ? 'destructive' : 'secondary'}
+                      className="shrink-0 font-normal text-xs"
+                    >
+                      {TASK_PRIORITY_LABELS[task.priority]}
+                    </Badge>
+                  ) : null}
                   <span className="min-w-0 truncate">{task.description}</span>
                 </li>
               ))}
@@ -460,7 +471,7 @@ function TasksDueSoonCard({
             )}
             {requiredIncomplete.length > 0 && (
               <p className="text-xs text-muted-foreground">
-                {requiredIncomplete.length} required task{requiredIncomplete.length !== 1 ? 's' : ''} remaining
+                {requiredIncomplete.length} high-priority task{requiredIncomplete.length !== 1 ? 's' : ''} remaining
               </p>
             )}
           </>
@@ -520,11 +531,8 @@ export function DashboardPage() {
     enabled: !!currentProductionId,
   })
 
-  const complete = tasks.filter((t) => t.is_complete === 1).length
-  const total = tasks.length
   const required = tasks.filter((t) => t.priority === 1)
   const requiredComplete = required.filter((t) => t.is_complete === 1).length
-  const score = total === 0 ? 100 : Math.round((complete / total) * 100)
   const requiredScore = required.length === 0 ? 100 : Math.round((requiredComplete / required.length) * 100)
   const warnings = tasks.filter((t) => t.priority === 1 && t.is_complete === 0)
 
@@ -579,36 +587,20 @@ export function DashboardPage() {
 
       {currentProductionId && (
         <>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Readiness score</CardTitle>
-                <CardDescription>Overall task completion</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-4">
-                  <span className="text-4xl font-bold">{score}%</span>
-                  <Badge variant={score === 100 ? 'default' : 'secondary'}>
-                    {complete} / {total} items
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Required items</CardTitle>
-                <CardDescription>Must complete before production</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-4">
-                  <span className="text-4xl font-bold">{requiredScore}%</span>
-                  <Badge variant={requiredScore === 100 ? 'default' : 'destructive'}>
-                    {requiredComplete} / {required.length} required
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Required items</CardTitle>
+              <CardDescription>Must complete before production</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-4">
+                <span className="text-4xl font-bold">{requiredScore}%</span>
+                <Badge variant={requiredScore === 100 ? 'default' : 'destructive'}>
+                  {requiredComplete} / {required.length} required
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
 
           <NextShootDayCard
             data={nextShootDayData}

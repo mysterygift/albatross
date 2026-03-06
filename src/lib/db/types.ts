@@ -431,6 +431,8 @@ export type ProductionTask = {
   due_date: string | null
   assigned_department: string | null
   priority: 1 | 2 | 3 | null
+  /** Null = top-level task; non-null = subtask of another task in the same production. */
+  parent_task_id: string | null
 } & SoftDeletable
 
 export type Deliverable = {

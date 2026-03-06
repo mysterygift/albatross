@@ -147,6 +147,12 @@ pub fn run() {
       sql: include_str!("../migrations/0024_production_tasks.sql"),
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 25,
+      description: "production_tasks_parent_task_id",
+      sql: include_str!("../migrations/0025_production_tasks_parent_task_id.sql"),
+      kind: MigrationKind::Up,
+    },
   ];
 
   tauri::Builder::default()
