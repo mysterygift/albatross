@@ -10,9 +10,9 @@
  * - equipment_terms: LENS (18mm, 24mm, 35mm, 50mm, 85mm, 100mm Macro, 24–70mm, 70–200mm) and SUPPORT terms.
  * - Verify: Schedule → Shot lists, pick a scene; check columns, lens/support dropdowns, null handling, long notes.
  */
-import { executeBatch, getDb, now, runInSerializedTransaction } from '../client'
-import { seedDefaultBudgetAccounts } from '../repositories/budgetAccounts'
+import { executeBatch, getDb, now } from '../client'
 import { getProductionBySlug, hardDeleteProduction } from '../repositories/production'
+import { seedDemoBudget } from './demoBudgetSeed'
 import { listDocumentsByProduction } from '../repositories/document'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { generateCueSheet, generateLocationReleaseCover, generateContributorFormCover } from '@/lib/pdf'
@@ -629,93 +629,11 @@ async function runFullSeed(): Promise<void> {
   }
 
   // -------------------------------------------------------------------------
-  // Budget: 14 categories, 120 items, 60 expenses. All values in GBP (production base currency).
-  // Test cases: round (1000, 25000, 500), non-round (1234.56, 987.65, 14250.75), small (5, 12.99),
-  // 3+ items > 100k (125000, 250000, 500000). Category 1 (ATL) = large overage; category 2 (BTL) = balanced.
+  // Budget: generated only via demoBudgetSeed (chart of accounts, budget items, expenses,
+  // production totals). No legacy budget_categories; category_id left null. All values in GBP.
+  // Uses runInSerializedTransaction + executeBatch. Do not add alternate budget seeding for demo.
   // -------------------------------------------------------------------------
-  const catCodes = [
-    'ATL', 'BTL', 'POST', 'OTHER', 'ART', 'WARD', 'CAM', 'SOUND', 'GRIP', 'TRANS', 'CATER', 'INS', 'VFX', 'MISC',
-  ]
-  const catNames = [
-    'Above the line', 'Below the line', 'Post-production', 'Other',
-    'Art Department', 'Wardrobe', 'Camera', 'Sound', 'Grip', 'Transport', 'Catering', 'Insurance', 'VFX', 'Misc',
-  ]
-  const catPhase = ['pre', 'production', 'post', 'production', 'production', 'production', 'production', 'production', 'production', 'production', 'production', 'pre', 'post', 'production'] as const
-  for (let i = 1; i <= 14; i++) {
-    await db.execute(
-      `INSERT INTO budget_categories (id, production_id, code, name, phase, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [IDS.budgetCat(i), pid, catCodes[i - 1], catNames[i - 1], catPhase[i - 1], ts, ts]
-    )
-  }
-
-  await seedDefaultBudgetAccounts(pid)
-
-  const estimatedCosts: number[] = [
-    125000, 25000, 500000, 1000, 500, 1234.56, 987.65, 14250.75, 5, 12.99, 25000, 1000, 500, 14250.75,
-    250000, 1234.56, 1000, 987.65, 500, 25000, 12.99, 5, 14250.75, 1000, 1234.56, 500, 987.65, 25000,
-    ...Array.from({ length: 120 - 28 }, (_, j) => {
-      const k = j + 28
-      const cycle = [1000, 25000, 500, 1234.56, 987.65, 14250.75, 5, 12.99, 2500, 7500, 15000]
-      return cycle[k % cycle.length]!
-    }),
-  ]
-  for (let i = 1; i <= 120; i++) {
-    const catIdx = (i - 1) % 14
-    const catNum = catIdx + 1
-    const est = estimatedCosts[i - 1] ?? 1000
-    let actual: number
-    if (catNum === 1) {
-      actual = Math.round(est * 1.45 * 100) / 100
-    } else if (catNum === 2) {
-      actual = est
-    } else {
-      actual = i % 5 === 0 ? Math.round(est * 1.1 * 100) / 100 : Math.round(est * 0.95 * 100) / 100
-    }
-    await db.execute(
-      `INSERT INTO budget_items (id, production_id, category_id, description, estimated_cost, actual_cost, vendor, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [
-        IDS.budgetItem(i),
-        pid,
-        IDS.budgetCat(catNum),
-        `Line item ${i}`,
-        est,
-        actual,
-        i % 4 === 0 ? 'Vendor Co' : null,
-        'draft',
-        ts,
-        ts,
-      ]
-    )
-  }
-
-  const expenseAmounts: number[] = [
-    1000, 500, 1234.56, 987.65, 12.99, 5, 25000, 14250.75, 1000, 500,
-    ...Array.from({ length: 50 }, (_, j) => {
-      const cycle = [200, 50, 75, 350, 1200, 45, 890, 12.99, 5000, 250]
-      return cycle[j % cycle.length]!
-    }),
-  ]
-  for (let i = 1; i <= 60; i++) {
-    const amount = expenseAmounts[i - 1] ?? 200 + (i % 10) * 100
-    await db.execute(
-      `INSERT INTO expenses (id, production_id, category_id, amount, date, vendor, notes, expense_type, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [
-        IDS.expense(i),
-        pid,
-        IDS.budgetCat((i % 14) + 1),
-        amount,
-        addDaysLocal(startDate, i % 15),
-        null,
-        i % 3 === 0 ? 'Per diem' : null,
-        i % 3 === 0 ? 'per_diem' : 'other',
-        ts,
-        ts,
-      ]
-    )
-  }
+  await seedDemoBudget(pid, startDate, ts, addDaysLocal, IDS.budgetItem, IDS.expense)
 
   const hods = [
     ['Director', 'Jane Doe', '555-0100', 'director@demo.com'],
