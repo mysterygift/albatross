@@ -116,7 +116,7 @@ const expenseSchema = z.object({
 /** Rate as percentage 0–100; stored as decimal 0–1 in DB. */
 const derivedRuleSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  ratePercent: z.coerce.number().min(0.01, 'Rate must be greater than 0').max(1000, 'Rate must be at most 1000%'),
+  ratePercent: z.coerce.number().min(0.01, 'Rate must be greater than 0').max(100, 'Rate must be at most 100%'),
   scope_account_ids: z.array(z.string()).min(1, 'Select at least one account'),
 })
 
