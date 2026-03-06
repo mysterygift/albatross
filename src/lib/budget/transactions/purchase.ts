@@ -15,6 +15,8 @@ export const purchaseDetailsSchema = z.object({
   purchase_description: z.string().min(1, 'Purchase description is required'),
   vendor_id: z.string().min(1).nullable().optional().default(null),
   notes: z.string().nullable().optional().default(null),
+  /** Spend amount; required for creation. expenses.amount is source of truth for actuals. */
+  amount: z.number().finite().nonnegative().optional().default(0),
 })
 
 export type PurchaseDetails = z.infer<typeof purchaseDetailsSchema>

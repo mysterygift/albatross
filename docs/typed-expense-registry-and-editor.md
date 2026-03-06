@@ -1,6 +1,6 @@
 # Typed Expense Registry and Unified Editor Architecture
 
-This document describes the unified typed-expense editing architecture on the Budget page. For data model, save pipelines, and row structure, see [TYPED_EXPENSES_AND_BUDGET_UI.md](TYPED_EXPENSES_AND_BUDGET_UI.md).
+This document describes the unified typed-expense editing architecture on the Budget page. For data model, save pipelines, and creation flow, see [budget.md](budget.md).
 
 ## Overview
 

@@ -165,7 +165,7 @@ When adding new settings-backed features, use a key pattern like `['settings', k
 
 ### 5.6 Legacy categories
 
-- Budget categories are **legacy-only** and are not shown or managed in Settings. They remain in the DB for legacy item display and backfill on the Budget page. See `docs/BUDGET_FEATURE.md`.
+- Budget categories are **legacy-only** and are not shown or managed in Settings. They remain in the DB for legacy item display and backfill on the Budget page. See `docs/budget.md`.
 
 ---
 
