@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useImperativeHandle } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -37,6 +37,8 @@ export function AllowTransactionEditor({
   onCancel,
   isSaving,
   context: _context,
+  hideFooter,
+  editorRef,
 }: TypedExpenseEditProps<AllowDetails>) {
   const initial: AllowFormValues = useMemo(() => {
     if (!detailsJson) {
@@ -59,6 +61,10 @@ export function AllowTransactionEditor({
     resolver: zodResolver(allowEditSchema) as never,
     defaultValues: initial,
   })
+
+  useImperativeHandle(editorRef, () => ({
+    submit: () => form.handleSubmit((data) => onSave(toAllowDetails(data)))(),
+  }), [form, onSave])
 
   return (
     <form
@@ -101,7 +107,7 @@ export function AllowTransactionEditor({
         <Label>Notes</Label>
         <Input {...form.register('notes')} />
       </div>
-      <ExpenseEditorFooter onCancel={onCancel} isSaving={isSaving} />
+      {!hideFooter && <ExpenseEditorFooter onCancel={onCancel} isSaving={isSaving} />}
       <input type="hidden" value={expenseId} readOnly />
     </form>
   )

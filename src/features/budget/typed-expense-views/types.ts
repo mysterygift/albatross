@@ -1,3 +1,4 @@
+import type { RefObject } from 'react'
 import type { Expense, Vendor } from '@/lib/db/types'
 
 export type FormatAmount = (amount: number, currency: string) => { formatted: string }
@@ -26,6 +27,11 @@ export type TypedExpenseReadProps<T = unknown> = {
 /** Use for registry: ReadComponent accepts unknown parsed and casts internally. */
 export type TypedExpenseReadPropsUnknown = TypedExpenseReadProps<unknown>
 
+/** Imperative handle for Log Spend shell: trigger form submit from shared footer. */
+export type LogSpendEditorHandle = {
+  submit: () => void
+}
+
 export type TypedExpenseEditProps<T = unknown> = {
   expenseId: string
   detailsJson: string | null
@@ -33,4 +39,8 @@ export type TypedExpenseEditProps<T = unknown> = {
   onCancel: () => void
   isSaving: boolean
   context: ExpenseViewContext
+  /** When true, do not render Save/Cancel footer (used by Log Spend shell). */
+  hideFooter?: boolean
+  /** When set, parent can call submit() to trigger form submit (e.g. from shared footer). */
+  editorRef?: RefObject<LogSpendEditorHandle>
 }

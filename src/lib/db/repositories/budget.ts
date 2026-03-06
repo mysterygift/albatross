@@ -315,6 +315,45 @@ export async function updateExpenseAccount(expenseId: string, newAccountId: stri
   await outboxPush(EXP_TABLE, expenseId, 'update', JSON.stringify({ account_id: newAccountId }))
 }
 
+/**
+ * Update basic expense row fields (amount, date, vendor, notes). Used for untyped/legacy expenses.
+ * Does not change account_id (use updateExpenseAccount), transaction_type, or expense_transaction_details.
+ */
+export async function updateExpense(
+  expenseId: string,
+  data: { amount?: number; date?: string; vendor?: string | null; notes?: string | null }
+): Promise<void> {
+  const db = await getDb()
+  const cols: string[] = []
+  const vals: unknown[] = []
+  let i = 1
+  if (data.amount !== undefined) {
+    cols.push(`amount = $${i++}`)
+    vals.push(data.amount)
+  }
+  if (data.date !== undefined) {
+    cols.push(`date = $${i++}`)
+    vals.push(data.date)
+  }
+  if (data.vendor !== undefined) {
+    cols.push(`vendor = $${i++}`)
+    vals.push(data.vendor)
+  }
+  if (data.notes !== undefined) {
+    cols.push(`notes = $${i++}`)
+    vals.push(data.notes)
+  }
+  if (cols.length === 0) return
+  const ts = now()
+  cols.push(`updated_at = $${i++}`)
+  vals.push(ts, expenseId)
+  await db.execute(
+    `UPDATE ${EXP_TABLE} SET ${cols.join(', ')} WHERE id = $${i} AND deleted_at IS NULL`,
+    vals
+  )
+  await outboxPush(EXP_TABLE, expenseId, 'update', JSON.stringify(data))
+}
+
 /** Category code to legacy fallback account key (ATL -> atl, etc.). */
 const CATEGORY_CODE_TO_FALLBACK = {
   ATL: 'atl' as const,

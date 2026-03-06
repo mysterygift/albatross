@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useImperativeHandle } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -43,6 +43,8 @@ export function PurchaseTransactionEditor({
   onCancel,
   isSaving,
   context,
+  hideFooter,
+  editorRef,
 }: TypedExpenseEditProps<PurchaseDetails>) {
   const productionId = context.productionId
   const locations = context.locations ?? []
@@ -88,6 +90,10 @@ export function PurchaseTransactionEditor({
     resolver: zodResolver(purchaseEditSchema) as never,
     defaultValues: initial,
   })
+
+  useImperativeHandle(editorRef, () => ({
+    submit: () => form.handleSubmit((data) => onSave(toPurchaseDetails(data)))(),
+  }), [form, onSave])
 
   const isService = !!form.watch('is_service_purchase')
 
@@ -147,12 +153,15 @@ export function PurchaseTransactionEditor({
             name="location_id"
             control={form.control}
             render={({ field }) => (
-              <Select value={field.value ?? ''} onValueChange={field.onChange}>
+              <Select
+                value={field.value && field.value.trim() !== '' ? field.value : '__none__'}
+                onValueChange={(v) => field.onChange(v === '__none__' ? '' : v)}
+              >
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="__none__">None</SelectItem>
                   {locations.map((l) => (
                     <SelectItem key={l.id} value={l.id}>
                       {l.name}
@@ -169,7 +178,7 @@ export function PurchaseTransactionEditor({
         <Label>Notes</Label>
         <Input {...form.register('notes')} />
       </div>
-      <ExpenseEditorFooter onCancel={onCancel} isSaving={isSaving} />
+      {!hideFooter && <ExpenseEditorFooter onCancel={onCancel} isSaving={isSaving} />}
       <input type="hidden" value={expenseId} readOnly />
     </form>
   )

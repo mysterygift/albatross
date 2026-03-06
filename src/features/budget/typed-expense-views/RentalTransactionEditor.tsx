@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useImperativeHandle } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Input } from '@/components/ui/input'
@@ -25,6 +25,8 @@ export function RentalTransactionEditor({
   onCancel,
   isSaving,
   context,
+  hideFooter,
+  editorRef,
 }: TypedExpenseEditProps<RentalDetails>) {
   const productionId = context.productionId
   const format = context.format
@@ -67,6 +69,10 @@ export function RentalTransactionEditor({
     resolver: zodResolver(rentalDetailsSchema) as never,
     defaultValues: initial,
   })
+
+  useImperativeHandle(editorRef, () => ({
+    submit: () => form.handleSubmit((data) => onSave(data))(),
+  }), [form, onSave])
 
   const watchAll = form.watch()
   const computedDays = computeRentalDays(watchAll.rental_start_date ?? null, watchAll.rental_end_date ?? null)
@@ -227,7 +233,7 @@ export function RentalTransactionEditor({
           onChange={(e) => form.setValue('notes', e.target.value || null)}
         />
       </div>
-      <ExpenseEditorFooter onCancel={onCancel} isSaving={isSaving} />
+      {!hideFooter && <ExpenseEditorFooter onCancel={onCancel} isSaving={isSaving} />}
       <input type="hidden" value={expenseId} readOnly />
     </form>
   )

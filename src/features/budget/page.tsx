@@ -8,6 +8,7 @@ import {
   listExpensesByProduction,
   createBudgetItem,
   createExpense,
+  updateExpense,
   updateExpenseAccount,
   backfillAccountIdsFromLegacyCategories,
 } from '@/lib/db/repositories/budget'
@@ -79,7 +80,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, SlidersHorizontal, Eye } from 'lucide-react'
+import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, SlidersHorizontal, Eye, Receipt } from 'lucide-react'
 import { saveFileWithDialog } from '@/lib/files'
 import { getAccountBandColor } from '@/lib/budget/accountBandColor'
 import type { BudgetItem, BudgetAccount } from '@/lib/db/types'
@@ -92,6 +93,7 @@ import { listPeopleByProduction } from '@/lib/db/repositories/person'
 import { parseAllowDetails } from '@/lib/budget/transactions/allow'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { ExpenseDetailPanel } from '@/features/budget/ExpenseDetailPanel'
+import { LogSpendPanel } from '@/features/budget/LogSpendPanel'
 
 const BUDGET_VIEW_MODE_KEY = 'budgetViewMode'
 const COST_REPORT_LAYOUT_MODE_KEY = 'costReportLayoutMode'
@@ -138,6 +140,7 @@ export function BudgetPage() {
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const [addItemOpen, setAddItemOpen] = useState(false)
   const [addExpenseOpen, setAddExpenseOpen] = useState(false)
+  const [logSpendOpen, setLogSpendOpen] = useState(false)
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
   const [uncodedExpanded, setUncodedExpanded] = useState(false)
   const [addItemForAccountId, setAddItemForAccountId] = useState<string | null>(null)
@@ -368,6 +371,24 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
     }
   }, [examinedExpenseId, currentProductionId, queryClient])
+
+  const handleUpdateExpenseRequest = useCallback(
+    async (data: {
+      expenseId: string
+      amount: number
+      date: string
+      vendor: string | null
+      notes: string | null
+    }) => {
+      await updateExpense(data.expenseId, {
+        amount: data.amount,
+        date: data.date,
+        vendor: data.vendor,
+        notes: data.notes,
+      })
+    },
+    []
+  )
 
   const createProductionTotalMutation = useMutation({
     mutationFn: (data: { name: string; account_ids: string[] }) =>
@@ -602,28 +623,24 @@ export function BudgetPage() {
             <Download className="mr-2 size-4" />
             Export CSV
           </Button>
-          <Dialog
-            open={addExpenseOpen}
-            onOpenChange={setAddExpenseOpen}
+          <Button
+            variant="outline"
+            className="no-print"
+            onClick={() => setLogSpendOpen(true)}
           >
-            <DialogTrigger asChild>
-              <Button variant="outline" className="no-print">
-                <Plus className="mr-2 size-4" />
-                Quick-add spend
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              {addExpenseOpen && (
-                <QuickExpenseForm
-                  productionId={currentProductionId!}
-                  accounts={postableAccounts}
-                  onSubmit={createExpenseMutation.mutate}
-                  onCancel={() => setAddExpenseOpen(false)}
-                  isLoading={createExpenseMutation.isPending}
-                />
-              )}
-            </DialogContent>
-          </Dialog>
+            <Receipt className="mr-2 size-4" />
+            Log Spend
+          </Button>
+          <LogSpendPanel
+            open={logSpendOpen}
+            onOpenChange={setLogSpendOpen}
+            postableAccounts={postableAccounts}
+            productionId={currentProductionId!}
+            productionCurrency={productionCurrency}
+            format={format}
+            people={people}
+            locations={locations}
+          />
           <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
             <DialogTrigger asChild>
               <Button className="no-print">
@@ -873,7 +890,7 @@ export function BudgetPage() {
                 {accountTree.length === 0 && uncodedList.length === 0 && legacyItems.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                      No accounts yet. Add a line item or quick-add spend to get started.
+                      No accounts yet. Add a line item or log spend to get started.
                     </TableCell>
                   </TableRow>
                 )}
@@ -946,11 +963,13 @@ export function BudgetPage() {
               locations={locations}
               onSaved={handleExpenseSaved}
               onSaveRequest={handleExpenseSaveRequest}
+              onUpdateExpenseRequest={handleUpdateExpenseRequest}
             />
           ) : examinedAccountId != null ? (
             (() => {
               const account = accounts.find((a) => a.id === examinedAccountId) ?? null
               const totals = account ? accountTotals.get(account.id) : undefined
+              const lineItemsForAccount = items.filter((i) => i.account_id === examinedAccountId)
               const list = expenses
                 .filter((e) => e.account_id === examinedAccountId)
                 .slice()
@@ -985,6 +1004,29 @@ export function BudgetPage() {
                           Open Allows in this account: {openAllowsForAccount}
                         </p>
                       )}
+                    </div>
+
+                    <div className="rounded-md border border-border">
+                      <div className="border-b border-border px-3 py-2">
+                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Line items ({lineItemsForAccount.length})</p>
+                      </div>
+                      <div className="divide-y divide-border">
+                        {lineItemsForAccount.length === 0 ? (
+                          <p className="px-3 py-3 text-sm text-muted-foreground">No line items in this account yet.</p>
+                        ) : (
+                          lineItemsForAccount.map((item) => (
+                            <div key={item.id} className="flex items-start justify-between gap-3 px-3 py-3">
+                              <div className="min-w-0">
+                                <p className="text-sm">{item.description}</p>
+                                {item.vendor && (
+                                  <p className="text-xs text-muted-foreground truncate">{item.vendor}</p>
+                                )}
+                              </div>
+                              <p className="text-sm font-medium shrink-0">{format(item.estimated_cost, productionCurrency).formatted}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
 
                     <div className="rounded-md border border-border">

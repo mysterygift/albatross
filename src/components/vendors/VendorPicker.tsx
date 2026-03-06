@@ -53,7 +53,7 @@ export function VendorPicker({
 
   const options = useMemo(() => vendors, [vendors])
 
-  const selectValue = value ?? ''
+  const selectValue = value && value.trim() !== '' ? value : '__no_vendor__'
 
   return (
     <div className="flex items-center gap-2">
@@ -64,14 +64,18 @@ export function VendorPicker({
             setCreateOpen(true)
             return
           }
-          onChange(v ? v : null)
+          if (v === '__no_vendor__') {
+            onChange(null)
+            return
+          }
+          onChange(v || null)
         }}
       >
         <SelectTrigger className="h-9">
           <SelectValue placeholder={isLoading ? 'Loading…' : placeholder} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">None</SelectItem>
+          <SelectItem value="__no_vendor__">None</SelectItem>
           {options.map((v) => (
             <SelectItem key={v.id} value={v.id}>
               {v.company_name}

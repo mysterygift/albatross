@@ -11,6 +11,7 @@ import {
   ExpenseDetailMetaRow,
   ExpenseTypedSection,
   ExpenseParseErrorCard,
+  UntypedExpenseEditor,
 } from '@/features/budget/expense-shared'
 
 export type ExpenseDetailPanelProps = {
@@ -24,6 +25,14 @@ export type ExpenseDetailPanelProps = {
   locations: Array<{ id: string; name: string; booked_status?: string }>
   onSaved: () => void
   onSaveRequest: (args: { expenseId: string; details: unknown; type: string }) => Promise<void>
+  /** When set, untyped (legacy) expenses can be edited (amount, date, vendor, notes). */
+  onUpdateExpenseRequest?: (data: {
+    expenseId: string
+    amount: number
+    date: string
+    vendor: string | null
+    notes: string | null
+  }) => Promise<void>
 }
 
 export function ExpenseDetailPanel({
@@ -37,6 +46,7 @@ export function ExpenseDetailPanel({
   locations,
   onSaved,
   onSaveRequest,
+  onUpdateExpenseRequest,
 }: ExpenseDetailPanelProps) {
   const [mode, setMode] = useState<'read' | 'edit'>('read')
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -45,7 +55,9 @@ export function ExpenseDetailPanel({
   const config = expenseWithDetails
     ? getTypedExpenseConfig(expenseWithDetails.expense.transaction_type)
     : null
-  const editable = config?.editable === true && config?.EditComponent != null
+  const typedEditable = config?.editable === true && config?.EditComponent != null
+  const untypedEditable = !config && onUpdateExpenseRequest != null
+  const editable = typedEditable || untypedEditable
   const transactionTypeLabel = config?.label ?? expenseWithDetails?.expense.transaction_type ?? '—'
 
   const viewContext: ExpenseViewContext = useMemo(
@@ -98,6 +110,29 @@ export function ExpenseDetailPanel({
     }
   }
 
+  const handleUpdateExpense = async (data: {
+    amount: number
+    date: string
+    vendor: string | null
+    notes: string | null
+  }) => {
+    if (!expenseWithDetails || !onUpdateExpenseRequest) return
+    setSaveError(null)
+    setIsSaving(true)
+    try {
+      await onUpdateExpenseRequest({
+        expenseId: expenseWithDetails.expense.id,
+        ...data,
+      })
+      onSaved()
+      setMode('read')
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="p-4">
@@ -117,7 +152,16 @@ export function ExpenseDetailPanel({
   const { expense, transaction_details } = expenseWithDetails
 
   let typedContent: ReactNode
-  if (mode === 'edit' && config?.EditComponent && editable) {
+  if (mode === 'edit' && untypedEditable) {
+    typedContent = (
+      <UntypedExpenseEditor
+        expense={expense}
+        onSave={handleUpdateExpense}
+        onCancel={() => setMode('read')}
+        isSaving={isSaving}
+      />
+    )
+  } else if (mode === 'edit' && config?.EditComponent && typedEditable) {
     const EditComponent = config.EditComponent
     typedContent = (
       <EditComponent
@@ -162,16 +206,15 @@ export function ExpenseDetailPanel({
       <SheetHeader className="border-b border-border">
         <div className="flex items-center justify-between gap-3">
           <SheetTitle>Expense details</SheetTitle>
-          {config && (
+          {editable && (
             <Button
               type="button"
               variant="outline"
               size="sm"
               className="h-8"
               onClick={() => setMode((m) => (m === 'read' ? 'edit' : 'read'))}
-              disabled={!editable}
               title={
-                !editable
+                !typedEditable && !untypedEditable
                   ? expense.transaction_type == null
                     ? 'Add a typed transaction in a follow-up prompt'
                     : 'Editing is not yet available for this transaction type.'

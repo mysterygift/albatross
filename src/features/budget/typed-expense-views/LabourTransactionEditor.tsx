@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from 'react'
+import { useMemo, useEffect, useImperativeHandle } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { parseLabourDetails } from '@/lib/budget/transactions/labour'
 import { getPersonBookingsSummary } from '@/lib/people/bookingsSummary'
 import { ExpenseEditorFooter } from '../expense-shared'
-import type { TypedExpenseEditProps } from './types'
+import type { LogSpendEditorHandle, TypedExpenseEditProps } from './types'
 
 const labourEditSchema = z.object({
   person_id: z.string().optional(),
@@ -50,6 +50,8 @@ export function LabourTransactionEditor({
   onCancel,
   isSaving,
   context,
+  hideFooter,
+  editorRef,
 }: TypedExpenseEditProps<ReturnType<typeof toLabourDetails>>) {
   const defaultCurrencyCode = context.defaultCurrencyCode ?? null
   const people = context.people ?? []
@@ -106,6 +108,10 @@ export function LabourTransactionEditor({
     defaultValues: initial,
   })
 
+  useImperativeHandle(editorRef, () => ({
+    submit: () => form.handleSubmit((data) => onSave(toLabourDetails(data)))(),
+  }), [form, onSave])
+
   const selectedPersonId = form.watch('person_id') ?? ''
   const selectedPerson = selectedPersonId ? personById.get(selectedPersonId) ?? null : null
 
@@ -131,12 +137,15 @@ export function LabourTransactionEditor({
           name="person_id"
           control={form.control}
           render={({ field }) => (
-            <Select value={field.value ?? ''} onValueChange={field.onChange}>
+            <Select
+              value={field.value && field.value.trim() !== '' ? field.value : '__none__'}
+              onValueChange={(v) => field.onChange(v === '__none__' ? '' : v)}
+            >
               <SelectTrigger className="h-9">
                 <SelectValue placeholder="Select person" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value="__none__">None</SelectItem>
                 {people.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.name}
@@ -233,7 +242,7 @@ export function LabourTransactionEditor({
           <Input {...form.register('notes')} />
         </div>
       </div>
-      <ExpenseEditorFooter onCancel={onCancel} isSaving={isSaving} />
+      {!hideFooter && <ExpenseEditorFooter onCancel={onCancel} isSaving={isSaving} />}
       <input type="hidden" value={expenseId} readOnly />
     </form>
   )
