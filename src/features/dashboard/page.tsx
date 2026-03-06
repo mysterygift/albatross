@@ -1,16 +1,21 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useCurrency } from '@/hooks/useCurrency'
 import { listChecklistByProduction } from '@/lib/db/repositories/checklist'
+import { getDashboardBudgetHealthData } from '@/lib/dashboard/budgetHealth'
 import { getDashboardNextShootDayData } from '@/lib/dashboard/nextShootDay'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { AlertCircle, CheckCircle2, Clapperboard, Film, Truck, Phone, Utensils, Moon, StickyNote } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Clapperboard, Film, Truck, Phone, Utensils, Moon, StickyNote, ChevronRight } from 'lucide-react'
 import type { StripboardStrip, StripType } from '@/lib/db/types'
 import type { Scene, Shot } from '@/lib/db/types'
+import type { DashboardBudgetHealthData } from '@/lib/dashboard/budgetHealth'
 import type { DashboardNextShootDayData } from '@/lib/dashboard/nextShootDay'
+import type { ChecklistItem } from '@/lib/db/types'
 
 const STRIP_ICONS: Record<StripType, typeof Film> = {
   SHOT: Film,
@@ -216,12 +221,280 @@ function NextShootDayCard({
   )
 }
 
+function BudgetDoughnutChart({ percentageSpent }: { percentageSpent: number }) {
+  const r = 36
+  const stroke = 10
+  const circumference = 2 * Math.PI * r
+  const spent = Math.min(Math.max(percentageSpent, 0), 1) * circumference
+  const remaining = circumference - spent
+  return (
+    <svg viewBox="0 0 100 100" className="size-20 shrink-0" aria-hidden>
+      <circle
+        cx="50"
+        cy="50"
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={stroke}
+        className="text-muted/40"
+      />
+      <circle
+        cx="50"
+        cy="50"
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={stroke}
+        strokeDasharray={`${spent} ${remaining}`}
+        strokeDashoffset={-circumference * 0.25}
+        className="text-primary"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function BudgetHealthCard({
+  data,
+  isLoading,
+  isError,
+  format,
+  productionCurrency,
+  onNavigate,
+}: {
+  data: DashboardBudgetHealthData | null | undefined
+  isLoading: boolean
+  isError?: boolean
+  format: (amount: number, currency: string) => { formatted: string }
+  productionCurrency: string
+  onNavigate: () => void
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Budget Health Check</CardTitle>
+          <CardDescription>A quick view of current budget spend and variance</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-32 rounded bg-muted/50 animate-pulse" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Budget Health Check</CardTitle>
+          <CardDescription>A quick view of current budget spend and variance</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load budget data.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const isEmpty = data && data.totalEstimated === 0 && data.totalActual === 0
+  if (!data || isEmpty) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Budget Health Check</CardTitle>
+          <CardDescription>A quick view of current budget spend and variance</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-sm">No budget data available yet.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const pctSpent = Math.min(100, Math.round(data.percentageSpent * 100))
+
+  return (
+    <Card
+      className="cursor-pointer transition-colors hover:bg-muted/30 hover:border-muted-foreground/20"
+      onClick={onNavigate}
+      role="button"
+      tabIndex={0}
+      aria-label="Budget Health Check — click to open Budget"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onNavigate()
+        }
+      }}
+    >
+      <CardHeader>
+        <CardTitle>Budget Health Check</CardTitle>
+        <CardDescription>A quick view of current budget spend and variance</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex items-center gap-4 shrink-0">
+            <BudgetDoughnutChart percentageSpent={data.percentageSpent} />
+            <div>
+              <p className="text-2xl font-bold">{pctSpent}%</p>
+              <p className="text-xs text-muted-foreground">spent</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm flex-1 min-w-0">
+            <div>
+              <span className="text-muted-foreground">Estimated</span>
+              <p className="font-medium tabular-nums">{format(data.totalEstimated, productionCurrency).formatted}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Actual</span>
+              <p className="font-medium tabular-nums">{format(data.totalActual, productionCurrency).formatted}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Variance</span>
+              <p className={`font-medium tabular-nums ${data.variance < 0 ? 'text-destructive' : ''}`}>
+                {format(data.variance, productionCurrency).formatted}
+              </p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Unallocated spend</span>
+              <p className="font-medium tabular-nums">{format(data.unallocatedSpend, productionCurrency).formatted}</p>
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mt-3">Click to open Budget</p>
+      </CardContent>
+    </Card>
+  )
+}
+
+const TASKS_DUE_SOON_LIMIT = 6
+
+function TasksDueSoonCard({
+  checklist,
+  isLoading,
+  isError,
+  onNavigate,
+}: {
+  checklist: ChecklistItem[]
+  isLoading: boolean
+  isError?: boolean
+  onNavigate: () => void
+}) {
+  const requiredIncomplete = checklist.filter((c) => c.is_required === 1 && c.status !== 'complete')
+  const optionalIncomplete = checklist.filter((c) => c.is_required === 0 && c.status !== 'complete')
+  const tasksDueSoon = [...requiredIncomplete, ...optionalIncomplete].slice(0, TASKS_DUE_SOON_LIMIT)
+  const remainingCount = requiredIncomplete.length + optionalIncomplete.length - tasksDueSoon.length
+  const allComplete = requiredIncomplete.length === 0 && optionalIncomplete.length === 0
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Tasks Due Soon</CardTitle>
+          <CardDescription>Checklist items that still need attention</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-4 rounded bg-muted/50 animate-pulse" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Tasks Due Soon</CardTitle>
+          <CardDescription>Checklist items that still need attention</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load tasks.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card
+      className="cursor-pointer transition-colors hover:bg-muted/30 hover:border-muted-foreground/20"
+      onClick={onNavigate}
+      role="button"
+      tabIndex={0}
+      aria-label="Tasks Due Soon — click to view full checklist"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onNavigate()
+        }
+      }}
+    >
+      <CardHeader>
+        <CardTitle>Tasks Due Soon</CardTitle>
+        <CardDescription>Checklist items that still need attention</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {allComplete ? (
+          <div className="flex items-center gap-2 py-2">
+            <CheckCircle2 className="size-5 shrink-0 text-green-600 dark:text-green-400" />
+            <p className="text-sm text-muted-foreground">All checklist items complete.</p>
+          </div>
+        ) : (
+          <>
+            <ul className="space-y-2">
+              {tasksDueSoon.map((item) => (
+                <li key={item.id} className="flex items-center gap-2 text-sm">
+                  <Badge variant={item.is_required === 1 ? 'destructive' : 'secondary'} className="shrink-0">
+                    {item.is_required === 1 ? 'Required' : 'Optional'}
+                  </Badge>
+                  <span className="min-w-0 truncate">{item.title}</span>
+                </li>
+              ))}
+            </ul>
+            {remainingCount > 0 && (
+              <p className="text-xs text-muted-foreground">+{remainingCount} more tasks</p>
+            )}
+            {requiredIncomplete.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {requiredIncomplete.length} required task{requiredIncomplete.length !== 1 ? 's' : ''} remaining
+              </p>
+            )}
+          </>
+        )}
+        <Link
+          to="/readiness"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-2"
+        >
+          View full checklist
+          <ChevronRight className="size-3.5" />
+        </Link>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function DashboardPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const { currentProduction, currentProductionId } = useCurrentProduction()
+  const { format, ensureRate } = useCurrency()
+  const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const wrapSuccess = (location.state as { wrapSuccess?: boolean } | null)?.wrapSuccess === true
-  const { data: checklist = [] } = useQuery({
+
+  useEffect(() => {
+    if (currentProduction?.currency_code) ensureRate(currentProduction.currency_code)
+  }, [currentProduction?.currency_code, ensureRate])
+
+  const {
+    data: checklist = [],
+    isLoading: checklistLoading,
+    isError: checklistError,
+  } = useQuery({
     queryKey: ['checklist', currentProductionId],
     queryFn: () => listChecklistByProduction(currentProductionId ?? ''),
     enabled: !!currentProductionId,
@@ -234,6 +507,16 @@ export function DashboardPage() {
   } = useQuery({
     queryKey: ['dashboard-next-shoot-day', currentProductionId],
     queryFn: () => getDashboardNextShootDayData(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
+  const {
+    data: budgetHealthData,
+    isLoading: budgetHealthLoading,
+    isError: budgetHealthError,
+  } = useQuery({
+    queryKey: ['dashboard-budget-health', currentProductionId],
+    queryFn: () => getDashboardBudgetHealthData(currentProductionId!),
     enabled: !!currentProductionId,
   })
 
@@ -332,6 +615,22 @@ export function DashboardPage() {
             isLoading={nextShootDayLoading}
             isError={nextShootDayError}
             onNavigate={() => navigate('/schedule/stripboard')}
+          />
+
+          <BudgetHealthCard
+            data={budgetHealthData}
+            isLoading={budgetHealthLoading}
+            isError={budgetHealthError}
+            format={format}
+            productionCurrency={productionCurrency}
+            onNavigate={() => navigate('/budget')}
+          />
+
+          <TasksDueSoonCard
+            checklist={checklist}
+            isLoading={checklistLoading}
+            isError={checklistError}
+            onNavigate={() => navigate('/readiness')}
           />
 
           {warnings.length > 0 && (
