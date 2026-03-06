@@ -1,4 +1,4 @@
-import { getDb } from '../client'
+import { getDb, runInSerializedTransaction } from '../client'
 
 const TABLE = 'settings'
 
@@ -25,16 +25,17 @@ export async function setSetting(key: string, value: string): Promise<void> {
   )
 }
 
-/** Ensure default keys exist. Call on first run / app init. */
+/** Ensure default keys exist. Call on first run / app init. Single queued write to avoid lock contention. */
 export async function ensureSettingsDefaults(): Promise<void> {
-  const db = await getDb()
-  for (const [key, value] of Object.entries(DEFAULTS)) {
-    const rows = await db.select<Record<string, unknown>[]>(
-      `SELECT 1 FROM ${TABLE} WHERE key = $1`,
-      [key]
+  const entries = Object.entries(DEFAULTS)
+  if (entries.length === 0) return
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const placeholders = entries.map((_, i) => `($${2 * i + 1}, $${2 * i + 2})`).join(', ')
+    const values = entries.flatMap(([k, v]) => [k, v])
+    await db.execute(
+      `INSERT OR IGNORE INTO ${TABLE} (key, value) VALUES ${placeholders}`,
+      values
     )
-    if (rows.length === 0) {
-      await db.execute(`INSERT INTO ${TABLE} (key, value) VALUES ($1, $2)`, [key, value])
-    }
-  }
+  })
 }

@@ -146,11 +146,9 @@ export function BudgetPage() {
   useEffect(() => {
     if (!currentProductionId || backfillRanForProduction.current.has(currentProductionId)) return
     backfillRanForProduction.current.add(currentProductionId)
-    backfillAccountIdsFromLegacyCategories(currentProductionId).then(({ updatedItems, updatedExpenses }) => {
-      if (updatedItems > 0 || updatedExpenses > 0) {
-        queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
-        queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
-      }
+    backfillAccountIdsFromLegacyCategories(currentProductionId).then(() => {
+      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
     })
   }, [currentProductionId, queryClient])
 

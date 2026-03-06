@@ -1,4 +1,4 @@
-import { getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxPush } from '../outbox'
 import type { BudgetCategory, BudgetItem, Expense } from '../types'
 import { ensureLegacyFallbackAccounts, getAccountById } from './budgetAccounts'
@@ -321,6 +321,8 @@ const CATEGORY_CODE_TO_FALLBACK = {
  * Backfill account_id on budget_items and expenses from legacy category_id.
  * Maps ATL->1001, BTL->2001, POST->9001, OTHER->9701 (ensureLegacyFallbackAccounts).
  * Idempotent: only updates rows where account_id IS NULL; never overwrites existing account_id.
+ * Uses a single executeBatch(BEGIN, ...UPDATEs..., COMMIT) so the whole transaction runs on one
+ * connection and does not hold the DB lock across separate execute() calls (avoids "database is locked").
  */
 export async function backfillAccountIdsFromLegacyCategories(productionId: string): Promise<{
   updatedItems: number
@@ -335,29 +337,26 @@ export async function backfillAccountIdsFromLegacyCategories(productionId: strin
   }
   if (categoryIdToAccountId.size === 0) return { updatedItems: 0, updatedExpenses: 0 }
 
-  let updatedItems = 0
-  let updatedExpenses = 0
+  const ts = now()
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN TRANSACTION', bindValues: [] }]
+  for (const [categoryId, accountId] of categoryIdToAccountId) {
+    statements.push(
+      {
+        sql: `UPDATE ${ITEM_TABLE} SET account_id = $1, updated_at = $2 WHERE production_id = $3 AND account_id IS NULL AND category_id = $4 AND deleted_at IS NULL`,
+        bindValues: [accountId, ts, productionId, categoryId],
+      },
+      {
+        sql: `UPDATE ${EXP_TABLE} SET account_id = $1, updated_at = $2 WHERE production_id = $3 AND account_id IS NULL AND category_id = $4 AND deleted_at IS NULL`,
+        bindValues: [accountId, ts, productionId, categoryId],
+      }
+    )
+  }
+  statements.push({ sql: 'COMMIT', bindValues: [] })
+
   await runInSerializedTransaction(async () => {
     const db = await getDb()
-    await db.execute('BEGIN TRANSACTION')
-    try {
-      for (const [categoryId, accountId] of categoryIdToAccountId) {
-        const rItems = await db.execute(
-          `UPDATE ${ITEM_TABLE} SET account_id = $1, updated_at = $2 WHERE production_id = $3 AND account_id IS NULL AND category_id = $4 AND deleted_at IS NULL`,
-          [accountId, now(), productionId, categoryId]
-        )
-        updatedItems += rItems.rowsAffected ?? 0
-        const rExp = await db.execute(
-          `UPDATE ${EXP_TABLE} SET account_id = $1, updated_at = $2 WHERE production_id = $3 AND account_id IS NULL AND category_id = $4 AND deleted_at IS NULL`,
-          [accountId, now(), productionId, categoryId]
-        )
-        updatedExpenses += rExp.rowsAffected ?? 0
-      }
-      await db.execute('COMMIT')
-    } catch (e) {
-      await db.execute('ROLLBACK')
-      throw e
-    }
+    await executeBatch(db, statements)
   })
-  return { updatedItems, updatedExpenses }
+
+  return { updatedItems: 0, updatedExpenses: 0 }
 }

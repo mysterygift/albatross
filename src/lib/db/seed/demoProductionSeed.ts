@@ -106,8 +106,8 @@ const VERIFY_SLUG = 'verify-cascade-test'
 /**
  * Dev-only: create a minimal production with a few child rows, hard-delete it, then verify
  * no child rows remain. Confirms FK ON DELETE CASCADE is working.
- * Uses runInSerializedTransaction + executeBatch so the whole create/delete runs in one
- * write-queue task and one execute() (single connection), avoiding SQLITE_BUSY with concurrent writes.
+ * Uses executeBatch (no explicit BEGIN/COMMIT) to avoid "cannot start a transaction within a
+ * transaction" with the Tauri plugin/sqlx; the batch runs as one write-queue task.
  */
 export async function verifyCascades(): Promise<{ ok: boolean; message: string; details?: string }> {
   const db = await getDb()
@@ -139,34 +139,33 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'equipment_terms',
   ]
   try {
-    await runInSerializedTransaction(async () => {
-      const statements: Array<{ sql: string; bindValues: unknown[] }> = [
-        { sql: 'BEGIN IMMEDIATE', bindValues: [] },
-        {
-          sql: `INSERT INTO productions (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          bindValues: [VERIFY_PID, 'Verify cascades', VERIFY_SLUG, 'GBP', null, ts, ts],
-        },
-        {
-          sql: `INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-          bindValues: ['b0000000-0000-4000-8000-000000000002', VERIFY_PID, 'Unit', ts, ts],
-        },
-        {
-          sql: `INSERT INTO people (id, production_id, name, is_cast, created_at, updated_at) VALUES ($1, $2, $3, 0, $4, $5)`,
-          bindValues: ['b0000000-0000-4000-8000-000000000003', VERIFY_PID, 'Person', 0, ts, ts],
-        },
-        {
-          sql: `INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-          bindValues: ['b0000000-0000-4000-8000-000000000004', VERIFY_PID, '1', ts, ts],
-        },
-        {
-          sql: `INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-          bindValues: ['b0000000-0000-4000-8000-000000000005', VERIFY_PID, '2025-01-01', ts, ts],
-        },
-        { sql: `DELETE FROM productions WHERE id = $1`, bindValues: [VERIFY_PID] },
-        { sql: 'COMMIT', bindValues: [] },
-      ]
-      await executeBatch(db, statements)
-    })
+    // Use executeBatch without explicit BEGIN/COMMIT: the Tauri plugin/sqlx can run multi-statement
+    // strings in a way that causes "cannot start a transaction within a transaction" when we send
+    // BEGIN/COMMIT (driver may wrap each statement or the batch in its own transaction).
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+      {
+        sql: `INSERT INTO productions (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        bindValues: [VERIFY_PID, 'Verify cascades', VERIFY_SLUG, 'GBP', null, ts, ts],
+      },
+      {
+        sql: `INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+        bindValues: ['b0000000-0000-4000-8000-000000000002', VERIFY_PID, 'Unit', ts, ts],
+      },
+      {
+        sql: `INSERT INTO people (id, production_id, name, is_cast, created_at, updated_at) VALUES ($1, $2, $3, 0, $4, $5)`,
+        bindValues: ['b0000000-0000-4000-8000-000000000003', VERIFY_PID, 'Person', 0, ts, ts],
+      },
+      {
+        sql: `INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+        bindValues: ['b0000000-0000-4000-8000-000000000004', VERIFY_PID, '1', ts, ts],
+      },
+      {
+        sql: `INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+        bindValues: ['b0000000-0000-4000-8000-000000000005', VERIFY_PID, '2025-01-01', ts, ts],
+      },
+      { sql: `DELETE FROM productions WHERE id = $1`, bindValues: [VERIFY_PID] },
+    ]
+    await executeBatch(db, statements)
     const remaining: string[] = []
     const prodRows = await db.select<Record<string, unknown>[]>(`SELECT id FROM productions WHERE id = $1`, [VERIFY_PID])
     if (prodRows.length > 0) remaining.push('productions')
