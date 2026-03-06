@@ -422,6 +422,13 @@ export type Equipment = {
   notes: string | null
 } & SoftDeletable
 
+export type ProductionTaskSection = {
+  id: string
+  production_id: string
+  name: string
+  sort_order: number
+} & SoftDeletable
+
 export type ProductionTask = {
   id: string
   production_id: string
@@ -433,6 +440,8 @@ export type ProductionTask = {
   priority: 1 | 2 | 3 | null
   /** Null = top-level task; non-null = subtask of another task in the same production. */
   parent_task_id: string | null
+  /** Null = unsectioned; non-null = task belongs to a section in the same production. */
+  section_id: string | null
 } & SoftDeletable
 
 export type Deliverable = {

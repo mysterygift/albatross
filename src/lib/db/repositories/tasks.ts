@@ -16,6 +16,7 @@ function rowToTask(r: Record<string, unknown>): ProductionTask {
     assigned_department: (r.assigned_department as string | null) ?? null,
     priority: p === 1 || p === 2 || p === 3 ? (p as 1 | 2 | 3) : null,
     parent_task_id: (r.parent_task_id as string | null) ?? null,
+    section_id: (r.section_id as string | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: (r.deleted_at as string | null) ?? null,
@@ -128,6 +129,7 @@ export type CreateTaskData = {
   assigned_department?: string | null
   priority?: 1 | 2 | 3 | null
   parent_task_id?: string | null
+  section_id?: string | null
 }
 
 export async function createTask(data: CreateTaskData): Promise<ProductionTask> {
@@ -135,8 +137,8 @@ export async function createTask(data: CreateTaskData): Promise<ProductionTask> 
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, created_at, updated_at)
-     VALUES ($1, $2, $3, 0, $4, $5, $6, $7, $8, $9, $10)`,
+    `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, created_at, updated_at)
+     VALUES ($1, $2, $3, 0, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       id,
       data.production_id,
@@ -146,6 +148,7 @@ export async function createTask(data: CreateTaskData): Promise<ProductionTask> 
       data.assigned_department ?? null,
       data.priority ?? null,
       data.parent_task_id ?? null,
+      data.section_id ?? null,
       ts,
       ts,
     ]
@@ -163,6 +166,7 @@ export type UpdateTaskPatch = Partial<{
   assigned_department: string | null
   priority: 1 | 2 | 3 | null
   parent_task_id: string | null
+  section_id: string | null
 }>
 
 const UPDATE_KEYS = [
@@ -173,7 +177,61 @@ const UPDATE_KEYS = [
   'assigned_department',
   'priority',
   'parent_task_id',
+  'section_id',
 ] as const
+
+/**
+ * Update a task's section and all its descendant tasks to the same section.
+ * When a parent task is moved to a section, all subtasks move with it.
+ * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ */
+export async function updateTaskSectionWithDescendants(
+  taskId: string,
+  sectionId: string | null
+): Promise<void> {
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const ts = now()
+
+    const rows = await db.select<{ id: string }[]>(
+      `WITH RECURSIVE descendants AS (
+        SELECT id FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL
+        UNION ALL
+        SELECT t.id FROM ${TABLE} t
+        INNER JOIN descendants d ON t.parent_task_id = d.id
+        WHERE t.deleted_at IS NULL
+      )
+      SELECT id FROM descendants`,
+      [taskId]
+    )
+
+    const ids = rows.map((r) => r.id)
+    if (ids.length === 0) return
+
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+      { sql: 'BEGIN', bindValues: [] },
+    ]
+
+    for (const id of ids) {
+      statements.push({
+        sql: `UPDATE ${TABLE} SET section_id = $1, updated_at = $2 WHERE id = $3`,
+        bindValues: [sectionId, ts, id],
+      })
+    }
+
+    const outboxRows = ids.map((entityId) => ({
+      entity: TABLE,
+      entityId,
+      operation: 'update' as const,
+      payloadJson: JSON.stringify({ section_id: sectionId }),
+    }))
+    const outboxStmt = outboxStatementForRows(outboxRows)
+    if (outboxStmt) statements.push(outboxStmt)
+
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+    await executeBatch(db, statements)
+  })
+}
 
 export async function updateTask(id: string, patch: UpdateTaskPatch): Promise<ProductionTask> {
   const db = await getDb()

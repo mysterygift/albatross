@@ -53,7 +53,7 @@ export async function duplicateProduction(
   const notes = (prodRows[0]!.notes as string | null) ?? null
 
   // Load all source data first (reads only).
-  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs] = await Promise.all([
+  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs] = await Promise.all([
     db.select<Record<string, unknown>[]>(`SELECT * FROM units WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM people WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM locations WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -74,6 +74,7 @@ export async function duplicateProduction(
       [sourceProductionId]
     ),
     db.select<Record<string, unknown>[]>(`SELECT * FROM key_contacts WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM production_task_sections WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM production_tasks WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM deliverables WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT ts.* FROM technical_specs ts INNER JOIN deliverables d ON d.id = ts.deliverable_id AND d.production_id = $1 AND d.deleted_at IS NULL WHERE ts.deleted_at IS NULL`, [sourceProductionId]),
@@ -84,6 +85,7 @@ export async function duplicateProduction(
   ])
 
   const taskIdMap: IdMap = new Map()
+  const sectionIdMap: IdMap = new Map()
   const unitIdMap: IdMap = new Map()
   const personIdMap: IdMap = new Map()
   const locationIdMap: IdMap = new Map()
@@ -275,6 +277,14 @@ export async function duplicateProduction(
       bindValues: [newId(), newProdId, r.department, r.name, r.phone, r.email, r.notes, ts, ts],
     })
   }
+  for (const r of taskSections) {
+    const id = newId()
+    sectionIdMap.set(r.id as string, id)
+    statements.push({
+      sql: `INSERT INTO production_task_sections (id, production_id, name, sort_order, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      bindValues: [id, newProdId, r.name, r.sort_order ?? 0, ts, ts],
+    })
+  }
   // Topological order: parents before children (for parent_task_id mapping)
   const taskRows = tasks as Array<Record<string, unknown> & { id: string; parent_task_id?: string | null }>
   const taskIds = new Set(taskRows.map((t) => t.id))
@@ -307,8 +317,9 @@ export async function duplicateProduction(
     const id = newId()
     taskIdMap.set(r.id, id)
     const newParentId = mapId(taskIdMap, r.parent_task_id ?? null)
+    const newSectionId = mapId(sectionIdMap, r.section_id as string | null)
     statements.push({
-      sql: `INSERT INTO production_tasks (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      sql: `INSERT INTO production_tasks (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       bindValues: [
         id,
         newProdId,
@@ -319,6 +330,7 @@ export async function duplicateProduction(
         r.assigned_department ?? null,
         r.priority ?? null,
         newParentId,
+        newSectionId,
         ts,
         ts,
       ],

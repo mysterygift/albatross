@@ -6,14 +6,23 @@ import {
   listTasksByProduction,
   createTask,
   updateTask,
+  updateTaskSectionWithDescendants,
   deleteTask,
   type TaskFilters,
   type CreateTaskData,
   type UpdateTaskPatch,
 } from '@/lib/db/repositories/tasks'
+import {
+  listTaskSectionsByProduction,
+  createTaskSection,
+  updateTaskSection,
+  deleteTaskSection,
+  type CreateTaskSectionData,
+  type UpdateTaskSectionPatch,
+} from '@/lib/db/repositories/taskSections'
 import { buildTaskTree, flattenTaskTreeForDisplay, getSubtaskProgress } from '@/lib/tasks/tree'
 import { PRODUCTION_DEPARTMENTS } from '@/lib/productions/departments'
-import type { ProductionTask } from '@/lib/db/types'
+import type { ProductionTask, ProductionTaskSection } from '@/lib/db/types'
 import {
   Table,
   TableBody,
@@ -43,7 +52,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Trash2, Pencil, ListTree, Search, X, ChevronDown } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
+import { Plus, Trash2, Pencil, ListTree, Search, X, ChevronDown, FolderInput, LayoutList } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const PRIORITY_LABELS: Record<1 | 2 | 3, string> = {
@@ -77,6 +99,7 @@ export function ReadinessPage() {
   const [priorityFilter, setPriorityFilter] = useState<1 | 2 | 3 | null>(null)
   const [dueTimingFilter, setDueTimingFilter] = useState<TaskFilters['dueTiming']>('all')
   const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(() => new Set())
+  const [sectionsOpen, setSectionsOpen] = useState(false)
 
   const filters: TaskFilters = useMemo(
     () => ({
@@ -96,11 +119,11 @@ export function ReadinessPage() {
     enabled: !!currentProductionId,
   })
 
-  const taskTree = useMemo(() => buildTaskTree(filteredTasks), [filteredTasks])
-  const flattenedTasks = useMemo(
-    () => flattenTaskTreeForDisplay(taskTree),
-    [taskTree]
-  )
+  const { data: sections = [] } = useQuery({
+    queryKey: ['taskSections', currentProductionId],
+    queryFn: () => listTaskSectionsByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
 
   const taskById = useMemo(
     () => new Map(filteredTasks.map((t) => [t.id, t])),
@@ -119,13 +142,40 @@ export function ReadinessPage() {
     return false
   }
 
-  const tasksForDisplay = useMemo(
-    () =>
-      flattenedTasks.filter(
-        ({ task, depth }) => !isTaskHiddenByCollapse(task, depth)
-      ),
-    [flattenedTasks, collapsedTaskIds, taskById]
-  )
+  const tasksGroupedBySection = useMemo(() => {
+    const bySection = new Map<string | null, ProductionTask[]>()
+    bySection.set(null, [])
+    for (const s of sections) bySection.set(s.id, [])
+    for (const t of filteredTasks) {
+      const key = t.section_id ?? null
+      if (!bySection.has(key)) bySection.set(key, [])
+      bySection.get(key)!.push(t)
+    }
+    const result: Array<{
+      sectionId: string | null
+      sectionName: string
+      tasks: Array<{ task: ProductionTask; depth: number }>
+    }> = []
+    for (const s of sections) {
+      const groupTasks = bySection.get(s.id) ?? []
+      if (groupTasks.length === 0) continue
+      const tree = buildTaskTree(groupTasks)
+      const flat = flattenTaskTreeForDisplay(tree)
+      const visible = flat.filter(({ task, depth }) => !isTaskHiddenByCollapse(task, depth))
+      if (visible.length === 0) continue
+      result.push({ sectionId: s.id, sectionName: s.name, tasks: visible })
+    }
+    const unsectioned = bySection.get(null) ?? []
+    if (unsectioned.length > 0) {
+      const tree = buildTaskTree(unsectioned)
+      const flat = flattenTaskTreeForDisplay(tree)
+      const visible = flat.filter(({ task, depth }) => !isTaskHiddenByCollapse(task, depth))
+      if (visible.length > 0) {
+        result.push({ sectionId: null, sectionName: 'Unsectioned', tasks: visible })
+      }
+    }
+    return result
+  }, [filteredTasks, sections, collapsedTaskIds, taskById])
 
   function toggleCollapsed(taskId: string) {
     setCollapsedTaskIds((prev) => {
@@ -163,9 +213,40 @@ export function ReadinessPage() {
     },
   })
 
+  const assignSectionMutation = useMutation({
+    mutationFn: ({ taskId, sectionId }: { taskId: string; sectionId: string | null }) =>
+      updateTaskSectionWithDescendants(taskId, sectionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    },
+  })
+
   const deleteMutation = useMutation({
     mutationFn: deleteTask,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+  })
+
+  const createSectionMutation = useMutation({
+    mutationFn: (data: CreateTaskSectionData) => createTaskSection(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['taskSections'] })
+    },
+  })
+
+  const updateSectionMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: UpdateTaskSectionPatch }) =>
+      updateTaskSection(id, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['taskSections'] })
+    },
+  })
+
+  const deleteSectionMutation = useMutation({
+    mutationFn: deleteTaskSection,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['taskSections'] })
+      queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    },
   })
 
   if (!currentProductionId) {
@@ -193,16 +274,29 @@ export function ReadinessPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-6">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
           <p className="text-muted-foreground text-sm">Production tasks and deadlines</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <Badge variant="secondary" className="font-medium tabular-nums">
             {score}% complete
           </Badge>
+          <ManageSectionsSheet
+            productionId={currentProductionId}
+            sections={sections}
+            filteredTasks={filteredTasks}
+            onCreateSection={(data) => createSectionMutation.mutate(data)}
+            onUpdateSection={(id, patch) => updateSectionMutation.mutate({ id, patch })}
+            onDeleteSection={(id) => deleteSectionMutation.mutate(id)}
+            isCreatePending={createSectionMutation.isPending}
+            isUpdatePending={updateSectionMutation.isPending}
+            isDeletePending={deleteSectionMutation.isPending}
+            open={sectionsOpen}
+            onOpenChange={setSectionsOpen}
+          />
           <NewTaskDialog
             productionId={currentProductionId}
             parentTaskId={addSubtaskParent?.id ?? null}
@@ -220,19 +314,19 @@ export function ReadinessPage() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
         <div className="relative flex-1 sm:max-w-[240px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="Search tasks..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 h-9"
+            className="pl-8 h-8"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as TaskFilters['status'])}>
-            <SelectTrigger className="h-9 w-[120px]">
+            <SelectTrigger className="h-8 w-[120px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -245,7 +339,7 @@ export function ReadinessPage() {
             value={departmentFilter ?? 'all'}
             onValueChange={(v) => setDepartmentFilter(v === 'all' ? null : v)}
           >
-            <SelectTrigger className="h-9 w-[140px]">
+            <SelectTrigger className="h-8 w-[140px]">
               <SelectValue placeholder="Department" />
             </SelectTrigger>
             <SelectContent>
@@ -263,7 +357,7 @@ export function ReadinessPage() {
               setPriorityFilter(v === 'all' ? null : (parseInt(v, 10) as 1 | 2 | 3))
             }
           >
-            <SelectTrigger className="h-9 w-[100px]">
+            <SelectTrigger className="h-8 w-[100px]">
               <SelectValue placeholder="Priority" />
             </SelectTrigger>
             <SelectContent>
@@ -277,7 +371,7 @@ export function ReadinessPage() {
             value={dueTimingFilter}
             onValueChange={(v) => setDueTimingFilter(v as TaskFilters['dueTiming'])}
           >
-            <SelectTrigger className="h-9 w-[120px]">
+            <SelectTrigger className="h-8 w-[120px]">
               <SelectValue placeholder="Due" />
             </SelectTrigger>
             <SelectContent>
@@ -292,7 +386,7 @@ export function ReadinessPage() {
               variant="ghost"
               size="sm"
               onClick={clearFilters}
-              className="h-9 gap-1.5 text-muted-foreground hover:text-foreground"
+              className="h-8 gap-1.5 text-muted-foreground hover:text-foreground"
             >
               <X className="size-3.5" />
               Clear filters
@@ -305,18 +399,18 @@ export function ReadinessPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="pl-4">Description</TableHead>
-              <TableHead className="w-[140px]">Department</TableHead>
-              <TableHead className="w-[110px]">Due date</TableHead>
-              <TableHead className="w-[90px]">Priority</TableHead>
-              <TableHead className="w-[100px]">Status</TableHead>
-              <TableHead className="w-[100px] pr-4 text-right">Actions</TableHead>
+              <TableHead className="pl-4 py-2">Description</TableHead>
+              <TableHead className="w-[140px] py-2">Department</TableHead>
+              <TableHead className="w-[110px] py-2">Due date</TableHead>
+              <TableHead className="w-[90px] py-2">Priority</TableHead>
+              <TableHead className="w-[100px] py-2">Status</TableHead>
+              <TableHead className="w-[100px] pr-4 py-2 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {tasksForDisplay.length === 0 ? (
+            {tasksGroupedBySection.length === 0 ? (
               <TableRow className="hover:bg-transparent border-0">
-                <TableCell colSpan={6} className="py-16 text-center">
+                <TableCell colSpan={6} className="py-12 text-center">
                   {allTasks.length === 0 ? (
                     <div className="space-y-2">
                       <p className="text-muted-foreground font-medium">No tasks yet.</p>
@@ -345,7 +439,13 @@ export function ReadinessPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              tasksForDisplay.map(({ task, depth }) => {
+              tasksGroupedBySection.flatMap((group) => [
+                <TableRow key={`section-${group.sectionId ?? 'unsectioned'}`} className="hover:bg-transparent border-0 bg-muted/30">
+                  <TableCell colSpan={6} className="py-1.5 pl-4 text-sm font-medium text-muted-foreground">
+                    {group.sectionName} ({group.tasks.length})
+                  </TableCell>
+                </TableRow>,
+                ...group.tasks.map(({ task, depth }) => {
                 const prog = getSubtaskProgress(task.id, filteredTasks)
                 const isParent = prog.total > 0
                 return (
@@ -359,7 +459,7 @@ export function ReadinessPage() {
                       isParent && depth === 0 && 'bg-muted/10'
                     )}
                   >
-                    <TableCell className="py-3 pl-4 align-top">
+                    <TableCell className="py-2 pl-4 align-top">
                       <div
                         className="flex items-start gap-2"
                         style={
@@ -400,13 +500,13 @@ export function ReadinessPage() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="py-3 text-muted-foreground text-sm align-top">
+                    <TableCell className="py-2 text-muted-foreground text-sm align-top">
                       {task.assigned_department ?? '—'}
                     </TableCell>
-                    <TableCell className="py-3 text-muted-foreground text-sm align-top">
+                    <TableCell className="py-2 text-muted-foreground text-sm align-top">
                       {formatDueDate(task.due_date)}
                     </TableCell>
-                    <TableCell className="py-3 align-top">
+                    <TableCell className="py-2 align-top">
                       {task.priority ? (
                         <Badge
                           variant={task.priority === 1 ? 'destructive' : 'secondary'}
@@ -418,7 +518,7 @@ export function ReadinessPage() {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="py-3 align-top">
+                    <TableCell className="py-2 align-top">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -433,7 +533,7 @@ export function ReadinessPage() {
                         {task.is_complete ? 'Complete' : 'Incomplete'}
                       </Button>
                     </TableCell>
-                    <TableCell className="py-3 pr-4 text-right align-top">
+                    <TableCell className="py-2 pr-4 text-right align-top">
                       <div className="flex items-center justify-end gap-0.5">
                         {isParent && (
                           <Button
@@ -460,6 +560,16 @@ export function ReadinessPage() {
                               aria-hidden
                             />
                           </Button>
+                        )}
+                        {task.parent_task_id === null && (
+                          <AssignToSectionDropdown
+                            task={task}
+                            sections={sections}
+                            onAssign={(sectionId) =>
+                              assignSectionMutation.mutate({ taskId: task.id, sectionId })
+                            }
+                            isPending={assignSectionMutation.isPending}
+                          />
                         )}
                         <Button
                           variant="ghost"
@@ -492,6 +602,7 @@ export function ReadinessPage() {
                   </TableRow>
                 )
               })
+            ])
             )}
           </TableBody>
         </Table>
@@ -508,6 +619,199 @@ export function ReadinessPage() {
         />
       )}
     </div>
+  )
+}
+
+function AssignToSectionDropdown({
+  task: _task,
+  sections,
+  onAssign,
+  isPending,
+}: {
+  task: ProductionTask
+  sections: ProductionTaskSection[]
+  onAssign: (sectionId: string | null) => void
+  isPending: boolean
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0"
+          title="Assign to section"
+          aria-label="Assign to section"
+          disabled={isPending}
+        >
+          <FolderInput className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onAssign(null)}>
+          No section
+        </DropdownMenuItem>
+        {sections.map((s) => (
+          <DropdownMenuItem
+            key={s.id}
+            onClick={() => onAssign(s.id)}
+          >
+            {s.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function ManageSectionsSheet({
+  productionId,
+  sections,
+  filteredTasks,
+  onCreateSection,
+  onUpdateSection,
+  onDeleteSection,
+  isCreatePending,
+  isUpdatePending,
+  isDeletePending,
+  open,
+  onOpenChange,
+}: {
+  productionId: string
+  sections: ProductionTaskSection[]
+  filteredTasks: ProductionTask[]
+  onCreateSection: (data: CreateTaskSectionData) => void
+  onUpdateSection: (id: string, patch: UpdateTaskSectionPatch) => void
+  onDeleteSection: (id: string) => void
+  isCreatePending: boolean
+  isUpdatePending: boolean
+  isDeletePending: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [newSectionName, setNewSectionName] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+
+  const taskCountBySection = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of filteredTasks) {
+      if (t.section_id) {
+        counts.set(t.section_id, (counts.get(t.section_id) ?? 0) + 1)
+      }
+    }
+    return counts
+  }, [filteredTasks])
+
+  const handleAddSection = () => {
+    const name = newSectionName.trim()
+    if (!name) return
+    onCreateSection({ production_id: productionId, name })
+    setNewSectionName('')
+  }
+
+  const handleStartEdit = (id: string, currentName: string) => {
+    setEditingId(id)
+    setEditingName(currentName)
+  }
+
+  const handleSaveEdit = () => {
+    if (!editingId || !editingName.trim()) return
+    onUpdateSection(editingId, { name: editingName.trim() })
+    setEditingId(null)
+    setEditingName('')
+  }
+
+  const handleDelete = (id: string, name: string) => {
+    const count = taskCountBySection.get(id) ?? 0
+    if (count > 0 && !window.confirm(`Delete "${name}"? ${count} task${count !== 1 ? 's' : ''} will be moved to Unsectioned.`)) return
+    if (count === 0 && !window.confirm(`Delete "${name}"?`)) return
+    onDeleteSection(id)
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1.5">
+          <LayoutList className="size-4" />
+          Manage Sections
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="right" className="sm:max-w-sm">
+        <SheetHeader>
+          <SheetTitle>Task Sections</SheetTitle>
+        </SheetHeader>
+        <div className="flex flex-col gap-4 py-4">
+          <div className="flex gap-2">
+            <Input
+              placeholder="New section name"
+              value={newSectionName}
+              onChange={(e) => setNewSectionName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddSection()}
+              className="flex-1"
+            />
+            <Button onClick={handleAddSection} disabled={!newSectionName.trim() || isCreatePending}>
+              Add
+            </Button>
+          </div>
+          <ul className="space-y-2">
+            {sections.map((s) => (
+              <li key={s.id} className="flex items-center gap-2 rounded-md border p-2">
+                {editingId === s.id ? (
+                  <>
+                    <Input
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveEdit()
+                        if (e.key === 'Escape') setEditingId(null)
+                      }}
+                      className="flex-1 h-8"
+                      autoFocus
+                    />
+                    <Button size="sm" onClick={handleSaveEdit} disabled={!editingName.trim() || isUpdatePending}>
+                      Save
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-sm font-medium truncate">{s.name}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {taskCountBySection.get(s.id) ?? 0} tasks
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 shrink-0"
+                      onClick={() => handleStartEdit(s.id, s.name)}
+                      aria-label="Rename section"
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 shrink-0 text-destructive hover:text-destructive"
+                      onClick={() => handleDelete(s.id, s.name)}
+                      disabled={isDeletePending}
+                      aria-label="Delete section"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+          {sections.length === 0 && (
+            <p className="text-sm text-muted-foreground">No sections yet. Add one above.</p>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   )
 }
 
