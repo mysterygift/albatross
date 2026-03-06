@@ -108,6 +108,7 @@ New productions get default categories via `seedDefaultBudgetCategories(producti
 - **Tables:** `cost_report_groups`, `cost_report_group_accounts` (migration 0016). Repository: `src/lib/db/repositories/costReportGroups.ts`.
 - **Purpose:** Presentation and reporting only. Groups organise accounts (e.g. “Above the line”, “Below the line”) for reports and exports. They **do not** affect posting rules, totals, or derived calculations.
 - **Many-to-many:** An account can belong to multiple groups. Header or leaf accounts may be mapped. Managed in **Settings** (Cost report groups card); not used on the Budget page for calculations.
+- **Cost Report tab:** The Budget page has a "Cost Report" tab (print-oriented view of the same data). See **docs/COST_REPORT.md** for design and implementation of the Cost Report view and cost report groups.
 
 ---
 
