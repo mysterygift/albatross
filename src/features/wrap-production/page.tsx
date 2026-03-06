@@ -30,7 +30,7 @@ import { listShootDaysByProduction } from '@/lib/db/repositories/schedule'
 import { listCalendarShootDayEvents } from '@/lib/db/repositories/calendar'
 import { listDeliverablesByProduction } from '@/lib/db/repositories/deliverable'
 import type { Expense } from '@/lib/db/types'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -50,7 +50,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Loader2, ChevronDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 function expenseDescription(expense: Expense): string {
   return (expense.vendor ?? expense.notes ?? 'Expense').trim() || 'Expense'
@@ -60,6 +61,62 @@ const DELIVERABLE_WRAP_STATUS_LABELS: Record<DeliverableWrapStatus, string> = {
   signed_off: 'Signed off',
   pending: 'Pending',
   unknown: 'Not reviewed',
+}
+
+function CollapsibleSection({
+  id,
+  title,
+  description,
+  badge,
+  expanded,
+  onToggle,
+  children,
+}: {
+  id: string
+  title: string
+  description: string
+  badge: React.ReactNode
+  expanded: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <Card className="gap-0 overflow-hidden p-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={`${id}-content`}
+        id={`${id}-header`}
+        className="flex w-full items-center justify-between gap-3 rounded-t-lg border-0 border-b border-border bg-card px-6 py-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <span className="font-medium">{title}</span>
+            <p className="text-muted-foreground mt-0.5 text-sm">{description}</p>
+          </div>
+          {badge}
+        </div>
+        <ChevronDown
+          className={cn('size-5 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-180')}
+          aria-hidden
+        />
+      </button>
+      <div
+        id={`${id}-content`}
+        role="region"
+        aria-labelledby={`${id}-header`}
+        className={cn(
+          'grid transition-[grid-template-rows] duration-200 ease-out',
+          expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="border-t border-border px-6 py-6">{children}</div>
+        </div>
+      </div>
+    </Card>
+  )
 }
 
 function DeliverableWrapStatusBadge({ status }: { status: DeliverableWrapStatus }) {
@@ -89,6 +146,14 @@ export function WrapProductionPage() {
   const { format } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [expandedSections, setExpandedSections] = useState({
+    budget: false,
+    schedule: false,
+    deliverables: false,
+    archive: false,
+  })
+  const toggleSection = (key: keyof typeof expandedSections) =>
+    setExpandedSections((s) => ({ ...s, [key]: !s[key] }))
 
   const { data: budgetItems = [] } = useQuery({
     queryKey: ['budget-items', currentProductionId],
@@ -218,7 +283,7 @@ export function WrapProductionPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-10">
+    <div className="mx-auto max-w-3xl rounded-xl bg-stone-100/10 px-8 py-8 dark:bg-stone-950/50">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Wrap Production</h1>
         <p className="text-muted-foreground">
@@ -227,37 +292,35 @@ export function WrapProductionPage() {
         </p>
       </header>
 
-      <section className="space-y-6">
+      <section className="mt-10 space-y-4">
         {/* Budget and Actualisation — real readiness section */}
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <CardTitle className="text-base">Budget and Actualisation</CardTitle>
-                <CardDescription>
-                  Review budget reconciliation issues before wrapping this production.
-                </CardDescription>
-              </div>
-              {readiness.status === 'ready' ? (
-                <Badge
-                  variant="secondary"
-                  className="shrink-0 gap-1 bg-green-600/15 text-green-800 dark:bg-green-500/20 dark:text-green-200"
-                >
-                  <CheckCircle2 className="size-3.5" />
-                  Ready
-                </Badge>
-              ) : (
-                <Badge
-                  variant="secondary"
-                  className="shrink-0 gap-1 bg-amber-500/15 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
-                >
-                  <AlertTriangle className="size-3.5" />
-                  Needs review
-                </Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
+        <CollapsibleSection
+          id="budget"
+          title="Budget and Actualisation"
+          description="Review budget reconciliation issues before wrapping this production."
+          badge={
+            readiness.status === 'ready' ? (
+              <Badge
+                variant="secondary"
+                className="shrink-0 gap-1 bg-green-600/15 text-green-800 dark:bg-green-500/20 dark:text-green-200"
+              >
+                <CheckCircle2 className="size-3.5" />
+                Ready
+              </Badge>
+            ) : (
+              <Badge
+                variant="secondary"
+                className="shrink-0 gap-1 bg-amber-500/15 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
+              >
+                <AlertTriangle className="size-3.5" />
+                Needs review
+              </Badge>
+            )
+          }
+          expanded={expandedSections.budget}
+          onToggle={() => toggleSection('budget')}
+        >
+          <div className="space-y-6">
             {/* Summary */}
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-border bg-muted/30 p-3">
@@ -480,39 +543,37 @@ export function WrapProductionPage() {
                 </ul>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </CollapsibleSection>
 
         {/* Schedule and Calendar — real readiness section */}
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <CardTitle className="text-base">Schedule and Calendar</CardTitle>
-                <CardDescription>
-                  Check that no future production activity remains before wrapping.
-                </CardDescription>
-              </div>
-              {scheduleReadiness.status === 'ready' ? (
-                <Badge
-                  variant="secondary"
-                  className="shrink-0 gap-1 bg-green-600/15 text-green-800 dark:bg-green-500/20 dark:text-green-200"
-                >
-                  <CheckCircle2 className="size-3.5" />
-                  Ready
-                </Badge>
-              ) : (
-                <Badge
-                  variant="secondary"
-                  className="shrink-0 gap-1 bg-amber-500/15 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
-                >
-                  <AlertTriangle className="size-3.5" />
-                  Needs review
-                </Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
+        <CollapsibleSection
+          id="schedule"
+          title="Schedule and Calendar"
+          description="Check that no future production activity remains before wrapping."
+          badge={
+            scheduleReadiness.status === 'ready' ? (
+              <Badge
+                variant="secondary"
+                className="shrink-0 gap-1 bg-green-600/15 text-green-800 dark:bg-green-500/20 dark:text-green-200"
+              >
+                <CheckCircle2 className="size-3.5" />
+                Ready
+              </Badge>
+            ) : (
+              <Badge
+                variant="secondary"
+                className="shrink-0 gap-1 bg-amber-500/15 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
+              >
+                <AlertTriangle className="size-3.5" />
+                Needs review
+              </Badge>
+            )
+          }
+          expanded={expandedSections.schedule}
+          onToggle={() => toggleSection('schedule')}
+        >
+          <div className="space-y-6">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-border bg-muted/30 p-3">
                 <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
@@ -580,39 +641,37 @@ export function WrapProductionPage() {
             <p className="text-muted-foreground text-sm">
               Review in <Link to="/schedule/calendar" className="underline hover:no-underline">Schedule</Link>.
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </CollapsibleSection>
 
         {/* Deliverables — real readiness section */}
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <CardTitle className="text-base">Deliverables</CardTitle>
-                <CardDescription>
-                  Review whether post-production deliverables have been signed off before wrapping.
-                </CardDescription>
-              </div>
-              {deliverablesReadiness.status === 'ready' ? (
-                <Badge
-                  variant="secondary"
-                  className="shrink-0 gap-1 bg-green-600/15 text-green-800 dark:bg-green-500/20 dark:text-green-200"
-                >
-                  <CheckCircle2 className="size-3.5" />
-                  Ready
-                </Badge>
-              ) : (
-                <Badge
-                  variant="secondary"
-                  className="shrink-0 gap-1 bg-amber-500/15 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
-                >
-                  <AlertTriangle className="size-3.5" />
-                  Needs review
-                </Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
+        <CollapsibleSection
+          id="deliverables"
+          title="Deliverables"
+          description="Review whether post-production deliverables have been signed off before wrapping."
+          badge={
+            deliverablesReadiness.status === 'ready' ? (
+              <Badge
+                variant="secondary"
+                className="shrink-0 gap-1 bg-green-600/15 text-green-800 dark:bg-green-500/20 dark:text-green-200"
+              >
+                <CheckCircle2 className="size-3.5" />
+                Ready
+              </Badge>
+            ) : (
+              <Badge
+                variant="secondary"
+                className="shrink-0 gap-1 bg-amber-500/15 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
+              >
+                <AlertTriangle className="size-3.5" />
+                Needs review
+              </Badge>
+            )
+          }
+          expanded={expandedSections.deliverables}
+          onToggle={() => toggleSection('deliverables')}
+        >
+          <div className="space-y-6">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-border bg-muted/30 p-3">
                 <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
@@ -680,23 +739,24 @@ export function WrapProductionPage() {
                 Review in <Link to="/deliverables" className="underline hover:no-underline">Deliverables</Link>.
               </p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </CollapsibleSection>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Archive Readiness</CardTitle>
-            <CardDescription>Final completion and archive</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground text-sm">
-              Final completion and archive actions will appear here.
-            </p>
-          </CardContent>
-        </Card>
+        <CollapsibleSection
+          id="archive"
+          title="Archive Readiness"
+          description="Final completion and archive"
+          badge={<span className="text-muted-foreground text-sm">—</span>}
+          expanded={expandedSections.archive}
+          onToggle={() => toggleSection('archive')}
+        >
+          <p className="text-muted-foreground text-sm">
+            Final completion and archive actions will appear here.
+          </p>
+        </CollapsibleSection>
       </section>
 
-      <footer className="border-t border-border pt-8">
+      <footer className="mt-10 border-t border-border pt-8">
         <div className="space-y-3">
           <Button
             variant="destructive"

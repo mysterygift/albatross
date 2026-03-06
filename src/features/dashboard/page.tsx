@@ -49,17 +49,17 @@ export function DashboardPage() {
       </div>
 
       {wrapSuccess && (
-        <Alert className="border-green-600/50 bg-green-50 dark:bg-green-950/30 dark:border-green-800">
-          <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
-          <AlertTitle>Production completed and archived.</AlertTitle>
-          <AlertDescription>
+        <Alert className="border-green-600/50 bg-green-500 dark:bg-green-90/30 dark:border-green-80 py-3 px-4">
+          <CheckCircle2 className="h-4 w-4 text-black dark:text-white" />
+          <AlertTitle className="text-white dark:text-white">Production completed and archived.</AlertTitle>
+          <AlertDescription className="text-white dark:text-white">
             The production has been wrapped and archived. You can view it in Productions with
             “Show archived” enabled.
           </AlertDescription>
           <button
             type="button"
             onClick={() => navigate(location.pathname, { replace: true, state: {} })}
-            className="text-muted-foreground mt-2 text-sm underline hover:no-underline"
+            className="text-white mt-2 text-sm underline hover:no-underline"
           >
             Dismiss
           </button>
