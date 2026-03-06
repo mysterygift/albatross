@@ -220,6 +220,28 @@
   color: #1a1a1a !important;
 }
 
+/* Cost Report: ledger ladder — code column + divider, rollup alignment, account indent */
+.cost-report-print .cost-report-col-code,
+.cost-report-print .cost-report-code-cell {
+  width: 90px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  border-right: 1px solid rgba(0, 0, 0, 0.12);
+}
+.cost-report-print .cost-report-code-cell {
+  text-align: right;
+}
+.cost-report-print .cost-report-account-cell {
+  padding-left: 10px;
+  padding-right: 8px;
+}
+.cost-report-print tr[data-is-rollup="true"] .cost-report-code-cell,
+.cost-report-print tr[data-is-rollup="true"] .cost-report-account-cell {
+  text-align: left;
+  padding-left: 10px;
+  padding-right: 8px;
+}
+
 /* Cost Report print: professional layout, PDF-ready */
 @page {
   margin: 20mm;
@@ -270,8 +292,25 @@
     border: 1px solid #e5e7eb;
     padding: 6px 8px;
   }
-  .cost-report-print .cost-report-col-code {
+  .cost-report-print .cost-report-col-code,
+  .cost-report-print .cost-report-code-cell {
     width: 90px !important;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    border-right: 1px solid rgba(0, 0, 0, 0.1);
+  }
+  .cost-report-print .cost-report-code-cell {
+    text-align: right;
+  }
+  .cost-report-print .cost-report-account-cell {
+    padding-left: 10px;
+    padding-right: 8px;
+  }
+  .cost-report-print tr[data-is-rollup="true"] .cost-report-code-cell,
+  .cost-report-print tr[data-is-rollup="true"] .cost-report-account-cell {
+    text-align: left;
+    padding-left: 10px;
+    padding-right: 8px;
   }
   .cost-report-print .cost-report-col-account {
     width: auto !important;

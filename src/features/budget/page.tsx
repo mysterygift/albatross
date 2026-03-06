@@ -79,7 +79,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, Printer, SlidersHorizontal } from 'lucide-react'
+import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, SlidersHorizontal } from 'lucide-react'
 import { saveFileWithDialog } from '@/lib/files'
 import { getAccountBandColor } from '@/lib/budget/accountBandColor'
 import type { BudgetItem, BudgetAccount } from '@/lib/db/types'
@@ -842,6 +842,237 @@ function hexWithAlpha(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
+/** Hex-only PDF stylesheet for Cost Report export (Albatross theme). Injected in onclone so html2canvas never sees oklch. */
+function buildCostReportPdfCss(): string {
+  return `
+/* 1) Reset / normalization for cloned document */
+*, *::before, *::after {
+  box-sizing: border-box;
+  color: #1a1a1a !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border-color: #e5e5e7 !important;
+  outline-color: #1a1a1a !important;
+  fill: #1a1a1a !important;
+  stroke: #1a1a1a !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+html, body {
+  background: #ffffff !important;
+  color: #1a1a1a !important;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.no-print { display: none !important; }
+.text-muted-foreground { color: #525252 !important; }
+.text-destructive { color: #b91c1c !important; }
+
+/* 2) Albatross PDF theme – typography and spacing */
+.cost-report-print {
+  background: #ffffff !important;
+  color: #1a1a1a !important;
+  padding: 0;
+}
+.cost-report-print .report-header {
+  border-bottom: 1px solid #e5e5e7;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+}
+.cost-report-print .report-header h2 {
+  font-size: 19px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 2px 0;
+}
+.cost-report-print .report-header p {
+  font-size: 11px;
+  font-weight: 500;
+  color: #525252;
+  margin: 0;
+}
+.cost-report-print .report-section-header {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #525252;
+  margin: 0 0 8px 0;
+}
+.cost-report-print .cost-report-table {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.cost-report-print .cost-report-table th,
+.cost-report-print .cost-report-table td {
+  border: 1px solid #e5e5e7;
+  padding: 6px 10px;
+  vertical-align: top;
+}
+.cost-report-print .cost-report-table thead th {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #525252;
+  border-bottom: 2px solid #d4d4d8;
+  padding: 8px 10px;
+}
+.cost-report-print .cost-report-col-code { width: 90px; }
+.cost-report-print .cost-report-col-account { width: auto; }
+.cost-report-print .cost-report-col-budget,
+.cost-report-print .cost-report-col-actual,
+.cost-report-print .cost-report-col-variance {
+  width: 120px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.cost-report-print .cost-report-col-pct {
+  width: 80px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.cost-report-print .cost-report-col-code,
+.cost-report-print .cost-report-code-cell {
+  width: 90px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  border-right: 1px solid rgba(0,0,0,0.12);
+}
+.cost-report-print .cost-report-code-cell {
+  text-align: right;
+}
+.cost-report-print .cost-report-account-cell {
+  padding-left: 10px;
+  padding-right: 8px;
+}
+.cost-report-print tr[data-is-rollup="true"] .cost-report-code-cell,
+.cost-report-print tr[data-is-rollup="true"] .cost-report-account-cell {
+  text-align: left;
+  padding-left: 10px;
+  padding-right: 8px;
+}
+.cost-report-print .cost-report-table tbody tr[data-band-hex] {
+  box-shadow: inset 1px 0 0 0 rgba(255,255,255,0.4) !important;
+}
+.cost-report-print .cost-report-table tbody tr[data-is-rollup="true"] {
+  background: var(--row-tint, transparent) !important;
+}
+.cost-report-print .cost-report-table tbody tr:nth-child(even):not([data-is-rollup="true"]) {
+  background: rgba(0,0,0,0.02) !important;
+}
+.cost-report-print .cost-report-group-total {
+  border-top: 1px solid #d4d4d8 !important;
+  font-weight: 600 !important;
+  background: rgba(0,0,0,0.02) !important;
+}
+.cost-report-print .cost-report-subtotals table {
+  font-size: 11px;
+}
+.cost-report-print .cost-report-subtotals th,
+.cost-report-print .cost-report-subtotals td {
+  padding: 6px 10px;
+  border: 1px solid #e5e5e7;
+}
+.cost-report-print .cost-report-subtotals .report-section-header {
+  border-top: 1px solid #d4d4d8;
+  padding-top: 12px;
+  margin-top: 8px;
+}
+.cost-report-print .cost-report-subtotals tr:last-child td {
+  font-weight: 600;
+  border-top: 1px solid #d4d4d8;
+}
+.cost-report-print .derived-overlays {
+  border: 1px solid #e5e5e7;
+  background: rgba(67, 56, 202, 0.04) !important;
+  padding: 12px 16px;
+}
+.cost-report-print .derived-overlays .text-muted-foreground {
+  font-style: italic;
+  color: #525252 !important;
+}
+.cost-report-print .final-totals {
+  border: 1px solid #e5e5e7;
+  border-top: 3px solid #3f3f46;
+  padding: 12px 16px;
+  font-size: 12px;
+}
+.cost-report-print .final-totals .report-section-header {
+  margin-bottom: 4px;
+}
+.cost-report-print .final-totals p {
+  font-weight: 600;
+  margin: 0 0 4px 0;
+}
+.cost-report-print .final-totals .text-xl {
+  font-size: 18px;
+}
+.cost-report-print .cost-report-table-wrap {
+  border: 1px solid #e5e5e7;
+  border-radius: 0;
+}
+.cost-report-print .report-section.rounded-md {
+  border: 1px solid #e5e5e7;
+}
+.cost-report-print .grid > div {
+  border: 1px solid #e5e5e7;
+  padding: 12px 16px;
+  background: #ffffff !important;
+}
+.cost-report-print .grid > div p:first-child {
+  font-size: 11px;
+  color: #525252;
+  margin: 0 0 4px 0;
+}
+.cost-report-print .grid > div .text-2xl {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* 3) Safety fallbacks */
+.cost-report-print,
+.cost-report-print *,
+.cost-report-print *::before,
+.cost-report-print *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+`
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const m = hex.match(/^#?([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/)
+  if (!m) return `rgba(0,0,0,${alpha})`
+  const r = parseInt(m[1], 16)
+  const g = parseInt(m[2], 16)
+  const b = parseInt(m[3], 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
+/** In cloned document, apply band colours to rows with data-band-hex (left border + optional rollup tint). Archived rows get reduced opacity. */
+function applyBandColorsInClone(clonedDoc: Document): void {
+  const rows = clonedDoc.querySelectorAll<HTMLElement>('tr[data-band-hex]')
+  rows.forEach((row) => {
+    const hex = row.getAttribute('data-band-hex')
+    if (!hex) return
+    const isArchived = row.getAttribute('data-archived') === 'true'
+    const borderAlpha = isArchived ? 0.35 : 0.62
+    const tintAlpha = isArchived ? 0.02 : 0.04
+    const borderColor = hexToRgba(hex, borderAlpha)
+    row.style.borderLeft = `4px solid ${borderColor}`
+    if (row.getAttribute('data-is-rollup') === 'true') {
+      row.style.setProperty('--row-tint', hexToRgba(hex, tintAlpha))
+    }
+  })
+}
+
 type ProductionTotalAmount = {
   id: string
   name: string
@@ -859,6 +1090,14 @@ type GroupTotalRow = {
   actualTotal: number
   variance: number
   percentSpent: number | null
+}
+
+/** Trigger browser print for Cost Report. Kept in code for re-enabling (e.g. via feature flag). */
+export function triggerCostReportPrint(): void {
+  const p = window.print()
+  if (p != null && typeof (p as Promise<void>).catch === 'function') {
+    ;(p as Promise<void>).catch(() => {})
+  }
 }
 
 function CostReportView({
@@ -957,23 +1196,7 @@ function CostReportView({
       void el.offsetHeight
     try {
       const html2pdf = (await import('html2pdf.js')).default
-      const hexOnlyCss = `
-        *, *::before, *::after {
-          color: #1a1a1a !important;
-          background: transparent !important;
-          background-color: transparent !important;
-          border-color: #e5e7eb !important;
-          outline-color: #1a1a1a !important;
-          fill: #1a1a1a !important;
-          stroke: #1a1a1a !important;
-          box-shadow: none !important;
-          text-shadow: none !important;
-        }
-        html, body { background: #ffffff !important; color: #1a1a1a !important; }
-        .text-muted-foreground { color: #525252 !important; }
-        .text-destructive { color: #b91c1c !important; }
-        .no-print { display: none !important; }
-      `
+      const pdfCss = buildCostReportPdfCss()
       const opt = {
         margin: 10,
         filename: 'cost-report.pdf',
@@ -984,8 +1207,10 @@ function CostReportView({
           letterRendering: true,
           onclone: (clonedDoc: Document) => {
             const style = clonedDoc.createElement('style')
-            style.textContent = hexOnlyCss
+            style.textContent = pdfCss
             clonedDoc.head.appendChild(style)
+            applyBandColorsInClone(clonedDoc)
+            void clonedDoc.body.offsetHeight
           },
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
@@ -1031,19 +1256,6 @@ function CostReportView({
         <Button variant="outline" size="sm" onClick={handleSaveAsPdf} disabled={isSavingPdf}>
           <Download className="mr-2 size-4" />
           {isSavingPdf ? 'Saving…' : 'Save as PDF'}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            const p = window.print()
-            if (p != null && typeof (p as Promise<void>).catch === 'function') {
-              ;(p as Promise<void>).catch(() => {})
-            }
-          }}
-        >
-          <Printer className="mr-2 size-4" />
-          Print
         </Button>
       </div>
 
@@ -1094,8 +1306,8 @@ function CostReportView({
               ))}
               {uncodedTotal > 0 && (
                 <TableRow className="border-border bg-muted/20">
-                  <TableCell className="border-border font-medium">—</TableCell>
-                  <TableCell className="border-border font-medium">Uncoded spend</TableCell>
+                  <TableCell className="cost-report-code-cell border-border font-medium">—</TableCell>
+                  <TableCell className="cost-report-account-cell border-border font-medium">Uncoded spend</TableCell>
                   <TableCell className="border-border text-right">—</TableCell>
                   <TableCell className="border-border text-right">{format(uncodedTotal, productionCurrency).formatted}</TableCell>
                   <TableCell colSpan={2} className="border-border" />
@@ -1144,8 +1356,8 @@ function CostReportView({
                         <Fragment key={node.account.id}>{renderCostReportRows(node, 0, rowCtx, visibleIds)}</Fragment>
                       ))}
                       <TableRow className="cost-report-group-total border-t border-border bg-muted/5 font-medium">
-                        <TableCell className="border-border" />
-                        <TableCell className="border-border">Group total</TableCell>
+                        <TableCell className="cost-report-code-cell border-border" />
+                        <TableCell className="cost-report-account-cell border-border">Group total</TableCell>
                         <TableCell className="border-border text-right tabular-nums">{format(group.budgetTotal, productionCurrency).formatted}</TableCell>
                         <TableCell className="border-border text-right tabular-nums">{format(group.actualTotal, productionCurrency).formatted}</TableCell>
                         <TableCell className={`border-border text-right tabular-nums ${group.variance < 0 ? 'text-destructive' : ''}`}>
@@ -1169,8 +1381,8 @@ function CostReportView({
               <Table className="cost-report-table">
                 <TableBody>
                   <TableRow className="border-border">
-                    <TableCell className="border-border font-medium">—</TableCell>
-                    <TableCell className="border-border font-medium">Uncoded spend</TableCell>
+                    <TableCell className="cost-report-code-cell border-border font-medium">—</TableCell>
+                    <TableCell className="cost-report-account-cell border-border font-medium">Uncoded spend</TableCell>
                     <TableCell className="border-border text-right">—</TableCell>
                     <TableCell className="border-border text-right">{format(uncodedTotal, productionCurrency).formatted}</TableCell>
                     <TableCell colSpan={2} className="border-border" />
@@ -1471,15 +1683,17 @@ function renderCostReportRows(
           : { borderLeft: `3px solid ${bandColor}` }
       }
       data-band-hex={bandColor}
+      data-is-rollup={isRollup ? 'true' : undefined}
+      data-archived={account.archived_at ? 'true' : undefined}
     >
       <TableCell
-        className={`w-[72px] align-top border-border ${isRollup ? 'font-semibold text-foreground' : 'text-foreground'}`}
+        className={`cost-report-code-cell w-[72px] align-top border-border ${isRollup ? 'font-semibold text-foreground' : 'text-foreground'}`}
       >
         {account.code}
       </TableCell>
       <TableCell
-        className={`align-top border-border ${isRollup ? 'font-semibold text-foreground' : ''}`}
-        style={{ paddingLeft: 8 + depth * 14 }}
+        className={`cost-report-account-cell align-top border-border ${isRollup ? 'font-semibold text-foreground' : ''}`}
+        style={depth > 0 ? { paddingLeft: 12 + depth * 14 } : undefined}
       >
         {account.is_postable ? (
           <>
@@ -1528,8 +1742,8 @@ function renderCostReportRows(
       lineItems.forEach((item) => {
         rows.push(
           <TableRow key={item.id} className="border-border bg-muted/10">
-            <TableCell className="border-border" />
-            <TableCell className="border-border pl-6 text-muted-foreground text-sm" style={{ paddingLeft: 8 + depth * 14 + 24 }}>
+            <TableCell className="cost-report-code-cell border-border" />
+            <TableCell className="cost-report-account-cell border-border pl-6 text-muted-foreground text-sm" style={{ paddingLeft: 12 + depth * 14 + 24 }}>
               {item.description}
             </TableCell>
             <TableCell className="text-right border-border text-sm">
@@ -1542,7 +1756,7 @@ function renderCostReportRows(
     } else {
       rows.push(
         <TableRow key={`${account.id}-empty`} className="border-border bg-muted/10">
-          <TableCell colSpan={6} className="border-border text-muted-foreground text-sm italic py-2" style={{ paddingLeft: 8 + depth * 14 + 24 }}>
+          <TableCell colSpan={6} className="border-border text-muted-foreground text-sm italic py-2" style={{ paddingLeft: 12 + depth * 14 + 24 }}>
             No line items yet
           </TableCell>
         </TableRow>
