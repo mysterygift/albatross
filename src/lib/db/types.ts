@@ -17,6 +17,8 @@ export type Production = {
   wrapped_at: string | null
   /** When set, production is archived (hidden from default list); reversible. */
   archived_at: string | null
+  /** When set to 'demo', production was created from the Demo template (used for override confirmation). */
+  created_from_template: string | null
 } & SoftDeletable
 
 export type Person = {

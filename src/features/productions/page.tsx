@@ -8,6 +8,7 @@ import {
   deleteProduction,
   archiveProduction,
   unarchiveProduction,
+  findExistingDemoTemplateProduction,
 } from '@/lib/db/repositories/production'
 import { createProductionFromTemplate } from '@/lib/db/createProductionFromTemplate'
 import {
@@ -97,6 +98,9 @@ const TEMPLATE_OPTIONS: {
   },
 ]
 
+/** Template options visible in the New Production modal. Demo is hidden for now. */
+const VISIBLE_TEMPLATE_OPTIONS = TEMPLATE_OPTIONS.filter((opt) => opt.value !== 'demo')
+
 export function ProductionsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
@@ -108,6 +112,9 @@ export function ProductionsPage() {
   const [actionToast, setActionToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [verifyDeleteResult, setVerifyDeleteResult] = useState<string | null>(null)
   const [verifyDeletePending, setVerifyDeletePending] = useState(false)
+  const [demoOverrideTarget, setDemoOverrideTarget] = useState<{ production: Production; formData: ProductionForm } | null>(null)
+  const [demoOverrideError, setDemoOverrideError] = useState<string | null>(null)
+  const [overrideDeletePending, setOverrideDeletePending] = useState(false)
   const [showArchived, setShowArchived] = useState(() => {
     try {
       return localStorage.getItem('showArchivedProductions') === 'true'
@@ -143,6 +150,10 @@ export function ProductionsPage() {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       setCurrentProductionId(production.id)
       setOpen(false)
+    },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ['productions'] })
+      refetchProductions()
     },
   })
 
@@ -377,13 +388,86 @@ export function ProductionsPage() {
             </DialogTrigger>
           <DialogContent>
             <ProductionFormDialog
-              onSubmit={(data) => createMutation.mutate(data)}
+              onSubmit={async (data) => {
+                if (data.template !== 'demo') {
+                  createMutation.mutate(data)
+                  return
+                }
+                const existing = await findExistingDemoTemplateProduction()
+                if (!existing) {
+                  createMutation.mutate(data)
+                  return
+                }
+                setDemoOverrideError(null)
+                setDemoOverrideTarget({ production: existing, formData: data })
+              }}
               onCancel={() => setOpen(false)}
               isLoading={createMutation.isPending}
               error={createMutation.isError ? (createMutation.error instanceof Error ? createMutation.error.message : 'Something went wrong') : null}
               onDismissError={() => createMutation.reset()}
             />
           </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={demoOverrideTarget !== null}
+            onOpenChange={(open) => {
+              if (!open) {
+                setDemoOverrideTarget(null)
+                setDemoOverrideError(null)
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Creating a new project will override the existing demo project.</DialogTitle>
+                <p className="text-muted-foreground text-sm leading-snug">
+                  The current demo project will be permanently deleted. A new demo project will then be created with the name and description you entered.
+                </p>
+              </DialogHeader>
+              {demoOverrideError && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-destructive text-sm">
+                  {demoOverrideError}
+                </div>
+              )}
+              <DialogFooter className="gap-2 sm:gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setDemoOverrideTarget(null)
+                    setDemoOverrideError(null)
+                  }}
+                  disabled={overrideDeletePending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={overrideDeletePending || createMutation.isPending}
+                  onClick={async () => {
+                    if (!demoOverrideTarget) return
+                    setDemoOverrideError(null)
+                    setOverrideDeletePending(true)
+                    try {
+                      await permanentlyDeleteProduction(demoOverrideTarget.production.id)
+                      if (currentProductionId === demoOverrideTarget.production.id) {
+                        setCurrentProductionId(null)
+                      }
+                      setDemoOverrideTarget(null)
+                      createMutation.mutate(demoOverrideTarget.formData)
+                    } catch (err) {
+                      setDemoOverrideError(err instanceof Error ? err.message : 'Delete failed')
+                    } finally {
+                      setOverrideDeletePending(false)
+                    }
+                  }}
+                >
+                  {overrideDeletePending || createMutation.isPending ? 'Overriding…' : 'Override demo project'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
           </Dialog>
         </div>
       </div>
@@ -625,7 +709,7 @@ function ProductionFormDialog({
             control={form.control}
             render={({ field }) => (
               <div className="grid gap-2" role="radiogroup" aria-label="Project template">
-                {TEMPLATE_OPTIONS.map((opt) => {
+                {VISIBLE_TEMPLATE_OPTIONS.map((opt) => {
                   const isSelected = field.value === opt.value
                   return (
                     <button

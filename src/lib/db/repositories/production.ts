@@ -34,6 +34,7 @@ function rowToProduction(r: Record<string, unknown>): Production {
     deleted_at: r.deleted_at as string | null,
     wrapped_at: (r.wrapped_at as string | null) ?? null,
     archived_at: (r.archived_at as string | null) ?? null,
+    created_from_template: (r.created_from_template as string | null) ?? null,
   }
 }
 
@@ -125,6 +126,31 @@ export async function getProductionBySlug(slug: string): Promise<Production | nu
     [slug]
   )
   return rows.length ? rowToProduction(rows[0]!) : null
+}
+
+/**
+ * Find an existing user-created demo-template production (created_from_template = 'demo').
+ * Used for override confirmation before creating another demo-style project.
+ * Does not include the singleton DEMO_SLUG production (that one is never created via template flow).
+ */
+export async function findExistingDemoTemplateProduction(): Promise<Production | null> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${TABLE} WHERE created_from_template = 'demo' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1`,
+    []
+  )
+  return rows.length ? rowToProduction(rows[0]!) : null
+}
+
+/** Set the created_from_template marker (e.g. 'demo' for Demo template). Used after creating a production from a template. */
+export async function setProductionCreatedFromTemplate(id: string, value: 'demo' | null): Promise<void> {
+  const db = await getDb()
+  const ts = now()
+  await db.execute(
+    `UPDATE ${TABLE} SET created_from_template = $1, updated_at = $2 WHERE id = $3`,
+    [value, ts, id]
+  )
+  await outboxPush(TABLE, id, 'update', JSON.stringify({ created_from_template: value }))
 }
 
 /** Ensure slug is unique; if taken, append -2, -3, etc. */

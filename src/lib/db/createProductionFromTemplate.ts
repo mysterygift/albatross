@@ -5,7 +5,7 @@
 
 import { uuid } from './client'
 import type { Production } from './types'
-import { createProduction } from './repositories/production'
+import { createProduction, setProductionCreatedFromTemplate } from './repositories/production'
 import { listAccounts } from './repositories/budgetAccounts'
 import { createContingencyRule } from './repositories/budgetDerived'
 import { applyTaskTemplateToProduction } from './repositories/taskTemplates'
@@ -41,6 +41,7 @@ export async function createProductionFromTemplate(
         { skipBudgetSeed: true }
       )
       await seedDemoProductionContent(production.id)
+      await setProductionCreatedFromTemplate(production.id, 'demo')
       return production
     }
 
