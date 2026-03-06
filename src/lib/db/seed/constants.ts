@@ -46,6 +46,8 @@ export const IDS = {
   sceneCast: (n: number) => `${P}${String(4000 + n).padStart(4, '0')}`,
   // cast_availability
   availability: (n: number) => `${P}${String(5000 + n).padStart(4, '0')}`,
+  // bookings (cast only for demo)
+  booking: (n: number) => `${P}${String(6200 + n).padStart(4, '0')}`,
   // location_scene
   locationScene: (n: number) => `${P}${String(6000 + n).padStart(4, '0')}`,
   // stripboard_items (legacy table - may not be used if using strips)

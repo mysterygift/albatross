@@ -13,6 +13,7 @@
 import { executeBatch, getDb, now } from '../client'
 import { getProductionBySlug, hardDeleteProduction } from '../repositories/production'
 import { seedDemoBudget } from './demoBudgetSeed'
+import { seedDemoBookings } from './demoBookingSeed'
 import { seedDemoReconciliation } from './demoReconciliationSeed'
 import { seedDemoTasks } from './demoTaskSeed'
 import { listDocumentsByProduction } from '../repositories/document'
@@ -755,6 +756,11 @@ async function runFullSeed(): Promise<void> {
       [IDS.locationScene(s), locId, IDS.scene(s), ts, ts]
     )
   }
+
+  // -------------------------------------------------------------------------
+  // Cast bookings: aligned with scene_cast and stripboard; respects cast availability clashes
+  // -------------------------------------------------------------------------
+  await seedDemoBookings(pid, ts)
 
   // -------------------------------------------------------------------------
   // Budget: generated only via demoBudgetSeed (chart of accounts, budget items, expenses,
