@@ -92,6 +92,7 @@ import type { ExpenseTransactionType } from '@/lib/db/types'
 import { listPeopleByProduction } from '@/lib/db/repositories/person'
 import { parseAllowDetails } from '@/lib/budget/transactions/allow'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
+import { ActualisationPage } from '@/features/budget/actualisation/page'
 import { ExpenseDetailPanel } from '@/features/budget/ExpenseDetailPanel'
 import { LineItemDetailPanel } from '@/features/budget/LineItemDetailPanel'
 import { LogSpendPanel } from '@/features/budget/LogSpendPanel'
@@ -112,7 +113,7 @@ import {
 
 const BUDGET_VIEW_MODE_KEY = 'budgetViewMode'
 const COST_REPORT_LAYOUT_MODE_KEY = 'costReportLayoutMode'
-type BudgetViewMode = 'budget' | 'cost_report'
+type BudgetViewMode = 'budget' | 'cost_report' | 'actualisation'
 type CostReportLayoutMode = 'chart' | 'groups'
 
 // Actuals are derived from expenses only. budget_item.actual_cost is deprecated/committed and not used for actual calculations.
@@ -168,7 +169,9 @@ export function BudgetPage() {
   const [viewMode, setViewMode] = useState<BudgetViewMode>(() => {
     if (typeof window === 'undefined') return 'budget'
     const stored = localStorage.getItem(BUDGET_VIEW_MODE_KEY)
-    return (stored === 'cost_report' ? 'cost_report' : 'budget') as BudgetViewMode
+    if (stored === 'cost_report') return 'cost_report'
+    if (stored === 'actualisation') return 'actualisation'
+    return 'budget'
   })
   const [costReportExpandedLeafId, setCostReportExpandedLeafId] = useState<string | null>(null)
   const [productionTotalsModalOpen, setProductionTotalsModalOpen] = useState(false)
@@ -227,6 +230,7 @@ export function BudgetPage() {
     backfillAccountIdsFromLegacyCategories(currentProductionId).then(() => {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
     })
   }, [currentProductionId, queryClient])
 
@@ -322,6 +326,7 @@ export function BudgetPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
       setAddItemOpen(false)
     },
   })
@@ -339,6 +344,7 @@ export function BudgetPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
       setAddItemForAccountId(null)
     },
   })
@@ -348,6 +354,7 @@ export function BudgetPage() {
       updateExpenseAccount(expenseId, newAccountId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
       setRecodeToast('Expense recoded.')
       setTimeout(() => setRecodeToast(null), 3000)
     },
@@ -369,6 +376,7 @@ export function BudgetPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
       setAddExpenseOpen(false)
     },
   })
@@ -391,6 +399,7 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['expense-with-details', examinedExpenseId] })
     if (currentProductionId) {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
     }
   }, [examinedExpenseId, currentProductionId, queryClient])
@@ -630,6 +639,9 @@ export function BudgetPage() {
               <TabsTrigger value="cost_report" className="px-3 text-sm data-[state=active]:bg-background">
                 Cost Report
               </TabsTrigger>
+              <TabsTrigger value="actualisation" className="px-3 text-sm data-[state=active]:bg-background">
+                Match Expenses
+              </TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="flex gap-2">
@@ -686,7 +698,9 @@ export function BudgetPage() {
         </div>
       </div>
 
-      {viewMode === 'cost_report' ? (
+      {viewMode === 'actualisation' ? (
+        <ActualisationPage />
+      ) : viewMode === 'cost_report' ? (
         <>
           <CostReportView
             productionName={currentProduction?.name ?? ''}
@@ -1040,8 +1054,10 @@ export function BudgetPage() {
                   locations={locations}
                   onClose={() => setExaminedLineItemId(null)}
                   onSaved={() => {
-                    if (currentProductionId)
+                    if (currentProductionId) {
                       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
+                      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+                    }
                     if (examinedLineItemId)
                       queryClient.invalidateQueries({
                         queryKey: ['budget-item-with-details', examinedLineItemId],

@@ -75,6 +75,7 @@ export function LogSpendPanel({
     mutationFn: createTypedExpense,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['expenses', variables.productionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', variables.productionId] })
       queryClient.invalidateQueries({ queryKey: ['expense-with-details', data.id] })
       if (variables.transactionType === 'allow') {
         queryClient.invalidateQueries({ queryKey: ['allow-expense-details', variables.productionId] })

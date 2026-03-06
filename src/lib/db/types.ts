@@ -154,6 +154,24 @@ export type ExpenseTransactionDetails = {
   updated_at: string
 }
 
+/** Link between a budget line item and an expense for reconciliation. Supports partial matching. */
+export type BudgetItemExpenseLink = {
+  id: string
+  production_id: string
+  budget_item_id: string
+  expense_id: string
+  matched_amount: number
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+/** Derived status for a line item based on matched amount vs estimated_cost. */
+export type BudgetItemReconciliationStatus = 'unmatched' | 'partial' | 'matched' | 'overspent'
+
+/** Derived status for an expense based on allocated amount vs amount. */
+export type ExpenseReconciliationStatus = 'unallocated' | 'partial' | 'allocated'
+
 /** Derived budget layer: percentage applied to a scoped base (budget or actual). */
 export type FringeRule = {
   id: string
