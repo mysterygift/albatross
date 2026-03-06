@@ -179,13 +179,20 @@ export async function reserveSlugAndInsertProduction(
   })
 }
 
+export type CreateProductionOptions = {
+  /** When true, skip default budget categories, accounts, and contingency. Used by Default template which seeds its own chart. */
+  skipBudgetSeed?: boolean
+}
+
 export async function createProduction(
-  data: Pick<Production, 'name' | 'notes'>
+  data: Pick<Production, 'name' | 'notes'>,
+  options?: CreateProductionOptions
 ): Promise<Production> {
   const db = await getDb()
   const id = uuid()
   const ts = now()
   const currencyCode = (data as { currency_code?: string }).currency_code ?? 'GBP'
+  const skipBudgetSeed = options?.skipBudgetSeed === true
   const { slug } = await withSlugLock(async () => {
     const s = await ensureUniqueSlug(slugify(data.name))
     await db.execute(
@@ -195,24 +202,25 @@ export async function createProduction(
     return { slug: s }
   })
   await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, slug, id, created_at: ts, updated_at: ts }))
-  await seedDefaultBudgetCategories(id)
-  await seedDefaultBudgetAccounts(id)
-  // Optional: seed one default Contingency rule scoped to all root accounts (production-wide base).
-  try {
-    const accounts = await listAccounts(id)
-    const rootIds = accounts.filter((a) => a.parent_account_id == null).map((a) => a.id)
-    if (rootIds.length > 0) {
-      await createContingencyRule({
-        production_id: id,
-        name: 'Contingency',
-        rate: 0.1,
-        base_kind: 'budget',
-        scope_mode: 'include_subtrees',
-        scope_account_ids: rootIds,
-      })
+  if (!skipBudgetSeed) {
+    await seedDefaultBudgetCategories(id)
+    await seedDefaultBudgetAccounts(id)
+    try {
+      const accounts = await listAccounts(id)
+      const rootIds = accounts.filter((a) => a.parent_account_id == null).map((a) => a.id)
+      if (rootIds.length > 0) {
+        await createContingencyRule({
+          production_id: id,
+          name: 'Contingency',
+          rate: 0.1,
+          base_kind: 'budget',
+          scope_mode: 'include_subtrees',
+          scope_account_ids: rootIds,
+        })
+      }
+    } catch {
+      // Non-fatal: user can add rules manually.
     }
-  } catch {
-    // Non-fatal: user can add rules manually.
   }
   return (await getProductionById(id))!
 }

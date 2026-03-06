@@ -42,6 +42,12 @@ function getSceneNumbersForDay(d: number): number[] {
   return scenes
 }
 
+export type DemoBookingSeedIdSource = {
+  booking: (n: number) => string
+  person: (n: number) => string
+  shootDay: (n: number) => string
+}
+
 /**
  * Seed cast bookings for demo production. Call after people, scenes, scene_cast, shoot_days
  * and stripboard have been created.
@@ -49,7 +55,8 @@ function getSceneNumbersForDay(d: number): number[] {
  */
 export async function seedDemoBookings(
   pid: string,
-  ts: string
+  ts: string,
+  idSource: DemoBookingSeedIdSource = IDS
 ): Promise<void> {
   const db = await getDb()
 
@@ -78,10 +85,10 @@ export async function seedDemoBookings(
     sql: `INSERT INTO bookings (id, production_id, person_id, shoot_day_id, start_date, end_date, role, notes, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     bindValues: [
-      IDS.booking(i + 1),
+      idSource.booking(i + 1),
       pid,
-      IDS.person(r.personIdx),
-      IDS.shootDay(r.dayNum),
+      idSource.person(r.personIdx),
+      idSource.shootDay(r.dayNum),
       null,
       null,
       null,

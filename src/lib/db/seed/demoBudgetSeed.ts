@@ -336,6 +336,75 @@ function parentCode(code: string): string | null {
 }
 
 /**
+ * Seed only the chart of accounts and production totals (Above the Line / Below the Line)
+ * using the same structure as demo. No budget items or expenses.
+ * Used by the Default production template. Uses runInSerializedTransaction + executeBatch.
+ * @param nextId - Called to generate each ID (e.g. uuid for default template).
+ */
+export async function seedChartOfAccountsAndTotalsOnly(
+  productionId: string,
+  ts: string,
+  nextId: () => string
+): Promise<void> {
+  const { getDb, executeBatch, runInSerializedTransaction } = await import('../client')
+  const TABLE_ACCOUNTS = 'budget_accounts'
+  const TABLE_TOTALS = 'production_totals'
+  const TABLE_TOTAL_ACCOUNTS = 'production_total_accounts'
+
+  const byCode = new Map<string, string>()
+  for (const { code } of DEMO_CHART_OF_ACCOUNTS) {
+    byCode.set(code, nextId())
+  }
+  const total1Id = nextId()
+  const total2Id = nextId()
+
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+      { sql: 'BEGIN', bindValues: [] },
+    ]
+
+    for (let i = 0; i < DEMO_CHART_OF_ACCOUNTS.length; i++) {
+      const { code, name } = DEMO_CHART_OF_ACCOUNTS[i]!
+      const id = byCode.get(code)!
+      const parentCodeVal = parentCode(code)
+      const parentId = parentCodeVal ? byCode.get(parentCodeVal) ?? null : null
+      const isPostable = !isHeaderCode(code)
+      statements.push({
+        sql: `INSERT INTO ${TABLE_ACCOUNTS} (id, production_id, code, name, parent_account_id, sort_order, is_postable, archived_at, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, $9)`,
+        bindValues: [id, productionId, code, name, parentId, i, isPostable ? 1 : 0, ts, ts],
+      })
+    }
+
+    statements.push({
+      sql: `INSERT INTO ${TABLE_TOTALS} (id, production_id, name, sort_order, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6), ($7, $8, $9, $10, $11, $12)`,
+      bindValues: [total1Id, productionId, 'Above the Line', 0, ts, ts, total2Id, productionId, 'Below the Line', 1, ts, ts],
+    })
+    for (const code of DEMO_ATL_HEADER_CODES) {
+      const accountId = byCode.get(code)
+      if (accountId) {
+        statements.push({
+          sql: `INSERT INTO ${TABLE_TOTAL_ACCOUNTS} (id, production_total_id, account_id) VALUES ($1, $2, $3)`,
+          bindValues: [nextId(), total1Id, accountId],
+        })
+      }
+    }
+    for (const code of DEMO_BTL_HEADER_CODES) {
+      const accountId = byCode.get(code)
+      if (accountId) {
+        statements.push({
+          sql: `INSERT INTO ${TABLE_TOTAL_ACCOUNTS} (id, production_total_id, account_id) VALUES ($1, $2, $3)`,
+          bindValues: [nextId(), total2Id, accountId],
+        })
+      }
+    }
+
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+    await executeBatch(db, statements)
+  })
+}
+
+/**
  * Seed demo production budget: chart of accounts, budget items (account_id only), expenses (account_id only),
  * and optional production totals (Above the Line, Below the Line). Uses runInSerializedTransaction + executeBatch.
  * Does not seed legacy budget_categories; category_id is left null on items and expenses.
