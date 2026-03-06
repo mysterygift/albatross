@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback, Fragment, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
@@ -41,8 +41,13 @@ import {
   legacyBudgetItemsList,
   computeFringeTotals,
   computeContingencyTotals,
+  getDescendantLeafIds,
   type AccountTreeNode,
 } from '@/lib/budget/calculations'
+import {
+  listCostReportGroupsWithAccountIds,
+  type CostReportGroupWithAccountIds,
+} from '@/lib/db/repositories/costReportGroups'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -80,7 +85,9 @@ import { getAccountBandColor } from '@/lib/budget/accountBandColor'
 import type { BudgetItem, BudgetAccount } from '@/lib/db/types'
 
 const BUDGET_VIEW_MODE_KEY = 'budgetViewMode'
+const COST_REPORT_LAYOUT_MODE_KEY = 'costReportLayoutMode'
 type BudgetViewMode = 'budget' | 'cost_report'
+type CostReportLayoutMode = 'chart' | 'groups'
 
 // Actuals are derived from expenses only. budget_item.actual_cost is deprecated/committed and not used for actual calculations.
 
@@ -133,10 +140,18 @@ export function BudgetPage() {
   const [productionTotalsModalOpen, setProductionTotalsModalOpen] = useState(false)
   const [productionTotalToEdit, setProductionTotalToEdit] = useState<ProductionTotalWithAccountIds | null>(null)
   const [productionTotalCreateOpen, setProductionTotalCreateOpen] = useState(false)
+  const [costReportLayoutMode, setCostReportLayoutMode] = useState<CostReportLayoutMode>(() => {
+    if (typeof window === 'undefined') return 'chart'
+    const stored = localStorage.getItem(COST_REPORT_LAYOUT_MODE_KEY)
+    return stored === 'groups' ? 'groups' : 'chart'
+  })
 
   useEffect(() => {
     localStorage.setItem(BUDGET_VIEW_MODE_KEY, viewMode)
   }, [viewMode])
+  useEffect(() => {
+    localStorage.setItem(COST_REPORT_LAYOUT_MODE_KEY, costReportLayoutMode)
+  }, [costReportLayoutMode])
   const queryClient = useQueryClient()
   const backfillRanForProduction = useRef<Set<string>>(new Set())
 
@@ -208,6 +223,12 @@ export function BudgetPage() {
   const { data: productionTotals = [] } = useQuery({
     queryKey: ['production-totals', currentProductionId],
     queryFn: () => listProductionTotals(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: costReportGroupsWithAccounts = [] } = useQuery({
+    queryKey: ['cost-report-groups-with-accounts', currentProductionId],
+    queryFn: () => listCostReportGroupsWithAccountIds(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
 
@@ -348,19 +369,68 @@ export function BudgetPage() {
     })
   }, [productionTotals, accountTotals])
 
-  // Production subtotal: sum over unique account IDs to avoid double-counting when multiple totals share header accounts.
-  const productionSubtotal = useMemo(() => {
-    const uniqueAccountIds = new Set<string>()
+  // Subtotal before derived: unique LEAFA account ids under all production totals' header accounts (deduped).
+  const productionSubtotalBeforeDerived = useMemo(() => {
+    const uniqueLeafIds = new Set<string>()
     for (const t of productionTotals) {
-      for (const accountId of t.account_ids) uniqueAccountIds.add(accountId)
+      for (const accountId of t.account_ids) {
+        getDescendantLeafIds(accountTree, accountId).forEach((id) => uniqueLeafIds.add(id))
+      }
     }
-    let sum = 0
-    for (const accountId of uniqueAccountIds) {
-      const tot = accountTotals.get(accountId)
-      if (tot) sum += tot.budgetTotal
+    let budget = 0
+    let actual = 0
+    for (const id of uniqueLeafIds) {
+      const tot = accountTotals.get(id)
+      if (tot) {
+        budget += tot.budgetTotal
+        actual += tot.actualTotal
+      }
     }
-    return sum
-  }, [productionTotals, accountTotals])
+    return { budget, actual, variance: budget - actual }
+  }, [productionTotals, accountTree, accountTotals])
+
+  // Group totals and visible ids for Cost Report "By groups" view (leaf-deduped, no double count).
+  const { groupTotals, visibleIdsByGroupId } = useMemo(() => {
+    const byGroupId = new Map<string, { budgetTotal: number; actualTotal: number; variance: number; percentSpent: number | null }>()
+    const visibleByGroupId = new Map<string, Set<string>>()
+    const accountById = new Map(accounts.map((a) => [a.id, a]))
+    for (const group of costReportGroupsWithAccounts) {
+      const leafIds = new Set<string>()
+      for (const accountId of group.account_ids) {
+        getDescendantLeafIds(accountTree, accountId).forEach((id) => leafIds.add(id))
+      }
+      let budgetTotal = 0
+      let actualTotal = 0
+      for (const id of leafIds) {
+        const tot = accountTotals.get(id)
+        if (tot) {
+          budgetTotal += tot.budgetTotal
+          actualTotal += tot.actualTotal
+        }
+      }
+      const variance = budgetTotal - actualTotal
+      const percentSpent = budgetTotal > 0 ? actualTotal / budgetTotal : null
+      byGroupId.set(group.id, { budgetTotal, actualTotal, variance, percentSpent })
+      const visibleIds = new Set<string>(group.account_ids)
+      for (const accountId of group.account_ids) {
+        let cur = accountById.get(accountId)
+        while (cur?.parent_account_id) {
+          visibleIds.add(cur.parent_account_id)
+          cur = accountById.get(cur.parent_account_id)
+        }
+      }
+      visibleByGroupId.set(group.id, visibleIds)
+    }
+    return {
+      groupTotals: costReportGroupsWithAccounts.map((g) => ({
+        groupId: g.id,
+        groupName: g.name,
+        groupCode: g.code,
+        ...byGroupId.get(g.id)!,
+      })),
+      visibleIdsByGroupId: visibleByGroupId,
+    }
+  }, [costReportGroupsWithAccounts, accountTree, accountTotals, accounts])
 
   const headerAccounts = useMemo(
     () => accounts.filter((a) => !a.is_postable && !a.archived_at),
@@ -504,6 +574,7 @@ export function BudgetPage() {
       {viewMode === 'cost_report' ? (
         <>
           <CostReportView
+            productionName={currentProduction?.name ?? ''}
             accountTree={accountTree}
             accountTotals={accountTotals}
             items={items}
@@ -516,7 +587,12 @@ export function BudgetPage() {
             fringeTotals={fringeTotals}
             contingencyTotals={contingencyTotals}
             productionTotalAmounts={productionTotalAmounts}
-            productionSubtotal={productionSubtotal}
+            productionSubtotalBeforeDerived={productionSubtotalBeforeDerived}
+            layoutMode={costReportLayoutMode}
+            setLayoutMode={setCostReportLayoutMode}
+            costReportGroupsWithAccounts={costReportGroupsWithAccounts}
+            groupTotals={groupTotals}
+            visibleIdsByGroupId={visibleIdsByGroupId}
             expandedLeafId={costReportExpandedLeafId}
             onToggleLeafDetail={setCostReportExpandedLeafId}
             configureButton={
@@ -775,7 +851,18 @@ type ProductionTotalAmount = {
   variance: number
 }
 
+type GroupTotalRow = {
+  groupId: string
+  groupName: string
+  groupCode: string | null
+  budgetTotal: number
+  actualTotal: number
+  variance: number
+  percentSpent: number | null
+}
+
 function CostReportView({
+  productionName,
   accountTree,
   accountTotals,
   items,
@@ -788,11 +875,17 @@ function CostReportView({
   fringeTotals,
   contingencyTotals,
   productionTotalAmounts,
-  productionSubtotal,
+  productionSubtotalBeforeDerived,
+  layoutMode,
+  setLayoutMode,
+  costReportGroupsWithAccounts,
+  groupTotals,
+  visibleIdsByGroupId,
   expandedLeafId,
   onToggleLeafDetail,
   configureButton,
 }: {
+  productionName: string
   accountTree: AccountTreeNode[]
   accountTotals: Map<string, { budgetTotal: number; actualTotal: number; variance: number; percentSpent: number | null }>
   items: BudgetItem[]
@@ -805,7 +898,12 @@ function CostReportView({
   fringeTotals: { totalFringesAmount: number }
   contingencyTotals: { totalContingencyAmount: number }
   productionTotalAmounts: ProductionTotalAmount[]
-  productionSubtotal: number
+  productionSubtotalBeforeDerived: { budget: number; actual: number; variance: number }
+  layoutMode: CostReportLayoutMode
+  setLayoutMode: (mode: CostReportLayoutMode) => void
+  costReportGroupsWithAccounts: CostReportGroupWithAccountIds[]
+  groupTotals: GroupTotalRow[]
+  visibleIdsByGroupId: Map<string, Set<string>>
   expandedLeafId: string | null
   onToggleLeafDetail: (id: string | null) => void
   configureButton?: ReactNode
@@ -814,15 +912,146 @@ function CostReportView({
   const estimatedPlusDerived = totalEstimated + totalDerived
   const hasDerived = totalDerived > 0
 
+  const rowCtx = {
+    accountTotals,
+    items,
+    format,
+    productionCurrency,
+    expandedLeafId,
+    onToggleLeafDetail,
+  }
+
+  const generatedDate = new Date().toISOString().slice(0, 10)
+  const reportRef = useRef<HTMLDivElement>(null)
+  const [isSavingPdf, setIsSavingPdf] = useState(false)
+
+  const handleSaveAsPdf = useCallback(async () => {
+    const el = reportRef.current
+    if (!el) return
+    setIsSavingPdf(true)
+    el.classList.add('cost-report-exporting-pdf')
+    function setHexStyles(node: Element) {
+      if (node instanceof HTMLElement) {
+        const isMuted = node.classList.contains('text-muted-foreground')
+        const isDestructive = node.classList.contains('text-destructive')
+        node.style.setProperty('color', isMuted ? '#525252' : isDestructive ? '#b91c1c' : '#1a1a1a')
+        node.style.setProperty('background-color', 'transparent')
+        node.style.setProperty('border-color', '#e5e7eb')
+      }
+      node.childNodes.forEach((child) => {
+        if (child instanceof Element) setHexStyles(child)
+      })
+    }
+    function clearHexStyles(node: Element) {
+      if (node instanceof HTMLElement) {
+        node.style.removeProperty('color')
+        node.style.removeProperty('background-color')
+        node.style.removeProperty('border-color')
+      }
+      node.childNodes.forEach((child) => {
+        if (child instanceof Element) clearHexStyles(child)
+      })
+    }
+    setHexStyles(el)
+      /* Force reflow so computed styles (and CSS variable overrides) are applied before capture */
+      void el.offsetHeight
+    try {
+      const html2pdf = (await import('html2pdf.js')).default
+      const hexOnlyCss = `
+        *, *::before, *::after {
+          color: #1a1a1a !important;
+          background: transparent !important;
+          background-color: transparent !important;
+          border-color: #e5e7eb !important;
+          outline-color: #1a1a1a !important;
+          fill: #1a1a1a !important;
+          stroke: #1a1a1a !important;
+          box-shadow: none !important;
+          text-shadow: none !important;
+        }
+        html, body { background: #ffffff !important; color: #1a1a1a !important; }
+        .text-muted-foreground { color: #525252 !important; }
+        .text-destructive { color: #b91c1c !important; }
+        .no-print { display: none !important; }
+      `
+      const opt = {
+        margin: 10,
+        filename: 'cost-report.pdf',
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          letterRendering: true,
+          onclone: (clonedDoc: Document) => {
+            const style = clonedDoc.createElement('style')
+            style.textContent = hexOnlyCss
+            clonedDoc.head.appendChild(style)
+          },
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
+      }
+      const arraybuffer = await html2pdf().set(opt).from(el).toPdf().output('arraybuffer')
+      await saveFileWithDialog(
+        {
+          defaultPath: `cost-report-${generatedDate}.pdf`,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }],
+          title: 'Save Cost Report as PDF',
+        },
+        new Uint8Array(arraybuffer as ArrayBuffer)
+      )
+    } catch (err) {
+      throw err
+    } finally {
+      clearHexStyles(el)
+      el.classList.remove('cost-report-exporting-pdf')
+      setIsSavingPdf(false)
+    }
+  }, [generatedDate])
+
   return (
-    <div className="cost-report-print space-y-6">
-      <div className="flex justify-end gap-2 no-print">
+    <div ref={reportRef} className="cost-report-print space-y-6">
+      <div className="flex flex-wrap items-center justify-end gap-2 no-print">
+        {costReportGroupsWithAccounts.length > 0 && (
+          <Tabs
+            value={layoutMode}
+            onValueChange={(v) => setLayoutMode(v as CostReportLayoutMode)}
+            className="w-auto"
+          >
+            <TabsList className="h-9 border border-border bg-muted/30">
+              <TabsTrigger value="chart" className="px-3 text-sm data-[state=active]:bg-background">
+                Chart of accounts
+              </TabsTrigger>
+              <TabsTrigger value="groups" className="px-3 text-sm data-[state=active]:bg-background">
+                By groups
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
         {configureButton}
-        <Button variant="outline" size="sm" onClick={() => window.print()}>
+        <Button variant="outline" size="sm" onClick={handleSaveAsPdf} disabled={isSavingPdf}>
+          <Download className="mr-2 size-4" />
+          {isSavingPdf ? 'Saving…' : 'Save as PDF'}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            const p = window.print()
+            if (p != null && typeof (p as Promise<void>).catch === 'function') {
+              ;(p as Promise<void>).catch(() => {})
+            }
+          }}
+        >
           <Printer className="mr-2 size-4" />
           Print
         </Button>
       </div>
+
+      <header className="report-header border-b border-border pb-3">
+        <h2 className="text-xl font-bold print:text-2xl">{productionName ? productionName : 'Cost Report'}</h2>
+        {productionName && <p className="text-lg font-semibold text-muted-foreground">Cost Report</p>}
+        <p className="text-sm text-muted-foreground mt-1">Generated: {generatedDate}</p>
+      </header>
 
       <div className="grid gap-4 md:grid-cols-3 print:grid-cols-3">
         <div className="rounded-lg border border-border p-4">
@@ -846,90 +1075,182 @@ function CostReportView({
         </div>
       </div>
 
-      <div className="rounded-md border border-border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-border">
-              <TableHead className="w-[72px] border-border">Code</TableHead>
-              <TableHead className="border-border">Account</TableHead>
-              <TableHead className="text-right border-border">Budget</TableHead>
-              <TableHead className="text-right border-border">Actual</TableHead>
-              <TableHead className="text-right border-border">Variance</TableHead>
-              <TableHead className="text-right w-[64px] border-border">%</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {accountTree.map((node) =>
-              renderCostReportRows(node, 0, {
-                accountTotals,
-                items,
-                format,
-                productionCurrency,
-                expandedLeafId,
-                onToggleLeafDetail,
-              })
-            )}
-            {uncodedTotal > 0 && (
-              <TableRow className="border-border bg-muted/20">
-                <TableCell className="border-border font-medium">—</TableCell>
-                <TableCell className="border-border font-medium">Uncoded spend</TableCell>
-                <TableCell className="border-border text-right">—</TableCell>
-                <TableCell className="border-border text-right">{format(uncodedTotal, productionCurrency).formatted}</TableCell>
-                <TableCell colSpan={2} className="border-border" />
+      {layoutMode === 'chart' && (
+        <div className="report-section rounded-md border border-border overflow-hidden cost-report-table-wrap">
+          <Table className="cost-report-table">
+            <TableHeader>
+              <TableRow className="border-border">
+                <TableHead className="cost-report-col-code w-[72px] border-border print:w-[90px]">Code</TableHead>
+                <TableHead className="cost-report-col-account border-border">Account</TableHead>
+                <TableHead className="cost-report-col-budget text-right border-border w-28 print:w-[120px]">Budget</TableHead>
+                <TableHead className="cost-report-col-actual text-right border-border w-28 print:w-[120px]">Actual</TableHead>
+                <TableHead className="cost-report-col-variance text-right border-border w-28 print:w-[120px]">Variance</TableHead>
+                <TableHead className="cost-report-col-pct text-right w-16 border-border print:w-[80px]">%</TableHead>
               </TableRow>
-            )}
-            {accountTree.length === 0 && uncodedTotal === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8 border-border">
-                  No accounts yet.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {accountTree.map((node) => (
+                <Fragment key={node.account.id}>{renderCostReportRows(node, 0, rowCtx)}</Fragment>
+              ))}
+              {uncodedTotal > 0 && (
+                <TableRow className="border-border bg-muted/20">
+                  <TableCell className="border-border font-medium">—</TableCell>
+                  <TableCell className="border-border font-medium">Uncoded spend</TableCell>
+                  <TableCell className="border-border text-right">—</TableCell>
+                  <TableCell className="border-border text-right">{format(uncodedTotal, productionCurrency).formatted}</TableCell>
+                  <TableCell colSpan={2} className="border-border" />
+                </TableRow>
+              )}
+              {accountTree.length === 0 && uncodedTotal === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8 border-border">
+                    No accounts yet.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {layoutMode === 'groups' && (
+        <div className="space-y-6">
+          {groupTotals.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No cost report groups configured. Add groups in Settings.</p>
+          ) : (
+            groupTotals.map((group) => {
+              const visibleIds = visibleIdsByGroupId.get(group.groupId)
+              if (!visibleIds) return null
+              return (
+                <div key={group.groupId} className="report-section rounded-md border border-border overflow-hidden cost-report-table-wrap">
+                  <div className="report-section-header border-b border-border bg-muted/10 px-4 py-2 print:bg-transparent">
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      {group.groupCode ? `${group.groupCode} — ` : ''}{group.groupName}
+                    </p>
+                  </div>
+                  <Table className="cost-report-table">
+                    <TableHeader>
+                      <TableRow className="border-border">
+                        <TableHead className="cost-report-col-code w-[72px] border-border print:w-[90px]">Code</TableHead>
+                        <TableHead className="cost-report-col-account border-border">Account</TableHead>
+                        <TableHead className="cost-report-col-budget text-right border-border w-28 print:w-[120px]">Budget</TableHead>
+                        <TableHead className="cost-report-col-actual text-right border-border w-28 print:w-[120px]">Actual</TableHead>
+                        <TableHead className="cost-report-col-variance text-right border-border w-28 print:w-[120px]">Variance</TableHead>
+                        <TableHead className="cost-report-col-pct text-right w-16 border-border print:w-[80px]">%</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {accountTree.map((node) => (
+                        <Fragment key={node.account.id}>{renderCostReportRows(node, 0, rowCtx, visibleIds)}</Fragment>
+                      ))}
+                      <TableRow className="cost-report-group-total border-t border-border bg-muted/5 font-medium">
+                        <TableCell className="border-border" />
+                        <TableCell className="border-border">Group total</TableCell>
+                        <TableCell className="border-border text-right tabular-nums">{format(group.budgetTotal, productionCurrency).formatted}</TableCell>
+                        <TableCell className="border-border text-right tabular-nums">{format(group.actualTotal, productionCurrency).formatted}</TableCell>
+                        <TableCell className={`border-border text-right tabular-nums ${group.variance < 0 ? 'text-destructive' : ''}`}>
+                          {format(group.variance, productionCurrency).formatted}
+                        </TableCell>
+                        <TableCell className="border-border text-right w-16 tabular-nums">
+                          {group.percentSpent != null ? `${Math.round(group.percentSpent * 100)}%` : '—'}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              )
+            })
+          )}
+          {uncodedTotal > 0 && (
+            <div className="report-section rounded-md border border-border overflow-hidden">
+              <div className="report-section-header border-b border-border bg-muted/10 px-4 py-2 print:bg-transparent">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Uncoded spend</p>
+              </div>
+              <Table className="cost-report-table">
+                <TableBody>
+                  <TableRow className="border-border">
+                    <TableCell className="border-border font-medium">—</TableCell>
+                    <TableCell className="border-border font-medium">Uncoded spend</TableCell>
+                    <TableCell className="border-border text-right">—</TableCell>
+                    <TableCell className="border-border text-right">{format(uncodedTotal, productionCurrency).formatted}</TableCell>
+                    <TableCell colSpan={2} className="border-border" />
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Subtotals (production totals + Subtotal before derived), then Derived, then Final */}
+      <div className="report-section border-t border-border pt-4 space-y-3">
+        {productionTotalAmounts.length > 0 && (
+          <>
+            <p className="report-section-header text-xs font-medium uppercase tracking-wider text-muted-foreground">Subtotals</p>
+          <div className="report-section rounded-md border border-border overflow-hidden cost-report-subtotals">
+            <Table>
+              <TableBody>
+                {productionTotalAmounts.map((t) => (
+                  <TableRow key={t.id} className="border-border">
+                    <TableCell className="border-border font-medium">{t.name}</TableCell>
+                    <TableCell className="border-border text-right tabular-nums">{format(t.budgetTotal, productionCurrency).formatted}</TableCell>
+                    <TableCell className="border-border text-right tabular-nums">{format(t.actualTotal, productionCurrency).formatted}</TableCell>
+                    <TableCell className={`border-border text-right tabular-nums ${t.variance < 0 ? 'text-destructive' : ''}`}>
+                      {format(t.variance, productionCurrency).formatted}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                <TableRow className="border-border bg-muted/10 font-semibold">
+                  <TableCell className="border-border">Subtotal before derived</TableCell>
+                  <TableCell className="border-border text-right tabular-nums">
+                    {format(productionSubtotalBeforeDerived.budget, productionCurrency).formatted}
+                  </TableCell>
+                  <TableCell className="border-border text-right tabular-nums">
+                    {format(productionSubtotalBeforeDerived.actual, productionCurrency).formatted}
+                  </TableCell>
+                  <TableCell className={`border-border text-right tabular-nums ${productionSubtotalBeforeDerived.variance < 0 ? 'text-destructive' : ''}`}>
+                    {format(productionSubtotalBeforeDerived.variance, productionCurrency).formatted}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+          </>
+        )}
+
+        {/* Derived (budget overlays) */}
+        {hasDerived && (
+          <div className="report-section derived-overlays rounded-lg border border-border bg-muted/20 p-4 space-y-2 print:bg-transparent">
+            <p className="report-section-header text-xs font-medium uppercase tracking-wider text-muted-foreground">Derived (budget overlays)</p>
+            <div className="flex flex-wrap gap-6">
+              {fringeTotals.totalFringesAmount > 0 && (
+                <div>
+                  <span className="text-muted-foreground text-sm italic">Fringes (derived): </span>
+                  <span className="font-medium">{format(fringeTotals.totalFringesAmount, productionCurrency).formatted}</span>
+                </div>
+              )}
+              {contingencyTotals.totalContingencyAmount > 0 && (
+                <div>
+                  <span className="text-muted-foreground text-sm italic">Contingency (derived): </span>
+                  <span className="font-medium">{format(contingencyTotals.totalContingencyAmount, productionCurrency).formatted}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Final: Total budget incl. derived, Total actual (expenses-only), Variance */}
+        <div className="report-section final-totals rounded-lg border border-border p-4 space-y-1">
+          <p className="report-section-header text-xs font-medium uppercase tracking-wider text-muted-foreground">Total budget incl. derived</p>
+          <p className="text-xl font-semibold">{format(estimatedPlusDerived, productionCurrency).formatted}</p>
+          <p className="text-muted-foreground text-sm">Total actual (expenses only): {format(totalActual, productionCurrency).formatted}</p>
+          <p className={`text-sm font-medium ${variance < 0 ? 'text-destructive' : ''}`}>
+            Variance vs estimated: {format(variance, productionCurrency).formatted}
+          </p>
+        </div>
       </div>
 
-      {productionTotalAmounts.length > 0 && (
-        <div className="border-t border-border pt-4">
-          <p className="text-muted-foreground text-sm font-medium mb-3">Production totals</p>
-          <div className="space-y-1.5">
-            {productionTotalAmounts.map((t) => (
-              <div key={t.id} className="flex justify-between items-baseline gap-4 font-medium">
-                <span>{t.name}</span>
-                <span className="text-right tabular-nums">{format(t.budgetTotal, productionCurrency).formatted}</span>
-              </div>
-            ))}
-            <div className="flex justify-between items-baseline gap-4 font-semibold pt-2 mt-2 border-t border-border">
-              <span>Production subtotal</span>
-              <span className="text-right tabular-nums">{format(productionSubtotal, productionCurrency).formatted}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {hasDerived && (
-        <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2">
-          <p className="text-muted-foreground text-sm font-medium">Derived (budget overlays)</p>
-          <div className="flex flex-wrap gap-6">
-            {fringeTotals.totalFringesAmount > 0 && (
-              <div>
-                <span className="text-muted-foreground text-sm">Fringes (derived): </span>
-                <span className="font-medium">{format(fringeTotals.totalFringesAmount, productionCurrency).formatted}</span>
-              </div>
-            )}
-            {contingencyTotals.totalContingencyAmount > 0 && (
-              <div>
-                <span className="text-muted-foreground text-sm">Contingency (derived): </span>
-                <span className="font-medium">{format(contingencyTotals.totalContingencyAmount, productionCurrency).formatted}</span>
-              </div>
-            )}
-            <div>
-              <span className="text-muted-foreground text-sm">Estimated + derived: </span>
-              <span className="font-medium">{format(estimatedPlusDerived, productionCurrency).formatted}</span>
-            </div>
-          </div>
-        </div>
-      )}
+      <footer className="cost-report-print-footer hidden print:block" aria-hidden="true" />
     </div>
   )
 }
@@ -1127,9 +1448,11 @@ function renderCostReportRows(
     productionCurrency: string
     expandedLeafId: string | null
     onToggleLeafDetail: (id: string | null) => void
-  }
+  },
+  visibleIds?: Set<string>
 ): ReactNode {
   const { account } = node
+  if (visibleIds != null && !visibleIds.has(account.id)) return null
   const totals = ctx.accountTotals.get(account.id)
   const isRollup = !account.is_postable
   const bandColor = getAccountBandColor(account)
@@ -1141,12 +1464,13 @@ function renderCostReportRows(
   rows.push(
     <TableRow
       key={account.id}
-      className={isRollup ? 'border-border' : 'border-border'}
+      className={`cost-report-band-row ${isRollup ? 'border-border' : 'border-border'}`}
       style={
         isRollup
           ? { backgroundColor: tintBg, borderLeft: `3px solid ${bandColor}` }
           : { borderLeft: `3px solid ${bandColor}` }
       }
+      data-band-hex={bandColor}
     >
       <TableCell
         className={`w-[72px] align-top border-border ${isRollup ? 'font-semibold text-foreground' : 'text-foreground'}`}
@@ -1227,7 +1551,8 @@ function renderCostReportRows(
   }
 
   node.children.forEach((child) => {
-    rows.push(renderCostReportRows(child, depth + 1, ctx))
+    const childRows = renderCostReportRows(child, depth + 1, ctx, visibleIds)
+    if (childRows != null) rows.push(childRows)
   })
   return <>{rows}</>
 }

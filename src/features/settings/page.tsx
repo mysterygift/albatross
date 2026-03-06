@@ -172,6 +172,7 @@ export function SettingsPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
       setAddGroupOpen(false)
     },
   })
@@ -184,6 +185,7 @@ export function SettingsPage() {
       ]),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
       setEditGroup(null)
     },
   })
@@ -192,6 +194,7 @@ export function SettingsPage() {
     mutationFn: (groupId: string) => deleteCostReportGroup(groupId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
     },
   })
 

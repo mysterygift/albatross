@@ -6,10 +6,11 @@ This document describes the Cost Report functionality: the **Cost Report view** 
 
 ## 1. Overview
 
-Cost Report functionality has two parts:
+Cost Report functionality has three parts:
 
 1. **Cost Report view** — A second tab on the Budget page (`/budget`) that shows the same budget data (chart of accounts, totals, line items) in a print-oriented layout with a Print button. It uses the same account tree and calculations as the Budget tab; no separate data model.
-2. **Cost report groups** — Configurable groups of accounts (e.g. “Above the line”, “Below the line”) managed in **Settings**. They are for presentation and reporting only: they do not affect posting, totals, or derived calculations. An account can belong to multiple groups. The **Budget Cost Report tab does not currently use these groups** to structure the view; they are available for future group-based reports or exports.
+2. **Cost report groups** — Configurable groups of accounts (e.g. “Above the line”, “Below the line”) managed in **Settings**. They are for presentation and reporting only. The Cost Report tab can display a **“By groups”** layout: one section per group with group subtotals (see §2.6).
+3. **Production totals** — User-defined rollup subtotals (e.g. “Above the line”, “Below the line”, “Subtotal before derived”) configured via “Configure production totals” on the Cost Report tab; see §2.5.
 
 ---
 
@@ -19,26 +20,24 @@ Cost Report functionality has two parts:
 
 - **Location:** `src/features/budget/page.tsx`. The Budget page has two tabs: **Budget** and **Cost Report** (same page, same data).
 - **View mode state:** `BudgetViewMode`: `'budget' | 'cost_report'`. Persisted in `localStorage` under key `BUDGET_VIEW_MODE_KEY` (`'budgetViewMode'`) so the user’s last tab is restored.
-- **Data:** The Cost Report view receives the same computed data as the Budget tab: `accountTree`, `accountTotals`, `items`, `totalEstimated`, `totalActual`, `variance`, `uncodedTotal`, `fringeTotals`, `contingencyTotals`. It also receives **production total amounts** (see §2.5) and an optional **configure** button for the Production totals modal. Production totals are loaded via `listProductionTotals(productionId)`; amounts are computed from `accountTotals` only (no direct item/expense queries).
+- **Data:** The Cost Report view receives the same computed data as the Budget tab plus: **production total amounts** and **productionSubtotalBeforeDerived** (see §2.5), **cost report groups with account ids** (when layout is “By groups”), **group totals** and **visibleIdsByGroupId** for section rendering. Groups are loaded via `listCostReportGroupsWithAccountIds(productionId)` (query key `['cost-report-groups-with-accounts', productionId]`). Production totals via `listProductionTotals(productionId)`. All amounts are computed from `accountTotals` only (no direct item/expense queries).
+- **Layout mode:** Toggle **“Chart of accounts”** (default) vs **“By groups”**; persisted in `localStorage` under `COST_REPORT_LAYOUT_MODE_KEY`. The “By groups” option is shown only when at least one cost report group exists.
 
 ### 2.2 Layout and behaviour
 
-- **Header actions:** “Configure production totals” (opens modal; see §2.5) and “Print”. Both are in a `no-print` block so they are hidden when printing.
-- **Print button:** Calls `window.print()`.
+- **Header actions:** Layout toggle (Chart of accounts / By groups) when groups exist, “Configure production totals”, “Print”. All in a `no-print` block.
+- **Print button:** Calls `window.print()` (unchanged; C2 will refine print layout).
 - **Summary cards:** Three cards — Total estimated, Total actual (with optional “Uncoded spend: £X”), Variance. Same values and formatting as the Budget tab.
-- **Derived section:** When fringes or contingency exist: “Derived (budget overlays)” with Fringes (derived), Contingency (derived), and Estimated + derived. Same logic as Budget tab; derived amounts are not included in Total actual.
-- **Table:** Columns — Code, Account, Budget, Actual, Variance, %. Rows are the **same hierarchical account tree** as the Budget tab (built from `buildAccountTree`), with:
-  - **Header (rollup) accounts:** Bold label, rollup totals, optional left border band colour from `getAccountBandColor(account)` (and tinted background in screen view).
-  - **Leaf (postable) accounts:** Code, name, and totals. **Expandable:** clicking the account name toggles a detail section showing that account’s **line items** (description + estimated cost); only one leaf can be expanded at a time (`costReportExpandedLeafId`). In print, the expanded state is not used; line item count is shown as “(N line items)” next to the name.
-- **Uncoded spend row:** When `uncodedTotal > 0`, a single table row “Uncoded spend” with the uncoded amount in the Actual column.
-- **Empty state:** When there are no accounts and no uncoded spend: “No accounts yet.”
-- **Production totals section:** When the user has defined production totals (see §2.5), a “Production totals” block is rendered **after** the account table and **before** the Derived section. It lists each total’s name and budget rollup (sum of `accountTotals` for the total’s header accounts), then a “Production subtotal” line (sum of those rollups). Styling: slightly heavier font, right-aligned currency, light separator above the block. Reporting only; does not affect accounting or derived calculations.
+- **Chart of accounts mode:** Single hierarchical table (same as before): columns Code, Account, Budget, Actual, Variance, %. Rows are the full account tree. **Uncoded spend** row when `uncodedTotal > 0`. **Empty state:** “No accounts yet.” when no accounts and no uncoded spend.
+- **By groups mode:** One section per cost report group (ordered by `sort_order` then name). Each section: uppercase section header (group name and optional code), table of the **subset** of the account tree that belongs to that group (group account ids plus their **ancestors** so the hierarchy is preserved; no re-parenting), then a **Group total** row (Budget, Actual, Variance, %). Totals are computed from **unique leaf descendants** of the group’s accounts (no double counting). After all groups, an **Uncoded spend** section when `uncodedTotal > 0`. Leaf expansion (one at a time) works the same as in Chart of accounts mode.
+- **Subtotals block (after table/sections):** When production totals exist: “Subtotals” label, table of each production total (name, Budget, Actual, Variance), then **“Subtotal before derived”** row (deduped: unique leaf ids under all production totals’ header accounts; budget, actual, variance). Then **“Derived (budget overlays)”** section (Fringes, Contingency; unchanged). Then **“Total budget incl. derived”** and **Total actual (expenses only)** and **Variance vs estimated**. Derived amounts are never included in Total actual.
 
 ### 2.3 Rendering implementation
 
 - **Component:** `CostReportView` in `page.tsx`. It receives the totals maps, items, format function, currency, and expand state; it does not fetch data.
 - **Row rendering:** `renderCostReportRows(node, depth, ctx)` walks the account tree recursively. For each node it emits one `TableRow` (code, account name, budget, actual, variance, %). For a leaf account, if `expandedLeafId === account.id`, it then emits child rows for each line item (description + estimated cost) or a “No line items yet” row. Then it recurses into `node.children`. Band colours and indentation (`paddingLeft: 8 + depth * 14`) are applied per row.
 - **Band colours:** From `@/lib/budget/accountBandColor`: `getAccountBandColor(account)` — uses `account.color_hex` if set, otherwise a palette derived from account code. Used for the left border (and for rollup rows, a light tint background via `hexWithAlpha(bandColor, 0.06)`).
+- **Group totals (By groups mode):** For each group, **visible ids** = group account ids ∪ all ancestors (walk `parent_account_id` to root). **Leaf set** = union of `getDescendantLeafIds(accountTree, accountId)` for each group account id. Group budget/actual = sum of `accountTotals.get(leafId)` over the leaf set (missing ids skipped). Implemented in `src/lib/budget/calculations.ts` (`getDescendantLeafIds`, `getDescendantLeafIdsFromNode`). `renderCostReportRows` accepts an optional `visibleIds` set and only emits rows for nodes in that set.
 
 ### 2.4 Print styling
 
@@ -52,7 +51,7 @@ Cost Report functionality has two parts:
 
 - **Purpose:** User-defined rollup totals for the Cost Report (e.g. “Above the line”, “Below the line”, “Production subtotal before fringes”). Reporting only; they do **not** affect accounting, posting, or derived totals.
 - **Data model:** Tables `production_totals` (id, production_id, name, sort_order, timestamps, deleted_at) and `production_total_accounts` (production_total_id, account_id). Only **header** accounts (`is_postable === false`) may be attached; each total can reference multiple header accounts. Repository: `src/lib/db/repositories/productionTotals.ts`. Types: `ProductionTotal`, `ProductionTotalAccount` in `src/lib/db/types.ts`.
-- **Calculation:** For each production total, **budgetTotal** = sum of `accountTotals.get(accountId).budgetTotal` over its account ids; **actualTotal** = sum of `accountTotals.get(accountId).actualTotal`; **variance** = budgetTotal − actualTotal. No direct queries to items or expenses; all from the existing `accountTotals` map produced by `computeAccountTotals`.
+- **Calculation:** For each production total (header accounts), **budgetTotal** / **actualTotal** = sum of `accountTotals` over its header account ids (rollups). **“Subtotal before derived”** is deduped: unique **leaf** account ids under all production totals’ header accounts (via `getDescendantLeafIds`), then sum of `accountTotals` over that set; avoids double counting when totals overlap. No direct queries to items or expenses.
 - **Configuration:** “Configure production totals” in the Cost Report tab header opens a modal titled “Production totals”. The modal lists existing totals (Name, Edit, Delete), a “Create production total” button, and a form (Name + checklist of header accounts) for create/edit. Only header (non-postable), non-archived accounts appear in the checklist. Saving create/update replaces the total’s account mappings. Delete is soft delete (`deleted_at`). Query key: `['production-totals', productionId]`; invalidate after create/update/delete.
 - **Transactions:** Create and update use `runInSerializedTransaction` + `executeBatch` (BEGIN, writes, outbox, COMMIT) per `docs/DATABASE_LAYER.md`. Delete is a single UPDATE so `db.execute` is used.
 
@@ -67,8 +66,8 @@ Cost Report functionality has two parts:
   - Budget/actual totals or variance,
   - Derived calculations (fringes, contingency),
   - The structure of the Cost Report tab (which still follows the chart-of-accounts tree).
-- **Use today:** Managed in Settings under “Cost report groups”. Intended for future use (e.g. group-based exports or alternate report layouts).
-- **Scope:** Production-scoped; each group belongs to one production. An account can belong to **multiple groups** (many-to-many).
+- **Use today:** Managed in Settings under “Cost report groups”. The Cost Report tab can show a **“By groups”** layout (one section per group with group subtotals). Query: `listCostReportGroupsWithAccountIds(productionId)` (key `['cost-report-groups-with-accounts', productionId]`). Settings mutations invalidate this key when groups change.
+- **Scope:** Production-scoped; each group belongs to one production. An account can belong to **multiple groups** (many-to-many). Archived accounts in a group still contribute to group totals (historical reporting).
 
 ### 3.2 Data model
 
@@ -78,6 +77,8 @@ Cost Report functionality has two parts:
 - **Types:** `CostReportGroup`, `CostReportGroupAccount` in `src/lib/db/types.ts`.
 
 ### 3.3 Repository — `src/lib/db/repositories/costReportGroups.ts`
+
+- **listCostReportGroupsWithAccountIds(productionId):** Returns `CostReportGroupWithAccountIds[]` (groups with `account_ids`) in one call; used by the Cost Report tab for the “By groups” layout. Ordered by `sort_order`, name.
 
 | Function | Description |
 |----------|-------------|
@@ -102,7 +103,9 @@ Cost Report functionality has two parts:
 - **Edit group:** Same form with initial values; loads `listGroupAccountIds(editGroup.id)` for account selection. Submit calls `updateCostReportGroup` and `setGroupAccountIds(editGroup.id, data.accountIds)`.
 - **Delete:** Confirmation then `deleteCostReportGroup(groupId)`; cache invalidated for `['cost-report-groups', currentProductionId]`.
 
-### 3.6 Query keys
+### 3.6 Query keys and invalidation
+
+- **Cost Report tab:** `['cost-report-groups-with-accounts', productionId]` — list of groups with account ids. When Settings creates/updates/deletes a cost report group or its account mappings, both `['cost-report-groups', currentProductionId]` and `['cost-report-groups-with-accounts', currentProductionId]` are invalidated so the Cost Report tab updates when the user returns to it.
 
 - `['cost-report-groups', productionId]` — List of groups with account count; invalidate on create/update/delete.
 - `['cost-report-group-accounts', groupId]` — Account ids for a group; used when editing a group (`editGroup?.id`). Invalidate when group’s accounts change (after `setGroupAccountIds` or delete); typically the edit dialog is closed on success so refetch is less critical.
@@ -118,13 +121,12 @@ Cost Report functionality has two parts:
 | **Structure** | Chart-of-accounts hierarchy | User-defined totals; each references header accounts only | User-defined groups; many-to-many with accounts |
 | **Affects totals?** | No (display only) | No (reporting only) | No |
 | **Print** | Yes; print-friendly layout and CSS | Shown in Cost Report print | N/A |
-| **Used by Cost Report tab?** | This is the Cost Report tab | Yes (section + configure) | Not yet; reserved for future group-based reports/exports |
+| **Used by Cost Report tab?** | This is the Cost Report tab | Yes (Subtotals block + configure) | Yes (“By groups” layout; one section per group) |
 
 ---
 
 ## 5. Implementation notes for future work
 
-- **Group-based Cost Report:** To show the Cost Report organised by cost report groups instead of (or in addition to) the account tree, the Budget page would need to load `listCostReportGroups(productionId)` and optionally `listGroupAccountIds` for each group, then build a view that sections or filters the account tree by group. Totals would still come from `computeAccountTotals`; groups would only affect ordering and grouping of rows.
 - **Export by group:** CSV or PDF export could add sections or sheets per cost report group using the same group–account mapping.
 - **Print:** The current print CSS is scoped to `.cost-report-print`. Any new report layout that should print cleanly can reuse this class or similar rules.
 

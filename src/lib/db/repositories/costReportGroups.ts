@@ -34,6 +34,8 @@ function validateName(name: string): string {
 
 export type CostReportGroupWithCount = CostReportGroup & { accountCount: number }
 
+export type CostReportGroupWithAccountIds = CostReportGroup & { account_ids: string[] }
+
 export async function listCostReportGroups(productionId: string): Promise<CostReportGroupWithCount[]> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
@@ -64,6 +66,34 @@ export async function listGroupAccountIds(groupId: string): Promise<string[]> {
     [groupId]
   )
   return rows.map((r) => r.account_id as string)
+}
+
+/** List cost report groups with account ids in one call (for Cost Report tab). */
+export async function listCostReportGroupsWithAccountIds(
+  productionId: string
+): Promise<CostReportGroupWithAccountIds[]> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${GROUPS_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY sort_order ASC, name ASC`,
+    [productionId]
+  )
+  if (rows.length === 0) return []
+  const groups = rows.map(rowToGroup)
+  const groupIds = groups.map((g) => g.id)
+  const placeholders = groupIds.map((_, i) => `$${i + 1}`).join(', ')
+  const mappingRows = await db.select<Record<string, unknown>[]>(
+    `SELECT group_id, account_id FROM ${MAPPINGS_TABLE} WHERE group_id IN (${placeholders})`,
+    groupIds
+  )
+  const accountIdsByGroup = new Map<string, string[]>()
+  for (const g of groups) accountIdsByGroup.set(g.id, [])
+  for (const m of mappingRows) {
+    const gid = m.group_id as string
+    const aid = m.account_id as string
+    const arr = accountIdsByGroup.get(gid)
+    if (arr) arr.push(aid)
+  }
+  return groups.map((g) => ({ ...g, account_ids: accountIdsByGroup.get(g.id) ?? [] }))
 }
 
 async function checkUniqueNameAndCode(

@@ -99,6 +99,37 @@ export function legacyBudgetItemsList(items: BudgetItem[]): BudgetItem[] {
   return items.filter((i) => i.account_id == null)
 }
 
+/**
+ * Return the set of leaf (postable) account ids in the subtree of the given node.
+ * Used for group/production totals to sum leaf totals without double-counting.
+ */
+export function getDescendantLeafIdsFromNode(node: AccountTreeNode): Set<string> {
+  if (node.account.is_postable) return new Set([node.account.id])
+  const out = new Set<string>()
+  for (const c of node.children) {
+    getDescendantLeafIdsFromNode(c).forEach((id) => out.add(id))
+  }
+  return out
+}
+
+/**
+ * Return the set of leaf account ids in the subtree of the given account (by id).
+ * If the account is not found in the tree, returns an empty set.
+ */
+export function getDescendantLeafIds(accountTree: AccountTreeNode[], accountId: string): Set<string> {
+  const idToNode = new Map<string, AccountTreeNode>()
+  function index(nodes: AccountTreeNode[]) {
+    for (const n of nodes) {
+      idToNode.set(n.account.id, n)
+      index(n.children)
+    }
+  }
+  index(accountTree)
+  const node = idToNode.get(accountId)
+  if (!node) return new Set()
+  return getDescendantLeafIdsFromNode(node)
+}
+
 /** Scope row: root account id and whether to include children (subtree). */
 export type RuleScope = { account_id: string; include_children: number }
 
