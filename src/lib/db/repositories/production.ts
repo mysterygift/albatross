@@ -1,6 +1,6 @@
 import { BaseDirectory, remove } from '@tauri-apps/plugin-fs'
-import { getDb, now, uuid } from '../client'
-import { outboxPush } from '../outbox'
+import { getDb, now, uuid, runInSerializedTransaction, executeBatch } from '../client'
+import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { Production } from '../types'
 import { seedDefaultBudgetCategories } from './budget'
 import { listAccounts, seedDefaultBudgetAccounts } from './budgetAccounts'
@@ -32,6 +32,7 @@ function rowToProduction(r: Record<string, unknown>): Production {
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
+    wrapped_at: (r.wrapped_at as string | null) ?? null,
     archived_at: (r.archived_at as string | null) ?? null,
   }
 }
@@ -75,6 +76,37 @@ export async function unarchiveProduction(id: string): Promise<void> {
     [ts, id]
   )
   await outboxPush(TABLE, id, 'update', JSON.stringify({ archived_at: null }))
+}
+
+/**
+ * Complete and archive a production (Wrap Production workflow).
+ * Sets wrapped_at and archived_at to now; validates production exists and is not deleted.
+ * Atomic: single transaction with outbox.
+ */
+export async function completeAndArchiveProduction(id: string): Promise<void> {
+  const existing = await getProductionById(id)
+  if (!existing) {
+    throw new Error('Production not found or deleted')
+  }
+  const ts = now()
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+      { sql: 'BEGIN', bindValues: [] },
+      {
+        sql: `UPDATE ${TABLE} SET wrapped_at = $1, archived_at = $1, updated_at = $1 WHERE id = $2`,
+        bindValues: [ts, id],
+      },
+      outboxStatementForRow({
+        entity: TABLE,
+        entityId: id,
+        operation: 'update',
+        payloadJson: JSON.stringify({ wrapped_at: ts, archived_at: ts }),
+      }),
+      { sql: 'COMMIT', bindValues: [] },
+    ]
+    await executeBatch(db, statements)
+  })
 }
 
 export async function getProductionById(id: string): Promise<Production | null> {

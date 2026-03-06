@@ -1,13 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
 import { listChecklistByProduction } from '@/lib/db/repositories/checklist'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Clapperboard } from 'lucide-react'
 
 export function DashboardPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const { currentProduction, currentProductionId } = useCurrentProduction()
+  const wrapSuccess = (location.state as { wrapSuccess?: boolean } | null)?.wrapSuccess === true
   const { data: checklist = [] } = useQuery({
     queryKey: ['checklist', currentProductionId],
     queryFn: () => listChecklistByProduction(currentProductionId ?? ''),
@@ -24,16 +29,44 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <p className="text-muted-foreground">
-          {currentProduction
-            ? `${currentProduction.name} — production overview`
-            : 'Select a production to see the dashboard.'}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <p className="text-muted-foreground">
+            {currentProduction
+              ? `${currentProduction.name} — production overview`
+              : 'Select a production to see the dashboard.'}
+          </p>
+        </div>
+        {currentProductionId && (
+          <Button variant="destructive" asChild>
+            <Link to="/wrap-production" className="inline-flex items-center gap-2">
+              <Clapperboard className="size-4" />
+              Wrap Production
+            </Link>
+          </Button>
+        )}
       </div>
 
-      {!currentProductionId && (
+      {wrapSuccess && (
+        <Alert className="border-green-600/50 bg-green-50 dark:bg-green-950/30 dark:border-green-800">
+          <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+          <AlertTitle>Production completed and archived.</AlertTitle>
+          <AlertDescription>
+            The production has been wrapped and archived. You can view it in Productions with
+            “Show archived” enabled.
+          </AlertDescription>
+          <button
+            type="button"
+            onClick={() => navigate(location.pathname, { replace: true, state: {} })}
+            className="text-muted-foreground mt-2 text-sm underline hover:no-underline"
+          >
+            Dismiss
+          </button>
+        </Alert>
+      )}
+
+      {!currentProductionId && !wrapSuccess && (
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>No production selected</AlertTitle>
