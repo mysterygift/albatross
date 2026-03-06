@@ -53,7 +53,7 @@ export async function duplicateProduction(
   const notes = (prodRows[0]!.notes as string | null) ?? null
 
   // Load all source data first (reads only).
-  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, strips, castAvail, categories, budgetItems, expRows, keyContacts, checklist, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs] = await Promise.all([
+  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, checklist, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs] = await Promise.all([
     db.select<Record<string, unknown>[]>(`SELECT * FROM units WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM people WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM locations WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -67,7 +67,12 @@ export async function duplicateProduction(
     db.select<Record<string, unknown>[]>(`SELECT * FROM cast_availability WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM budget_categories WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM budget_items WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM vendors WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM expenses WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(
+      `SELECT d.* FROM expense_transaction_details d INNER JOIN expenses e ON e.id = d.expense_id WHERE e.production_id = $1 AND e.deleted_at IS NULL`,
+      [sourceProductionId]
+    ),
     db.select<Record<string, unknown>[]>(`SELECT * FROM key_contacts WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM checklist_items WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM deliverables WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -85,6 +90,8 @@ export async function duplicateProduction(
   const shootDayIdMap: IdMap = new Map()
   const shootDayUnitIdMap: IdMap = new Map()
   const categoryIdMap: IdMap = new Map()
+  const vendorIdMap: IdMap = new Map()
+  const expenseIdMap: IdMap = new Map()
   const deliverableIdMap: IdMap = new Map()
   const musicTrackIdMap: IdMap = new Map()
   const documentIdMap: IdMap = new Map()
@@ -214,6 +221,14 @@ export async function duplicateProduction(
       bindValues: [id, newProdId, r.code, r.name, r.phase ?? 'pre', ts, ts],
     })
   }
+  for (const r of vendors) {
+    const id = newId()
+    vendorIdMap.set(r.id as string, id)
+    statements.push({
+      sql: `INSERT INTO vendors (id, production_id, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      bindValues: [id, newProdId, r.company_name, r.primary_contact_full_name ?? null, r.primary_contact_email ?? null, ts, ts],
+    })
+  }
   for (const r of budgetItems) {
     const catId = r.category_id != null ? categoryIdMap.get(r.category_id as string) ?? null : null
     statements.push({
@@ -222,10 +237,35 @@ export async function duplicateProduction(
     })
   }
   for (const r of expRows) {
+    const expId = newId()
+    expenseIdMap.set(r.id as string, expId)
     const catId = mapId(categoryIdMap, r.category_id as string | null)
+    const vendorId = mapId(vendorIdMap, r.vendor_id as string | null)
     statements.push({
-      sql: `INSERT INTO expenses (id, production_id, category_id, account_id, amount, date, vendor, notes, expense_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      bindValues: [newId(), newProdId, catId, null, r.amount, r.date, r.vendor, r.notes, r.expense_type ?? 'other', ts, ts],
+      sql: `INSERT INTO expenses (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      bindValues: [
+        expId,
+        newProdId,
+        catId,
+        null,
+        r.transaction_type ?? null,
+        vendorId,
+        r.amount,
+        r.date,
+        r.vendor,
+        r.notes,
+        r.expense_type ?? 'other',
+        ts,
+        ts,
+      ],
+    })
+  }
+  for (const r of expenseTransactionDetails) {
+    const newExpenseId = expenseIdMap.get(r.expense_id as string)
+    if (!newExpenseId) continue
+    statements.push({
+      sql: `INSERT INTO expense_transaction_details (id, expense_id, transaction_type, details_json, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      bindValues: [newId(), newExpenseId, r.transaction_type, r.details_json, ts, ts],
     })
   }
   for (const r of keyContacts) {

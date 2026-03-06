@@ -1,7 +1,5 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import {
-  outboxInsert,
-  outboxInsertMany,
   outboxPush,
   outboxStatementForRow,
   outboxStatementForRows,
@@ -439,7 +437,7 @@ export async function moveShootDayUnitToDate(
       statements.push({ sql: 'COMMIT', bindValues: [] })
       await executeBatch(db, statements)
     }
-    return { success: true }
+    return { success: true } as const
   })
   if (result.success) await resequenceShootDays(day.production_id)
   return result

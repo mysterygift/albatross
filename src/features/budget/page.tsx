@@ -79,10 +79,19 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, SlidersHorizontal } from 'lucide-react'
+import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, SlidersHorizontal, Eye } from 'lucide-react'
 import { saveFileWithDialog } from '@/lib/files'
 import { getAccountBandColor } from '@/lib/budget/accountBandColor'
 import type { BudgetItem, BudgetAccount } from '@/lib/db/types'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { getExpenseWithDetails, listAllowExpenseDetailsByProduction } from '@/lib/db/repositories/expenseTransactions'
+import { VendorPicker } from '@/components/vendors/VendorPicker'
+import { getTypedExpenseConfig } from '@/lib/budget/transactions/registry'
+import type { ExpenseTransactionType } from '@/lib/db/types'
+import { listPeopleByProduction } from '@/lib/db/repositories/person'
+import { parseAllowDetails } from '@/lib/budget/transactions/allow'
+import { listLocationsByProduction } from '@/lib/db/repositories/location'
+import { ExpenseDetailPanel } from '@/features/budget/ExpenseDetailPanel'
 
 const BUDGET_VIEW_MODE_KEY = 'budgetViewMode'
 const COST_REPORT_LAYOUT_MODE_KEY = 'costReportLayoutMode'
@@ -108,6 +117,7 @@ const expenseSchema = z.object({
   account_id: z.string().min(1, 'Select an account'),
   amount: z.coerce.number().min(0),
   date: z.string().min(1),
+  vendor_id: z.string().optional(),
   vendor: z.string().optional(),
   notes: z.string().optional(),
   expense_type: z.enum(['petty_cash', 'per_diem', 'other']),
@@ -120,6 +130,8 @@ const derivedRuleSchema = z.object({
   scope_account_ids: z.array(z.string()).min(1, 'Select at least one account'),
 })
 
+type DerivedRuleFormValues = z.infer<typeof derivedRuleSchema>
+
 export function BudgetPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const { format, ensureRate, conversionBanner } = useCurrency()
@@ -131,6 +143,8 @@ export function BudgetPage() {
   const [addItemForAccountId, setAddItemForAccountId] = useState<string | null>(null)
   const [recodeToast, setRecodeToast] = useState<string | null>(null)
   const [manageDerivedOpen, setManageDerivedOpen] = useState(false)
+  const [examinedExpenseId, setExaminedExpenseId] = useState<string | null>(null)
+  const [examinedAccountId, setExaminedAccountId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<BudgetViewMode>(() => {
     if (typeof window === 'undefined') return 'budget'
     const stored = localStorage.getItem(BUDGET_VIEW_MODE_KEY)
@@ -154,6 +168,25 @@ export function BudgetPage() {
   }, [costReportLayoutMode])
   const queryClient = useQueryClient()
   const backfillRanForProduction = useRef<Set<string>>(new Set())
+
+  const { data: allowDetailsForProduction } = useQuery({
+    queryKey: ['allow-expense-details', currentProductionId],
+    enabled: !!currentProductionId,
+    queryFn: () => listAllowExpenseDetailsByProduction(currentProductionId!),
+  })
+
+  const openAllowCountGlobal =
+    allowDetailsForProduction?.reduce((acc, row) => {
+      const parsed = parseAllowDetails(row.details_json)
+      if (parsed.ok && parsed.value.status === 'open') {
+        return acc + 1
+      }
+      // If details cannot be parsed, treat as open to avoid hiding potentially unresolved allows.
+      if (!parsed.ok) {
+        return acc + 1
+      }
+      return acc
+    }, 0) ?? 0
 
   const toggleAccountExpanded = (id: string) => {
     setExpandedAccountIds((prev) => {
@@ -205,6 +238,24 @@ export function BudgetPage() {
   const { data: expenses = [] } = useQuery({
     queryKey: ['expenses', currentProductionId],
     queryFn: () => listExpensesByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: examinedExpenseWithDetails, isLoading: examinedExpenseLoading } = useQuery({
+    queryKey: ['expense-with-details', examinedExpenseId],
+    queryFn: () => getExpenseWithDetails(examinedExpenseId!),
+    enabled: examinedExpenseId != null,
+  })
+
+  const { data: people = [] } = useQuery({
+    queryKey: ['people', currentProductionId],
+    queryFn: () => listPeopleByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: locations = [] } = useQuery({
+    queryKey: ['locations', currentProductionId],
+    queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
 
@@ -284,6 +335,7 @@ export function BudgetPage() {
         category_id: null,
         amount: data.amount,
         date: data.date,
+        vendor_id: data.vendor_id ? data.vendor_id : null,
         vendor: data.vendor ?? null,
         notes: data.notes ?? null,
         expense_type: data.expense_type,
@@ -294,6 +346,28 @@ export function BudgetPage() {
       setAddExpenseOpen(false)
     },
   })
+
+  const handleExpenseSaveRequest = useCallback(
+    async (args: { expenseId: string; details: unknown; type: string }) => {
+      const config = getTypedExpenseConfig(args.type as ExpenseTransactionType)
+      if (!config?.save) throw new Error('Unknown transaction type')
+      await config.save({
+        expenseId: args.expenseId,
+        details: args.details,
+        ctx: { productionId: currentProductionId! },
+      })
+    },
+    [currentProductionId]
+  )
+
+  const handleExpenseSaved = useCallback(() => {
+    if (examinedExpenseId)
+      queryClient.invalidateQueries({ queryKey: ['expense-with-details', examinedExpenseId] })
+    if (currentProductionId) {
+      queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
+    }
+  }, [examinedExpenseId, currentProductionId, queryClient])
 
   const createProductionTotalMutation = useMutation({
     mutationFn: (data: { name: string; account_ids: string[] }) =>
@@ -540,12 +614,13 @@ export function BudgetPage() {
             </DialogTrigger>
             <DialogContent>
               {addExpenseOpen && (
-              <QuickExpenseForm
-                accounts={postableAccounts}
-                onSubmit={createExpenseMutation.mutate}
-                onCancel={() => setAddExpenseOpen(false)}
-                isLoading={createExpenseMutation.isPending}
-              />
+                <QuickExpenseForm
+                  productionId={currentProductionId!}
+                  accounts={postableAccounts}
+                  onSubmit={createExpenseMutation.mutate}
+                  onCancel={() => setAddExpenseOpen(false)}
+                  isLoading={createExpenseMutation.isPending}
+                />
               )}
             </DialogContent>
           </Dialog>
@@ -575,6 +650,7 @@ export function BudgetPage() {
         <>
           <CostReportView
             productionName={currentProduction?.name ?? ''}
+            openAllowCount={openAllowCountGlobal}
             accountTree={accountTree}
             accountTotals={accountTotals}
             items={items}
@@ -684,7 +760,7 @@ export function BudgetPage() {
                   <TableHead className="text-right">Actual</TableHead>
                   <TableHead className="text-right">Variance</TableHead>
                   <TableHead className="text-right w-[70px]">% Spent</TableHead>
-                  <TableHead className="w-[80px]">Actions</TableHead>
+                  <TableHead className="w-[96px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -700,6 +776,10 @@ export function BudgetPage() {
                     addItemForAccountId,
                     createInlineItemMutation,
                     postableAccounts,
+                    onExamineAccount: (accountId) => {
+                      setExaminedExpenseId(null)
+                      setExaminedAccountId(accountId)
+                    },
                   })
                 )}
                 {uncodedTotal > 0 && (
@@ -733,23 +813,38 @@ export function BudgetPage() {
                           <TableCell />
                           <TableCell />
                           <TableCell>
-                            <Select
-                              value=""
-                              onValueChange={(value) => {
-                                if (value) recodeExpenseMutation.mutate({ expenseId: exp.id, newAccountId: value })
-                              }}
-                            >
-                              <SelectTrigger className="h-8 w-[180px]">
-                                <SelectValue placeholder="Recode…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {postableAccounts.map((a) => (
-                                  <SelectItem key={a.id} value={a.id}>
-                                    {a.code} — {a.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => {
+                                  setExaminedAccountId(null)
+                                  setExaminedExpenseId(exp.id)
+                                }}
+                                aria-label="Examine spend"
+                              >
+                                <Eye className="size-4" />
+                              </Button>
+                              <Select
+                                value=""
+                                onValueChange={(value) => {
+                                  if (value) recodeExpenseMutation.mutate({ expenseId: exp.id, newAccountId: value })
+                                }}
+                              >
+                                <SelectTrigger className="h-8 w-[180px]">
+                                  <SelectValue placeholder="Recode…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {postableAccounts.map((a) => (
+                                    <SelectItem key={a.id} value={a.id}>
+                                      {a.code} — {a.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -828,6 +923,114 @@ export function BudgetPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <Sheet
+        open={examinedExpenseId != null || examinedAccountId != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setExaminedExpenseId(null)
+            setExaminedAccountId(null)
+          }
+        }}
+      >
+        <SheetContent side="right" className="w-[520px] sm:max-w-[520px]">
+          {examinedExpenseId != null ? (
+            <ExpenseDetailPanel
+              expenseWithDetails={examinedExpenseWithDetails ?? null}
+              isLoading={examinedExpenseLoading}
+              productionId={currentProductionId!}
+              productionCurrency={productionCurrency}
+              format={format}
+              defaultCurrencyCode={currentProduction?.currency_code ?? null}
+              people={people}
+              locations={locations}
+              onSaved={handleExpenseSaved}
+              onSaveRequest={handleExpenseSaveRequest}
+            />
+          ) : examinedAccountId != null ? (
+            (() => {
+              const account = accounts.find((a) => a.id === examinedAccountId) ?? null
+              const totals = account ? accountTotals.get(account.id) : undefined
+              const list = expenses
+                .filter((e) => e.account_id === examinedAccountId)
+                .slice()
+                .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+              const openAllowsForAccount =
+                allowDetailsForProduction?.reduce((acc, row) => {
+                  if (row.account_id !== examinedAccountId) return acc
+                  const parsed = parseAllowDetails(row.details_json)
+                  if (parsed.ok && parsed.value.status === 'open') {
+                    return acc + 1
+                  }
+                  if (!parsed.ok) {
+                    return acc + 1
+                  }
+                  return acc
+                }, 0) ?? 0
+              return (
+                <>
+                  <SheetHeader className="border-b border-border">
+                    <SheetTitle>Examine account</SheetTitle>
+                  </SheetHeader>
+                  <div className="p-4 space-y-4 overflow-auto">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">{account ? `${account.code} — ${account.name}` : 'Account'}</p>
+                      {totals && (
+                        <p className="text-xs text-muted-foreground">
+                          Budget {format(totals.budgetTotal, productionCurrency).formatted} · Actual {format(totals.actualTotal, productionCurrency).formatted}
+                        </p>
+                      )}
+                      {openAllowsForAccount > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          Open Allows in this account: {openAllowsForAccount}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="rounded-md border border-border">
+                      <div className="border-b border-border px-3 py-2">
+                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Expenses ({list.length})</p>
+                      </div>
+                      <div className="divide-y divide-border">
+                        {list.length === 0 ? (
+                          <p className="px-3 py-3 text-sm text-muted-foreground">No expenses posted to this account yet.</p>
+                        ) : (
+                          list.map((e) => (
+                            <div key={e.id} className="flex items-start justify-between gap-3 px-3 py-3">
+                              <div className="min-w-0">
+                                <p className="text-sm">{e.date}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {e.vendor ? e.vendor : '—'}
+                                  {e.notes ? ` · ${e.notes}` : ''}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium">{format(e.amount, productionCurrency).formatted}</p>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => {
+                                    setExaminedAccountId(null)
+                                    setExaminedExpenseId(e.id)
+                                  }}
+                                >
+                                  Examine
+                                </Button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )
+            })()
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
@@ -1102,6 +1305,7 @@ export function triggerCostReportPrint(): void {
 
 function CostReportView({
   productionName,
+  openAllowCount,
   accountTree,
   accountTotals,
   items,
@@ -1125,6 +1329,7 @@ function CostReportView({
   configureButton,
 }: {
   productionName: string
+  openAllowCount: number
   accountTree: AccountTreeNode[]
   accountTotals: Map<string, { budgetTotal: number; actualTotal: number; variance: number; percentSpent: number | null }>
   items: BudgetItem[]
@@ -1263,6 +1468,11 @@ function CostReportView({
         <h2 className="text-xl font-bold print:text-2xl">{productionName ? productionName : 'Cost Report'}</h2>
         {productionName && <p className="text-lg font-semibold text-muted-foreground">Cost Report</p>}
         <p className="text-sm text-muted-foreground mt-1">Generated: {generatedDate}</p>
+        {openAllowCount > 0 && (
+          <p className="text-xs text-muted-foreground mt-1">
+            Open Allows: {openAllowCount}
+          </p>
+        )}
       </header>
 
       <div className="grid gap-4 md:grid-cols-3 print:grid-cols-3">
@@ -1787,6 +1997,7 @@ function renderAccountRow(
     addItemForAccountId: string | null
     createInlineItemMutation: { mutate: (data: { account_id: string; description: string; estimated_cost: number }) => void; isPending: boolean }
     postableAccounts: BudgetAccount[]
+    onExamineAccount: (accountId: string) => void
   }
 ): ReactNode {
   const { account } = node
@@ -1838,18 +2049,30 @@ function renderAccountRow(
           ? `${Math.round(totals.percentSpent * 100)}%`
           : '—'}
       </TableCell>
-      <TableCell className="w-[80px]">
+      <TableCell className="w-[96px]">
         {isLeaf && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => ctx.setAddItemForAccountId(account.id)}
-            aria-label="Add line item"
-          >
-            <Plus className="size-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => ctx.onExamineAccount(account.id)}
+              aria-label="Examine account"
+            >
+              <Eye className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => ctx.setAddItemForAccountId(account.id)}
+              aria-label="Add line item"
+            >
+              <Plus className="size-4" />
+            </Button>
+          </div>
         )}
       </TableCell>
     </TableRow>
@@ -2029,11 +2252,13 @@ function BudgetItemForm({
 }
 
 function QuickExpenseForm({
+  productionId,
   accounts,
   onSubmit,
   onCancel,
   isLoading,
 }: {
+  productionId: string
   accounts: BudgetAccount[]
   onSubmit: (d: z.infer<typeof expenseSchema>) => void
   onCancel: () => void
@@ -2046,6 +2271,9 @@ function QuickExpenseForm({
       amount: 0,
       date: new Date().toISOString().slice(0, 10),
       expense_type: 'other',
+      vendor_id: '',
+      vendor: '',
+      notes: '',
     },
   })
   return (
@@ -2118,7 +2346,25 @@ function QuickExpenseForm({
           />
         </div>
         <div>
-          <Label>Vendor</Label>
+          <Label>Vendor (linked)</Label>
+          <Controller
+            name="vendor_id"
+            control={form.control}
+            render={({ field }) => (
+              <VendorPicker
+                productionId={productionId}
+                value={field.value ? String(field.value) : null}
+                onChange={(id) => field.onChange(id ?? '')}
+                placeholder="Select vendor"
+              />
+            )}
+          />
+          <p className="text-muted-foreground text-xs mt-1">
+            Optional. Linking a vendor keeps the legacy vendor text field available for migration later.
+          </p>
+        </div>
+        <div>
+          <Label>Vendor (legacy)</Label>
           <Input {...form.register('vendor')} />
         </div>
         <div>
@@ -2138,7 +2384,6 @@ function QuickExpenseForm({
   )
 }
 
-type DerivedRuleFormValues = z.infer<typeof derivedRuleSchema>
 
 function ManageDerivedCostsDialog({
   productionId,
@@ -2503,7 +2748,7 @@ function DerivedRuleForm({
                   const current = form.getValues('scope_account_ids')
                   const next = checked
                     ? [...current, acc.id]
-                    : current.filter((id) => id !== acc.id)
+                    : current.filter((id: string) => id !== acc.id)
                   form.setValue('scope_account_ids', next)
                 }}
               />

@@ -97,18 +97,42 @@ export type BudgetItem = {
   status: string
 } & SoftDeletable
 
+export type Vendor = {
+  id: string
+  production_id: string
+  company_name: string
+  primary_contact_full_name: string | null
+  primary_contact_email: string | null
+} & SoftDeletable
+
+export type ExpenseTransactionType = 'labour' | 'purchase' | 'rental' | 'allow' | 'deposit'
+
 export type Expense = {
   id: string
   production_id: string
   category_id: string | null
   /** Optional link to chart of accounts (budget_accounts.id). Leaf accounts only. */
   account_id: string | null
+  /** Typed transaction discriminator; null for legacy/untyped spend. */
+  transaction_type: ExpenseTransactionType | null
+  /** Optional normalized vendor link; legacy vendor string remains in vendor. */
+  vendor_id: string | null
   amount: number
   date: string
   vendor: string | null
   notes: string | null
   expense_type: 'petty_cash' | 'per_diem' | 'other'
 } & SoftDeletable
+
+export type ExpenseTransactionDetails = {
+  id: string
+  expense_id: string
+  transaction_type: ExpenseTransactionType
+  /** JSON string payload; structured per transaction type. */
+  details_json: string
+  created_at: string
+  updated_at: string
+}
 
 /** Derived budget layer: percentage applied to a scoped base (budget or actual). */
 export type FringeRule = {

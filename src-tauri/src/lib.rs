@@ -117,6 +117,12 @@ pub fn run() {
       sql: include_str!("../migrations/0019_production_totals.sql"),
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 20,
+      description: "vendors_and_expense_transaction_details",
+      sql: include_str!("../migrations/0020_vendors_and_expense_transaction_details.sql"),
+      kind: MigrationKind::Up,
+    },
   ];
 
   tauri::Builder::default()

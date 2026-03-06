@@ -43,6 +43,8 @@ function rowToExpense(r: Record<string, unknown>): Expense {
     production_id: r.production_id as string,
     category_id: r.category_id as string | null,
     account_id: r.account_id as string | null,
+    transaction_type: (r.transaction_type as Expense['transaction_type']) ?? null,
+    vendor_id: (r.vendor_id as string | null) ?? null,
     amount: r.amount as number,
     date: r.date as string,
     vendor: r.vendor as string | null,
@@ -254,6 +256,8 @@ export async function createExpense(data: {
   date: string
   category_id?: string | null
   account_id?: string | null
+  transaction_type?: Expense['transaction_type']
+  vendor_id?: string | null
   vendor?: string | null
   notes?: string | null
   expense_type?: Expense['expense_type']
@@ -262,13 +266,15 @@ export async function createExpense(data: {
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${EXP_TABLE} (id, production_id, category_id, account_id, amount, date, vendor, notes, expense_type, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO ${EXP_TABLE} (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       id,
       data.production_id,
       data.category_id ?? null,
       data.account_id ?? null,
+      data.transaction_type ?? null,
+      data.vendor_id ?? null,
       data.amount,
       data.date,
       data.vendor ?? null,

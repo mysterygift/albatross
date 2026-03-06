@@ -1,11 +1,6 @@
 import { getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxPush } from '../outbox'
-import type {
-  ContingencyRule,
-  ContingencyRuleScope,
-  FringeRule,
-  FringeRuleScope,
-} from '../types'
+import type { ContingencyRule, FringeRule } from '../types'
 
 const FRINGE_TABLE = 'fringe_rules'
 const FRINGE_SCOPES_TABLE = 'fringe_rule_scopes'
@@ -30,15 +25,6 @@ function rowToFringeRule(r: Record<string, unknown>): FringeRule {
   }
 }
 
-function rowToFringeScope(r: Record<string, unknown>): FringeRuleScope {
-  return {
-    id: r.id as string,
-    rule_id: r.rule_id as string,
-    account_id: r.account_id as string,
-    include_children: (r.include_children as number) ?? 1,
-  }
-}
-
 function rowToContingencyRule(r: Record<string, unknown>): ContingencyRule {
   return {
     id: r.id as string,
@@ -51,15 +37,6 @@ function rowToContingencyRule(r: Record<string, unknown>): ContingencyRule {
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
-  }
-}
-
-function rowToContingencyScope(r: Record<string, unknown>): ContingencyRuleScope {
-  return {
-    id: r.id as string,
-    rule_id: r.rule_id as string,
-    account_id: r.account_id as string,
-    include_children: (r.include_children as number) ?? 1,
   }
 }
 
