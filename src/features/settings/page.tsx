@@ -2,10 +2,27 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
 import {
-  listBudgetCategoriesByProduction,
-  createBudgetCategory,
-  deleteBudgetCategory,
-} from '@/lib/db/repositories/budget'
+  listAccounts,
+  createAccount,
+  updateAccountName,
+  updateAccountColor,
+  archiveAccount,
+  unarchiveAccount,
+  hardDeleteAccount,
+  getHardDeleteEligibleAccountIds,
+} from '@/lib/db/repositories/budgetAccounts'
+import { buildAccountTree } from '@/lib/budget/calculations'
+import type { AccountTreeNode } from '@/lib/budget/calculations'
+import { getAccountBandColor, ACCOUNT_COLOR_PRESETS } from '@/lib/budget/accountBandColor'
+import {
+  listCostReportGroups,
+  createCostReportGroup,
+  updateCostReportGroup,
+  deleteCostReportGroup,
+  listGroupAccountIds,
+  setGroupAccountIds,
+  type CostReportGroupWithCount,
+} from '@/lib/db/repositories/costReportGroups'
 import { CURRENCY_OPTIONS } from '@/lib/money/formatMoney'
 import {
   Table,
@@ -16,15 +33,6 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -33,9 +41,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Plus, Trash2, Wrench, AlertTriangle } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   ensureDemoData,
   resetDemoData,
@@ -48,6 +76,7 @@ import { getSetting, setSetting } from '@/lib/db/repositories/settings'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { getRate } from '@/lib/money/exchangeRates'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
+import type { BudgetAccount } from '@/lib/db/types'
 
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 
@@ -60,11 +89,33 @@ export function SettingsPage() {
     setConversionApiEnabled,
     conversionBanner,
   } = useCurrency()
-  const [open, setOpen] = useState(false)
   const [cascadeResult, setCascadeResult] = useState<{ ok: boolean; message: string; details?: string } | null>(null)
   const [cascadeLoading, setCascadeLoading] = useState(false)
   const [demoError, setDemoError] = useState<string | null>(null)
+  const [addGroupOpen, setAddGroupOpen] = useState(false)
+  const [editGroup, setEditGroup] = useState<CostReportGroupWithCount | null>(null)
+  const [addAccountOpen, setAddAccountOpen] = useState(false)
+  const [editAccount, setEditAccount] = useState<BudgetAccount | null>(null)
+  const [accountToDelete, setAccountToDelete] = useState<BudgetAccount | null>(null)
+  const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
+  const [colorToast, setColorToast] = useState<string | null>(null)
   const queryClient = useQueryClient()
+
+  const toggleAccountExpanded = useCallback((accountId: string) => {
+    setExpandedAccountIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(accountId)) next.delete(accountId)
+      else next.add(accountId)
+      return next
+    })
+  }, [])
+
+  const invalidateAccountKeys = () => {
+    if (currentProductionId) {
+      queryClient.invalidateQueries({ queryKey: ['budget-accounts', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['budgetAccounts', currentProductionId, 'postable'] })
+    }
+  }
 
   const { data: dbPerfEnabledSetting } = useQuery({
     queryKey: ['settings', DB_PERF_SETTING_KEY],
@@ -83,43 +134,138 @@ export function SettingsPage() {
     onMutate: (enabled) => {
       setPerfLoggingEnabled(enabled)
     },
-    onSuccess: (_, enabled) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', DB_PERF_SETTING_KEY] })
     },
   })
-  const [code, setCode] = useState('')
-  const [name, setName] = useState('')
-  const [phase, setPhase] = useState<'pre' | 'production' | 'post'>('pre')
-
-  const { data: categories = [] } = useQuery({
-    queryKey: ['budget-categories', currentProductionId],
-    queryFn: () => listBudgetCategoriesByProduction(currentProductionId ?? ''),
+  const { data: costReportGroups = [] } = useQuery({
+    queryKey: ['cost-report-groups', currentProductionId],
+    queryFn: () => listCostReportGroups(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
 
-  const createMutation = useMutation({
-    mutationFn: () =>
-      createBudgetCategory({
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['budget-accounts', currentProductionId],
+    queryFn: () => listAccounts(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: hardDeleteEligibleIds = new Set<string>() } = useQuery({
+    queryKey: ['budget-accounts-eligible-delete', currentProductionId],
+    queryFn: () => getHardDeleteEligibleAccountIds(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: editGroupAccountIds = [] } = useQuery({
+    queryKey: ['cost-report-group-accounts', editGroup?.id],
+    queryFn: () => listGroupAccountIds(editGroup!.id),
+    enabled: !!editGroup?.id,
+  })
+
+  const createGroupMutation = useMutation({
+    mutationFn: (data: { name: string; code: string; accountIds: string[] }) =>
+      createCostReportGroup({
         production_id: currentProductionId!,
-        code,
-        name,
-        phase,
+        name: data.name.trim(),
+        code: data.code.trim() || null,
+        accountIds: data.accountIds,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['budget-categories'] })
-      setOpen(false)
-      setCode('')
-      setName('')
-      setPhase('pre')
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
+      setAddGroupOpen(false)
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: deleteBudgetCategory,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['budget-categories'] }),
+  const updateGroupMutation = useMutation({
+    mutationFn: (data: { name: string; code: string; accountIds: string[] }) =>
+      Promise.all([
+        updateCostReportGroup(editGroup!.id, { name: data.name.trim(), code: data.code.trim() || null }),
+        setGroupAccountIds(editGroup!.id, data.accountIds),
+      ]),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
+      setEditGroup(null)
+    },
   })
 
+  const deleteGroupMutation = useMutation({
+    mutationFn: (groupId: string) => deleteCostReportGroup(groupId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
+    },
+  })
+
+  const createAccountMutation = useMutation({
+    mutationFn: (data: { code: string; name: string; parent_account_id?: string | null; is_postable: boolean; sort_order: number }) =>
+      createAccount({
+        production_id: currentProductionId!,
+        code: data.code,
+        name: data.name,
+        parent_account_id: data.parent_account_id ?? null,
+        is_postable: data.is_postable,
+        sort_order: data.sort_order,
+      }),
+    onSuccess: () => {
+      invalidateAccountKeys()
+      setAddAccountOpen(false)
+    },
+  })
+
+  const updateAccountNameMutation = useMutation({
+    mutationFn: ({ accountId, name }: { accountId: string; name: string }) => updateAccountName(accountId, name),
+    onSuccess: () => {
+      invalidateAccountKeys()
+      setEditAccount(null)
+    },
+  })
+
+  const archiveAccountMutation = useMutation({
+    mutationFn: (accountId: string) => archiveAccount(accountId),
+    onSuccess: () => {
+      invalidateAccountKeys()
+      queryClient.invalidateQueries({ queryKey: ['budget-accounts-eligible-delete', currentProductionId] })
+    },
+  })
+
+  const unarchiveAccountMutation = useMutation({
+    mutationFn: (accountId: string) => unarchiveAccount(accountId),
+    onSuccess: () => {
+      invalidateAccountKeys()
+      queryClient.invalidateQueries({ queryKey: ['budget-accounts-eligible-delete', currentProductionId] })
+    },
+  })
+
+  const hardDeleteAccountMutation = useMutation({
+    mutationFn: (accountId: string) => hardDeleteAccount(accountId),
+    onSuccess: () => {
+      invalidateAccountKeys()
+      queryClient.invalidateQueries({ queryKey: ['budget-accounts-eligible-delete', currentProductionId] })
+      setAccountToDelete(null)
+    },
+  })
+
+  const updateAccountColorMutation = useMutation({
+    mutationFn: ({ accountId, colorHex }: { accountId: string; colorHex: string | null }) =>
+      updateAccountColor(accountId, colorHex),
+    onSuccess: () => {
+      invalidateAccountKeys()
+      setColorToast('Account colour updated.')
+    },
+  })
+
+  useEffect(() => {
+    if (!colorToast) return
+    const t = setTimeout(() => setColorToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [colorToast])
+
+  const accountTree = buildAccountTree(accounts)
+
   return (
+    <TooltipProvider>
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Settings</h1>
 
@@ -160,68 +306,66 @@ export function SettingsPage() {
       {currentProductionId && (
         <Card>
           <CardHeader>
-            <CardTitle>Budget categories</CardTitle>
+            <CardTitle>Cost report groups</CardTitle>
             <CardDescription>
-              Define budget codes for this production. Used in Budget and quick-add spend.
+              Organise accounts for reporting and exports. Groups do not affect accounting totals.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="mb-4 flex justify-end">
-              <Dialog open={open} onOpenChange={setOpen}>
-                <DialogTrigger asChild>
-                  <Button><Plus className="mr-2 size-4" />Add category</Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader><DialogTitle>New budget category</DialogTitle></DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label>Code</Label>
-                      <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. ART" />
-                    </div>
-                    <div>
-                      <Label>Name</Label>
-                      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Art Department" />
-                    </div>
-                    <div>
-                      <Label>Phase</Label>
-                      <Select value={phase} onValueChange={(v) => setPhase(v as typeof phase)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pre">Pre-production</SelectItem>
-                          <SelectItem value="production">Production</SelectItem>
-                          <SelectItem value="post">Post-production</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                    <Button onClick={() => createMutation.mutate()} disabled={!code.trim() || !name.trim() || createMutation.isPending}>Add</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+              <Button onClick={() => setAddGroupOpen(true)}>
+                <Plus className="mr-2 size-4" />
+                Add group
+              </Button>
             </div>
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Code</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead>Phase</TableHead>
-                    <TableHead className="w-[100px]">Actions</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead className="w-[100px]">Accounts</TableHead>
+                    <TableHead className="w-[120px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {categories.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell>{c.code}</TableCell>
-                      <TableCell>{c.name}</TableCell>
-                      <TableCell>{c.phase}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(c.id)}><Trash2 className="size-4 text-destructive" /></Button>
-                      </TableCell>
+                  {costReportGroups.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-muted-foreground text-sm">No groups yet.</TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    costReportGroups.map((g) => (
+                      <TableRow key={g.id}>
+                        <TableCell>{g.name}</TableCell>
+                        <TableCell>{g.code ?? '—'}</TableCell>
+                        <TableCell>{g.accountCount}</TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setEditGroup(g)}
+                            aria-label="Edit"
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive"
+                            onClick={() => {
+                              if (window.confirm(`Delete group "${g.name}"?`)) {
+                                deleteGroupMutation.mutate(g.id)
+                              }
+                            }}
+                            aria-label="Delete"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -229,8 +373,134 @@ export function SettingsPage() {
         </Card>
       )}
 
+      <Dialog open={addGroupOpen} onOpenChange={setAddGroupOpen}>
+        <DialogContent className="max-w-lg">
+          {addGroupOpen && currentProductionId && (
+            <CostReportGroupForm
+              accounts={accounts.filter((a) => !a.archived_at)}
+              initialName=""
+              initialCode=""
+              initialAccountIds={[]}
+              onSubmit={(data) => createGroupMutation.mutate(data)}
+              onCancel={() => setAddGroupOpen(false)}
+              isLoading={createGroupMutation.isPending}
+              submitLabel="Add"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editGroup != null} onOpenChange={(open) => !open && setEditGroup(null)}>
+        <DialogContent className="max-w-lg">
+          {editGroup && currentProductionId && (
+            <CostReportGroupForm
+              accounts={accounts.filter((a) => !a.archived_at)}
+              initialName={editGroup.name}
+              initialCode={editGroup.code ?? ''}
+              initialAccountIds={editGroup.id ? editGroupAccountIds : []}
+              onSubmit={(data) => updateGroupMutation.mutate(data)}
+              onCancel={() => setEditGroup(null)}
+              isLoading={updateGroupMutation.isPending}
+              submitLabel="Save"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {currentProductionId && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Chart of accounts</CardTitle>
+            <CardDescription>
+              Manage account structure for budgeting and reporting. Archiving prevents new posting without changing historical totals.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex justify-end">
+              <Button onClick={() => setAddAccountOpen(true)}>
+                <Plus className="mr-2 size-4" />
+                Add account
+              </Button>
+            </div>
+            <ChartOfAccountsTree
+              tree={accountTree}
+              expandedAccountIds={expandedAccountIds}
+              onToggleExpand={toggleAccountExpanded}
+              hardDeleteEligibleIds={hardDeleteEligibleIds}
+              onEditName={(acc) => setEditAccount(acc)}
+              onArchive={(id) => archiveAccountMutation.mutate(id)}
+              onUnarchive={(id) => unarchiveAccountMutation.mutate(id)}
+              onRequestDelete={(acc) => setAccountToDelete(acc)}
+              onUpdateColor={(accountId, colorHex) => updateAccountColorMutation.mutate({ accountId, colorHex })}
+              archivePending={archiveAccountMutation.isPending}
+              unarchivePending={unarchiveAccountMutation.isPending}
+              deletePending={hardDeleteAccountMutation.isPending}
+              colorPending={updateAccountColorMutation.isPending}
+            />
+            {colorToast && (
+              <p className="text-sm text-muted-foreground rounded-md border border-border bg-card px-3 py-2">
+                {colorToast}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={addAccountOpen} onOpenChange={setAddAccountOpen}>
+        <DialogContent className="max-w-lg">
+          {addAccountOpen && currentProductionId && (
+            <AddAccountForm
+              productionId={currentProductionId}
+              accounts={accounts.filter((a) => !a.archived_at)}
+              onSubmit={(data) => createAccountMutation.mutate(data)}
+              onCancel={() => setAddAccountOpen(false)}
+              isLoading={createAccountMutation.isPending}
+              error={createAccountMutation.error instanceof Error ? createAccountMutation.error.message : undefined}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editAccount != null} onOpenChange={(open) => !open && setEditAccount(null)}>
+        <DialogContent className="max-w-md">
+          {editAccount && (
+            <EditAccountNameForm
+              account={editAccount}
+              onSubmit={(name) => updateAccountNameMutation.mutate({ accountId: editAccount.id, name })}
+              onCancel={() => setEditAccount(null)}
+              isLoading={updateAccountNameMutation.isPending}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={accountToDelete != null} onOpenChange={(open) => !open && setAccountToDelete(null)}>
+        <DialogContent className="max-w-md">
+          {accountToDelete && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Delete account</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">
+                Permanently remove &quot;{accountToDelete.code} — {accountToDelete.name}&quot;? This cannot be undone.
+              </p>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAccountToDelete(null)}>Cancel</Button>
+                <Button
+                  variant="destructive"
+                  disabled={hardDeleteAccountMutation.isPending}
+                  onClick={() => hardDeleteAccountMutation.mutate(accountToDelete.id)}
+                >
+                  Delete
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {!currentProductionId && (
-        <p className="text-muted-foreground">Select a production to manage budget categories and other settings.</p>
+        <p className="text-muted-foreground">Select a production to manage cost report groups, chart of accounts, and other settings.</p>
       )}
 
       <Card>
@@ -386,6 +656,589 @@ export function SettingsPage() {
         </Card>
       )}
     </div>
+    </TooltipProvider>
+  )
+}
+
+const COLOR_HEX_REGEX = /^#[0-9A-Fa-f]{6}$/
+
+function ChartOfAccountsTree({
+  tree,
+  expandedAccountIds,
+  onToggleExpand,
+  hardDeleteEligibleIds,
+  onEditName,
+  onArchive,
+  onUnarchive,
+  onRequestDelete,
+  onUpdateColor,
+  archivePending,
+  unarchivePending,
+  deletePending,
+  colorPending,
+}: {
+  tree: AccountTreeNode[]
+  expandedAccountIds: Set<string>
+  onToggleExpand: (accountId: string) => void
+  hardDeleteEligibleIds: Set<string>
+  onEditName: (account: BudgetAccount) => void
+  onArchive: (accountId: string) => void
+  onUnarchive: (accountId: string) => void
+  onRequestDelete: (account: BudgetAccount) => void
+  onUpdateColor: (accountId: string, colorHex: string | null) => void
+  archivePending: boolean
+  unarchivePending: boolean
+  deletePending: boolean
+  colorPending: boolean
+}) {
+  return (
+    <div className="rounded-md border overflow-hidden">
+      {tree.length === 0 ? (
+        <p className="p-4 text-muted-foreground text-sm">No accounts yet. Add an account to get started.</p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {tree.map((node) => (
+            <ChartOfAccountsRow
+              key={node.account.id}
+              node={node}
+              depth={0}
+              expandedAccountIds={expandedAccountIds}
+              onToggleExpand={onToggleExpand}
+              hardDeleteEligibleIds={hardDeleteEligibleIds}
+              onEditName={onEditName}
+              onArchive={onArchive}
+              onUnarchive={onUnarchive}
+              onRequestDelete={onRequestDelete}
+              onUpdateColor={onUpdateColor}
+              archivePending={archivePending}
+              unarchivePending={unarchivePending}
+              deletePending={deletePending}
+              colorPending={colorPending}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function ChartOfAccountsRow({
+  node,
+  depth,
+  expandedAccountIds,
+  onToggleExpand,
+  hardDeleteEligibleIds,
+  onEditName,
+  onArchive,
+  onUnarchive,
+  onRequestDelete,
+  onUpdateColor,
+  archivePending,
+  unarchivePending,
+  deletePending,
+  colorPending,
+}: {
+  node: AccountTreeNode
+  depth: number
+  expandedAccountIds: Set<string>
+  onToggleExpand: (accountId: string) => void
+  hardDeleteEligibleIds: Set<string>
+  onEditName: (account: BudgetAccount) => void
+  onArchive: (accountId: string) => void
+  onUnarchive: (accountId: string) => void
+  onRequestDelete: (account: BudgetAccount) => void
+  onUpdateColor: (accountId: string, colorHex: string | null) => void
+  archivePending: boolean
+  unarchivePending: boolean
+  deletePending: boolean
+  colorPending: boolean
+}) {
+  const acc = node.account
+  const isArchived = !!acc.archived_at
+  const canHardDelete = hardDeleteEligibleIds.has(acc.id)
+  const isRollup = !acc.is_postable
+  const hasChildren = node.children.length > 0
+  const isExpanded = expandedAccountIds.has(acc.id)
+  const bandColor = getAccountBandColor(acc)
+  const bandOpacity = isArchived ? 0.6 : 0.9
+  const [isHovered, setIsHovered] = useState(false)
+  const showGlow = isHovered || (isRollup && isExpanded)
+  const glowStyle = showGlow ? `0 0 0 2px ${bandColor}${isRollup && isExpanded ? '40' : '20'}` : undefined
+
+  return (
+    <>
+      <li
+        className="flex items-stretch min-h-[40px] transition-[opacity,box-shadow] duration-150 ease-out"
+        style={{ paddingLeft: `${12 + depth * 20}px` }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        <div
+          className="w-1 shrink-0 rounded-r transition-[opacity,box-shadow] duration-150 ease-out"
+          style={{
+            backgroundColor: bandColor,
+            opacity: isHovered ? 1 : bandOpacity,
+            boxShadow: glowStyle,
+          } as React.CSSProperties}
+        />
+        <div
+          className="flex flex-1 items-center gap-2 py-2 pr-3 pl-2 min-w-0 transition-[box-shadow] duration-150 ease-out rounded-r"
+          style={{ boxShadow: glowStyle }}
+        >
+          {isRollup && hasChildren ? (
+            <button
+              type="button"
+              onClick={() => onToggleExpand(acc.id)}
+              className="shrink-0 p-0.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+              aria-label={isExpanded ? 'Collapse' : 'Expand'}
+            >
+              {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+            </button>
+          ) : (
+            <span className="w-5 shrink-0" aria-hidden />
+          )}
+          <span className={`flex-1 min-w-0 text-sm truncate ${isArchived ? 'text-muted-foreground' : ''}`}>
+            <span className="font-mono">{acc.code}</span>
+            <span className="mx-2">—</span>
+            <span>{acc.name}</span>
+            {isArchived && (
+              <span className="ml-2 inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                Archived
+              </span>
+            )}
+          </span>
+          <div className="flex items-center gap-1 shrink-0">
+            {isRollup && (
+              <AccountColorPopover
+                account={acc}
+                bandColor={bandColor}
+                onSelect={(colorHex) => onUpdateColor(acc.id, colorHex)}
+                disabled={colorPending}
+              />
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => onEditName(acc)}
+              aria-label="Edit name"
+            >
+              <Pencil className="size-4" />
+            </Button>
+            {isArchived ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => onUnarchive(acc.id)}
+                disabled={unarchivePending}
+                aria-label="Unarchive"
+              >
+                <ArchiveRestore className="size-4" />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => onArchive(acc.id)}
+                disabled={archivePending}
+                aria-label="Archive"
+              >
+                <Archive className="size-4" />
+              </Button>
+            )}
+            {canHardDelete ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-destructive"
+                onClick={() => onRequestDelete(acc)}
+                disabled={deletePending}
+                aria-label="Delete"
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" disabled aria-label="Delete">
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Account must have no children, line items, expenses, or rule/group references to delete.</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </div>
+      </li>
+      {isExpanded &&
+        node.children.map((child) => (
+          <ChartOfAccountsRow
+            key={child.account.id}
+            node={child}
+            depth={depth + 1}
+            expandedAccountIds={expandedAccountIds}
+            onToggleExpand={onToggleExpand}
+            hardDeleteEligibleIds={hardDeleteEligibleIds}
+            onEditName={onEditName}
+            onArchive={onArchive}
+            onUnarchive={onUnarchive}
+            onRequestDelete={onRequestDelete}
+            onUpdateColor={onUpdateColor}
+            archivePending={archivePending}
+            unarchivePending={unarchivePending}
+            deletePending={deletePending}
+            colorPending={colorPending}
+          />
+        ))}
+    </>
+  )
+}
+
+function AccountColorPopover({
+  account: _account,
+  bandColor,
+  onSelect,
+  disabled,
+}: {
+  account: BudgetAccount
+  bandColor: string
+  onSelect: (colorHex: string | null) => void
+  disabled: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [customHex, setCustomHex] = useState('')
+  const [customError, setCustomError] = useState<string | null>(null)
+
+  const handleCustomSubmit = () => {
+    const trimmed = customHex.trim()
+    if (!trimmed) {
+      setCustomError('Enter a hex value (e.g. #9DBBAA)')
+      return
+    }
+    if (!COLOR_HEX_REGEX.test(trimmed)) {
+      setCustomError('Must be 6-digit hex (e.g. #9DBBAA)')
+      return
+    }
+    setCustomError(null)
+    onSelect(trimmed)
+    setOpen(false)
+    setCustomHex('')
+  }
+
+  const handleClear = () => {
+    onSelect(null)
+    setOpen(false)
+    setCustomHex('')
+    setCustomError(null)
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          disabled={disabled}
+          aria-label="Set account colour"
+        >
+          <span
+            className="inline-block size-4 rounded border border-border"
+            style={{ backgroundColor: bandColor }}
+          />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 bg-card border-border">
+        <div className="space-y-3">
+          <p className="text-sm font-medium">Account colour</p>
+          <div className="flex flex-wrap gap-2">
+            {ACCOUNT_COLOR_PRESETS.map((hex) => (
+              <button
+                key={hex}
+                type="button"
+                className="size-8 rounded border border-border hover:ring-2 hover:ring-mint-500/50 focus:outline-none focus:ring-2 focus:ring-mint-500"
+                style={{ backgroundColor: hex }}
+                onClick={() => {
+                  onSelect(hex)
+                  setOpen(false)
+                }}
+                aria-label={`Use ${hex}`}
+              />
+            ))}
+          </div>
+          <div>
+            <Label htmlFor="custom-hex" className="text-xs text-muted-foreground">Custom hex</Label>
+            <div className="flex gap-2 mt-1">
+              <Input
+                id="custom-hex"
+                value={customHex}
+                onChange={(e) => {
+                  setCustomHex(e.target.value)
+                  setCustomError(null)
+                }}
+                placeholder="#9DBBAA"
+                className="font-mono text-sm"
+              />
+              <Button type="button" variant="outline" size="sm" onClick={handleCustomSubmit}>
+                Apply
+              </Button>
+            </div>
+            {customError && <p className="text-xs text-destructive mt-1">{customError}</p>}
+          </div>
+          <Button type="button" variant="ghost" size="sm" className="w-full" onClick={handleClear}>
+            Clear
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function AddAccountForm({
+  productionId: _productionId,
+  accounts,
+  onSubmit,
+  onCancel,
+  isLoading,
+  error,
+}: {
+  productionId: string
+  accounts: BudgetAccount[]
+  onSubmit: (data: { code: string; name: string; parent_account_id?: string | null; is_postable: boolean; sort_order: number }) => void
+  onCancel: () => void
+  isLoading: boolean
+  error?: string
+}) {
+  const [code, setCode] = useState('')
+  const [name, setName] = useState('')
+  const [parentId, setParentId] = useState<string | null>(null)
+  const [isPostable, setIsPostable] = useState(true)
+  const parentOptions = accounts.filter((a) => !a.is_postable)
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const trimmedCode = code.trim()
+    const trimmedName = name.trim()
+    if (!trimmedCode || !trimmedName) return
+    if (isPostable && parentId) {
+      const parent = accounts.find((a) => a.id === parentId)
+      if (parent?.is_postable) return
+    }
+    onSubmit({
+      code: trimmedCode,
+      name: trimmedName,
+      parent_account_id: parentId,
+      is_postable: isPostable,
+      sort_order: 0,
+    })
+  }
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Add account</DialogTitle>
+      </DialogHeader>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <Label htmlFor="coa-code">Code</Label>
+          <Input
+            id="coa-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="e.g. 3111"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="coa-name">Name</Label>
+          <Input
+            id="coa-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Art Purchases"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="coa-parent">Parent (optional)</Label>
+          <Select value={parentId ?? 'none'} onValueChange={(v) => setParentId(v === 'none' ? null : v)}>
+            <SelectTrigger id="coa-parent" className="w-full">
+              <SelectValue placeholder="None" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              {parentOptions.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.code} — {a.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs mt-1">Only non-postable (header) accounts can be parents.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="coa-postable"
+            checked={isPostable}
+            onCheckedChange={(c) => setIsPostable(c === true)}
+          />
+          <Label htmlFor="coa-postable">Postable (can receive line items and expenses)</Label>
+        </div>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button type="submit" disabled={isLoading || !code.trim() || !name.trim()}>Add</Button>
+        </DialogFooter>
+      </form>
+    </>
+  )
+}
+
+function EditAccountNameForm({
+  account,
+  onSubmit,
+  onCancel,
+  isLoading,
+}: {
+  account: BudgetAccount
+  onSubmit: (name: string) => void
+  onCancel: () => void
+  isLoading: boolean
+}) {
+  const [name, setName] = useState(account.name)
+  useEffect(() => {
+    setName(account.name)
+  }, [account.id, account.name])
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const trimmed = name.trim()
+    if (!trimmed) return
+    onSubmit(trimmed)
+  }
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Edit account name</DialogTitle>
+      </DialogHeader>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <Label htmlFor="edit-name">Name</Label>
+          <Input
+            id="edit-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+          <p className="text-muted-foreground text-xs mt-1">Code: {account.code} (cannot be changed)</p>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button type="submit" disabled={isLoading || !name.trim()}>Save</Button>
+        </DialogFooter>
+      </form>
+    </>
+  )
+}
+
+function CostReportGroupForm({
+  accounts,
+  initialName,
+  initialCode,
+  initialAccountIds,
+  onSubmit,
+  onCancel,
+  isLoading,
+  submitLabel,
+}: {
+  accounts: BudgetAccount[]
+  initialName: string
+  initialCode: string
+  initialAccountIds: string[]
+  onSubmit: (data: { name: string; code: string; accountIds: string[] }) => void
+  onCancel: () => void
+  isLoading: boolean
+  submitLabel: string
+}) {
+  const [name, setName] = useState(initialName)
+  const [code, setCode] = useState(initialCode)
+  const [accountIds, setAccountIds] = useState<string[]>(initialAccountIds)
+
+  useEffect(() => {
+    setName(initialName)
+    setCode(initialCode)
+  }, [initialName, initialCode])
+
+  useEffect(() => {
+    setAccountIds(initialAccountIds)
+  }, [initialAccountIds.join(',')])
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    onSubmit({ name: name.trim(), code: code.trim(), accountIds })
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>{submitLabel === 'Add' ? 'Add group' : 'Edit group'}</DialogTitle>
+      </DialogHeader>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <Label htmlFor="crg-name">Name</Label>
+          <Input
+            id="crg-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Above the line"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="crg-code">Code (optional)</Label>
+          <Input
+            id="crg-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="e.g. ATL"
+            maxLength={10}
+          />
+        </div>
+        <div>
+          <Label>Accounts</Label>
+          <p className="text-muted-foreground text-xs mb-2">Select accounts to include. Header accounts are allowed.</p>
+          <div className="max-h-40 overflow-auto space-y-2 rounded border border-border p-2">
+            {accounts.map((acc) => (
+              <label key={acc.id} className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={accountIds.includes(acc.id)}
+                  onCheckedChange={(checked) => {
+                    setAccountIds((prev) =>
+                      checked ? [...prev, acc.id] : prev.filter((id) => id !== acc.id)
+                    )
+                  }}
+                />
+                <span className="text-sm">
+                  {acc.code} — {acc.name}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isLoading || !name.trim()}>
+            {submitLabel}
+          </Button>
+        </DialogFooter>
+      </form>
+    </>
   )
 }
 

@@ -75,6 +75,48 @@ pub fn run() {
       sql: include_str!("../migrations/0012_productions_archived_at.sql"),
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 13,
+      description: "budget_accounts_chart_of_accounts",
+      sql: include_str!("../migrations/0013_budget_accounts_chart_of_accounts.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 14,
+      description: "budget_items_category_nullable",
+      sql: include_str!("../migrations/0014_budget_items_category_nullable.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 15,
+      description: "fringe_contingency_rules",
+      sql: include_str!("../migrations/0015_fringe_contingency_rules.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 16,
+      description: "cost_report_groups",
+      sql: include_str!("../migrations/0016_cost_report_groups.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 17,
+      description: "budget_accounts_archived_at",
+      sql: include_str!("../migrations/0017_budget_accounts_archived_at.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 18,
+      description: "budget_accounts_color_hex",
+      sql: include_str!("../migrations/0018_budget_accounts_color_hex.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 19,
+      description: "production_totals",
+      sql: include_str!("../migrations/0019_production_totals.sql"),
+      kind: MigrationKind::Up,
+    },
   ];
 
   tauri::Builder::default()

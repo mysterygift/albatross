@@ -8,6 +8,7 @@
  * (3) retry execute/select on SQLITE_BUSY up to 3 times with exponential backoff; (4) log errors
  * and retries in db/perf. Verify: open DB Perf HUD (dev), use the app, click "Log to console"
  * and check for lock errors; cascade verification disables its button while running and reports BUSY.
+ * See docs/DATABASE_LAYER.md for how to write transaction-safe code and avoid open transactions.
  *
  * Foreign key enforcement: we run PRAGMA foreign_keys = ON on every connection.
  * In DEV, all execute/select are timed and logged to db/perf (including errors and retries).

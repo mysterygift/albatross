@@ -27,7 +27,7 @@
 | PRAGMAs | Enable WAL, set synchronous=NORMAL | Implemented in client (see §1) |
 | Perf visibility | DB timing wrapper + DevPerfHud | Implemented |
 | Invalidation | Narrow stripboard/shot invalidations | Recommended (see §4) |
-| Outbox | Co-locate outbox write in same transaction | Recommended (repo refactor) |
+| Outbox | Co-locate outbox write in same transaction | Recommended (repo refactor). See [DATABASE_LAYER.md](DATABASE_LAYER.md) for transaction and batching rules. |
 | Debounce | Inline cell edit: commit on blur/enter, not every keystroke | Audit: shot-list already commits on blur/enter (no per-keystroke write) |
 | Indexes | Verify with EXPLAIN QUERY PLAN | Migration 0004 + 0011 add many indexes; audit script below |
 

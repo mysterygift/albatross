@@ -3,6 +3,8 @@ import { getDb, now, uuid } from '../client'
 import { outboxPush } from '../outbox'
 import type { Production } from '../types'
 import { seedDefaultBudgetCategories } from './budget'
+import { listAccounts, seedDefaultBudgetAccounts } from './budgetAccounts'
+import { createContingencyRule } from './budgetDerived'
 import { listDocumentsByProduction } from './document'
 
 const ATTACHMENTS_PREFIX = 'attachments/'
@@ -162,6 +164,24 @@ export async function createProduction(
   })
   await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, slug, id, created_at: ts, updated_at: ts }))
   await seedDefaultBudgetCategories(id)
+  await seedDefaultBudgetAccounts(id)
+  // Optional: seed one default Contingency rule scoped to all root accounts (production-wide base).
+  try {
+    const accounts = await listAccounts(id)
+    const rootIds = accounts.filter((a) => a.parent_account_id == null).map((a) => a.id)
+    if (rootIds.length > 0) {
+      await createContingencyRule({
+        production_id: id,
+        name: 'Contingency',
+        rate: 0.1,
+        base_kind: 'budget',
+        scope_mode: 'include_subtrees',
+        scope_account_ids: rootIds,
+      })
+    }
+  } catch {
+    // Non-fatal: user can add rules manually.
+  }
   return (await getProductionById(id))!
 }
 

@@ -146,3 +146,265 @@
 [data-dragging-over] {
   @apply bg-primary/10 border-primary/50;
 }
+
+/* Cost Report: when exporting to PDF (html2pdf), hide no-print and use print-like styling.
+   Use only hex/rgb colors so html2canvas can parse (it does not support oklch).
+   Override all theme variables to hex so getComputedStyle never returns oklch. */
+.cost-report-print.cost-report-exporting-pdf .no-print {
+  display: none !important;
+}
+.cost-report-print.cost-report-exporting-pdf {
+  --background: #ffffff;
+  --foreground: #1a1a1a;
+  --card: #ffffff;
+  --card-foreground: #1a1a1a;
+  --popover: #ffffff;
+  --popover-foreground: #1a1a1a;
+  --primary: #2d9d78;
+  --primary-foreground: #1a1a1a;
+  --secondary: #3f3f46;
+  --secondary-foreground: #fafafa;
+  --muted: #3f3f46;
+  --muted-foreground: #525252;
+  --accent: #2d9d78;
+  --accent-foreground: #1a1a1a;
+  --destructive: #b91c1c;
+  --border: #e5e7eb;
+  --input: #3f3f46;
+  --ring: #2d9d78;
+  --chart-1: #2d9d78;
+  --chart-2: #0d9488;
+  --chart-3: #7c3aed;
+  --chart-4: #65a30d;
+  --chart-5: #ea580c;
+  --sidebar: #27272a;
+  --sidebar-foreground: #fafafa;
+  --sidebar-primary: #2d9d78;
+  --sidebar-primary-foreground: #1a1a1a;
+  --sidebar-accent: #3f3f46;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #e5e7eb;
+  --sidebar-ring: #2d9d78;
+  --unit-main: #2d9d78;
+  --unit-main-foreground: #1a1a1a;
+  --unit-second: #0d9488;
+  --unit-second-foreground: #fafafa;
+  background: #ffffff !important;
+  color: #1a1a1a !important;
+  border-color: #e5e7eb !important;
+}
+.cost-report-print.cost-report-exporting-pdf *,
+.cost-report-print.cost-report-exporting-pdf *::before,
+.cost-report-print.cost-report-exporting-pdf *::after {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: #1a1a1a !important;
+  border-color: #e5e7eb !important;
+  outline-color: #1a1a1a !important;
+  fill: #1a1a1a !important;
+  stroke: #1a1a1a !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+.cost-report-print.cost-report-exporting-pdf .text-muted-foreground {
+  color: #525252 !important;
+}
+.cost-report-print.cost-report-exporting-pdf .text-destructive {
+  color: #b91c1c !important;
+}
+.cost-report-print.cost-report-exporting-pdf th,
+.cost-report-print.cost-report-exporting-pdf td {
+  border-color: #e5e7eb !important;
+}
+.cost-report-print.cost-report-exporting-pdf button {
+  color: #1a1a1a !important;
+}
+
+/* Cost Report: ledger ladder — code column + divider, rollup alignment, account indent */
+.cost-report-print .cost-report-col-code,
+.cost-report-print .cost-report-code-cell {
+  width: 90px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  border-right: 1px solid rgba(0, 0, 0, 0.12);
+}
+.cost-report-print .cost-report-code-cell {
+  text-align: right;
+}
+.cost-report-print .cost-report-account-cell {
+  padding-left: 10px;
+  padding-right: 8px;
+}
+.cost-report-print tr[data-is-rollup="true"] .cost-report-code-cell,
+.cost-report-print tr[data-is-rollup="true"] .cost-report-account-cell {
+  text-align: left;
+  padding-left: 10px;
+  padding-right: 8px;
+}
+
+/* Cost Report print: professional layout, PDF-ready */
+@page {
+  margin: 20mm;
+  size: A4;
+}
+
+@media print {
+  /* 1) Dedicated container: white background, high contrast */
+  .cost-report-print {
+    background: white !important;
+    color: #1a1a1a !important;
+  }
+  .cost-report-print * {
+    background: transparent !important;
+    color: inherit !important;
+  }
+  .cost-report-print .text-muted-foreground {
+    color: #525252 !important;
+  }
+  .cost-report-print .text-destructive {
+    color: #b91c1c !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+
+  /* 2) Report header */
+  .cost-report-print .report-header {
+    border-bottom-color: #e5e7eb !important;
+  }
+  .cost-report-print .report-header h2 {
+    color: #1a1a1a !important;
+    font-size: 1.5rem !important;
+  }
+  .cost-report-print .report-header p {
+    color: #525252 !important;
+  }
+
+  /* 3) Tables: consistent column widths, borders, font size */
+  .cost-report-print table.cost-report-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12px;
+    table-layout: fixed;
+  }
+  .cost-report-print .cost-report-table th,
+  .cost-report-print .cost-report-table td {
+    border: 1px solid #e5e7eb;
+    padding: 6px 8px;
+  }
+  .cost-report-print .cost-report-col-code,
+  .cost-report-print .cost-report-code-cell {
+    width: 90px !important;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    border-right: 1px solid rgba(0, 0, 0, 0.1);
+  }
+  .cost-report-print .cost-report-code-cell {
+    text-align: right;
+  }
+  .cost-report-print .cost-report-account-cell {
+    padding-left: 10px;
+    padding-right: 8px;
+  }
+  .cost-report-print tr[data-is-rollup="true"] .cost-report-code-cell,
+  .cost-report-print tr[data-is-rollup="true"] .cost-report-account-cell {
+    text-align: left;
+    padding-left: 10px;
+    padding-right: 8px;
+  }
+  .cost-report-print .cost-report-col-account {
+    width: auto !important;
+  }
+  .cost-report-print .cost-report-col-budget,
+  .cost-report-print .cost-report-col-actual,
+  .cost-report-print .cost-report-col-variance {
+    width: 120px !important;
+    text-align: right !important;
+  }
+  .cost-report-print .cost-report-col-pct {
+    width: 80px !important;
+    text-align: right !important;
+  }
+
+  /* 4) Section formatting: group header row */
+  .cost-report-print .report-section-header {
+    border-top: 2px solid #d1d5db !important;
+    color: #6b7280 !important;
+    background: transparent !important;
+    page-break-after: avoid;
+  }
+  .cost-report-print .cost-report-group-total {
+    border-top: 1px solid #e5e7eb !important;
+    font-weight: 700 !important;
+    background: transparent !important;
+  }
+
+  /* 5) Page break control */
+  .cost-report-print .report-section {
+    page-break-inside: avoid;
+  }
+  .cost-report-print .report-section-header {
+    page-break-after: avoid;
+  }
+  .cost-report-print tr {
+    page-break-inside: avoid;
+  }
+
+  /* 6) Production totals / Subtotals block */
+  .cost-report-print .cost-report-subtotals table {
+    font-size: 14px !important;
+  }
+  .cost-report-print .cost-report-subtotals th,
+  .cost-report-print .cost-report-subtotals td {
+    padding: 8px 10px !important;
+  }
+  .cost-report-print .cost-report-subtotals .report-section-header {
+    border-top: 2px solid #9ca3af !important;
+    padding-bottom: 8px !important;
+  }
+
+  /* 7) Derived overlays: italic/muted, not part of actual */
+  .cost-report-print .derived-overlays {
+    border-color: #e5e7eb !important;
+    background: transparent !important;
+  }
+  .cost-report-print .derived-overlays .text-muted-foreground {
+    font-style: italic !important;
+    color: #6b7280 !important;
+  }
+
+  /* 8) Final totals: bold, thicker border, slightly larger */
+  .cost-report-print .final-totals {
+    border-top: 3px solid #374151 !important;
+    border-color: #e5e7eb !important;
+    background: transparent !important;
+    font-size: 14px !important;
+  }
+  .cost-report-print .final-totals p {
+    font-weight: 700 !important;
+  }
+  .cost-report-print .final-totals .text-xl {
+    font-size: 1.25rem !important;
+  }
+
+  /* 9) Band colours in print: subtle left border only */
+  .cost-report-print .cost-report-band-row[data-band-hex] {
+    border-left: 3px solid #d1d5db !important;
+    background: transparent !important;
+  }
+
+  /* 10) Footer: page number */
+  .cost-report-print-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 11px;
+    color: #6b7280 !important;
+    padding-top: 8px;
+  }
+  .cost-report-print-footer::before {
+    content: "Page " counter(page);
+  }
+}
