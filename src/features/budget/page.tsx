@@ -1664,6 +1664,8 @@ function renderCostReportRows(
   visibleIds?: Set<string>
 ): ReactNode {
   const { account } = node
+  // Roots (no parent) must only be rendered from the root accountTree array at depth 0, never as children.
+  if (depth > 0 && account.parent_account_id === null) return null
   if (visibleIds != null && !visibleIds.has(account.id)) return null
   const totals = ctx.accountTotals.get(account.id)
   const isRollup = !account.is_postable

@@ -52,7 +52,7 @@ Categories, accounts, items, expenses, and rule tables are soft-deleted where ap
 
 **BudgetAccount**
 
-- `id`, `production_id`, `code`, `name`, `parent_account_id` (nullable), `sort_order`, `is_postable`, `archived_at` (nullable), timestamps. Leaf accounts have `is_postable === true` and may have budget items and expenses; non-postable accounts are headers for rollup only. Archived accounts remain in `listAccounts()` for correct rollups but are excluded from `listPostableAccounts()` so no new posting.
+- `id`, `production_id`, `code`, `name`, `parent_account_id` (nullable), `sort_order`, `is_postable`, `archived_at` (nullable), timestamps. **Postable** accounts (`is_postable === true`) are leaf accounts: they are the only accounts that may receive budget items and expenses. **Header (rollup)** accounts must have `is_postable === false`; they display rollup totals only and cannot have children if they are postable. When creating an account, header/rollup accounts **must** be created with `is_postable: false` so the tree and Cost Report display correctly. Archived accounts remain in `listAccounts()` for correct rollups but are excluded from `listPostableAccounts()` so no new posting.
 
 **BudgetItem**
 
@@ -95,6 +95,12 @@ New productions get default categories via `seedDefaultBudgetCategories(producti
 - **Hierarchy:** `parent_account_id`; roots have `parent_account_id IS NULL`. Tree built by `buildAccountTree(accounts)` in `src/lib/budget/calculations.ts`.
 - **Leaf-only posting:** Only accounts with `is_postable === true` may have budget items or expenses. Header accounts display rollup totals only. Dropdowns for “Add line item” and “Quick-add spend” use `listPostableAccounts(productionId)`.
 - **Default accounts:** New productions get a default chart via `seedDefaultBudgetAccounts(productionId)` in production create (see `budgetAccounts.ts`).
+
+**Postable vs header (rollup) accounts**
+
+- **Postable account** — An account with `is_postable === true`. Only postable (leaf) accounts can have budget line items and expenses attached. They appear as leaves in the Chart of Accounts, Budget table, and Cost Report. Use postable for the accounts you actually post to (e.g. "2406 Camera Rental Package", "3105 Location Permits").
+- **Header / rollup account** — An account with `is_postable === false`. These accounts group other accounts and display **rollup totals only** (sum of their subtree). They cannot receive line items or expenses. Examples: department headers like "1100 SCRIPT", "2400 CAMERA".
+- **Creation rule:** When creating a **header or rollup** account (any account that will have children or is used only for grouping), it **must** be created with `is_postable: false`. If a header is mistakenly created as postable, the hierarchy can display incorrectly (e.g. in Cost Report) and the app assumes postable accounts are leaves. In Settings → Chart of Accounts, use "Postable" only for leaf accounts that will receive budget items and expenses.
 
 ### 2.7 Derived rules (fringes, contingency)
 
