@@ -141,6 +141,12 @@ pub fn run() {
       sql: include_str!("../migrations/0023_productions_wrapped_at.sql"),
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 24,
+      description: "production_tasks",
+      sql: include_str!("../migrations/0024_production_tasks.sql"),
+      kind: MigrationKind::Up,
+    },
   ];
 
   tauri::Builder::default()

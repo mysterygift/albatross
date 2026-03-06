@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
-import { listChecklistByProduction } from '@/lib/db/repositories/checklist'
+import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import { getDashboardBudgetHealthData } from '@/lib/dashboard/budgetHealth'
 import { getDashboardNextShootDayData } from '@/lib/dashboard/nextShootDay'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,7 +15,7 @@ import type { StripboardStrip, StripType } from '@/lib/db/types'
 import type { Scene, Shot } from '@/lib/db/types'
 import type { DashboardBudgetHealthData } from '@/lib/dashboard/budgetHealth'
 import type { DashboardNextShootDayData } from '@/lib/dashboard/nextShootDay'
-import type { ChecklistItem } from '@/lib/db/types'
+import type { ProductionTask } from '@/lib/db/types'
 
 const STRIP_ICONS: Record<StripType, typeof Film> = {
   SHOT: Film,
@@ -371,18 +371,18 @@ function BudgetHealthCard({
 const TASKS_DUE_SOON_LIMIT = 6
 
 function TasksDueSoonCard({
-  checklist,
+  tasks,
   isLoading,
   isError,
   onNavigate,
 }: {
-  checklist: ChecklistItem[]
+  tasks: ProductionTask[]
   isLoading: boolean
   isError?: boolean
   onNavigate: () => void
 }) {
-  const requiredIncomplete = checklist.filter((c) => c.is_required === 1 && c.status !== 'complete')
-  const optionalIncomplete = checklist.filter((c) => c.is_required === 0 && c.status !== 'complete')
+  const requiredIncomplete = tasks.filter((t) => t.priority === 1 && t.is_complete === 0)
+  const optionalIncomplete = tasks.filter((t) => t.priority !== 1 && t.is_complete === 0)
   const tasksDueSoon = [...requiredIncomplete, ...optionalIncomplete].slice(0, TASKS_DUE_SOON_LIMIT)
   const remainingCount = requiredIncomplete.length + optionalIncomplete.length - tasksDueSoon.length
   const allComplete = requiredIncomplete.length === 0 && optionalIncomplete.length === 0
@@ -392,7 +392,7 @@ function TasksDueSoonCard({
       <Card>
         <CardHeader>
           <CardTitle>Tasks Due Soon</CardTitle>
-          <CardDescription>Checklist items that still need attention</CardDescription>
+          <CardDescription>Tasks that still need attention</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
@@ -410,7 +410,7 @@ function TasksDueSoonCard({
       <Card>
         <CardHeader>
           <CardTitle>Tasks Due Soon</CardTitle>
-          <CardDescription>Checklist items that still need attention</CardDescription>
+          <CardDescription>Tasks that still need attention</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground text-sm text-destructive/90">Unable to load tasks.</p>
@@ -425,7 +425,7 @@ function TasksDueSoonCard({
       onClick={onNavigate}
       role="button"
       tabIndex={0}
-      aria-label="Tasks Due Soon — click to view full checklist"
+      aria-label="Tasks Due Soon — click to view all tasks"
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
@@ -435,23 +435,23 @@ function TasksDueSoonCard({
     >
       <CardHeader>
         <CardTitle>Tasks Due Soon</CardTitle>
-        <CardDescription>Checklist items that still need attention</CardDescription>
+        <CardDescription>Tasks that still need attention</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {allComplete ? (
           <div className="flex items-center gap-2 py-2">
             <CheckCircle2 className="size-5 shrink-0 text-green-600 dark:text-green-400" />
-            <p className="text-sm text-muted-foreground">All checklist items complete.</p>
+            <p className="text-sm text-muted-foreground">All tasks complete.</p>
           </div>
         ) : (
           <>
             <ul className="space-y-2">
-              {tasksDueSoon.map((item) => (
-                <li key={item.id} className="flex items-center gap-2 text-sm">
-                  <Badge variant={item.is_required === 1 ? 'destructive' : 'secondary'} className="shrink-0">
-                    {item.is_required === 1 ? 'Required' : 'Optional'}
+              {tasksDueSoon.map((task) => (
+                <li key={task.id} className="flex items-center gap-2 text-sm">
+                  <Badge variant={task.priority === 1 ? 'destructive' : 'secondary'} className="shrink-0">
+                    {task.priority === 1 ? 'Required' : 'Optional'}
                   </Badge>
-                  <span className="min-w-0 truncate">{item.title}</span>
+                  <span className="min-w-0 truncate">{task.description}</span>
                 </li>
               ))}
             </ul>
@@ -470,7 +470,7 @@ function TasksDueSoonCard({
           onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-2"
         >
-          View full checklist
+          View all tasks
           <ChevronRight className="size-3.5" />
         </Link>
       </CardContent>
@@ -491,12 +491,12 @@ export function DashboardPage() {
   }, [currentProduction?.currency_code, ensureRate])
 
   const {
-    data: checklist = [],
-    isLoading: checklistLoading,
-    isError: checklistError,
+    data: tasks = [],
+    isLoading: tasksLoading,
+    isError: tasksError,
   } = useQuery({
-    queryKey: ['checklist', currentProductionId],
-    queryFn: () => listChecklistByProduction(currentProductionId ?? ''),
+    queryKey: ['tasks', currentProductionId],
+    queryFn: () => listTasksByProduction(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
 
@@ -520,13 +520,13 @@ export function DashboardPage() {
     enabled: !!currentProductionId,
   })
 
-  const complete = checklist.filter((c) => c.status === 'complete').length
-  const total = checklist.length
-  const required = checklist.filter((c) => c.is_required === 1)
-  const requiredComplete = required.filter((c) => c.status === 'complete').length
+  const complete = tasks.filter((t) => t.is_complete === 1).length
+  const total = tasks.length
+  const required = tasks.filter((t) => t.priority === 1)
+  const requiredComplete = required.filter((t) => t.is_complete === 1).length
   const score = total === 0 ? 100 : Math.round((complete / total) * 100)
   const requiredScore = required.length === 0 ? 100 : Math.round((requiredComplete / required.length) * 100)
-  const warnings = checklist.filter((c) => c.is_required === 1 && c.status !== 'complete')
+  const warnings = tasks.filter((t) => t.priority === 1 && t.is_complete === 0)
 
   return (
     <div className="space-y-6">
@@ -583,7 +583,7 @@ export function DashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Readiness score</CardTitle>
-                <CardDescription>Overall checklist completion</CardDescription>
+                <CardDescription>Overall task completion</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-4">
@@ -627,9 +627,9 @@ export function DashboardPage() {
           />
 
           <TasksDueSoonCard
-            checklist={checklist}
-            isLoading={checklistLoading}
-            isError={checklistError}
+            tasks={tasks}
+            isLoading={tasksLoading}
+            isError={tasksError}
             onNavigate={() => navigate('/readiness')}
           />
 
@@ -640,7 +640,7 @@ export function DashboardPage() {
               <AlertDescription>
                 <ul className="mt-2 list-inside list-disc">
                   {warnings.map((w) => (
-                    <li key={w.id}>{w.title}</li>
+                    <li key={w.id}>{w.description}</li>
                   ))}
                 </ul>
               </AlertDescription>

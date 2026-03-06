@@ -130,7 +130,7 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'call_sheets',
     'bookings',
     'equipment',
-    'checklist_items',
+    'production_tasks',
     'deliverables',
     'music_tracks',
     'clearances',

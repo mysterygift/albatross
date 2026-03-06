@@ -120,7 +120,7 @@ From the **Productions** list, use the **Duplicate** action (copy icon) on a pro
 
 - Prompts for a new name (default: “&lt;original&gt; (Copy)”).
 - Creates a new production with a **unique slug** (e.g. `my-production-copy`, `my-production-copy-2`).
-- Copies all production-scoped data in a single transaction: units, people, locations, scenes, shoot days, stripboard strips, cast availability, budget categories/items/expenses, key contacts, checklist items, deliverables, technical specs, music tracks, clearances, equipment terms, and documents (metadata + attachment files under `attachments/<newProductionId>/`).
+- Copies all production-scoped data in a single transaction: units, people, locations, scenes, shoot days, stripboard strips, cast availability, budget categories/items/expenses, key contacts, production tasks, deliverables, technical specs, music tracks, clearances, equipment terms, and documents (metadata + attachment files under `attachments/<newProductionId>/`).
 - No outbox entries are written for the duplicated rows (duplication is local-only).
 - After duplication, the new production is selected and a “Production duplicated.” message is shown. Use this to make a **safe copy** before trying risky or experimental settings (e.g. the currency conversion API).
 

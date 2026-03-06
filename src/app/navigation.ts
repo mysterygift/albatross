@@ -56,7 +56,7 @@ export const navItems: NavItem[] = [
   { to: '/equipment', label: 'Equipment', icon: Film },
   { to: '/documents', label: 'Documents', icon: FileText },
   { to: '/call-sheets', label: 'Call Sheets', icon: Megaphone },
-  { to: '/readiness', label: 'Readiness Checklist', icon: FileCheck },
+  { to: '/readiness', label: 'Tasks', icon: FileCheck },
   { to: '/deliverables', label: 'Deliverables', icon: FileCheck },
   { to: '/music-clearance', label: 'Music & Archive', icon: Music },
   { to: '/settings', label: 'Settings', icon: Settings },

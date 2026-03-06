@@ -12,7 +12,7 @@ Albatross runs on your computer as a native desktop app. It helps you:
 - **Plan the schedule** — Calendar, stripboard, shot lists, and script import.
 - **Track people** — Cast and crew bookings, plus Day Out of Days (DOOD) inferred from the stripboard.
 - **Handle budget** — Categories, line items, and expenses in your production’s currency.
-- **Organize the rest** — Locations, equipment, documents, call sheets, readiness checklists, deliverables, and music/archive clearances.
+- **Organize the rest** — Locations, equipment, documents, call sheets, tasks, deliverables, and music/archive clearances.
 
 Everything is stored locally (SQLite + files). No account, no cloud, no internet required after install.
 
@@ -70,7 +70,7 @@ Outputs (e.g. `.dmg` on macOS) are under `src-tauri/target/release/`. See the ma
 
 | Area | What you can do |
 |------|------------------|
-| **Dashboard** | Overview of the current production; readiness checklist score and required items. |
+| **Dashboard** | Overview of the current production; task completion score and required items. |
 | **Productions** | Create, edit, delete, duplicate productions; select which one is “current”. |
 | **Budget** | Set budget categories (pre/production/post), add line items and expenses. Default currency is GBP; display currency is configurable in Settings. |
 | **Schedule** | **Calendar** — shoot days; **Stripboard** — drag-and-drop strips (scenes, moves, calls, lunch, wrap, notes), multiple units per day, lock columns; **Shot lists** — shots per scene; **Script import** — paste text or attach `.txt` to break down scenes (see *Not yet implemented* for PDF). |
@@ -79,7 +79,7 @@ Outputs (e.g. `.dmg` on macOS) are under `src-tauri/target/release/`. See the ma
 | **Equipment** | Track equipment and terms per production. |
 | **Documents** | Attach files (PDFs, images, etc.); open in system viewer. Call sheet PDFs are also stored here. |
 | **Call sheets** | Generate call sheet PDFs per shoot day/unit; save and open in system viewer. |
-| **Readiness checklist** | Custom checklist items; required vs optional; completion status. |
+| **Tasks** | Production tasks; required vs optional; completion status. |
 | **Deliverables** | Track deliverables for the production. |
 | **Music & archive** | Music tracks and clearances; generate cue sheets. |
 | **Settings** | Display currency, budget categories for current production, data location info; in dev, developer tools (demo seed, currency API, cascade verification). |

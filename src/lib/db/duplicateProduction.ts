@@ -53,7 +53,7 @@ export async function duplicateProduction(
   const notes = (prodRows[0]!.notes as string | null) ?? null
 
   // Load all source data first (reads only).
-  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, checklist, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs] = await Promise.all([
+  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs] = await Promise.all([
     db.select<Record<string, unknown>[]>(`SELECT * FROM units WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM people WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM locations WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -74,7 +74,7 @@ export async function duplicateProduction(
       [sourceProductionId]
     ),
     db.select<Record<string, unknown>[]>(`SELECT * FROM key_contacts WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
-    db.select<Record<string, unknown>[]>(`SELECT * FROM checklist_items WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM production_tasks WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM deliverables WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT ts.* FROM technical_specs ts INNER JOIN deliverables d ON d.id = ts.deliverable_id AND d.production_id = $1 AND d.deleted_at IS NULL WHERE ts.deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM music_tracks WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -274,10 +274,21 @@ export async function duplicateProduction(
       bindValues: [newId(), newProdId, r.department, r.name, r.phone, r.email, r.notes, ts, ts],
     })
   }
-  for (const r of checklist) {
+  for (const r of tasks) {
     statements.push({
-      sql: `INSERT INTO checklist_items (id, production_id, title, sort_order, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
-      bindValues: [newId(), newProdId, r.title, r.sort_order ?? 0, ts, ts],
+      sql: `INSERT INTO production_tasks (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      bindValues: [
+        newId(),
+        newProdId,
+        r.description,
+        r.is_complete ?? 0,
+        r.notes ?? null,
+        r.due_date ?? null,
+        r.assigned_department ?? null,
+        r.priority ?? null,
+        ts,
+        ts,
+      ],
     })
   }
   for (const r of deliverables) {

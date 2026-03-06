@@ -422,13 +422,15 @@ export type Equipment = {
   notes: string | null
 } & SoftDeletable
 
-export type ChecklistItem = {
+export type ProductionTask = {
   id: string
   production_id: string
-  title: string
-  is_required: number
-  status: 'pending' | 'complete'
-  sort_order: number
+  description: string
+  is_complete: number
+  notes: string | null
+  due_date: string | null
+  assigned_department: string | null
+  priority: 1 | 2 | 3 | null
 } & SoftDeletable
 
 export type Deliverable = {
