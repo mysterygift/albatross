@@ -53,7 +53,7 @@ export async function duplicateProduction(
   const notes = (prodRows[0]!.notes as string | null) ?? null
 
   // Load all source data first (reads only).
-  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, strips, castAvail, categories, budgetItems, expRows, keyContacts, checklist, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs] = await Promise.all([
+  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs] = await Promise.all([
     db.select<Record<string, unknown>[]>(`SELECT * FROM units WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM people WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM locations WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -67,9 +67,15 @@ export async function duplicateProduction(
     db.select<Record<string, unknown>[]>(`SELECT * FROM cast_availability WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM budget_categories WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM budget_items WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM vendors WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM expenses WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(
+      `SELECT d.* FROM expense_transaction_details d INNER JOIN expenses e ON e.id = d.expense_id WHERE e.production_id = $1 AND e.deleted_at IS NULL`,
+      [sourceProductionId]
+    ),
     db.select<Record<string, unknown>[]>(`SELECT * FROM key_contacts WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
-    db.select<Record<string, unknown>[]>(`SELECT * FROM checklist_items WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM production_task_sections WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM production_tasks WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM deliverables WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT ts.* FROM technical_specs ts INNER JOIN deliverables d ON d.id = ts.deliverable_id AND d.production_id = $1 AND d.deleted_at IS NULL WHERE ts.deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM music_tracks WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -78,6 +84,8 @@ export async function duplicateProduction(
     db.select<Record<string, unknown>[]>(`SELECT * FROM documents WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
   ])
 
+  const taskIdMap: IdMap = new Map()
+  const sectionIdMap: IdMap = new Map()
   const unitIdMap: IdMap = new Map()
   const personIdMap: IdMap = new Map()
   const locationIdMap: IdMap = new Map()
@@ -85,6 +93,8 @@ export async function duplicateProduction(
   const shootDayIdMap: IdMap = new Map()
   const shootDayUnitIdMap: IdMap = new Map()
   const categoryIdMap: IdMap = new Map()
+  const vendorIdMap: IdMap = new Map()
+  const expenseIdMap: IdMap = new Map()
   const deliverableIdMap: IdMap = new Map()
   const musicTrackIdMap: IdMap = new Map()
   const documentIdMap: IdMap = new Map()
@@ -214,18 +224,51 @@ export async function duplicateProduction(
       bindValues: [id, newProdId, r.code, r.name, r.phase ?? 'pre', ts, ts],
     })
   }
+  for (const r of vendors) {
+    const id = newId()
+    vendorIdMap.set(r.id as string, id)
+    statements.push({
+      sql: `INSERT INTO vendors (id, production_id, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      bindValues: [id, newProdId, r.company_name, r.primary_contact_full_name ?? null, r.primary_contact_email ?? null, ts, ts],
+    })
+  }
   for (const r of budgetItems) {
     const catId = r.category_id != null ? categoryIdMap.get(r.category_id as string) ?? null : null
     statements.push({
-      sql: `INSERT INTO budget_items (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      bindValues: [newId(), newProdId, catId, null, r.description, r.estimated_cost ?? 0, r.actual_cost ?? 0, r.vendor, r.status ?? 'draft', ts, ts],
+      sql: `INSERT INTO budget_items (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      bindValues: [newId(), newProdId, catId, null, r.description, r.estimated_cost ?? 0, r.actual_cost ?? 0, r.vendor, r.status ?? 'draft', null, ts, ts],
     })
   }
   for (const r of expRows) {
+    const expId = newId()
+    expenseIdMap.set(r.id as string, expId)
     const catId = mapId(categoryIdMap, r.category_id as string | null)
+    const vendorId = mapId(vendorIdMap, r.vendor_id as string | null)
     statements.push({
-      sql: `INSERT INTO expenses (id, production_id, category_id, account_id, amount, date, vendor, notes, expense_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      bindValues: [newId(), newProdId, catId, null, r.amount, r.date, r.vendor, r.notes, r.expense_type ?? 'other', ts, ts],
+      sql: `INSERT INTO expenses (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      bindValues: [
+        expId,
+        newProdId,
+        catId,
+        null,
+        r.transaction_type ?? null,
+        vendorId,
+        r.amount,
+        r.date,
+        r.vendor,
+        r.notes,
+        r.expense_type ?? 'other',
+        ts,
+        ts,
+      ],
+    })
+  }
+  for (const r of expenseTransactionDetails) {
+    const newExpenseId = expenseIdMap.get(r.expense_id as string)
+    if (!newExpenseId) continue
+    statements.push({
+      sql: `INSERT INTO expense_transaction_details (id, expense_id, transaction_type, details_json, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      bindValues: [newId(), newExpenseId, r.transaction_type, r.details_json, ts, ts],
     })
   }
   for (const r of keyContacts) {
@@ -234,10 +277,63 @@ export async function duplicateProduction(
       bindValues: [newId(), newProdId, r.department, r.name, r.phone, r.email, r.notes, ts, ts],
     })
   }
-  for (const r of checklist) {
+  for (const r of taskSections) {
+    const id = newId()
+    sectionIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO checklist_items (id, production_id, title, sort_order, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
-      bindValues: [newId(), newProdId, r.title, r.sort_order ?? 0, ts, ts],
+      sql: `INSERT INTO production_task_sections (id, production_id, name, sort_order, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      bindValues: [id, newProdId, r.name, r.sort_order ?? 0, ts, ts],
+    })
+  }
+  // Topological order: parents before children (for parent_task_id mapping)
+  const taskRows = tasks as Array<Record<string, unknown> & { id: string; parent_task_id?: string | null }>
+  const taskIds = new Set(taskRows.map((t) => t.id))
+  const sortedTasks: typeof taskRows = []
+  const seen = new Set<string>()
+  while (sortedTasks.length < taskRows.length) {
+    let added = false
+    for (const t of taskRows) {
+      if (seen.has(t.id)) continue
+      const parentId = t.parent_task_id ?? null
+      const parentInList = parentId == null || taskIds.has(parentId)
+      if (parentInList && (parentId == null || seen.has(parentId))) {
+        sortedTasks.push(t)
+        seen.add(t.id)
+        added = true
+      }
+    }
+    if (!added) {
+      // Orphaned or cyclic refs: add remaining as top-level
+      for (const t of taskRows) {
+        if (!seen.has(t.id)) {
+          sortedTasks.push({ ...t, parent_task_id: null })
+          seen.add(t.id)
+        }
+      }
+      break
+    }
+  }
+  for (const r of sortedTasks) {
+    const id = newId()
+    taskIdMap.set(r.id, id)
+    const newParentId = mapId(taskIdMap, r.parent_task_id ?? null)
+    const newSectionId = mapId(sectionIdMap, r.section_id as string | null)
+    statements.push({
+      sql: `INSERT INTO production_tasks (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      bindValues: [
+        id,
+        newProdId,
+        r.description,
+        r.is_complete ?? 0,
+        r.notes ?? null,
+        r.due_date ?? null,
+        r.assigned_department ?? null,
+        r.priority ?? null,
+        newParentId,
+        newSectionId,
+        ts,
+        ts,
+      ],
     })
   }
   for (const r of deliverables) {
@@ -284,7 +380,7 @@ export async function duplicateProduction(
     const fileName = (r.file_name as string) || 'file'
     const newRelPath = `${ATTACHMENTS}/${newProdId}/${id}-${fileName}`
     docNewPaths.push({ oldPath: r.file_path as string, newPath: newRelPath, docId: id })
-    const entityId = mapEntityId(r.entity_type as string | null, r.entity_id as string | null, { locationIdMap, personIdMap, shootDayIdMap })
+    const entityId = mapEntityId(r.entity_type as string | null, r.entity_id as string | null, { locationIdMap, personIdMap, shootDayIdMap, deliverableIdMap })
     statements.push({
       sql: `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       bindValues: [id, newProdId, r.entity_type, entityId, r.file_name, newRelPath, r.mime_type, ts, ts],
@@ -312,11 +408,12 @@ export async function duplicateProduction(
 function mapEntityId(
   entityType: string | null,
   entityId: string | null,
-  maps: { locationIdMap: IdMap; personIdMap: IdMap; shootDayIdMap: IdMap }
+  maps: { locationIdMap: IdMap; personIdMap: IdMap; shootDayIdMap: IdMap; deliverableIdMap: IdMap }
 ): string | null {
   if (entityId == null) return null
   if (entityType === 'location_release' || entityType === 'location') return maps.locationIdMap.get(entityId) ?? entityId
   if (entityType === 'contributor_form' || entityType === 'person') return maps.personIdMap.get(entityId) ?? entityId
   if (entityType === 'call_sheet' || entityType === 'shoot_day') return maps.shootDayIdMap.get(entityId) ?? entityId
+  if (entityType === 'deliverable') return maps.deliverableIdMap.get(entityId) ?? entityId
   return entityId
 }

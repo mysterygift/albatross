@@ -46,6 +46,8 @@ export const IDS = {
   sceneCast: (n: number) => `${P}${String(4000 + n).padStart(4, '0')}`,
   // cast_availability
   availability: (n: number) => `${P}${String(5000 + n).padStart(4, '0')}`,
+  // bookings (cast only for demo)
+  booking: (n: number) => `${P}${String(6200 + n).padStart(4, '0')}`,
   // location_scene
   locationScene: (n: number) => `${P}${String(6000 + n).padStart(4, '0')}`,
   // stripboard_items (legacy table - may not be used if using strips)
@@ -54,6 +56,12 @@ export const IDS = {
   cueSheet: `${P}7999`,
   // equipment_terms (LENS + SUPPORT for shot list suggestions)
   equipmentTerm: (n: number) => `${P}${String(1600 + n).padStart(4, '0')}`,
+  // production_task_sections (Pre-Production, Principal Photography, Post-Production)
+  taskSection: (n: number) => `${P}${String(8000 + n).padStart(4, '0')}`,
+  // production_tasks (including subtasks)
+  task: (n: number) => `${P}${String(8100 + n).padStart(4, '0')}`,
+  // budget_item_expense_links (demo reconciliation)
+  reconciliationLink: (n: number) => `${P}${String(8500 + n).padStart(4, '0')}`,
 } as const
 
 export const SEED_VERSION = '2'

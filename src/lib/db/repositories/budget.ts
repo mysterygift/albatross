@@ -1,11 +1,12 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
-import { outboxPush } from '../outbox'
+import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { BudgetCategory, BudgetItem, Expense } from '../types'
 import { ensureLegacyFallbackAccounts, getAccountById } from './budgetAccounts'
 
 const CAT_TABLE = 'budget_categories'
 const ITEM_TABLE = 'budget_items'
 const EXP_TABLE = 'expenses'
+const LINKS_TABLE = 'budget_item_expense_links'
 
 function rowToCategory(r: Record<string, unknown>): BudgetCategory {
   return {
@@ -31,6 +32,7 @@ function rowToItem(r: Record<string, unknown>): BudgetItem {
     actual_cost: (r.actual_cost as number) ?? 0,
     vendor: r.vendor as string | null,
     status: (r.status as string) ?? 'draft',
+    line_item_type: (r.line_item_type as BudgetItem['line_item_type']) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
@@ -43,6 +45,8 @@ function rowToExpense(r: Record<string, unknown>): Expense {
     production_id: r.production_id as string,
     category_id: r.category_id as string | null,
     account_id: r.account_id as string | null,
+    transaction_type: (r.transaction_type as Expense['transaction_type']) ?? null,
+    vendor_id: (r.vendor_id as string | null) ?? null,
     amount: r.amount as number,
     date: r.date as string,
     vendor: r.vendor as string | null,
@@ -173,8 +177,8 @@ export async function createBudgetItem(data: {
   const categoryId = data.category_id ?? null
   const accountId = data.account_id ?? null
   await db.execute(
-    `INSERT INTO ${ITEM_TABLE} (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO ${ITEM_TABLE} (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     [
       id,
       data.production_id,
@@ -185,6 +189,7 @@ export async function createBudgetItem(data: {
       data.actual_cost ?? 0,
       data.vendor ?? null,
       data.status ?? 'draft',
+      null,
       ts,
       ts,
     ]
@@ -196,14 +201,14 @@ export async function createBudgetItem(data: {
 
 export async function updateBudgetItem(
   id: string,
-  data: Partial<Pick<BudgetItem, 'description' | 'estimated_cost' | 'actual_cost' | 'vendor' | 'status'>>
+  data: Partial<Pick<BudgetItem, 'description' | 'estimated_cost' | 'actual_cost' | 'vendor' | 'status' | 'line_item_type'>>
 ): Promise<BudgetItem> {
   const db = await getDb()
   const ts = now()
   const cols: string[] = []
   const vals: unknown[] = []
   let i = 1
-  for (const k of ['description', 'estimated_cost', 'actual_cost', 'vendor', 'status'] as const) {
+  for (const k of ['description', 'estimated_cost', 'actual_cost', 'vendor', 'status', 'line_item_type'] as const) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
       vals.push(data[k])
@@ -254,6 +259,8 @@ export async function createExpense(data: {
   date: string
   category_id?: string | null
   account_id?: string | null
+  transaction_type?: Expense['transaction_type']
+  vendor_id?: string | null
   vendor?: string | null
   notes?: string | null
   expense_type?: Expense['expense_type']
@@ -262,13 +269,15 @@ export async function createExpense(data: {
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${EXP_TABLE} (id, production_id, category_id, account_id, amount, date, vendor, notes, expense_type, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO ${EXP_TABLE} (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       id,
       data.production_id,
       data.category_id ?? null,
       data.account_id ?? null,
+      data.transaction_type ?? null,
+      data.vendor_id ?? null,
       data.amount,
       data.date,
       data.vendor ?? null,
@@ -283,14 +292,45 @@ export async function createExpense(data: {
   return rowToExpense(rows[0]!)
 }
 
-export async function deleteExpense(id: string): Promise<void> {
+/**
+ * Soft-delete an expense and any active reconciliation links in one transaction.
+ * Does not modify expense_transaction_details, budget_items, or any roll-up totals.
+ * Per DATABASE_LAYER.md: runInSerializedTransaction + executeBatch(BEGIN, ..., COMMIT).
+ */
+export async function deleteExpense(expenseId: string): Promise<void> {
   const db = await getDb()
-  const ts = now()
-  await db.execute(
-    `UPDATE ${EXP_TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
-    [ts, ts, id]
+  const expenseRows = await db.select<Record<string, unknown>[]>(
+    `SELECT id FROM ${EXP_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
+    [expenseId]
   )
-  await outboxPush(EXP_TABLE, id, 'delete', null)
+  if (expenseRows.length === 0) {
+    throw new Error('Expense not found or already deleted')
+  }
+
+  const ts = now()
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+    { sql: 'BEGIN TRANSACTION', bindValues: [] },
+    {
+      sql: `UPDATE ${EXP_TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
+      bindValues: [ts, ts, expenseId],
+    },
+    {
+      sql: `UPDATE ${LINKS_TABLE} SET deleted_at = $1, updated_at = $2 WHERE expense_id = $3 AND deleted_at IS NULL`,
+      bindValues: [ts, ts, expenseId],
+    },
+    outboxStatementForRow({
+      entity: EXP_TABLE,
+      entityId: expenseId,
+      operation: 'delete',
+      payloadJson: null,
+    }),
+    { sql: 'COMMIT', bindValues: [] },
+  ]
+
+  await runInSerializedTransaction(async () => {
+    const conn = await getDb()
+    await executeBatch(conn, statements)
+  })
 }
 
 /**
@@ -307,6 +347,45 @@ export async function updateExpenseAccount(expenseId: string, newAccountId: stri
     [newAccountId, expenseId]
   )
   await outboxPush(EXP_TABLE, expenseId, 'update', JSON.stringify({ account_id: newAccountId }))
+}
+
+/**
+ * Update basic expense row fields (amount, date, vendor, notes). Used for untyped/legacy expenses.
+ * Does not change account_id (use updateExpenseAccount), transaction_type, or expense_transaction_details.
+ */
+export async function updateExpense(
+  expenseId: string,
+  data: { amount?: number; date?: string; vendor?: string | null; notes?: string | null }
+): Promise<void> {
+  const db = await getDb()
+  const cols: string[] = []
+  const vals: unknown[] = []
+  let i = 1
+  if (data.amount !== undefined) {
+    cols.push(`amount = $${i++}`)
+    vals.push(data.amount)
+  }
+  if (data.date !== undefined) {
+    cols.push(`date = $${i++}`)
+    vals.push(data.date)
+  }
+  if (data.vendor !== undefined) {
+    cols.push(`vendor = $${i++}`)
+    vals.push(data.vendor)
+  }
+  if (data.notes !== undefined) {
+    cols.push(`notes = $${i++}`)
+    vals.push(data.notes)
+  }
+  if (cols.length === 0) return
+  const ts = now()
+  cols.push(`updated_at = $${i++}`)
+  vals.push(ts, expenseId)
+  await db.execute(
+    `UPDATE ${EXP_TABLE} SET ${cols.join(', ')} WHERE id = $${i} AND deleted_at IS NULL`,
+    vals
+  )
+  await outboxPush(EXP_TABLE, expenseId, 'update', JSON.stringify(data))
 }
 
 /** Category code to legacy fallback account key (ATL -> atl, etc.). */

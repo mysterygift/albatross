@@ -13,6 +13,10 @@
 import { executeBatch, getDb, now } from '../client'
 import { getProductionBySlug, hardDeleteProduction } from '../repositories/production'
 import { seedDemoBudget } from './demoBudgetSeed'
+import { seedDemoBookings } from './demoBookingSeed'
+import { seedDemoDeliverables } from './demoDeliverableSeed'
+import { seedDemoReconciliation } from './demoReconciliationSeed'
+import { seedDemoTasks } from './demoTaskSeed'
 import { listDocumentsByProduction } from '../repositories/document'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { generateCueSheet, generateLocationReleaseCover, generateContributorFormCover } from '@/lib/pdf'
@@ -130,7 +134,7 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'call_sheets',
     'bookings',
     'equipment',
-    'checklist_items',
+    'production_tasks',
     'deliverables',
     'music_tracks',
     'clearances',
@@ -274,32 +278,158 @@ async function runFullSeed(): Promise<void> {
     )
   }
 
-  const locNames = [
-    'Bank Interior',
-    'Street Exterior',
-    'Warehouse',
-    'Police Station',
-    'Mint Building',
-    'Roof Top',
-    'Parking Lot',
-    'Alley',
-    'Office',
-    'Apartment',
-    'Cafe',
-    'Hotel Lobby',
-    'Garage',
-    'Studio',
+  const DEMO_LOCATIONS: Array<{
+    name: string
+    booked_status: 'unbooked' | 'hold' | 'booked' | 'wrap'
+    address: string
+    availability_constraints: string | null
+    permit_fee: number | null
+    location_fee: number | null
+    notes: string | null
+  }> = [
+    {
+      name: 'Bank Interior',
+      booked_status: 'hold',
+      address: '101 Threadneedle St, London EC2R',
+      availability_constraints: 'Weekdays only after 18:00',
+      permit_fee: null,
+      location_fee: 2500,
+      notes: 'Contact concierge 30 minutes before arrival.',
+    },
+    {
+      name: 'Street Exterior',
+      booked_status: 'booked',
+      address: '102 Victoria Embankment, London WC2',
+      availability_constraints: 'Permit required for traffic control. No parking for large trucks.',
+      permit_fee: 450,
+      location_fee: null,
+      notes: 'LCC permit secured. Use service entrance on tech scout and shoot days.',
+    },
+    {
+      name: 'Warehouse',
+      booked_status: 'hold',
+      address: '103 Hackney Wick, London E9',
+      availability_constraints: 'Rear loading access only. Limited power on site.',
+      permit_fee: null,
+      location_fee: 1200,
+      notes: 'Warehouse power distro to be brought in.',
+    },
+    {
+      name: 'Police Station',
+      booked_status: 'booked',
+      address: '104 New Scotland Yard, London SW1',
+      availability_constraints: 'Security presence required.',
+      permit_fee: 350,
+      location_fee: 800,
+      notes: 'Filming before opening only. Use rear entrance.',
+    },
+    {
+      name: 'Mint Building',
+      booked_status: 'booked',
+      address: '105 Main St, London',
+      availability_constraints: 'No access before 08:00. Noise restrictions after 22:00.',
+      permit_fee: null,
+      location_fee: 4200,
+      notes: 'Rooftop access requires harness sign-off.',
+    },
+    {
+      name: 'Roof Top',
+      booked_status: 'hold',
+      address: '106 Shoreditch High St, London E1',
+      availability_constraints: 'Drone permit required. Rooftop access requires harness sign-off.',
+      permit_fee: 200,
+      location_fee: 1800,
+      notes: 'Wind check required for exterior work.',
+    },
+    {
+      name: 'Parking Lot',
+      booked_status: 'unbooked',
+      address: '107 Commercial Rd, London E1',
+      availability_constraints: 'No access before 06:00. No parking for large trucks.',
+      permit_fee: null,
+      location_fee: 450,
+      notes: 'Traffic control plan required.',
+    },
+    {
+      name: 'Alley',
+      booked_status: 'hold',
+      address: '108 Brick Lane, London E1',
+      availability_constraints: 'Residential area — quiet setup/breakdown.',
+      permit_fee: 150,
+      location_fee: null,
+      notes: 'Narrow access — equipment via hand trolley.',
+    },
+    {
+      name: 'Office',
+      booked_status: 'booked',
+      address: '109 Canary Wharf, London E14',
+      availability_constraints: 'Weekdays only after 18:00. Active business — filming before opening only.',
+      permit_fee: null,
+      location_fee: 3200,
+      notes: 'Use service entrance on tech scout and shoot days.',
+    },
+    {
+      name: 'Apartment',
+      booked_status: 'hold',
+      address: '110 Kensington Gardens, London W2',
+      availability_constraints: 'Residential area — quiet setup/breakdown. No access before 09:00.',
+      permit_fee: null,
+      location_fee: 950,
+      notes: 'Apartment corridor too narrow for dolly track.',
+    },
+    {
+      name: 'Cafe',
+      booked_status: 'booked',
+      address: '111 Borough High St, London SE1',
+      availability_constraints: 'Active business — filming before opening only.',
+      permit_fee: null,
+      location_fee: 650,
+      notes: 'Café requires protection for tiled floor.',
+    },
+    {
+      name: 'Hotel Lobby',
+      booked_status: 'hold',
+      address: '112 Strand, London WC2',
+      availability_constraints: 'Contact concierge 30 minutes before arrival. No access before 06:00.',
+      permit_fee: 275,
+      location_fee: 2100,
+      notes: 'Use service entrance on tech scout and shoot days.',
+    },
+    {
+      name: 'Garage',
+      booked_status: 'unbooked',
+      address: '113 Bermondsey St, London SE1',
+      availability_constraints: 'Rear loading access only.',
+      permit_fee: null,
+      location_fee: 380,
+      notes: 'Limited ceiling height — check rigging.',
+    },
+    {
+      name: 'Studio',
+      booked_status: 'wrap',
+      address: '114 Park Royal, London NW10',
+      availability_constraints: null,
+      permit_fee: null,
+      location_fee: 2800,
+      notes: 'Full day rate. Power and rigging included.',
+    },
   ]
+
   for (let i = 1; i <= 14; i++) {
+    const loc = DEMO_LOCATIONS[i - 1]!
     await db.execute(
-      `INSERT INTO locations (id, production_id, name, booked_status, address, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO locations (id, production_id, name, booked_status, address, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         IDS.location(i),
         pid,
-        locNames[i - 1],
-        i % 3 === 0 ? 'booked' : 'hold',
-        `${100 + i} Main St`,
+        loc.name,
+        loc.booked_status,
+        loc.address,
+        loc.availability_constraints,
+        loc.permit_fee,
+        loc.location_fee,
+        loc.notes,
         ts,
         ts,
       ]
@@ -629,11 +759,19 @@ async function runFullSeed(): Promise<void> {
   }
 
   // -------------------------------------------------------------------------
+  // Cast bookings: aligned with scene_cast and stripboard; respects cast availability clashes
+  // -------------------------------------------------------------------------
+  await seedDemoBookings(pid, ts)
+
+  // -------------------------------------------------------------------------
   // Budget: generated only via demoBudgetSeed (chart of accounts, budget items, expenses,
   // production totals). No legacy budget_categories; category_id left null. All values in GBP.
   // Uses runInSerializedTransaction + executeBatch. Do not add alternate budget seeding for demo.
   // -------------------------------------------------------------------------
   await seedDemoBudget(pid, startDate, ts, addDaysLocal, IDS.budgetItem, IDS.expense)
+  await seedDemoTasks(pid, startDate, ts, addDaysLocal)
+  await seedDemoReconciliation(pid, ts, IDS.budgetItem, IDS.expense)
+  await seedDemoDeliverables(pid, startDate, ts, addDaysLocal)
 
   const hods = [
     ['Director', 'Jane Doe', '555-0100', 'director@demo.com'],
@@ -742,22 +880,6 @@ async function runFullSeed(): Promise<void> {
       `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [IDS.document(i), pid, null, null, fileName, path, 'text/plain', ts, ts]
-    )
-  }
-
-  for (let i = 1; i <= 12; i++) {
-    await db.execute(
-      `INSERT INTO deliverables (id, production_id, name, due_date, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [IDS.deliverable(i), pid, `Deliverable ${i}`, addDaysLocal(startDate, 60 + i * 7), i % 3 === 0 ? 'done' : 'pending', ts, ts]
-    )
-  }
-
-  for (let i = 1; i <= 12; i++) {
-    await db.execute(
-      `INSERT INTO technical_specs (id, deliverable_id, resolution, codec, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [IDS.technicalSpec(i), IDS.deliverable(i), '1920x1080', 'H.264', `Spec for deliverable ${i}`, ts, ts]
     )
   }
 

@@ -18,6 +18,7 @@ import { ReadinessPage } from '@/features/readiness/page'
 import { DeliverablesPage } from '@/features/deliverables/page'
 import { MusicClearancePage } from '@/features/music-clearance/page'
 import { SettingsPage } from '@/features/settings/page'
+import { WrapProductionPage } from '@/features/wrap-production/page'
 
 export const router = createBrowserRouter([
   {
@@ -25,6 +26,7 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <DashboardPage /> },
+      { path: 'wrap-production', element: <WrapProductionPage /> },
       { path: 'productions', element: <ProductionsPage /> },
       { path: 'budget', element: <BudgetPage /> },
       { path: 'schedule', element: <Navigate to="/schedule/calendar" replace /> },

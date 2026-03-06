@@ -13,6 +13,8 @@ export type Production = {
   /** ISO 4217 code; all stored budget numbers are in this currency. Default GBP. */
   currency_code: string
   notes: string | null
+  /** When set, production was completed/wrapped (e.g. via Wrap Production workflow). */
+  wrapped_at: string | null
   /** When set, production is archived (hidden from default list); reversible. */
   archived_at: string | null
 } & SoftDeletable
@@ -82,6 +84,9 @@ export type BudgetAccount = {
   deleted_at: string | null
 }
 
+/** Supported line item types for typed classification (mirrors expense transaction types). */
+export type LineItemType = 'labour' | 'purchase' | 'rental' | 'allow' | 'deposit'
+
 export type BudgetItem = {
   id: string
   production_id: string
@@ -95,7 +100,34 @@ export type BudgetItem = {
   actual_cost: number
   vendor: string | null
   status: string
+  /** Typed classification discriminator; null when unclassified. */
+  line_item_type: LineItemType | null
 } & SoftDeletable
+
+export type BudgetItemDetails = {
+  id: string
+  budget_item_id: string
+  line_item_type: LineItemType
+  /** JSON payload; structure per line_item_type (opaque in this stage). */
+  details_json: string
+  created_at: string
+  updated_at: string
+}
+
+export type BudgetItemWithDetails = {
+  budget_item: BudgetItem
+  details: BudgetItemDetails | null
+}
+
+export type Vendor = {
+  id: string
+  production_id: string
+  company_name: string
+  primary_contact_full_name: string | null
+  primary_contact_email: string | null
+} & SoftDeletable
+
+export type ExpenseTransactionType = 'labour' | 'purchase' | 'rental' | 'allow' | 'deposit'
 
 export type Expense = {
   id: string
@@ -103,12 +135,44 @@ export type Expense = {
   category_id: string | null
   /** Optional link to chart of accounts (budget_accounts.id). Leaf accounts only. */
   account_id: string | null
+  /** Typed transaction discriminator; null for legacy/untyped spend. */
+  transaction_type: ExpenseTransactionType | null
+  /** Optional normalized vendor link; legacy vendor string remains in vendor. */
+  vendor_id: string | null
   amount: number
   date: string
   vendor: string | null
   notes: string | null
   expense_type: 'petty_cash' | 'per_diem' | 'other'
 } & SoftDeletable
+
+export type ExpenseTransactionDetails = {
+  id: string
+  expense_id: string
+  transaction_type: ExpenseTransactionType
+  /** JSON string payload; structured per transaction type. */
+  details_json: string
+  created_at: string
+  updated_at: string
+}
+
+/** Link between a budget line item and an expense for reconciliation. Supports partial matching. */
+export type BudgetItemExpenseLink = {
+  id: string
+  production_id: string
+  budget_item_id: string
+  expense_id: string
+  matched_amount: number
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+/** Derived status for a line item based on matched amount vs estimated_cost. */
+export type BudgetItemReconciliationStatus = 'unmatched' | 'partial' | 'matched' | 'overspent'
+
+/** Derived status for an expense based on allocated amount vs amount. */
+export type ExpenseReconciliationStatus = 'unallocated' | 'partial' | 'allocated'
 
 /** Derived budget layer: percentage applied to a scoped base (budget or actual). */
 export type FringeRule = {
@@ -358,12 +422,46 @@ export type Equipment = {
   notes: string | null
 } & SoftDeletable
 
-export type ChecklistItem = {
+export type ProductionTaskSection = {
   id: string
   production_id: string
-  title: string
-  is_required: number
-  status: 'pending' | 'complete'
+  name: string
+  sort_order: number
+} & SoftDeletable
+
+export type ProductionTask = {
+  id: string
+  production_id: string
+  description: string
+  is_complete: number
+  notes: string | null
+  due_date: string | null
+  assigned_department: string | null
+  priority: 1 | 2 | 3 | null
+  /** Null = top-level task; non-null = subtask of another task in the same production. */
+  parent_task_id: string | null
+  /** Null = unsectioned; non-null = task belongs to a section in the same production. */
+  section_id: string | null
+} & SoftDeletable
+
+/** Global task template (not production-scoped). */
+export type TaskTemplate = {
+  id: string
+  name: string
+  description: string | null
+} & SoftDeletable
+
+/** Item within a task template. Supports nesting via parent_template_item_id. */
+export type TaskTemplateItem = {
+  id: string
+  task_template_id: string
+  description: string
+  notes: string | null
+  due_offset_days: number | null
+  assigned_department: string | null
+  priority: 1 | 2 | 3 | null
+  section_name: string | null
+  parent_template_item_id: string | null
   sort_order: number
 } & SoftDeletable
 
@@ -373,6 +471,31 @@ export type Deliverable = {
   name: string
   due_date: string | null
   status: string
+  /** Who the deliverable is sent to. */
+  recipient: string | null
+  delivery_method: string | null
+  delivered_by: string | null
+  delivered_at: string | null
+  /** pending | approved | rejected */
+  approval_status: string | null
+} & SoftDeletable
+
+/** Global deliverable template (not production-scoped). */
+export type DeliverableTemplate = {
+  id: string
+  name: string
+  description: string | null
+} & SoftDeletable
+
+/** Item within a deliverable template. spec_defaults_json holds optional technical spec fields as JSON. */
+export type DeliverableTemplateItem = {
+  id: string
+  deliverable_template_id: string
+  name: string
+  due_offset_days: number | null
+  default_status: string | null
+  spec_defaults_json: string | null
+  sort_order: number
 } & SoftDeletable
 
 export type TechnicalSpec = {
@@ -385,6 +508,11 @@ export type TechnicalSpec = {
   aspect_ratio: string | null
   platform: string | null
   notes: string | null
+  bitrate: string | null
+  subtitles: string | null
+  graphics: string | null
+  language: string | null
+  audio_mix: string | null
 } & SoftDeletable
 
 export type MusicTrack = {

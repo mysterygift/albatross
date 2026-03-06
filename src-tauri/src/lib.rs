@@ -117,6 +117,78 @@ pub fn run() {
       sql: include_str!("../migrations/0019_production_totals.sql"),
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 20,
+      description: "vendors_and_expense_transaction_details",
+      sql: include_str!("../migrations/0020_vendors_and_expense_transaction_details.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 21,
+      description: "budget_item_typed_details",
+      sql: include_str!("../migrations/0021_budget_item_typed_details.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 22,
+      description: "budget_item_expense_links",
+      sql: include_str!("../migrations/0022_budget_item_expense_links.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 23,
+      description: "productions_wrapped_at",
+      sql: include_str!("../migrations/0023_productions_wrapped_at.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 24,
+      description: "production_tasks",
+      sql: include_str!("../migrations/0024_production_tasks.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 25,
+      description: "production_tasks_parent_task_id",
+      sql: include_str!("../migrations/0025_production_tasks_parent_task_id.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 26,
+      description: "production_task_sections",
+      sql: include_str!("../migrations/0026_production_task_sections.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 27,
+      description: "production_tasks_section_id",
+      sql: include_str!("../migrations/0027_production_tasks_section_id.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 28,
+      description: "task_templates",
+      sql: include_str!("../migrations/0028_task_templates.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 29,
+      description: "deliverables_expanded",
+      sql: include_str!("../migrations/0029_deliverables_expanded.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 30,
+      description: "deliverable_templates",
+      sql: include_str!("../migrations/0030_deliverable_templates.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 31,
+      description: "deliverable_template_defaults",
+      sql: include_str!("../migrations/0031_deliverable_template_defaults.sql"),
+      kind: MigrationKind::Up,
+    },
   ];
 
   tauri::Builder::default()

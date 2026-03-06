@@ -1,7 +1,5 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import {
-  outboxInsert,
-  outboxInsertMany,
   outboxPush,
   outboxStatementForRow,
   outboxStatementForRows,
@@ -92,6 +90,17 @@ function rowToStripboardItem(r: Record<string, unknown>): StripboardItem {
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
   }
+}
+
+/**
+ * Returns the next upcoming shoot day (shoot_date >= today) for the production.
+ * Used by Dashboard and other read-only consumers. Returns null if none.
+ */
+export async function getNextShootDayForProduction(productionId: string): Promise<ShootDay | null> {
+  const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+  const days = await listShootDaysByProduction(productionId)
+  const next = days.find((d) => d.shoot_date >= today)
+  return next ?? null
 }
 
 // Shoot days. Order by shoot_date (YYYY-MM-DD string) then id for stable order; no Date parsing to avoid UTC edge cases.
@@ -439,7 +448,7 @@ export async function moveShootDayUnitToDate(
       statements.push({ sql: 'COMMIT', bindValues: [] })
       await executeBatch(db, statements)
     }
-    return { success: true }
+    return { success: true } as const
   })
   if (result.success) await resequenceShootDays(day.production_id)
   return result

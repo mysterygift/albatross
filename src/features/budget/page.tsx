@@ -8,9 +8,12 @@ import {
   listExpensesByProduction,
   createBudgetItem,
   createExpense,
+  deleteExpense,
+  updateExpense,
   updateExpenseAccount,
   backfillAccountIdsFromLegacyCategories,
 } from '@/lib/db/repositories/budget'
+import { listBudgetItemExpenseLinksForExpense } from '@/lib/db/repositories/budgetReconciliation'
 import { listAccounts, listPostableAccounts } from '@/lib/db/repositories/budgetAccounts'
 import {
   listProductionTotals,
@@ -79,14 +82,40 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, SlidersHorizontal } from 'lucide-react'
+import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, SlidersHorizontal, Eye, Receipt } from 'lucide-react'
 import { saveFileWithDialog } from '@/lib/files'
 import { getAccountBandColor } from '@/lib/budget/accountBandColor'
 import type { BudgetItem, BudgetAccount } from '@/lib/db/types'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { getExpenseWithDetails, listAllowExpenseDetailsByProduction } from '@/lib/db/repositories/expenseTransactions'
+import { VendorPicker } from '@/components/vendors/VendorPicker'
+import { getTypedExpenseConfig } from '@/lib/budget/transactions/registry'
+import type { ExpenseTransactionType } from '@/lib/db/types'
+import { listPeopleByProduction } from '@/lib/db/repositories/person'
+import { parseAllowDetails } from '@/lib/budget/transactions/allow'
+import { listLocationsByProduction } from '@/lib/db/repositories/location'
+import { ActualisationPage } from '@/features/budget/actualisation/page'
+import { ExpenseDetailPanel } from '@/features/budget/ExpenseDetailPanel'
+import { LineItemDetailPanel } from '@/features/budget/LineItemDetailPanel'
+import { LogSpendPanel } from '@/features/budget/LogSpendPanel'
+import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
+import { getBudgetItemWithDetails } from '@/lib/db/repositories/budgetItemDetails'
+import { getLineItemTypeConfig } from '@/lib/budget/line-items/registry'
+import {
+  type ClassificationFilter,
+  filterLineItemsByClassification,
+  filterExpensesByClassification,
+  getLineItemType,
+  getExpenseType,
+  getRelatedExpensesForLineItem,
+  sumActualForExpenses,
+  getRelatedLineItemsForExpense,
+  sumEstimatedForLineItems,
+} from '@/lib/budget/matching'
 
 const BUDGET_VIEW_MODE_KEY = 'budgetViewMode'
 const COST_REPORT_LAYOUT_MODE_KEY = 'costReportLayoutMode'
-type BudgetViewMode = 'budget' | 'cost_report'
+type BudgetViewMode = 'budget' | 'cost_report' | 'actualisation'
 type CostReportLayoutMode = 'chart' | 'groups'
 
 // Actuals are derived from expenses only. budget_item.actual_cost is deprecated/committed and not used for actual calculations.
@@ -108,6 +137,7 @@ const expenseSchema = z.object({
   account_id: z.string().min(1, 'Select an account'),
   amount: z.coerce.number().min(0),
   date: z.string().min(1),
+  vendor_id: z.string().optional(),
   vendor: z.string().optional(),
   notes: z.string().optional(),
   expense_type: z.enum(['petty_cash', 'per_diem', 'other']),
@@ -120,21 +150,30 @@ const derivedRuleSchema = z.object({
   scope_account_ids: z.array(z.string()).min(1, 'Select at least one account'),
 })
 
+type DerivedRuleFormValues = z.infer<typeof derivedRuleSchema>
+
 export function BudgetPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const { format, ensureRate, conversionBanner } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const [addItemOpen, setAddItemOpen] = useState(false)
   const [addExpenseOpen, setAddExpenseOpen] = useState(false)
+  const [logSpendOpen, setLogSpendOpen] = useState(false)
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
   const [uncodedExpanded, setUncodedExpanded] = useState(false)
   const [addItemForAccountId, setAddItemForAccountId] = useState<string | null>(null)
   const [recodeToast, setRecodeToast] = useState<string | null>(null)
   const [manageDerivedOpen, setManageDerivedOpen] = useState(false)
+  const [examinedExpenseId, setExaminedExpenseId] = useState<string | null>(null)
+  const [examinedAccountId, setExaminedAccountId] = useState<string | null>(null)
+  const [examinedLineItemId, setExaminedLineItemId] = useState<string | null>(null)
+  const [examineAccountFilter, setExamineAccountFilter] = useState<ClassificationFilter>('all')
   const [viewMode, setViewMode] = useState<BudgetViewMode>(() => {
     if (typeof window === 'undefined') return 'budget'
     const stored = localStorage.getItem(BUDGET_VIEW_MODE_KEY)
-    return (stored === 'cost_report' ? 'cost_report' : 'budget') as BudgetViewMode
+    if (stored === 'cost_report') return 'cost_report'
+    if (stored === 'actualisation') return 'actualisation'
+    return 'budget'
   })
   const [costReportExpandedLeafId, setCostReportExpandedLeafId] = useState<string | null>(null)
   const [productionTotalsModalOpen, setProductionTotalsModalOpen] = useState(false)
@@ -155,6 +194,25 @@ export function BudgetPage() {
   const queryClient = useQueryClient()
   const backfillRanForProduction = useRef<Set<string>>(new Set())
 
+  const { data: allowDetailsForProduction } = useQuery({
+    queryKey: ['allow-expense-details', currentProductionId],
+    enabled: !!currentProductionId,
+    queryFn: () => listAllowExpenseDetailsByProduction(currentProductionId!),
+  })
+
+  const openAllowCountGlobal =
+    allowDetailsForProduction?.reduce((acc, row) => {
+      const parsed = parseAllowDetails(row.details_json)
+      if (parsed.ok && parsed.value.status === 'open') {
+        return acc + 1
+      }
+      // If details cannot be parsed, treat as open to avoid hiding potentially unresolved allows.
+      if (!parsed.ok) {
+        return acc + 1
+      }
+      return acc
+    }, 0) ?? 0
+
   const toggleAccountExpanded = (id: string) => {
     setExpandedAccountIds((prev) => {
       const next = new Set(prev)
@@ -174,6 +232,7 @@ export function BudgetPage() {
     backfillAccountIdsFromLegacyCategories(currentProductionId).then(() => {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
     })
   }, [currentProductionId, queryClient])
 
@@ -205,6 +264,36 @@ export function BudgetPage() {
   const { data: expenses = [] } = useQuery({
     queryKey: ['expenses', currentProductionId],
     queryFn: () => listExpensesByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: examinedExpenseWithDetails, isLoading: examinedExpenseLoading } = useQuery({
+    queryKey: ['expense-with-details', examinedExpenseId],
+    queryFn: () => getExpenseWithDetails(examinedExpenseId!),
+    enabled: examinedExpenseId != null,
+  })
+
+  const { data: linksForExaminedExpense = [] } = useQuery({
+    queryKey: ['budget-item-expense-links-for-expense', examinedExpenseId],
+    queryFn: () => listBudgetItemExpenseLinksForExpense(examinedExpenseId!),
+    enabled: examinedExpenseId != null,
+  })
+
+  const { data: examinedLineItemWithDetails, isLoading: examinedLineItemLoading } = useQuery({
+    queryKey: ['budget-item-with-details', examinedLineItemId],
+    queryFn: () => getBudgetItemWithDetails(examinedLineItemId!),
+    enabled: examinedLineItemId != null,
+  })
+
+  const { data: people = [] } = useQuery({
+    queryKey: ['people', currentProductionId],
+    queryFn: () => listPeopleByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: locations = [] } = useQuery({
+    queryKey: ['locations', currentProductionId],
+    queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
 
@@ -245,6 +334,7 @@ export function BudgetPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
       setAddItemOpen(false)
     },
   })
@@ -262,6 +352,7 @@ export function BudgetPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
       setAddItemForAccountId(null)
     },
   })
@@ -271,6 +362,7 @@ export function BudgetPage() {
       updateExpenseAccount(expenseId, newAccountId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
       setRecodeToast('Expense recoded.')
       setTimeout(() => setRecodeToast(null), 3000)
     },
@@ -284,6 +376,7 @@ export function BudgetPage() {
         category_id: null,
         amount: data.amount,
         date: data.date,
+        vendor_id: data.vendor_id ? data.vendor_id : null,
         vendor: data.vendor ?? null,
         notes: data.notes ?? null,
         expense_type: data.expense_type,
@@ -291,7 +384,63 @@ export function BudgetPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
       setAddExpenseOpen(false)
+    },
+  })
+
+  const handleExpenseSaveRequest = useCallback(
+    async (args: { expenseId: string; details: unknown; type: string }) => {
+      const config = getTypedExpenseConfig(args.type as ExpenseTransactionType)
+      if (!config?.save) throw new Error('Unknown transaction type')
+      await config.save({
+        expenseId: args.expenseId,
+        details: args.details,
+        ctx: { productionId: currentProductionId! },
+      })
+    },
+    [currentProductionId]
+  )
+
+  const handleExpenseSaved = useCallback(() => {
+    if (examinedExpenseId)
+      queryClient.invalidateQueries({ queryKey: ['expense-with-details', examinedExpenseId] })
+    if (currentProductionId) {
+      queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
+    }
+  }, [examinedExpenseId, currentProductionId, queryClient])
+
+  const handleUpdateExpenseRequest = useCallback(
+    async (data: {
+      expenseId: string
+      amount: number
+      date: string
+      vendor: string | null
+      notes: string | null
+    }) => {
+      await updateExpense(data.expenseId, {
+        amount: data.amount,
+        date: data.date,
+        vendor: data.vendor,
+        notes: data.notes,
+      })
+    },
+    []
+  )
+
+  const deleteExpenseMutation = useMutation({
+    mutationFn: (expenseId: string) => deleteExpense(expenseId),
+    onSuccess: (_, expenseId) => {
+      setExaminedExpenseId(null)
+      if (currentProductionId) {
+        queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
+        queryClient.invalidateQueries({ queryKey: ['expense-with-details', expenseId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item'] })
+      }
     },
   })
 
@@ -512,6 +661,9 @@ export function BudgetPage() {
               <TabsTrigger value="cost_report" className="px-3 text-sm data-[state=active]:bg-background">
                 Cost Report
               </TabsTrigger>
+              <TabsTrigger value="actualisation" className="px-3 text-sm data-[state=active]:bg-background">
+                Match Expenses
+              </TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="flex gap-2">
@@ -528,27 +680,24 @@ export function BudgetPage() {
             <Download className="mr-2 size-4" />
             Export CSV
           </Button>
-          <Dialog
-            open={addExpenseOpen}
-            onOpenChange={setAddExpenseOpen}
+          <Button
+            variant="outline"
+            className="no-print"
+            onClick={() => setLogSpendOpen(true)}
           >
-            <DialogTrigger asChild>
-              <Button variant="outline" className="no-print">
-                <Plus className="mr-2 size-4" />
-                Quick-add spend
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              {addExpenseOpen && (
-              <QuickExpenseForm
-                accounts={postableAccounts}
-                onSubmit={createExpenseMutation.mutate}
-                onCancel={() => setAddExpenseOpen(false)}
-                isLoading={createExpenseMutation.isPending}
-              />
-              )}
-            </DialogContent>
-          </Dialog>
+            <Receipt className="mr-2 size-4" />
+            Log Spend
+          </Button>
+          <LogSpendPanel
+            open={logSpendOpen}
+            onOpenChange={setLogSpendOpen}
+            postableAccounts={postableAccounts}
+            productionId={currentProductionId!}
+            productionCurrency={productionCurrency}
+            format={format}
+            people={people}
+            locations={locations}
+          />
           <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
             <DialogTrigger asChild>
               <Button className="no-print">
@@ -571,10 +720,13 @@ export function BudgetPage() {
         </div>
       </div>
 
-      {viewMode === 'cost_report' ? (
+      {viewMode === 'actualisation' ? (
+        <ActualisationPage />
+      ) : viewMode === 'cost_report' ? (
         <>
           <CostReportView
             productionName={currentProduction?.name ?? ''}
+            openAllowCount={openAllowCountGlobal}
             accountTree={accountTree}
             accountTotals={accountTotals}
             items={items}
@@ -684,7 +836,7 @@ export function BudgetPage() {
                   <TableHead className="text-right">Actual</TableHead>
                   <TableHead className="text-right">Variance</TableHead>
                   <TableHead className="text-right w-[70px]">% Spent</TableHead>
-                  <TableHead className="w-[80px]">Actions</TableHead>
+                  <TableHead className="w-[96px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -700,6 +852,10 @@ export function BudgetPage() {
                     addItemForAccountId,
                     createInlineItemMutation,
                     postableAccounts,
+                    onExamineAccount: (accountId) => {
+                      setExaminedExpenseId(null)
+                      setExaminedAccountId(accountId)
+                    },
                   })
                 )}
                 {uncodedTotal > 0 && (
@@ -733,23 +889,38 @@ export function BudgetPage() {
                           <TableCell />
                           <TableCell />
                           <TableCell>
-                            <Select
-                              value=""
-                              onValueChange={(value) => {
-                                if (value) recodeExpenseMutation.mutate({ expenseId: exp.id, newAccountId: value })
-                              }}
-                            >
-                              <SelectTrigger className="h-8 w-[180px]">
-                                <SelectValue placeholder="Recode…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {postableAccounts.map((a) => (
-                                  <SelectItem key={a.id} value={a.id}>
-                                    {a.code} — {a.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => {
+                                  setExaminedAccountId(null)
+                                  setExaminedExpenseId(exp.id)
+                                }}
+                                aria-label="Examine spend"
+                              >
+                                <Eye className="size-4" />
+                              </Button>
+                              <Select
+                                value=""
+                                onValueChange={(value) => {
+                                  if (value) recodeExpenseMutation.mutate({ expenseId: exp.id, newAccountId: value })
+                                }}
+                              >
+                                <SelectTrigger className="h-8 w-[180px]">
+                                  <SelectValue placeholder="Recode…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {postableAccounts.map((a) => (
+                                    <SelectItem key={a.id} value={a.id}>
+                                      {a.code} — {a.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -778,7 +949,7 @@ export function BudgetPage() {
                 {accountTree.length === 0 && uncodedList.length === 0 && legacyItems.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                      No accounts yet. Add a line item or quick-add spend to get started.
+                      No accounts yet. Add a line item or log spend to get started.
                     </TableCell>
                   </TableRow>
                 )}
@@ -828,6 +999,287 @@ export function BudgetPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <Sheet
+        open={examinedExpenseId != null || examinedAccountId != null || examinedLineItemId != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setExaminedExpenseId(null)
+            setExaminedAccountId(null)
+            setExaminedLineItemId(null)
+          }
+        }}
+      >
+        <SheetContent side="right" className="w-[520px] sm:max-w-[520px]">
+          {examinedExpenseId != null ? (
+            (() => {
+              const expense = examinedExpenseWithDetails?.expense
+              const accountId = expense?.account_id ?? null
+              const relatedLineItems =
+                expense && accountId
+                  ? getRelatedLineItemsForExpense(expense, items, accountId)
+                  : []
+              const relatedLineItemsInAccount =
+                expense && relatedLineItems.length > 0
+                  ? {
+                      count: relatedLineItems.length,
+                      totalEstimated: sumEstimatedForLineItems(relatedLineItems),
+                      typeLabel: getLineItemTypeConfig(expense.transaction_type)?.label ?? 'Untyped',
+                    }
+                  : undefined
+              return (
+                <ExpenseDetailPanel
+                  expenseWithDetails={examinedExpenseWithDetails ?? null}
+                  isLoading={examinedExpenseLoading}
+                  productionId={currentProductionId!}
+                  productionCurrency={productionCurrency}
+                  format={format}
+                  defaultCurrencyCode={currentProduction?.currency_code ?? null}
+                  people={people}
+                  locations={locations}
+                  onSaved={handleExpenseSaved}
+                  onSaveRequest={handleExpenseSaveRequest}
+                  onUpdateExpenseRequest={handleUpdateExpenseRequest}
+                  relatedLineItemsInAccount={relatedLineItemsInAccount}
+                  onDeleteRequest={async (expenseId) => {
+                    await deleteExpenseMutation.mutateAsync(expenseId)
+                  }}
+                  hasReconciliationLinks={linksForExaminedExpense.length > 0}
+                />
+              )
+            })()
+          ) : examinedLineItemId != null ? (
+            (() => {
+              const account = examinedLineItemWithDetails
+                ? accounts.find((a) => a.id === examinedLineItemWithDetails.budget_item.account_id) ?? null
+                : null
+              const accountLabel = account ? `${account.code} — ${account.name}` : '—'
+              const lineItem = examinedLineItemWithDetails?.budget_item
+              const accountId = lineItem?.account_id ?? null
+              const relatedExpenses =
+                lineItem && accountId
+                  ? getRelatedExpensesForLineItem(lineItem, expenses, accountId)
+                  : []
+              const relatedSpendInAccount =
+                lineItem && relatedExpenses.length > 0
+                  ? {
+                      count: relatedExpenses.length,
+                      totalActual: sumActualForExpenses(relatedExpenses),
+                      typeLabel: getLineItemTypeConfig(lineItem.line_item_type)?.label ?? 'Untyped',
+                    }
+                  : undefined
+              return (
+                <LineItemDetailPanel
+                  lineItemWithDetails={examinedLineItemWithDetails ?? null}
+                  isLoading={examinedLineItemLoading}
+                  accountLabel={accountLabel}
+                  format={format}
+                  productionCurrency={productionCurrency}
+                  productionId={currentProductionId ?? ''}
+                  people={people}
+                  locations={locations}
+                  onClose={() => setExaminedLineItemId(null)}
+                  onSaved={() => {
+                    if (currentProductionId) {
+                      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
+                      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+                    }
+                    if (examinedLineItemId)
+                      queryClient.invalidateQueries({
+                        queryKey: ['budget-item-with-details', examinedLineItemId],
+                      })
+                  }}
+                  relatedSpendInAccount={relatedSpendInAccount}
+                />
+              )
+            })()
+          ) : examinedAccountId != null ? (
+            (() => {
+              const account = accounts.find((a) => a.id === examinedAccountId) ?? null
+              const totals = account ? accountTotals.get(account.id) : undefined
+              const lineItemsForAccount = items.filter((i) => i.account_id === examinedAccountId)
+              const list = expenses
+                .filter((e) => e.account_id === examinedAccountId)
+                .slice()
+                .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+              const filteredLineItems = filterLineItemsByClassification(lineItemsForAccount, examineAccountFilter)
+                .slice()
+                .sort((a, b) => {
+                  const ta = getLineItemType(a) ?? ''
+                  const tb = getLineItemType(b) ?? ''
+                  const byType = ta.localeCompare(tb)
+                  if (byType !== 0) return byType
+                  return (a.description ?? '').localeCompare(b.description ?? '')
+                })
+              const filteredExpenses = filterExpensesByClassification(list, examineAccountFilter)
+                .slice()
+                .sort((a, b) => {
+                  const ta = getExpenseType(a) ?? ''
+                  const tb = getExpenseType(b) ?? ''
+                  const byType = ta.localeCompare(tb)
+                  if (byType !== 0) return byType
+                  return String(b.date).localeCompare(String(a.date))
+                })
+              const openAllowsForAccount =
+                allowDetailsForProduction?.reduce((acc, row) => {
+                  if (row.account_id !== examinedAccountId) return acc
+                  const parsed = parseAllowDetails(row.details_json)
+                  if (parsed.ok && parsed.value.status === 'open') {
+                    return acc + 1
+                  }
+                  if (!parsed.ok) {
+                    return acc + 1
+                  }
+                  return acc
+                }, 0) ?? 0
+              const filterOptions: { value: ClassificationFilter; label: string }[] = [
+                { value: 'all', label: 'All' },
+                { value: 'labour', label: 'Labour' },
+                { value: 'purchase', label: 'Purchase' },
+                { value: 'rental', label: 'Rental' },
+                { value: 'allow', label: 'Allow' },
+                { value: 'deposit', label: 'Deposit' },
+                { value: 'untyped', label: 'Untyped' },
+              ]
+              return (
+                <>
+                  <SheetHeader className="border-b border-border">
+                    <SheetTitle>Examine account</SheetTitle>
+                  </SheetHeader>
+                  <div className="p-4 space-y-4 overflow-auto">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">{account ? `${account.code} — ${account.name}` : 'Account'}</p>
+                      {totals && (
+                        <p className="text-xs text-muted-foreground">
+                          Budget {format(totals.budgetTotal, productionCurrency).formatted} · Actual {format(totals.actualTotal, productionCurrency).formatted}
+                        </p>
+                      )}
+                      {openAllowsForAccount > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          Open Allows in this account: {openAllowsForAccount}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Filter by type</Label>
+                      <Select
+                        value={examineAccountFilter}
+                        onValueChange={(v) => setExamineAccountFilter(v as ClassificationFilter)}
+                      >
+                        <SelectTrigger className="mt-1 h-9 w-full max-w-[200px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filterOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="rounded-md border border-border">
+                      <div className="border-b border-border px-3 py-2">
+                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Line items ({filteredLineItems.length}
+                          {examineAccountFilter !== 'all' ? ` of ${lineItemsForAccount.length}` : ''})
+                        </p>
+                      </div>
+                      <div className="divide-y divide-border">
+                        {filteredLineItems.length === 0 ? (
+                          <p className="px-3 py-3 text-sm text-muted-foreground">
+                            {lineItemsForAccount.length === 0
+                              ? 'No line items in this account yet.'
+                              : 'No line items match the selected filter.'}
+                          </p>
+                        ) : (
+                          filteredLineItems.map((item) => (
+                            <div key={item.id} className="flex items-start justify-between gap-3 px-3 py-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <ClassificationBadge type={getLineItemType(item)} />
+                                  <p className="text-sm truncate">{item.description}</p>
+                                </div>
+                                {item.vendor && (
+                                  <p className="text-xs text-muted-foreground truncate mt-0.5">{item.vendor}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <p className="text-sm font-medium">{format(item.estimated_cost, productionCurrency).formatted}</p>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => setExaminedLineItemId(item.id)}
+                                  aria-label="Examine line item"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                  Examine
+                                </Button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border border-border">
+                      <div className="border-b border-border px-3 py-2">
+                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Expenses ({filteredExpenses.length}
+                          {examineAccountFilter !== 'all' ? ` of ${list.length}` : ''})
+                        </p>
+                      </div>
+                      <div className="divide-y divide-border">
+                        {filteredExpenses.length === 0 ? (
+                          <p className="px-3 py-3 text-sm text-muted-foreground">
+                            {list.length === 0
+                              ? 'No expenses posted to this account yet.'
+                              : 'No expenses match the selected filter.'}
+                          </p>
+                        ) : (
+                          filteredExpenses.map((e) => (
+                            <div key={e.id} className="flex items-start justify-between gap-3 px-3 py-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <ClassificationBadge type={getExpenseType(e)} />
+                                  <p className="text-sm">{e.date}</p>
+                                </div>
+                                <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                  {e.vendor ? e.vendor : '—'}
+                                  {e.notes ? ` · ${e.notes}` : ''}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <p className="text-sm font-medium">{format(e.amount, productionCurrency).formatted}</p>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => {
+                                    setExaminedAccountId(null)
+                                    setExaminedExpenseId(e.id)
+                                  }}
+                                >
+                                  Examine
+                                </Button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )
+            })()
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
@@ -1102,6 +1554,7 @@ export function triggerCostReportPrint(): void {
 
 function CostReportView({
   productionName,
+  openAllowCount,
   accountTree,
   accountTotals,
   items,
@@ -1125,6 +1578,7 @@ function CostReportView({
   configureButton,
 }: {
   productionName: string
+  openAllowCount: number
   accountTree: AccountTreeNode[]
   accountTotals: Map<string, { budgetTotal: number; actualTotal: number; variance: number; percentSpent: number | null }>
   items: BudgetItem[]
@@ -1263,6 +1717,11 @@ function CostReportView({
         <h2 className="text-xl font-bold print:text-2xl">{productionName ? productionName : 'Cost Report'}</h2>
         {productionName && <p className="text-lg font-semibold text-muted-foreground">Cost Report</p>}
         <p className="text-sm text-muted-foreground mt-1">Generated: {generatedDate}</p>
+        {openAllowCount > 0 && (
+          <p className="text-xs text-muted-foreground mt-1">
+            Open Allows: {openAllowCount}
+          </p>
+        )}
       </header>
 
       <div className="grid gap-4 md:grid-cols-3 print:grid-cols-3">
@@ -1787,6 +2246,7 @@ function renderAccountRow(
     addItemForAccountId: string | null
     createInlineItemMutation: { mutate: (data: { account_id: string; description: string; estimated_cost: number }) => void; isPending: boolean }
     postableAccounts: BudgetAccount[]
+    onExamineAccount: (accountId: string) => void
   }
 ): ReactNode {
   const { account } = node
@@ -1838,18 +2298,30 @@ function renderAccountRow(
           ? `${Math.round(totals.percentSpent * 100)}%`
           : '—'}
       </TableCell>
-      <TableCell className="w-[80px]">
+      <TableCell className="w-[96px]">
         {isLeaf && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => ctx.setAddItemForAccountId(account.id)}
-            aria-label="Add line item"
-          >
-            <Plus className="size-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => ctx.onExamineAccount(account.id)}
+              aria-label="Examine account"
+            >
+              <Eye className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => ctx.setAddItemForAccountId(account.id)}
+              aria-label="Add line item"
+            >
+              <Plus className="size-4" />
+            </Button>
+          </div>
         )}
       </TableCell>
     </TableRow>
@@ -2029,11 +2501,13 @@ function BudgetItemForm({
 }
 
 function QuickExpenseForm({
+  productionId,
   accounts,
   onSubmit,
   onCancel,
   isLoading,
 }: {
+  productionId: string
   accounts: BudgetAccount[]
   onSubmit: (d: z.infer<typeof expenseSchema>) => void
   onCancel: () => void
@@ -2046,6 +2520,9 @@ function QuickExpenseForm({
       amount: 0,
       date: new Date().toISOString().slice(0, 10),
       expense_type: 'other',
+      vendor_id: '',
+      vendor: '',
+      notes: '',
     },
   })
   return (
@@ -2118,7 +2595,25 @@ function QuickExpenseForm({
           />
         </div>
         <div>
-          <Label>Vendor</Label>
+          <Label>Vendor (linked)</Label>
+          <Controller
+            name="vendor_id"
+            control={form.control}
+            render={({ field }) => (
+              <VendorPicker
+                productionId={productionId}
+                value={field.value ? String(field.value) : null}
+                onChange={(id) => field.onChange(id ?? '')}
+                placeholder="Select vendor"
+              />
+            )}
+          />
+          <p className="text-muted-foreground text-xs mt-1">
+            Optional. Linking a vendor keeps the legacy vendor text field available for migration later.
+          </p>
+        </div>
+        <div>
+          <Label>Vendor (legacy)</Label>
           <Input {...form.register('vendor')} />
         </div>
         <div>
@@ -2138,7 +2633,6 @@ function QuickExpenseForm({
   )
 }
 
-type DerivedRuleFormValues = z.infer<typeof derivedRuleSchema>
 
 function ManageDerivedCostsDialog({
   productionId,
@@ -2503,7 +2997,7 @@ function DerivedRuleForm({
                   const current = form.getValues('scope_account_ids')
                   const next = checked
                     ? [...current, acc.id]
-                    : current.filter((id) => id !== acc.id)
+                    : current.filter((id: string) => id !== acc.id)
                   form.setValue('scope_account_ids', next)
                 }}
               />
