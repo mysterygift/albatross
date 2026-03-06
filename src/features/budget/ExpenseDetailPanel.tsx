@@ -1,5 +1,13 @@
 import { useState, useMemo, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { getTypedExpenseConfig } from '@/lib/budget/transactions/registry'
 import type { ExpenseWithDetails } from '@/lib/db/repositories/expenseTransactions'
@@ -35,6 +43,10 @@ export type ExpenseDetailPanelProps = {
   }) => Promise<void>
   /** Optional: related line items in same account + same type (informational only). */
   relatedLineItemsInAccount?: { count: number; totalEstimated: number; typeLabel: string }
+  /** When set, shows Delete Expense and calls this on confirm. */
+  onDeleteRequest?: (expenseId: string) => Promise<void>
+  /** When true, confirmation dialog shows that allocations linked to this expense will also be removed. */
+  hasReconciliationLinks?: boolean
 }
 
 export function ExpenseDetailPanel({
@@ -50,10 +62,15 @@ export function ExpenseDetailPanel({
   onSaveRequest,
   onUpdateExpenseRequest,
   relatedLineItemsInAccount,
+  onDeleteRequest,
+  hasReconciliationLinks,
 }: ExpenseDetailPanelProps) {
   const [mode, setMode] = useState<'read' | 'edit'>('read')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const config = expenseWithDetails
     ? getTypedExpenseConfig(expenseWithDetails.expense.transaction_type)
@@ -136,6 +153,25 @@ export function ExpenseDetailPanel({
     }
   }
 
+  const handleDeleteClick = () => {
+    setDeleteError(null)
+    setDeleteConfirmOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!expenseWithDetails || !onDeleteRequest) return
+    setIsDeleting(true)
+    setDeleteError(null)
+    try {
+      await onDeleteRequest(expenseWithDetails.expense.id)
+      setDeleteConfirmOpen(false)
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="p-4">
@@ -209,26 +245,82 @@ export function ExpenseDetailPanel({
       <SheetHeader className="border-b border-border">
         <div className="flex items-center justify-between gap-3">
           <SheetTitle>Expense details</SheetTitle>
-          {editable && (
+          <div className="flex items-center gap-2">
+            {onDeleteRequest && (
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-8"
+                onClick={handleDeleteClick}
+              >
+                Delete Expense
+              </Button>
+            )}
+            {editable && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8"
+                onClick={() => setMode((m) => (m === 'read' ? 'edit' : 'read'))}
+                title={
+                  !typedEditable && !untypedEditable
+                    ? expense.transaction_type == null
+                      ? 'Add a typed transaction in a follow-up prompt'
+                      : 'Editing is not yet available for this transaction type.'
+                    : undefined
+                }
+              >
+                {mode === 'edit' ? 'View' : 'Edit'}
+              </Button>
+            )}
+          </div>
+        </div>
+      </SheetHeader>
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent showCloseButton={!isDeleting}>
+          <DialogHeader>
+            <DialogTitle>Delete this expense?</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-1">
+                <p>This will remove the expense from the budget and update totals.</p>
+                {hasReconciliationLinks && (
+                  <p>This will also remove any matching allocations linked to this expense.</p>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError && (
+            <p className="text-sm text-destructive" role="alert">
+              {deleteError}
+            </p>
+          )}
+          <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              className="h-8"
-              onClick={() => setMode((m) => (m === 'read' ? 'edit' : 'read'))}
-              title={
-                !typedEditable && !untypedEditable
-                  ? expense.transaction_type == null
-                    ? 'Add a typed transaction in a follow-up prompt'
-                    : 'Editing is not yet available for this transaction type.'
-                  : undefined
-              }
+              disabled={isDeleting}
+              onClick={() => {
+                if (!isDeleting) {
+                  setDeleteConfirmOpen(false)
+                  setDeleteError(null)
+                }
+              }}
             >
-              {mode === 'edit' ? 'View' : 'Edit'}
+              Cancel
             </Button>
-          )}
-        </div>
-      </SheetHeader>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={handleDeleteConfirm}
+            >
+              {isDeleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="p-4 space-y-4 overflow-auto">
         <ExpenseDetailHeader
           expense={expense}

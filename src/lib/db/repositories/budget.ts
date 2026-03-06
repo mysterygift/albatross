@@ -1,11 +1,12 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
-import { outboxPush } from '../outbox'
+import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { BudgetCategory, BudgetItem, Expense } from '../types'
 import { ensureLegacyFallbackAccounts, getAccountById } from './budgetAccounts'
 
 const CAT_TABLE = 'budget_categories'
 const ITEM_TABLE = 'budget_items'
 const EXP_TABLE = 'expenses'
+const LINKS_TABLE = 'budget_item_expense_links'
 
 function rowToCategory(r: Record<string, unknown>): BudgetCategory {
   return {
@@ -291,14 +292,45 @@ export async function createExpense(data: {
   return rowToExpense(rows[0]!)
 }
 
-export async function deleteExpense(id: string): Promise<void> {
+/**
+ * Soft-delete an expense and any active reconciliation links in one transaction.
+ * Does not modify expense_transaction_details, budget_items, or any roll-up totals.
+ * Per DATABASE_LAYER.md: runInSerializedTransaction + executeBatch(BEGIN, ..., COMMIT).
+ */
+export async function deleteExpense(expenseId: string): Promise<void> {
   const db = await getDb()
-  const ts = now()
-  await db.execute(
-    `UPDATE ${EXP_TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
-    [ts, ts, id]
+  const expenseRows = await db.select<Record<string, unknown>[]>(
+    `SELECT id FROM ${EXP_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
+    [expenseId]
   )
-  await outboxPush(EXP_TABLE, id, 'delete', null)
+  if (expenseRows.length === 0) {
+    throw new Error('Expense not found or already deleted')
+  }
+
+  const ts = now()
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+    { sql: 'BEGIN TRANSACTION', bindValues: [] },
+    {
+      sql: `UPDATE ${EXP_TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
+      bindValues: [ts, ts, expenseId],
+    },
+    {
+      sql: `UPDATE ${LINKS_TABLE} SET deleted_at = $1, updated_at = $2 WHERE expense_id = $3 AND deleted_at IS NULL`,
+      bindValues: [ts, ts, expenseId],
+    },
+    outboxStatementForRow({
+      entity: EXP_TABLE,
+      entityId: expenseId,
+      operation: 'delete',
+      payloadJson: null,
+    }),
+    { sql: 'COMMIT', bindValues: [] },
+  ]
+
+  await runInSerializedTransaction(async () => {
+    const conn = await getDb()
+    await executeBatch(conn, statements)
+  })
 }
 
 /**

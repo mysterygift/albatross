@@ -8,10 +8,12 @@ import {
   listExpensesByProduction,
   createBudgetItem,
   createExpense,
+  deleteExpense,
   updateExpense,
   updateExpenseAccount,
   backfillAccountIdsFromLegacyCategories,
 } from '@/lib/db/repositories/budget'
+import { listBudgetItemExpenseLinksForExpense } from '@/lib/db/repositories/budgetReconciliation'
 import { listAccounts, listPostableAccounts } from '@/lib/db/repositories/budgetAccounts'
 import {
   listProductionTotals,
@@ -271,6 +273,12 @@ export function BudgetPage() {
     enabled: examinedExpenseId != null,
   })
 
+  const { data: linksForExaminedExpense = [] } = useQuery({
+    queryKey: ['budget-item-expense-links-for-expense', examinedExpenseId],
+    queryFn: () => listBudgetItemExpenseLinksForExpense(examinedExpenseId!),
+    enabled: examinedExpenseId != null,
+  })
+
   const { data: examinedLineItemWithDetails, isLoading: examinedLineItemLoading } = useQuery({
     queryKey: ['budget-item-with-details', examinedLineItemId],
     queryFn: () => getBudgetItemWithDetails(examinedLineItemId!),
@@ -421,6 +429,20 @@ export function BudgetPage() {
     },
     []
   )
+
+  const deleteExpenseMutation = useMutation({
+    mutationFn: (expenseId: string) => deleteExpense(expenseId),
+    onSuccess: (_, expenseId) => {
+      setExaminedExpenseId(null)
+      if (currentProductionId) {
+        queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
+        queryClient.invalidateQueries({ queryKey: ['expense-with-details', expenseId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item'] })
+      }
+    },
+  })
 
   const createProductionTotalMutation = useMutation({
     mutationFn: (data: { name: string; account_ids: string[] }) =>
@@ -1019,6 +1041,10 @@ export function BudgetPage() {
                   onSaveRequest={handleExpenseSaveRequest}
                   onUpdateExpenseRequest={handleUpdateExpenseRequest}
                   relatedLineItemsInAccount={relatedLineItemsInAccount}
+                  onDeleteRequest={async (expenseId) => {
+                    await deleteExpenseMutation.mutateAsync(expenseId)
+                  }}
+                  hasReconciliationLinks={linksForExaminedExpense.length > 0}
                 />
               )
             })()
