@@ -386,7 +386,7 @@ export async function seedDemoBudget(
       if (!accountId) return
       const id = budgetItemId(idx + 1)
       statements.push({
-        sql: `INSERT INTO ${TABLE_ITEMS} (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, created_at, updated_at) VALUES ($1, $2, NULL, $3, $4, $5, 0, $6, 'draft', $7, $8)`,
+        sql: `INSERT INTO ${TABLE_ITEMS} (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at) VALUES ($1, $2, NULL, $3, $4, $5, 0, $6, 'draft', NULL, $7, $8)`,
         bindValues: [
           id,
           pid,

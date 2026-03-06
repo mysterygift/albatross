@@ -93,7 +93,22 @@ import { listPeopleByProduction } from '@/lib/db/repositories/person'
 import { parseAllowDetails } from '@/lib/budget/transactions/allow'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { ExpenseDetailPanel } from '@/features/budget/ExpenseDetailPanel'
+import { LineItemDetailPanel } from '@/features/budget/LineItemDetailPanel'
 import { LogSpendPanel } from '@/features/budget/LogSpendPanel'
+import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
+import { getBudgetItemWithDetails } from '@/lib/db/repositories/budgetItemDetails'
+import { getLineItemTypeConfig } from '@/lib/budget/line-items/registry'
+import {
+  type ClassificationFilter,
+  filterLineItemsByClassification,
+  filterExpensesByClassification,
+  getLineItemType,
+  getExpenseType,
+  getRelatedExpensesForLineItem,
+  sumActualForExpenses,
+  getRelatedLineItemsForExpense,
+  sumEstimatedForLineItems,
+} from '@/lib/budget/matching'
 
 const BUDGET_VIEW_MODE_KEY = 'budgetViewMode'
 const COST_REPORT_LAYOUT_MODE_KEY = 'costReportLayoutMode'
@@ -148,6 +163,8 @@ export function BudgetPage() {
   const [manageDerivedOpen, setManageDerivedOpen] = useState(false)
   const [examinedExpenseId, setExaminedExpenseId] = useState<string | null>(null)
   const [examinedAccountId, setExaminedAccountId] = useState<string | null>(null)
+  const [examinedLineItemId, setExaminedLineItemId] = useState<string | null>(null)
+  const [examineAccountFilter, setExamineAccountFilter] = useState<ClassificationFilter>('all')
   const [viewMode, setViewMode] = useState<BudgetViewMode>(() => {
     if (typeof window === 'undefined') return 'budget'
     const stored = localStorage.getItem(BUDGET_VIEW_MODE_KEY)
@@ -248,6 +265,12 @@ export function BudgetPage() {
     queryKey: ['expense-with-details', examinedExpenseId],
     queryFn: () => getExpenseWithDetails(examinedExpenseId!),
     enabled: examinedExpenseId != null,
+  })
+
+  const { data: examinedLineItemWithDetails, isLoading: examinedLineItemLoading } = useQuery({
+    queryKey: ['budget-item-with-details', examinedLineItemId],
+    queryFn: () => getBudgetItemWithDetails(examinedLineItemId!),
+    enabled: examinedLineItemId != null,
   })
 
   const { data: people = [] } = useQuery({
@@ -942,29 +965,92 @@ export function BudgetPage() {
       </Dialog>
 
       <Sheet
-        open={examinedExpenseId != null || examinedAccountId != null}
+        open={examinedExpenseId != null || examinedAccountId != null || examinedLineItemId != null}
         onOpenChange={(open) => {
           if (!open) {
             setExaminedExpenseId(null)
             setExaminedAccountId(null)
+            setExaminedLineItemId(null)
           }
         }}
       >
         <SheetContent side="right" className="w-[520px] sm:max-w-[520px]">
           {examinedExpenseId != null ? (
-            <ExpenseDetailPanel
-              expenseWithDetails={examinedExpenseWithDetails ?? null}
-              isLoading={examinedExpenseLoading}
-              productionId={currentProductionId!}
-              productionCurrency={productionCurrency}
-              format={format}
-              defaultCurrencyCode={currentProduction?.currency_code ?? null}
-              people={people}
-              locations={locations}
-              onSaved={handleExpenseSaved}
-              onSaveRequest={handleExpenseSaveRequest}
-              onUpdateExpenseRequest={handleUpdateExpenseRequest}
-            />
+            (() => {
+              const expense = examinedExpenseWithDetails?.expense
+              const accountId = expense?.account_id ?? null
+              const relatedLineItems =
+                expense && accountId
+                  ? getRelatedLineItemsForExpense(expense, items, accountId)
+                  : []
+              const relatedLineItemsInAccount =
+                expense && relatedLineItems.length > 0
+                  ? {
+                      count: relatedLineItems.length,
+                      totalEstimated: sumEstimatedForLineItems(relatedLineItems),
+                      typeLabel: getLineItemTypeConfig(expense.transaction_type)?.label ?? 'Untyped',
+                    }
+                  : undefined
+              return (
+                <ExpenseDetailPanel
+                  expenseWithDetails={examinedExpenseWithDetails ?? null}
+                  isLoading={examinedExpenseLoading}
+                  productionId={currentProductionId!}
+                  productionCurrency={productionCurrency}
+                  format={format}
+                  defaultCurrencyCode={currentProduction?.currency_code ?? null}
+                  people={people}
+                  locations={locations}
+                  onSaved={handleExpenseSaved}
+                  onSaveRequest={handleExpenseSaveRequest}
+                  onUpdateExpenseRequest={handleUpdateExpenseRequest}
+                  relatedLineItemsInAccount={relatedLineItemsInAccount}
+                />
+              )
+            })()
+          ) : examinedLineItemId != null ? (
+            (() => {
+              const account = examinedLineItemWithDetails
+                ? accounts.find((a) => a.id === examinedLineItemWithDetails.budget_item.account_id) ?? null
+                : null
+              const accountLabel = account ? `${account.code} — ${account.name}` : '—'
+              const lineItem = examinedLineItemWithDetails?.budget_item
+              const accountId = lineItem?.account_id ?? null
+              const relatedExpenses =
+                lineItem && accountId
+                  ? getRelatedExpensesForLineItem(lineItem, expenses, accountId)
+                  : []
+              const relatedSpendInAccount =
+                lineItem && relatedExpenses.length > 0
+                  ? {
+                      count: relatedExpenses.length,
+                      totalActual: sumActualForExpenses(relatedExpenses),
+                      typeLabel: getLineItemTypeConfig(lineItem.line_item_type)?.label ?? 'Untyped',
+                    }
+                  : undefined
+              return (
+                <LineItemDetailPanel
+                  lineItemWithDetails={examinedLineItemWithDetails ?? null}
+                  isLoading={examinedLineItemLoading}
+                  accountLabel={accountLabel}
+                  format={format}
+                  productionCurrency={productionCurrency}
+                  productionId={currentProductionId ?? ''}
+                  people={people}
+                  locations={locations}
+                  onClose={() => setExaminedLineItemId(null)}
+                  onSaved={() => {
+                    if (currentProductionId)
+                      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
+                    if (examinedLineItemId)
+                      queryClient.invalidateQueries({
+                        queryKey: ['budget-item-with-details', examinedLineItemId],
+                      })
+                  }}
+                  relatedSpendInAccount={relatedSpendInAccount}
+                />
+              )
+            })()
           ) : examinedAccountId != null ? (
             (() => {
               const account = accounts.find((a) => a.id === examinedAccountId) ?? null
@@ -974,6 +1060,24 @@ export function BudgetPage() {
                 .filter((e) => e.account_id === examinedAccountId)
                 .slice()
                 .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+              const filteredLineItems = filterLineItemsByClassification(lineItemsForAccount, examineAccountFilter)
+                .slice()
+                .sort((a, b) => {
+                  const ta = getLineItemType(a) ?? ''
+                  const tb = getLineItemType(b) ?? ''
+                  const byType = ta.localeCompare(tb)
+                  if (byType !== 0) return byType
+                  return (a.description ?? '').localeCompare(b.description ?? '')
+                })
+              const filteredExpenses = filterExpensesByClassification(list, examineAccountFilter)
+                .slice()
+                .sort((a, b) => {
+                  const ta = getExpenseType(a) ?? ''
+                  const tb = getExpenseType(b) ?? ''
+                  const byType = ta.localeCompare(tb)
+                  if (byType !== 0) return byType
+                  return String(b.date).localeCompare(String(a.date))
+                })
               const openAllowsForAccount =
                 allowDetailsForProduction?.reduce((acc, row) => {
                   if (row.account_id !== examinedAccountId) return acc
@@ -986,6 +1090,15 @@ export function BudgetPage() {
                   }
                   return acc
                 }, 0) ?? 0
+              const filterOptions: { value: ClassificationFilter; label: string }[] = [
+                { value: 'all', label: 'All' },
+                { value: 'labour', label: 'Labour' },
+                { value: 'purchase', label: 'Purchase' },
+                { value: 'rental', label: 'Rental' },
+                { value: 'allow', label: 'Allow' },
+                { value: 'deposit', label: 'Deposit' },
+                { value: 'untyped', label: 'Untyped' },
+              ]
               return (
                 <>
                   <SheetHeader className="border-b border-border">
@@ -1006,23 +1119,65 @@ export function BudgetPage() {
                       )}
                     </div>
 
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Filter by type</Label>
+                      <Select
+                        value={examineAccountFilter}
+                        onValueChange={(v) => setExamineAccountFilter(v as ClassificationFilter)}
+                      >
+                        <SelectTrigger className="mt-1 h-9 w-full max-w-[200px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filterOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
                     <div className="rounded-md border border-border">
                       <div className="border-b border-border px-3 py-2">
-                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Line items ({lineItemsForAccount.length})</p>
+                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Line items ({filteredLineItems.length}
+                          {examineAccountFilter !== 'all' ? ` of ${lineItemsForAccount.length}` : ''})
+                        </p>
                       </div>
                       <div className="divide-y divide-border">
-                        {lineItemsForAccount.length === 0 ? (
-                          <p className="px-3 py-3 text-sm text-muted-foreground">No line items in this account yet.</p>
+                        {filteredLineItems.length === 0 ? (
+                          <p className="px-3 py-3 text-sm text-muted-foreground">
+                            {lineItemsForAccount.length === 0
+                              ? 'No line items in this account yet.'
+                              : 'No line items match the selected filter.'}
+                          </p>
                         ) : (
-                          lineItemsForAccount.map((item) => (
+                          filteredLineItems.map((item) => (
                             <div key={item.id} className="flex items-start justify-between gap-3 px-3 py-3">
-                              <div className="min-w-0">
-                                <p className="text-sm">{item.description}</p>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <ClassificationBadge type={getLineItemType(item)} />
+                                  <p className="text-sm truncate">{item.description}</p>
+                                </div>
                                 {item.vendor && (
-                                  <p className="text-xs text-muted-foreground truncate">{item.vendor}</p>
+                                  <p className="text-xs text-muted-foreground truncate mt-0.5">{item.vendor}</p>
                                 )}
                               </div>
-                              <p className="text-sm font-medium shrink-0">{format(item.estimated_cost, productionCurrency).formatted}</p>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <p className="text-sm font-medium">{format(item.estimated_cost, productionCurrency).formatted}</p>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => setExaminedLineItemId(item.id)}
+                                  aria-label="Examine line item"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                  Examine
+                                </Button>
+                              </div>
                             </div>
                           ))
                         )}
@@ -1031,22 +1186,32 @@ export function BudgetPage() {
 
                     <div className="rounded-md border border-border">
                       <div className="border-b border-border px-3 py-2">
-                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Expenses ({list.length})</p>
+                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Expenses ({filteredExpenses.length}
+                          {examineAccountFilter !== 'all' ? ` of ${list.length}` : ''})
+                        </p>
                       </div>
                       <div className="divide-y divide-border">
-                        {list.length === 0 ? (
-                          <p className="px-3 py-3 text-sm text-muted-foreground">No expenses posted to this account yet.</p>
+                        {filteredExpenses.length === 0 ? (
+                          <p className="px-3 py-3 text-sm text-muted-foreground">
+                            {list.length === 0
+                              ? 'No expenses posted to this account yet.'
+                              : 'No expenses match the selected filter.'}
+                          </p>
                         ) : (
-                          list.map((e) => (
+                          filteredExpenses.map((e) => (
                             <div key={e.id} className="flex items-start justify-between gap-3 px-3 py-3">
-                              <div className="min-w-0">
-                                <p className="text-sm">{e.date}</p>
-                                <p className="text-xs text-muted-foreground truncate">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <ClassificationBadge type={getExpenseType(e)} />
+                                  <p className="text-sm">{e.date}</p>
+                                </div>
+                                <p className="text-xs text-muted-foreground truncate mt-0.5">
                                   {e.vendor ? e.vendor : '—'}
                                   {e.notes ? ` · ${e.notes}` : ''}
                                 </p>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 shrink-0">
                                 <p className="text-sm font-medium">{format(e.amount, productionCurrency).formatted}</p>
                                 <Button
                                   type="button"

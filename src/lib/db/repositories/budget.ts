@@ -31,6 +31,7 @@ function rowToItem(r: Record<string, unknown>): BudgetItem {
     actual_cost: (r.actual_cost as number) ?? 0,
     vendor: r.vendor as string | null,
     status: (r.status as string) ?? 'draft',
+    line_item_type: (r.line_item_type as BudgetItem['line_item_type']) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
@@ -175,8 +176,8 @@ export async function createBudgetItem(data: {
   const categoryId = data.category_id ?? null
   const accountId = data.account_id ?? null
   await db.execute(
-    `INSERT INTO ${ITEM_TABLE} (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO ${ITEM_TABLE} (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     [
       id,
       data.production_id,
@@ -187,6 +188,7 @@ export async function createBudgetItem(data: {
       data.actual_cost ?? 0,
       data.vendor ?? null,
       data.status ?? 'draft',
+      null,
       ts,
       ts,
     ]
@@ -198,14 +200,14 @@ export async function createBudgetItem(data: {
 
 export async function updateBudgetItem(
   id: string,
-  data: Partial<Pick<BudgetItem, 'description' | 'estimated_cost' | 'actual_cost' | 'vendor' | 'status'>>
+  data: Partial<Pick<BudgetItem, 'description' | 'estimated_cost' | 'actual_cost' | 'vendor' | 'status' | 'line_item_type'>>
 ): Promise<BudgetItem> {
   const db = await getDb()
   const ts = now()
   const cols: string[] = []
   const vals: unknown[] = []
   let i = 1
-  for (const k of ['description', 'estimated_cost', 'actual_cost', 'vendor', 'status'] as const) {
+  for (const k of ['description', 'estimated_cost', 'actual_cost', 'vendor', 'status', 'line_item_type'] as const) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
       vals.push(data[k])

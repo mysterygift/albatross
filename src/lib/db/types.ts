@@ -82,6 +82,9 @@ export type BudgetAccount = {
   deleted_at: string | null
 }
 
+/** Supported line item types for typed classification (mirrors expense transaction types). */
+export type LineItemType = 'labour' | 'purchase' | 'rental' | 'allow' | 'deposit'
+
 export type BudgetItem = {
   id: string
   production_id: string
@@ -95,7 +98,24 @@ export type BudgetItem = {
   actual_cost: number
   vendor: string | null
   status: string
+  /** Typed classification discriminator; null when unclassified. */
+  line_item_type: LineItemType | null
 } & SoftDeletable
+
+export type BudgetItemDetails = {
+  id: string
+  budget_item_id: string
+  line_item_type: LineItemType
+  /** JSON payload; structure per line_item_type (opaque in this stage). */
+  details_json: string
+  created_at: string
+  updated_at: string
+}
+
+export type BudgetItemWithDetails = {
+  budget_item: BudgetItem
+  details: BudgetItemDetails | null
+}
 
 export type Vendor = {
   id: string

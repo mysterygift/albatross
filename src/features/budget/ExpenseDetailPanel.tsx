@@ -33,6 +33,8 @@ export type ExpenseDetailPanelProps = {
     vendor: string | null
     notes: string | null
   }) => Promise<void>
+  /** Optional: related line items in same account + same type (informational only). */
+  relatedLineItemsInAccount?: { count: number; totalEstimated: number; typeLabel: string }
 }
 
 export function ExpenseDetailPanel({
@@ -47,6 +49,7 @@ export function ExpenseDetailPanel({
   onSaved,
   onSaveRequest,
   onUpdateExpenseRequest,
+  relatedLineItemsInAccount,
 }: ExpenseDetailPanelProps) {
   const [mode, setMode] = useState<'read' | 'edit'>('read')
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -254,6 +257,15 @@ export function ExpenseDetailPanel({
             value={<span className="whitespace-pre-wrap">{expense.notes ? expense.notes : '—'}</span>}
           />
         </ExpenseDetailMetaGrid>
+        {relatedLineItemsInAccount && relatedLineItemsInAccount.count > 0 && (
+          <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+            <p className="text-xs font-medium text-muted-foreground">Related line items in this account</p>
+            <p className="text-sm mt-0.5">
+              {relatedLineItemsInAccount.count} {relatedLineItemsInAccount.typeLabel.toLowerCase()} line item
+              {relatedLineItemsInAccount.count !== 1 ? 's' : ''} · {format(relatedLineItemsInAccount.totalEstimated, productionCurrency).formatted} estimated
+            </p>
+          </div>
+        )}
         <ExpenseTypedSection>{typedContent}</ExpenseTypedSection>
         {saveError && (
           <p className="text-sm text-destructive">{saveError}</p>

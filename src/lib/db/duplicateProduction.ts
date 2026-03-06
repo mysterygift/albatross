@@ -232,8 +232,8 @@ export async function duplicateProduction(
   for (const r of budgetItems) {
     const catId = r.category_id != null ? categoryIdMap.get(r.category_id as string) ?? null : null
     statements.push({
-      sql: `INSERT INTO budget_items (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      bindValues: [newId(), newProdId, catId, null, r.description, r.estimated_cost ?? 0, r.actual_cost ?? 0, r.vendor, r.status ?? 'draft', ts, ts],
+      sql: `INSERT INTO budget_items (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      bindValues: [newId(), newProdId, catId, null, r.description, r.estimated_cost ?? 0, r.actual_cost ?? 0, r.vendor, r.status ?? 'draft', null, ts, ts],
     })
   }
   for (const r of expRows) {
