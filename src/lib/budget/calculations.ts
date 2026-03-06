@@ -12,9 +12,15 @@ export type AccountTotals = {
   percentSpent: number | null
 }
 
+/** Parse account code as number for ordering; non-numeric codes sort as 0 then by string. */
+function codeAsNumber(code: string): number {
+  const n = parseInt(String(code).trim(), 10)
+  return Number.isNaN(n) ? 0 : n
+}
+
 /**
  * Build account tree from flat list. Roots have parent_account_id === null.
- * Children ordered by sort_order then code.
+ * Siblings ordered by numeric code ascending, then sort_order, then code string for stability.
  */
 export function buildAccountTree(accounts: BudgetAccount[]): AccountTreeNode[] {
   const byParent = new Map<string | null, BudgetAccount[]>()
@@ -24,7 +30,12 @@ export function buildAccountTree(accounts: BudgetAccount[]): AccountTreeNode[] {
     byParent.get(key)!.push(a)
   }
   for (const arr of byParent.values()) {
-    arr.sort((a, b) => a.sort_order - b.sort_order || a.code.localeCompare(b.code))
+    arr.sort(
+      (a, b) =>
+        codeAsNumber(a.code) - codeAsNumber(b.code) ||
+        a.sort_order - b.sort_order ||
+        a.code.localeCompare(b.code)
+    )
   }
   function node(parentKey: string | null): AccountTreeNode[] {
     const list = byParent.get(parentKey) ?? []

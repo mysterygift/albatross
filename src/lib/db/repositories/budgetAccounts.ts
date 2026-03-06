@@ -21,11 +21,11 @@ function rowToAccount(r: Record<string, unknown>): BudgetAccount {
   }
 }
 
-/** List all accounts for a production, ordered by sort_order then code. */
+/** List all accounts for a production, ordered by numeric code ascending then sort_order. */
 export async function listAccounts(productionId: string): Promise<BudgetAccount[]> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY sort_order ASC, code ASC`,
+    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY CAST(code AS INTEGER) ASC, sort_order ASC, code ASC`,
     [productionId]
   )
   return rows.map(rowToAccount)
@@ -35,7 +35,7 @@ export async function listAccounts(productionId: string): Promise<BudgetAccount[
 export async function listPostableAccounts(productionId: string): Promise<BudgetAccount[]> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL AND archived_at IS NULL AND is_postable = 1 ORDER BY sort_order ASC, code ASC`,
+    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL AND archived_at IS NULL AND is_postable = 1 ORDER BY CAST(code AS INTEGER) ASC, sort_order ASC, code ASC`,
     [productionId]
   )
   return rows.map(rowToAccount)
