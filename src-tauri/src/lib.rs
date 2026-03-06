@@ -171,6 +171,24 @@ pub fn run() {
       sql: include_str!("../migrations/0028_task_templates.sql"),
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 29,
+      description: "deliverables_expanded",
+      sql: include_str!("../migrations/0029_deliverables_expanded.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 30,
+      description: "deliverable_templates",
+      sql: include_str!("../migrations/0030_deliverable_templates.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 31,
+      description: "deliverable_template_defaults",
+      sql: include_str!("../migrations/0031_deliverable_template_defaults.sql"),
+      kind: MigrationKind::Up,
+    },
   ];
 
   tauri::Builder::default()

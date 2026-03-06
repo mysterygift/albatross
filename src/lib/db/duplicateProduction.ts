@@ -380,7 +380,7 @@ export async function duplicateProduction(
     const fileName = (r.file_name as string) || 'file'
     const newRelPath = `${ATTACHMENTS}/${newProdId}/${id}-${fileName}`
     docNewPaths.push({ oldPath: r.file_path as string, newPath: newRelPath, docId: id })
-    const entityId = mapEntityId(r.entity_type as string | null, r.entity_id as string | null, { locationIdMap, personIdMap, shootDayIdMap })
+    const entityId = mapEntityId(r.entity_type as string | null, r.entity_id as string | null, { locationIdMap, personIdMap, shootDayIdMap, deliverableIdMap })
     statements.push({
       sql: `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       bindValues: [id, newProdId, r.entity_type, entityId, r.file_name, newRelPath, r.mime_type, ts, ts],
@@ -408,11 +408,12 @@ export async function duplicateProduction(
 function mapEntityId(
   entityType: string | null,
   entityId: string | null,
-  maps: { locationIdMap: IdMap; personIdMap: IdMap; shootDayIdMap: IdMap }
+  maps: { locationIdMap: IdMap; personIdMap: IdMap; shootDayIdMap: IdMap; deliverableIdMap: IdMap }
 ): string | null {
   if (entityId == null) return null
   if (entityType === 'location_release' || entityType === 'location') return maps.locationIdMap.get(entityId) ?? entityId
   if (entityType === 'contributor_form' || entityType === 'person') return maps.personIdMap.get(entityId) ?? entityId
   if (entityType === 'call_sheet' || entityType === 'shoot_day') return maps.shootDayIdMap.get(entityId) ?? entityId
+  if (entityType === 'deliverable') return maps.deliverableIdMap.get(entityId) ?? entityId
   return entityId
 }

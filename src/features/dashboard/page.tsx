@@ -4,13 +4,14 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
 import { listTasksByProduction } from '@/lib/db/repositories/tasks'
+import { listDeliverablesByProduction } from '@/lib/db/repositories/deliverable'
 import { getDashboardBudgetHealthData } from '@/lib/dashboard/budgetHealth'
 import { getDashboardNextShootDayData } from '@/lib/dashboard/nextShootDay'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { AlertCircle, CheckCircle2, Clapperboard, Film, Truck, Phone, Utensils, Moon, StickyNote, ChevronRight } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Clapperboard, Film, Truck, Phone, Utensils, Moon, StickyNote, ChevronRight, Package } from 'lucide-react'
 import type { StripboardStrip, StripType } from '@/lib/db/types'
 import type { Scene, Shot } from '@/lib/db/types'
 import type { DashboardBudgetHealthData } from '@/lib/dashboard/budgetHealth'
@@ -489,6 +490,108 @@ function TasksDueSoonCard({
   )
 }
 
+const DUE_SOON_DAYS = 14
+
+function DeliverablesCard({
+  deliverables,
+  isLoading,
+  isError,
+  onNavigate,
+}: {
+  deliverables: { id: string; name: string; due_date: string | null; status: string }[]
+  isLoading: boolean
+  isError?: boolean
+  onNavigate: () => void
+}) {
+  const today = new Date().toISOString().slice(0, 10)
+  const future = new Date()
+  future.setDate(future.getDate() + DUE_SOON_DAYS)
+  const dueSoonEnd = future.toISOString().slice(0, 10)
+  const dueSoon = deliverables.filter((d) => d.due_date && d.due_date >= today && d.due_date <= dueSoonEnd && d.status !== 'delivered')
+  const overdue = deliverables.filter((d) => d.due_date && d.due_date < today && d.status !== 'delivered')
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Deliverables</CardTitle>
+          <CardDescription>Due soon and overdue</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-16 rounded bg-muted/50 animate-pulse" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Deliverables</CardTitle>
+          <CardDescription>Due soon and overdue</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load deliverables.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const hasAttention = dueSoon.length > 0 || overdue.length > 0
+  return (
+    <Card
+      className={hasAttention ? 'cursor-pointer transition-colors hover:bg-muted/30 hover:border-muted-foreground/20' : undefined}
+      onClick={hasAttention ? onNavigate : undefined}
+      role={hasAttention ? 'button' : undefined}
+      tabIndex={hasAttention ? 0 : undefined}
+      aria-label={hasAttention ? 'Deliverables — click to view' : undefined}
+      onKeyDown={
+        hasAttention
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onNavigate()
+              }
+            }
+          : undefined
+      }
+    >
+      <CardHeader>
+        <CardTitle>Deliverables</CardTitle>
+        <CardDescription>Due soon and overdue</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {dueSoon.length === 0 && overdue.length === 0 ? (
+          <p className="text-muted-foreground text-sm">No deliverables due soon or overdue.</p>
+        ) : (
+          <div className="flex flex-wrap gap-3 text-sm">
+            {overdue.length > 0 && (
+              <Badge variant="destructive" className="font-normal">
+                {overdue.length} overdue
+              </Badge>
+            )}
+            {dueSoon.length > 0 && (
+              <Badge variant="secondary" className="font-normal">
+                {dueSoon.length} due in {DUE_SOON_DAYS} days
+              </Badge>
+            )}
+          </div>
+        )}
+        <Link
+          to="/deliverables"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-2"
+        >
+          <Package className="size-3.5" />
+          View deliverables
+          <ChevronRight className="size-3.5" />
+        </Link>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function DashboardPage() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -528,6 +631,16 @@ export function DashboardPage() {
   } = useQuery({
     queryKey: ['dashboard-budget-health', currentProductionId],
     queryFn: () => getDashboardBudgetHealthData(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
+  const {
+    data: deliverables = [],
+    isLoading: deliverablesLoading,
+    isError: deliverablesError,
+  } = useQuery({
+    queryKey: ['deliverables', currentProductionId],
+    queryFn: () => listDeliverablesByProduction(currentProductionId!),
     enabled: !!currentProductionId,
   })
 
@@ -623,6 +736,13 @@ export function DashboardPage() {
             isLoading={tasksLoading}
             isError={tasksError}
             onNavigate={() => navigate('/readiness')}
+          />
+
+          <DeliverablesCard
+            deliverables={deliverables}
+            isLoading={deliverablesLoading}
+            isError={deliverablesError}
+            onNavigate={() => navigate('/deliverables')}
           />
 
           {warnings.length > 0 && (

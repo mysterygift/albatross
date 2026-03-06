@@ -471,6 +471,31 @@ export type Deliverable = {
   name: string
   due_date: string | null
   status: string
+  /** Who the deliverable is sent to. */
+  recipient: string | null
+  delivery_method: string | null
+  delivered_by: string | null
+  delivered_at: string | null
+  /** pending | approved | rejected */
+  approval_status: string | null
+} & SoftDeletable
+
+/** Global deliverable template (not production-scoped). */
+export type DeliverableTemplate = {
+  id: string
+  name: string
+  description: string | null
+} & SoftDeletable
+
+/** Item within a deliverable template. spec_defaults_json holds optional technical spec fields as JSON. */
+export type DeliverableTemplateItem = {
+  id: string
+  deliverable_template_id: string
+  name: string
+  due_offset_days: number | null
+  default_status: string | null
+  spec_defaults_json: string | null
+  sort_order: number
 } & SoftDeletable
 
 export type TechnicalSpec = {
@@ -483,6 +508,11 @@ export type TechnicalSpec = {
   aspect_ratio: string | null
   platform: string | null
   notes: string | null
+  bitrate: string | null
+  subtitles: string | null
+  graphics: string | null
+  language: string | null
+  audio_mix: string | null
 } & SoftDeletable
 
 export type MusicTrack = {
