@@ -14,6 +14,7 @@ import { executeBatch, getDb, now } from '../client'
 import { getProductionBySlug, hardDeleteProduction } from '../repositories/production'
 import { seedDemoBudget } from './demoBudgetSeed'
 import { seedDemoBookings } from './demoBookingSeed'
+import { seedDemoDeliverables } from './demoDeliverableSeed'
 import { seedDemoReconciliation } from './demoReconciliationSeed'
 import { seedDemoTasks } from './demoTaskSeed'
 import { listDocumentsByProduction } from '../repositories/document'
@@ -770,6 +771,7 @@ async function runFullSeed(): Promise<void> {
   await seedDemoBudget(pid, startDate, ts, addDaysLocal, IDS.budgetItem, IDS.expense)
   await seedDemoTasks(pid, startDate, ts, addDaysLocal)
   await seedDemoReconciliation(pid, ts, IDS.budgetItem, IDS.expense)
+  await seedDemoDeliverables(pid, startDate, ts, addDaysLocal)
 
   const hods = [
     ['Director', 'Jane Doe', '555-0100', 'director@demo.com'],
@@ -878,22 +880,6 @@ async function runFullSeed(): Promise<void> {
       `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [IDS.document(i), pid, null, null, fileName, path, 'text/plain', ts, ts]
-    )
-  }
-
-  for (let i = 1; i <= 12; i++) {
-    await db.execute(
-      `INSERT INTO deliverables (id, production_id, name, due_date, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [IDS.deliverable(i), pid, `Deliverable ${i}`, addDaysLocal(startDate, 60 + i * 7), i % 3 === 0 ? 'done' : 'pending', ts, ts]
-    )
-  }
-
-  for (let i = 1; i <= 12; i++) {
-    await db.execute(
-      `INSERT INTO technical_specs (id, deliverable_id, resolution, codec, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [IDS.technicalSpec(i), IDS.deliverable(i), '1920x1080', 'H.264', `Spec for deliverable ${i}`, ts, ts]
     )
   }
 
