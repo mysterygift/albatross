@@ -92,6 +92,17 @@ function rowToStripboardItem(r: Record<string, unknown>): StripboardItem {
   }
 }
 
+/**
+ * Returns the next upcoming shoot day (shoot_date >= today) for the production.
+ * Used by Dashboard and other read-only consumers. Returns null if none.
+ */
+export async function getNextShootDayForProduction(productionId: string): Promise<ShootDay | null> {
+  const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+  const days = await listShootDaysByProduction(productionId)
+  const next = days.find((d) => d.shoot_date >= today)
+  return next ?? null
+}
+
 // Shoot days. Order by shoot_date (YYYY-MM-DD string) then id for stable order; no Date parsing to avoid UTC edge cases.
 export async function listShootDaysByProduction(productionId: string): Promise<ShootDay[]> {
   const db = await getDb()
