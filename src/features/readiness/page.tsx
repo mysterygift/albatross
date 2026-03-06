@@ -20,7 +20,13 @@ import {
   type CreateTaskSectionData,
   type UpdateTaskSectionPatch,
 } from '@/lib/db/repositories/taskSections'
+import { applyTaskTemplateToProduction } from '@/lib/db/repositories/taskTemplates'
 import { buildTaskTree, flattenTaskTreeForDisplay, getSubtaskProgress } from '@/lib/tasks/tree'
+import {
+  TaskTemplatesSheet,
+  TaskTemplateEditorSheet,
+  ApplyTemplateDialog,
+} from '@/features/readiness/task-template-ui'
 import { PRODUCTION_DEPARTMENTS } from '@/lib/productions/departments'
 import type { ProductionTask, ProductionTaskSection } from '@/lib/db/types'
 import {
@@ -65,7 +71,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import { Plus, Trash2, Pencil, ListTree, Search, X, ChevronDown, FolderInput, LayoutList } from 'lucide-react'
+import { Plus, Trash2, Pencil, ListTree, Search, X, ChevronDown, FolderInput, LayoutList, FileStack, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const PRIORITY_LABELS: Record<1 | 2 | 3, string> = {
@@ -100,6 +106,9 @@ export function ReadinessPage() {
   const [dueTimingFilter, setDueTimingFilter] = useState<TaskFilters['dueTiming']>('all')
   const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(() => new Set())
   const [sectionsOpen, setSectionsOpen] = useState(false)
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [applyTemplateOpen, setApplyTemplateOpen] = useState(false)
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
 
   const filters: TaskFilters = useMemo(
     () => ({
@@ -249,6 +258,15 @@ export function ReadinessPage() {
     },
   })
 
+  const applyTemplateMutation = useMutation({
+    mutationFn: applyTaskTemplateToProduction,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      queryClient.invalidateQueries({ queryKey: ['taskSections'] })
+      setApplyTemplateOpen(false)
+    },
+  })
+
   if (!currentProductionId) {
     return (
       <div>
@@ -297,6 +315,14 @@ export function ReadinessPage() {
             open={sectionsOpen}
             onOpenChange={setSectionsOpen}
           />
+          <Button variant="outline" size="sm" onClick={() => setTemplatesOpen(true)} className="gap-1.5">
+            <FileStack className="size-4" />
+            Templates
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setApplyTemplateOpen(true)} className="gap-1.5">
+            <Play className="size-4" />
+            Apply Template
+          </Button>
           <NewTaskDialog
             productionId={currentProductionId}
             parentTaskId={addSubtaskParent?.id ?? null}
@@ -618,6 +644,30 @@ export function ReadinessPage() {
           isPending={updateMutation.isPending}
         />
       )}
+
+      <TaskTemplatesSheet
+        open={templatesOpen}
+        onOpenChange={setTemplatesOpen}
+        onEditTemplate={(id) => {
+          setTemplatesOpen(false)
+          setEditingTemplateId(id)
+        }}
+      />
+
+      {editingTemplateId && (
+        <TaskTemplateEditorSheet
+          templateId={editingTemplateId}
+          onClose={() => setEditingTemplateId(null)}
+        />
+      )}
+
+      <ApplyTemplateDialog
+        productionId={currentProductionId ?? ''}
+        open={applyTemplateOpen}
+        onOpenChange={setApplyTemplateOpen}
+        onApply={(params) => applyTemplateMutation.mutate(params)}
+        isPending={applyTemplateMutation.isPending}
+      />
     </div>
   )
 }

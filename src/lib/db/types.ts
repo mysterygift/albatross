@@ -444,6 +444,27 @@ export type ProductionTask = {
   section_id: string | null
 } & SoftDeletable
 
+/** Global task template (not production-scoped). */
+export type TaskTemplate = {
+  id: string
+  name: string
+  description: string | null
+} & SoftDeletable
+
+/** Item within a task template. Supports nesting via parent_template_item_id. */
+export type TaskTemplateItem = {
+  id: string
+  task_template_id: string
+  description: string
+  notes: string | null
+  due_offset_days: number | null
+  assigned_department: string | null
+  priority: 1 | 2 | 3 | null
+  section_name: string | null
+  parent_template_item_id: string | null
+  sort_order: number
+} & SoftDeletable
+
 export type Deliverable = {
   id: string
   production_id: string
