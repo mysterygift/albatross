@@ -14,6 +14,7 @@ This document is both a **user guide** (how to use the Budget feature) and a **d
 - [4. Examine Account and Examine Spend](#4-examine-account-and-examine-spend)
 - [5. Cost Report tab](#5-cost-report-tab)
 - [6. Settings](#6-settings)
+- [7. Actualisation and Match Spend](#7-actualisation-and-match-spend)
 
 **Part II — Developer guide**
 
@@ -119,6 +120,50 @@ The Budget page has two tabs: **Budget** and **Cost Report**. The Cost Report ta
 
 ---
 
+### 7. Actualisation and Match Spend
+
+The Budget page has three tabs: **Budget**, **Cost Report**, and **Match Expenses**. The **Match Expenses** tab (value `actualisation`) renders the Actualisation workspace from `src/features/budget/actualisation/page.tsx`. Its purpose is to reconcile expenses to budget line items by creating and managing **links** between an expense and one or more line items, with **matched amounts** (partial allocation). It does not change `expenses.amount` or `budget_items.estimated_cost`; those remain the source of truth.
+
+**Reconciliation summary card**
+
+- Counts for line items: matched, partially matched, unmatched, overspent.
+- Counts for expenses: allocated, partially allocated, unallocated.
+- Totals: total remaining estimate (line items), total unallocated spend (expenses).
+
+**Filters**
+
+- **Type** — All, Labour, Purchase, Rental, Allow, Deposit, Untyped.
+- **Line item status** — All, Unmatched, Partially matched, Matched, Overspent.
+- **Expense status** — All, Unallocated, Partially allocated, Allocated.
+- **Clear filters** appears when any filter is active. If both columns are empty with filters active, the page shows: “No line items or expenses match the current filters.”
+
+**Two-column workspace**
+
+- **Left: Budget line items** — Table: code, description, estimated cost, type, match status badge, remaining estimate. Remaining estimate is emphasised; when negative (overspent) it uses destructive styling. Click a row to select it; the selected row has a mint highlight and left border.
+- **Right: Expenses** — Table: date, description, amount, type, allocation status badge, unallocated amount. When an expense is partially allocated, the unallocated amount is emphasised. Click to select; selected row uses the same mint highlight and left border. When an expense is selected, a **Match Spend** button appears; clicking it opens the Match Spend modal.
+
+**Linked records panels (read-only)**
+
+- When a **line item** is selected, a card **Linked expenses** lists expenses linked to that line item (description, type badge, account code, matched amount). Empty state: “No linked expenses yet.”
+- When an **expense** is selected, a card **Linked line items** lists line items linked to that expense (description, type badge, account code, matched amount). Empty state: “No linked line items yet.”
+
+**Match Spend modal**
+
+- **Opens when:** An expense is selected and the user clicks **Match Spend**.
+- **Header:** Title “Match Spend”, description “Allocate this expense to one or more budget line items.”
+- **Expense summary card:** Shows the selected expense: description, date, account (code · name), amount, type badge, allocation status badge, allocated total, unallocated amount (from existing links).
+- **Candidate line items** — Line items on the **same account** as the selected expense. Each row shows: description, type badge, estimated / matched / remaining, match status. Optional hints (e.g. “Same type as this expense”, “Already partially matched”, “Overspent”) help guide without restricting. Use the checkbox to select one or more; when selected, an allocation amount input appears. The total “allocating now” cannot exceed the expense’s current unallocated amount. Overspend of a line item (matched total &gt; estimated cost) is allowed; a warning icon and tooltip explain but do not block.
+- **Allocation summary** — Live summary: expense amount, previously allocated, allocating now, remaining unallocated after save.
+- **Existing allocations** — Current links for this expense. Each row: description, type, matched amount, estimated, remaining. **Edit** opens inline amount editing (validated so the expense’s total allocated does not exceed its amount; other links are taken into account). **Remove** asks “Remove this match?” and on confirm soft-deletes the link. Edit and Remove only affect the link; the expense and line item records are unchanged. Overspend of a line item is allowed with a warning.
+- **Footer:** **Cancel** (closes the modal), **Save** (enabled when new allocations are valid). On **Save** for new links: creates links, closes the modal, keeps the same expense selected, and shows a brief success message “Spend matched.” On **Edit** or **Remove**: the modal stays open, data refreshes, and a success message “Allocation updated.” or “Match removed.” is shown.
+
+**Empty states in the modal**
+
+- No candidate line items: “No budget line items are available under this account yet.” Secondary note: “Create or classify line items in the Budget page to match this spend.”
+- No existing allocations: “This expense has not been matched yet.”
+
+---
+
 ## Part II — Developer guide
 
 ### 7. Data model
@@ -136,8 +181,9 @@ The Budget page has two tabs: **Budget** and **Cost Report**. The Cost Report ta
 | **ContingencyRule / ContingencyRuleScope** | `contingency_rules`, `contingency_rule_scopes` | Derived contingency. |
 | **ProductionTotal / ProductionTotalAccount** | `production_totals`, `production_total_accounts` | User-defined rollup subtotals (Cost Report). Header accounts only. |
 | **CostReportGroup / CostReportGroupAccount** | `cost_report_groups`, `cost_report_group_accounts` | Groups of accounts for reporting (Settings; “By groups” layout). |
+| **BudgetItemExpenseLink** | `budget_item_expense_links` | Links a budget line item to an expense with `matched_amount`; supports partial allocation; soft-deleted via `deleted_at`. Used by Actualisation / Match Spend. |
 
-Types: `src/lib/db/types.ts`. Repositories: `budget.ts`, `budgetAccounts.ts`, `budgetDerived.ts`, `expenseTransactions.ts`, `purchaseTransactions.ts`, `rentalTransactions.ts`, `createTypedExpense.ts`, `productionTotals.ts`, `costReportGroups.ts`.
+Types: `src/lib/db/types.ts`. Repositories: `budget.ts`, `budgetAccounts.ts`, `budgetDerived.ts`, `budgetReconciliation.ts`, `expenseTransactions.ts`, `purchaseTransactions.ts`, `rentalTransactions.ts`, `createTypedExpense.ts`, `productionTotals.ts`, `costReportGroups.ts`.
 
 #### 7.2 Typed expenses: transaction_type and details
 
@@ -173,12 +219,18 @@ Types: `src/lib/db/types.ts`. Repositories: `budget.ts`, `budgetAccounts.ts`, `b
 
 Rules have name, rate (decimal 0–1), base_kind (budget | actual), scope_mode, is_enabled. Scopes define which account subtrees form the base. `computeFringeTotals` / `computeContingencyTotals` in `calculations.ts` compute display-only amounts; legacy items are excluded from the base.
 
+#### 7.6 Reconciliation (links and derived status)
+
+- **Links:** Table `budget_item_expense_links`: `id`, `production_id`, `budget_item_id`, `expense_id`, `matched_amount`, timestamps, `deleted_at`. One expense can link to many line items; one line item to many expenses. These amounts are not normalised elsewhere; `expenses.amount` and `budget_items.estimated_cost` remain the source of truth.
+- **Derived statuses (not stored):** For line items: unmatched / partial / matched / overspent (from `sum(matched_amount)` vs `estimated_cost`). For expenses: unallocated / partial / allocated (from `sum(matched_amount)` vs `expense.amount`). Computed in `src/lib/budget/reconciliation.ts`.
+
 ---
 
 ### 8. Repositories and persistence
 
 - **budget.ts** — Categories (list, seed); budget items (list, createBudgetItem, update, delete, backfill); expenses (listExpensesByProduction, createExpense, updateExpense, updateExpenseAccount, deleteExpense). Outbox pushed for create/update/delete.
 - **budgetAccounts.ts** — listAccounts, listPostableAccounts, getAccountById, createAccount, updateAccountName, updateAccountSortOrder, archive, unarchive, hardDelete; seedDefaultBudgetAccounts. Postable dropdowns use listPostableAccounts.
+- **budgetReconciliation.ts** — List links by production, by budget item, by expense; `createBudgetItemExpenseLink` (single); `createBudgetItemExpenseLinks` (bulk, atomic: validates expense and items exist and belong to production, total new allocation ≤ expense unallocated, no duplicate budget item in one call; uses runInSerializedTransaction + executeBatch); `updateBudgetItemExpenseLink` (validates new total allocated ≤ expense.amount using current DB state); `deleteBudgetItemExpenseLink` (soft delete). Reconciliation links are not synced; no outbox rows.
 - **budgetDerived.ts** — Fringe and contingency rules + scopes; create/update/delete/toggle. Uses runInSerializedTransaction + executeBatch when rule/scopes change.
 - **expenseTransactions.ts** — getExpenseWithDetails (expense + vendor + account + transaction_details); saveExpenseTransactionDetails (update expenses.transaction_type, upsert expense_transaction_details). Used by labour and allow. runInSerializedTransaction + executeBatch.
 - **purchaseTransactions.ts** — savePurchaseTransaction (update expense type + vendor_id, upsert details, optional location booked_status + outbox for location update).
@@ -211,6 +263,8 @@ All in `src/lib/budget/calculations.ts`:
 - `computeFringeTotals`, `computeContingencyTotals` — Per-rule amounts from scopes and totals map.
 - `getDescendantLeafIds` / `getDescendantLeafIdsFromNode` — For production totals and cost report group totals (unique leaf set under header/group accounts).
 
+**Reconciliation helpers** (`src/lib/budget/reconciliation.ts`): `sumMatchedAmountForBudgetItem`, `sumAllocatedAmountForExpense`, `getBudgetItemRemainingEstimate`, `getExpenseUnallocatedAmount`, `getBudgetItemMatchStatus`, `getExpenseAllocationStatus`, `getReconciliationSummary`. Used by Actualisation UI and for future completion checks; derived status is not persisted.
+
 ---
 
 ### 11. Query keys and invalidation
@@ -228,6 +282,11 @@ Production-scoped keys:
 - `['production-totals', productionId]`
 - `['cost-report-groups', productionId]`, `['cost-report-groups-with-accounts', productionId]` — Invalidate when groups or mappings change in Settings.
 - `['locations', productionId]` — Invalidate after purchase save when location booked_status is updated.
+- `['budget-item-expense-links', productionId]` — All non-deleted links for the production. Invalidate on create/update/delete link (bulk or single).
+- `['budget-item-expense-links-for-expense', expenseId]` — Links for one expense. Invalidate when that expense’s links change.
+- `['budget-item-expense-links-for-item', budgetItemId]` — Links for one line item. Invalidate when that item’s links change.
+
+After create/update/delete in the Match Spend modal, invalidate the production list plus the relevant for-expense and for-item keys so the reconciliation summary, tables, and linked panels refresh.
 
 ---
 
@@ -272,6 +331,7 @@ When adding or changing budget-related features:
 - **Line items in Examine Account** — Line items are view-only in the sheet; editing is from the Budget table or Add line item.
 - **Set/change transaction type on existing expense** — No UI to convert an untyped expense to typed (e.g. “Make this a Labour expense”) or to create expense_transaction_details for it.
 - **Other** — No phase filtering; no column sorting in account table; export is CSV only; BudgetItem.status not shown/editable; duplicate production behaviour for derived rules may need to be defined.
+- **Match Spend** — No audit tables for link changes; no project-completion safeguards; no automatic or fuzzy matching yet.
 
 ---
 
@@ -282,3 +342,4 @@ When adding or changing budget-related features:
 - **Untyped expense editing** — updateExpense(expenseId, { amount, date, vendor, notes }) and UntypedExpenseEditor allow editing amount, date, vendor, notes for expenses with no transaction_type. onUpdateExpenseRequest is passed from Budget page to ExpenseDetailPanel.
 - **Examine Account** — Sheet shows both line items (view-only) and expenses (with Examine spend). Expense Detail Panel uses registry + typed-expense-views (LabourTransactionEditor, etc.) for read/edit; Deposit and untyped have no or limited edit.
 - **Registry** — Single source of truth per type (label, parse, ReadComponent, EditComponent, save, editable). See typed-expense-registry-and-editor.md.
+- **Actualisation and Match Spend** — The **Match Expenses** tab and Match Spend modal were added to support reconciling expenses to line items via `budget_item_expense_links`. Users can create, edit, and remove links with matched amounts. Derived statuses (unmatched, partial, matched, overspent for line items; unallocated, partial, allocated for expenses) are computed in `src/lib/budget/reconciliation.ts` and not stored.
