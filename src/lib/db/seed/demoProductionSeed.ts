@@ -13,6 +13,8 @@
 import { executeBatch, getDb, now } from '../client'
 import { getProductionBySlug, hardDeleteProduction } from '../repositories/production'
 import { seedDemoBudget } from './demoBudgetSeed'
+import { seedDemoReconciliation } from './demoReconciliationSeed'
+import { seedDemoTasks } from './demoTaskSeed'
 import { listDocumentsByProduction } from '../repositories/document'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { generateCueSheet, generateLocationReleaseCover, generateContributorFormCover } from '@/lib/pdf'
@@ -634,6 +636,8 @@ async function runFullSeed(): Promise<void> {
   // Uses runInSerializedTransaction + executeBatch. Do not add alternate budget seeding for demo.
   // -------------------------------------------------------------------------
   await seedDemoBudget(pid, startDate, ts, addDaysLocal, IDS.budgetItem, IDS.expense)
+  await seedDemoTasks(pid, startDate, ts, addDaysLocal)
+  await seedDemoReconciliation(pid, ts, IDS.budgetItem, IDS.expense)
 
   const hods = [
     ['Director', 'Jane Doe', '555-0100', 'director@demo.com'],
