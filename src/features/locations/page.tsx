@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useCurrency } from '@/hooks/useCurrency'
 import {
   listLocationsByProduction,
   createLocation,
@@ -46,21 +47,33 @@ import { z } from 'zod'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import type { Location } from '@/lib/db/types'
 
+const feeSchema = z
+  .union([z.coerce.number(), z.literal('')])
+  .transform((v) => (v === '' ? undefined : Number(v)))
+  .pipe(
+    z
+      .number()
+      .min(0, { message: 'Must be 0 or greater' })
+      .optional()
+  )
+
 const locationSchema = z.object({
   name: z.string().min(1),
   booked_status: z.enum(['unbooked', 'hold', 'booked', 'wrap']),
   address: z.string().optional(),
   what3words: z.string().optional(),
   availability_constraints: z.string().optional(),
-  permit_fee: z.coerce.number().optional(),
-  location_fee: z.coerce.number().optional(),
+  permit_fee: feeSchema,
+  location_fee: feeSchema,
   notes: z.string().optional(),
 })
 
 type LocationForm = z.infer<typeof locationSchema>
 
 export function LocationsPage() {
-  const { currentProductionId } = useCurrentProduction()
+  const { currentProductionId, currentProduction } = useCurrentProduction()
+  const { format } = useCurrency()
+  const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
@@ -107,10 +120,10 @@ export function LocationsPage() {
     { accessorKey: 'address', header: 'Address', cell: ({ getValue }) => (getValue() as string) ?? '—' },
     {
       accessorKey: 'location_fee',
-      header: 'Fee',
+      header: 'Location Fee',
       cell: ({ getValue }) => {
         const v = getValue() as number | null
-        return v != null ? `$${v}` : '—'
+        return v != null ? format(v, productionCurrency).formatted : '—'
       },
     },
     {
@@ -232,11 +245,11 @@ function LocationForm({
         <DialogTitle>{defaultValues.id ? 'Edit location' : 'Add location'}</DialogTitle>
       </DialogHeader>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <div>
+        <div className="space-y-1.5">
           <Label>Name</Label>
           <Input {...form.register('name')} />
         </div>
-        <div>
+        <div className="space-y-1.5">
           <Label>Booked status</Label>
           <Select
             value={form.watch('booked_status')}
@@ -251,29 +264,30 @@ function LocationForm({
             </SelectContent>
           </Select>
         </div>
-        <div>
+        <div className="space-y-1.5">
           <Label>Address</Label>
           <Input {...form.register('address')} />
         </div>
-        <div>
+        <div className="space-y-1.5">
             <Label>what3words</Label>
             <Input {...form.register('what3words')} />
         </div>
-        <div>
+        <div className="space-y-1.5">
           <Label>Availability constraints</Label>
           <Input {...form.register('availability_constraints')} />
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <div>
+          <div className="space-y-1.5">
             <Label>Permit fee</Label>
-            <Input type="number" step={0.01} {...form.register('permit_fee')} />
+            <Input type="number" step={0.01} min={0} {...form.register('permit_fee')} />
           </div>
-          <div>
+          <div className="space-y-1.5">
             <Label>Location fee</Label>
-            <Input type="number" step={0.01} {...form.register('location_fee')} />
+            <Input type="number" step={0.01} min={0} {...form.register('location_fee')} />
           </div>
         </div>
-        <div>
+        <p className="text-sm text-muted-foreground">Fees must be 0 or greater.</p>
+        <div className="space-y-1.5">
           <Label>Notes</Label>
           <Textarea {...form.register('notes')} rows={2} />
         </div>
