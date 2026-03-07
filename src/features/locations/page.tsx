@@ -50,6 +50,7 @@ const locationSchema = z.object({
   name: z.string().min(1),
   booked_status: z.enum(['unbooked', 'hold', 'booked', 'wrap']),
   address: z.string().optional(),
+  what3words: z.string().optional(),
   availability_constraints: z.string().optional(),
   permit_fee: z.coerce.number().optional(),
   location_fee: z.coerce.number().optional(),
@@ -62,6 +63,7 @@ export function LocationsPage() {
   const { currentProductionId } = useCurrentProduction()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const { data: locations = [] } = useQuery({
@@ -89,6 +91,9 @@ export function LocationsPage() {
       queryClient.invalidateQueries({ queryKey: ['locations'] })
       setEditingId(null)
     },
+    onError: () => {
+      setUpdateError('Failed to save location.')
+    },
   })
 
   const deleteMutation = useMutation({
@@ -112,7 +117,7 @@ export function LocationsPage() {
       id: 'actions',
       cell: ({ row }) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="icon" onClick={() => setEditingId(row.original.id)}>
+          <Button variant="ghost" size="icon" onClick={() => { setUpdateError(null); setEditingId(row.original.id) }}>
             <Pencil className="size-4" />
           </Button>
           <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(row.original.id)}>
@@ -179,8 +184,11 @@ export function LocationsPage() {
         </Table>
       </div>
       {editingId && (
-        <Dialog open={!!editingId} onOpenChange={() => setEditingId(null)}>
+        <Dialog open={!!editingId} onOpenChange={() => { setUpdateError(null); setEditingId(null) }}>
           <DialogContent>
+            {updateError && (
+              <p className="text-sm text-destructive">{updateError}</p>
+            )}
             <LocationForm
               defaultValues={locations.find((l) => l.id === editingId)!}
               onSubmit={(d) => updateMutation.mutate({ id: editingId, data: d })}
@@ -211,6 +219,7 @@ function LocationForm({
       name: defaultValues.name ?? '',
       booked_status: defaultValues.booked_status ?? 'unbooked',
       address: defaultValues.address ?? '',
+      what3words: defaultValues.what3words ?? '',
       availability_constraints: defaultValues.availability_constraints ?? '',
       permit_fee: defaultValues.permit_fee ?? undefined,
       location_fee: defaultValues.location_fee ?? undefined,
@@ -245,6 +254,10 @@ function LocationForm({
         <div>
           <Label>Address</Label>
           <Input {...form.register('address')} />
+        </div>
+        <div>
+            <Label>what3words</Label>
+            <Input {...form.register('what3words')} />
         </div>
         <div>
           <Label>Availability constraints</Label>

@@ -40,6 +40,7 @@ export type Location = {
   name: string
   booked_status: 'unbooked' | 'hold' | 'booked' | 'wrap'
   address: string | null
+  what3words: string | null
   availability_constraints: string | null
   permit_fee: number | null
   location_fee: number | null

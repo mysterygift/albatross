@@ -189,6 +189,18 @@ pub fn run() {
             sql: include_str!("../migrations/0031_deliverable_template_defaults.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 32,
+            description: "productions_created_from_template",
+            sql: include_str!("../migrations/0032_productions_created_from_template.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 33,
+            description: "locations_w3w",
+            sql: include_str!("../migrations/0033_locations_w3w.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
