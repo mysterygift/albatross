@@ -53,7 +53,7 @@ import {
 } from '@/components/ui/select'
 import { listDocumentsByEntity, createDocument, deleteDocument } from '@/lib/db/repositories/document'
 import { pickAndSaveAttachment, getFileUrl, openInSystem } from '@/lib/files'
-import { Paperclip, Upload, ExternalLink, Trash2 } from 'lucide-react'
+import { Paperclip, Upload, ExternalLink, Trash2, Loader2 } from 'lucide-react'
 
 const EMPTY = '—'
 
@@ -355,6 +355,8 @@ function DeliverableEditSheet({
     return s
   })
   const [approvalStatus, setApprovalStatus] = useState(deliverable.approval_status ?? 'pending')
+  const [openingFilePath, setOpeningFilePath] = useState<string | null>(null)
+  const [openAttachmentError, setOpenAttachmentError] = useState<string | null>(null)
 
   useEffect(() => {
     setName(deliverable.name)
@@ -399,8 +401,16 @@ function DeliverableEditSheet({
   })
 
   const handleOpenAttachment = async (filePath: string) => {
-    const url = await getFileUrl(filePath)
-    await openInSystem(url)
+    setOpenAttachmentError(null)
+    setOpeningFilePath(filePath)
+    try {
+      const url = await getFileUrl(filePath)
+      await openInSystem(url)
+    } catch (err) {
+      setOpenAttachmentError(err instanceof Error ? err.message : 'Failed to open attachment')
+    } finally {
+      setOpeningFilePath(null)
+    }
   }
 
   const saveMutation = useMutation({
@@ -430,7 +440,7 @@ function DeliverableEditSheet({
         <SheetHeader className="shrink-0 border-b border-border pb-4">
           <SheetTitle className="text-lg">Edit deliverable</SheetTitle>
         </SheetHeader>
-        <div className="flex-1 overflow-y-auto px-1 py-4">
+        <div className="flex-1 overflow-y-auto px-5 py-4">
           <div className="space-y-6">
             {/* Basics */}
             <div className="space-y-3">
@@ -522,6 +532,20 @@ function DeliverableEditSheet({
                   <Upload className="size-4 shrink-0" />
                   Attach file
                 </Button>
+                {openAttachmentError && (
+                  <p className="rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-destructive text-sm flex items-center justify-between gap-2">
+                    <span>{openAttachmentError}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 h-auto py-0.5 text-destructive hover:bg-destructive/20"
+                      onClick={() => setOpenAttachmentError(null)}
+                    >
+                      Dismiss
+                    </Button>
+                  </p>
+                )}
                 {attachments.length === 0 ? (
                   <p className="text-muted-foreground text-sm py-2">No attachments yet.</p>
                 ) : (
@@ -541,9 +565,14 @@ function DeliverableEditSheet({
                             size="sm"
                             className="size-7 p-0"
                             onClick={() => handleOpenAttachment(doc.file_path)}
-                            title="Open"
+                            disabled={openingFilePath !== null}
+                            title={openingFilePath === doc.file_path ? 'Opening…' : 'Open'}
                           >
-                            <ExternalLink className="size-3.5" />
+                            {openingFilePath === doc.file_path ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <ExternalLink className="size-3.5" />
+                            )}
                           </Button>
                           <Button
                             variant="ghost"
