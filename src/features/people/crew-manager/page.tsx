@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/dialog'
 import { Search, Plus, Pencil, Eye } from 'lucide-react'
 import { CrewForm, type CrewFormValues } from '@/features/people/components/CrewForm'
+import { CrewSetupWizard } from '@/features/people/crew-manager/CrewSetupWizard'
 
 const CANONICAL_DEPARTMENT_NAMES = getCrewDepartmentNames()
 const CANONICAL_DEPARTMENT_SET = new Set<string>(CANONICAL_DEPARTMENT_NAMES)
@@ -93,8 +94,10 @@ export function CrewManagerPage() {
   const [missingFilter, setMissingFilter] = useState<MissingFilter>('all')
   const [addOpen, setAddOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const hasAutoOpenedWizardRef = useRef(false)
 
-  const { data: crew = [] } = useQuery({
+  const { data: crew = [], isLoading: crewLoading } = useQuery({
     queryKey: ['crew', currentProductionId],
     queryFn: () => listCrew(currentProductionId ?? ''),
     enabled: !!currentProductionId,
@@ -234,6 +237,28 @@ export function CrewManagerPage() {
     [hodResponsibilitySummary]
   )
 
+  // Reset auto-open when switching production so wizard can show once per production when empty
+  const prevProductionRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (currentProductionId !== prevProductionRef.current) {
+      prevProductionRef.current = currentProductionId ?? null
+      hasAutoOpenedWizardRef.current = false
+    }
+  }, [currentProductionId])
+
+  // Auto-open setup wizard when production has no crew (first entry to Crew Manager in empty state)
+  useEffect(() => {
+    if (
+      currentProductionId &&
+      !crewLoading &&
+      crew.length === 0 &&
+      !hasAutoOpenedWizardRef.current
+    ) {
+      hasAutoOpenedWizardRef.current = true
+      setWizardOpen(true)
+    }
+  }, [currentProductionId, crewLoading, crew.length])
+
   if (!currentProductionId) {
     return (
       <div className="space-y-4">
@@ -363,7 +388,8 @@ export function CrewManagerPage() {
         </p>
       )}
 
-      {/* Toolbar: search + filters */}
+      {/* Toolbar: search + filters (hidden when no crew) */}
+      {crew.length > 0 && (
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -412,16 +438,36 @@ export function CrewManagerPage() {
           </SelectContent>
         </Select>
       </div>
+      )}
 
-      {/* Crew table */}
-      <Card>
+      {/* Crew table or empty state */}
+      <Card className="border-border bg-card">
         <CardContent className="p-0">
           {crew.length === 0 ? (
-            <div className="py-12 px-4 text-center">
-              <p className="text-muted-foreground">No crew yet.</p>
-              <p className="text-muted-foreground text-sm mt-1">
-                Add people as crew from the People list to see them here.
+            <div className="py-12 px-6 text-center max-w-md mx-auto">
+              <p className="font-medium text-foreground">Crew Manager</p>
+              <p className="text-muted-foreground text-sm mt-2">
+                Organise crew by department, assign Heads of Department, manage contact details, and
+                support tasks and call sheets. Add your first crew to get started.
               </p>
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-6">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => setWizardOpen(true)}
+                  className="bg-primary/90 hover:bg-primary"
+                >
+                  Start setup
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAddOpen(true)}
+                  className="border-border"
+                >
+                  Add crew manually
+                </Button>
+              </div>
             </div>
           ) : sortedCrew.length === 0 ? (
             <div className="py-12 px-4 text-center text-muted-foreground text-sm">
@@ -545,6 +591,14 @@ export function CrewManagerPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <CrewSetupWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        onCreateCrew={async (values) => {
+          await createMutation.mutateAsync(values)
+        }}
+      />
     </div>
   )
 }
