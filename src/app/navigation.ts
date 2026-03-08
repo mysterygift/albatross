@@ -29,7 +29,16 @@ export type NavItem =
 export const navItems: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/productions', label: 'Productions', icon: FolderOpen },
-  { to: '/budget', label: 'Budget', icon: DollarSign },
+  {
+    to: '/budget',
+    label: 'Budget',
+    icon: DollarSign,
+    defaultChild: '/budget',
+    sub: [
+      { to: '/budget', label: 'Budget' },
+      { to: '/budget/vendors', label: 'Vendors' },
+    ],
+  },
   {
     to: '/schedule',
     label: 'Schedule',

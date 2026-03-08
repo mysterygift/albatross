@@ -139,6 +139,16 @@
   }
 }
 
+/* Vendor rolodex: cards stack slightly over predecessor */
+.rolodex-card {
+  position: relative;
+  z-index: calc(var(--rolodex-index, 0));
+  transform: translateY(calc(var(--rolodex-index, 0) * -5px));
+}
+.rolodex-card button {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
 /* DnD drop indicator: mint outline */
 [data-droppable-placeholder] {
   @apply ring-2 ring-primary ring-offset-2 ring-offset-background rounded-md min-h-[2rem];

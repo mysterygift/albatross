@@ -130,6 +130,45 @@ export type Vendor = {
   primary_contact_email: string | null
 } & SoftDeletable
 
+/** Invoice lifecycle status. Enforced in DB via CHECK; use this union in TS. */
+export type VendorInvoiceStatus = 'draft' | 'received' | 'approved' | 'paid' | 'overdue'
+
+export type VendorInvoice = {
+  id: string
+  production_id: string
+  vendor_id: string
+  invoice_number: string
+  issue_date: string | null
+  due_date: string | null
+  amount: number | null
+  tax: number | null
+  currency_code: string | null
+  status: VendorInvoiceStatus
+  notes: string | null
+} & SoftDeletable
+
+/** Purchase order lifecycle status. Enforced in DB via CHECK; use this union in TS. */
+export type PurchaseOrderStatus =
+  | 'draft'
+  | 'issued'
+  | 'approved'
+  | 'closed'
+  | 'cancelled'
+
+export type VendorPurchaseOrder = {
+  id: string
+  production_id: string
+  vendor_id: string
+  po_number: string
+  description: string | null
+  issue_date: string | null
+  due_date: string | null
+  amount: number | null
+  status: PurchaseOrderStatus
+  approval: number
+  notes: string | null
+} & SoftDeletable
+
 export type ExpenseTransactionType = 'labour' | 'purchase' | 'rental' | 'allow' | 'deposit'
 
 export type Expense = {
@@ -445,6 +484,8 @@ export type ProductionTask = {
   parent_task_id: string | null
   /** Null = unsectioned; non-null = task belongs to a section in the same production. */
   section_id: string | null
+  /** Null = normal task; non-null = reminder task for this vendor invoice (at most one task per invoice). */
+  vendor_invoice_id: string | null
 } & SoftDeletable
 
 /** Global task template (not production-scoped). */

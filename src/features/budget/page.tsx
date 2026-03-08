@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback, Fragment, type ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
@@ -153,6 +154,8 @@ const derivedRuleSchema = z.object({
 type DerivedRuleFormValues = z.infer<typeof derivedRuleSchema>
 
 export function BudgetPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const { format, ensureRate, conversionBanner } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
@@ -191,6 +194,17 @@ export function BudgetPage() {
   useEffect(() => {
     localStorage.setItem(COST_REPORT_LAYOUT_MODE_KEY, costReportLayoutMode)
   }, [costReportLayoutMode])
+
+  // Open expense panel when navigating from vendor ledger (Examine Spend)
+  const state = location.state as { examineExpenseId?: string } | null
+  useEffect(() => {
+    if (state?.examineExpenseId) {
+      setExaminedExpenseId(state.examineExpenseId)
+      setViewMode('actualisation')
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  }, [state?.examineExpenseId, location.pathname, navigate])
+
   const queryClient = useQueryClient()
   const backfillRanForProduction = useRef<Set<string>>(new Set())
 

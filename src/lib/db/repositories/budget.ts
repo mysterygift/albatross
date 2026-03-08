@@ -253,6 +253,19 @@ export async function listExpensesByProduction(
   return rows.map(rowToExpense)
 }
 
+/** List expenses linked to a vendor (vendor_id). Order: date DESC. */
+export async function listExpensesByVendorId(
+  productionId: string,
+  vendorId: string
+): Promise<Expense[]> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${EXP_TABLE} WHERE production_id = $1 AND vendor_id = $2 AND deleted_at IS NULL ORDER BY date DESC`,
+    [productionId, vendorId]
+  )
+  return rows.map(rowToExpense)
+}
+
 export async function createExpense(data: {
   production_id: string
   amount: number
