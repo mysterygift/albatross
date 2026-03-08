@@ -10,7 +10,15 @@ import { listScenesByProduction } from '@/lib/db/repositories/schedule'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { listKeyContactsByProduction } from '@/lib/db/repositories/key-contacts'
 import { getCastIdsBySceneIds } from '@/lib/db/repositories/scene-cast'
+import { getCastIdsByShotIds } from '@/lib/db/repositories/shot-cast'
+import { listBookingsByShootDay } from '@/lib/db/repositories/booking'
 import { listCast } from '@/lib/db/repositories/person'
+import {
+  getCallSheetCastRequirements,
+  getCastCalledNames,
+  type CallSheetCastResult,
+  type CallSheetCastRow,
+} from '@/lib/call-sheets/castRequirements'
 import { getProductionById } from '@/lib/db/repositories/production'
 import { generateCallSheetPdf } from '@/lib/pdf/callSheet'
 import { saveFileWithDialog, openInSystem } from '@/lib/files'
@@ -18,6 +26,15 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   Select,
   SelectContent,
@@ -108,21 +125,39 @@ export function CallSheetsPage() {
   )
 
   const sceneIdsScheduled = useMemo(() => unitStrips.filter((s) => s.scene_id).map((s) => s.scene_id!), [unitStrips])
+  const shotIdsScheduled = useMemo(() => unitStrips.filter((s) => s.shot_id).map((s) => s.shot_id!), [unitStrips])
+
   const { data: castBySceneId = new Map<string, string[]>() } = useQuery({
     queryKey: ['cast-by-scene-callsheet', sceneIdsScheduled.join(',')],
     queryFn: () => getCastIdsBySceneIds(sceneIdsScheduled),
     enabled: sceneIdsScheduled.length > 0,
   })
 
-  const castCalledIds = useMemo(() => {
-    const set = new Set<string>()
-    for (const ids of castBySceneId.values()) for (const id of ids) set.add(id)
-    return Array.from(set)
-  }, [castBySceneId])
-  const castCalledNames = useMemo(
-    () => castCalledIds.map((id) => cast.find((p) => p.id === id)?.name ?? id).sort(),
-    [castCalledIds, cast]
-  )
+  const { data: castByShotId = new Map<string, string[]>() } = useQuery({
+    queryKey: ['cast-by-shot-callsheet', shotIdsScheduled.join(',')],
+    queryFn: () => getCastIdsByShotIds(shotIdsScheduled),
+    enabled: shotIdsScheduled.length > 0,
+  })
+
+  const { data: bookingsForDay = [] } = useQuery({
+    queryKey: ['bookings-by-shoot-day', shootDayId],
+    queryFn: () => listBookingsByShootDay(shootDayId!),
+    enabled: !!shootDayId,
+  })
+
+  const castResult: CallSheetCastResult = useMemo(() => {
+    const bookedPersonIds = new Set(bookingsForDay.map((b) => b.person_id))
+    return getCallSheetCastRequirements({
+      sceneIdsScheduled,
+      shotIdsScheduled,
+      castBySceneId,
+      castByShotId,
+      bookedPersonIds,
+      cast,
+    })
+  }, [sceneIdsScheduled, shotIdsScheduled, castBySceneId, castByShotId, bookingsForDay, cast])
+
+  const castCalledNames = useMemo(() => getCastCalledNames(castResult.castRows), [castResult.castRows])
 
   const locationIdsUsed = useMemo(() => {
     const set = new Set<string>()
@@ -215,6 +250,7 @@ export function CallSheetsPage() {
       specialNotes: shootDay.special_notes ?? null,
       schedule,
       castCalled: castCalledNames,
+      castCalledRows: castResult.castRows,
       locations: locationsForDay.map((l) => ({ name: l.name, address: l.address })),
     }
   }, [
@@ -230,6 +266,7 @@ export function CallSheetsPage() {
     weatherSummary,
     weatherFromDay,
     castCalledNames,
+    castResult.castRows,
     locationsForDay,
   ])
 
@@ -340,6 +377,66 @@ export function CallSheetsPage() {
                 placeholder="e.g. Sunny, 72°F"
               />
             </div>
+            {shootDayId && shootDayUnitId && (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Cast called (booked & required)</Label>
+                  {castResult.castRows.length > 0 ? (
+                    <div className="rounded-md border border-border overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-border">
+                            <TableHead className="w-[4rem] text-muted-foreground">#</TableHead>
+                            <TableHead className="text-muted-foreground">Name</TableHead>
+                            <TableHead className="text-muted-foreground">Phone</TableHead>
+                            <TableHead className="text-muted-foreground hidden sm:table-cell">Agent</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {castResult.castRows.map((row: CallSheetCastRow) => (
+                            <TableRow key={row.person_id} className="border-border">
+                              <TableCell className="font-mono text-muted-foreground">{row.cast_number ?? '—'}</TableCell>
+                              <TableCell>{row.name}</TableCell>
+                              <TableCell className="text-muted-foreground">{row.phone ?? '—'}</TableCell>
+                              <TableCell className="text-muted-foreground hidden sm:table-cell">
+                                {[row.agent_name, row.agent_phone].filter(Boolean).join('  ') || '—'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">No cast called for this day/unit.</p>
+                  )}
+                </div>
+                {(castResult.requiredButNotBooked.length > 0 || castResult.bookedButNotRequired.length > 0) && (
+              <div className="space-y-2">
+                {castResult.requiredButNotBooked.length > 0 && (
+                  <Alert variant="destructive" className="py-2">
+                    <AlertTitle>
+                      {castResult.requiredButNotBooked.length} required cast not booked for this day
+                    </AlertTitle>
+                    <AlertDescription>
+                      {castResult.requiredButNotBooked.map((w) => w.name).join(', ')}
+                      {' — add bookings to include them on the call sheet.'}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {castResult.bookedButNotRequired.length > 0 && (
+                  <Alert className="py-2">
+                    <AlertTitle>
+                      {castResult.bookedButNotRequired.length} booked cast not required by scheduled material
+                    </AlertTitle>
+                    <AlertDescription>
+                      {castResult.bookedButNotRequired.map((w) => w.name).join(', ')}
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+                )}
+              </>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 onClick={() => handleGenerate(false)}

@@ -10,6 +10,7 @@ import { ScriptImportPage } from '@/features/schedule/script-import-page'
 import { PeoplePage } from '@/features/people/page'
 import { BookingsPage } from '@/features/people/pages/BookingsPage'
 import { DayOutOfDaysPage } from '@/features/people/pages/DayOutOfDaysPage'
+import { PersonDetailPage } from '@/features/people/pages/PersonDetailPage'
 import { LocationsPage } from '@/features/locations/page'
 import { EquipmentPage } from '@/features/equipment/page'
 import { DocumentsPage } from '@/features/documents/page'
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
       { path: 'people/bookings', element: <BookingsPage /> },
       { path: 'people/day-out-of-days', element: <DayOutOfDaysPage /> },
       { path: 'people/cast', element: <PeoplePage /> },
+      { path: 'people/:personId', element: <PersonDetailPage /> },
       { path: 'locations', element: <LocationsPage /> },
       { path: 'equipment', element: <EquipmentPage /> },
       { path: 'documents', element: <DocumentsPage /> },

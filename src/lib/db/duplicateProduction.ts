@@ -53,7 +53,7 @@ export async function duplicateProduction(
   const notes = (prodRows[0]!.notes as string | null) ?? null
 
   // Load all source data first (reads only).
-  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs] = await Promise.all([
+  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs] = await Promise.all([
     db.select<Record<string, unknown>[]>(`SELECT * FROM units WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM people WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM locations WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -63,6 +63,7 @@ export async function duplicateProduction(
     db.select<Record<string, unknown>[]>(`SELECT ls.* FROM location_scene ls INNER JOIN locations loc ON loc.id = ls.location_id AND loc.production_id = $1 AND loc.deleted_at IS NULL WHERE ls.deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT s.* FROM shots s INNER JOIN scenes sc ON sc.id = s.scene_id AND sc.production_id = $1 AND sc.deleted_at IS NULL WHERE s.deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM scene_cast WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM shot_cast WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM stripboard_strips WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM cast_availability WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM budget_categories WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -122,8 +123,8 @@ export async function duplicateProduction(
     const id = newId()
     personIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO people (id, production_id, name, is_cast, email, phone, department, phases, notes, contributor_form_status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      bindValues: [id, newProdId, r.name, r.is_cast ?? 0, r.email, r.phone, r.department, r.phases, r.notes, r.contributor_form_status ?? 'not_requested', ts, ts],
+      sql: `INSERT INTO people (id, production_id, name, is_cast, email, phone, department, phases, notes, contributor_form_status, cast_number, agent_name, agent_email, agent_phone, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      bindValues: [id, newProdId, r.name, r.is_cast ?? 0, r.email, r.phone, r.department, r.phases, r.notes, r.contributor_form_status ?? 'not_requested', r.cast_number ?? null, r.agent_name ?? null, r.agent_email ?? null, r.agent_phone ?? null, ts, ts],
     })
   }
   for (const r of locations) {
@@ -192,6 +193,16 @@ export async function duplicateProduction(
       statements.push({
         sql: `INSERT INTO scene_cast (id, production_id, scene_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
         bindValues: [newId(), newProdId, sceneId, personId, ts, ts],
+      })
+    }
+  }
+  for (const r of shotCast) {
+    const shotId = shotIdMap.get(r.shot_id as string)
+    const personId = personIdMap.get(r.person_id as string)
+    if (shotId && personId) {
+      statements.push({
+        sql: `INSERT INTO shot_cast (id, production_id, shot_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+        bindValues: [newId(), newProdId, shotId, personId, ts, ts],
       })
     }
   }

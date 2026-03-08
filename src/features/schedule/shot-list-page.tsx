@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useMemo } from 'react'
  import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import {
@@ -7,11 +7,18 @@ import {
   updateShot,
 } from '@/lib/db/repositories/schedule'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
+import { listSceneCastByScene, addSceneCast, removeSceneCast } from '@/lib/db/repositories/scene-cast'
+import {
+  listShotCastByShotIds,
+  addShotCast,
+  removeShotCast,
+} from '@/lib/db/repositories/shot-cast'
+import { listCast } from '@/lib/db/repositories/person'
 import {
   listEquipmentTermsByProductionAndType,
   upsertEquipmentTerm,
 } from '@/lib/db/repositories/equipment-terms'
-import type { Shot, Scene } from '@/lib/db/types'
+import type { Shot, Scene, ShotCast } from '@/lib/db/types'
 import { SHOT_SIZE_VALUES, CAMERA_MOVEMENT_VALUES } from '@/lib/db/types'
 import {
   Table,
@@ -46,7 +53,12 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Pencil, Check } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog'
+import { Pencil, Check, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /** Sentinel for "no selection" in Select; Radix forbids SelectItem value="". */
@@ -91,6 +103,8 @@ export function ShotListPage() {
   const [editingCell, setEditingCell] = useState<{ shotId: string; field: EditableField } | null>(null)
   const [localValue, setLocalValue] = useState<string>('')
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [addCastOpen, setAddCastOpen] = useState(false)
+  const [addShotCastShotId, setAddShotCastShotId] = useState<string | null>(null)
 
   const { data: scenes = [] } = useQuery({
     queryKey: ['scenes', currentProductionId],
@@ -108,6 +122,90 @@ export function ShotListPage() {
     queryKey: ['locations', currentProductionId],
     queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
     enabled: !!currentProductionId,
+  })
+
+  const { data: sceneCastList = [] } = useQuery({
+    queryKey: ['scene-cast-by-scene', selectedSceneId],
+    queryFn: () => listSceneCastByScene(selectedSceneId!),
+    enabled: !!selectedSceneId,
+  })
+
+  const { data: cast = [] } = useQuery({
+    queryKey: ['cast', currentProductionId],
+    queryFn: () => listCast(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const shotIds = useMemo(() => shots.map((s) => s.id), [shots])
+  const { data: shotCastByShotId = new Map<string, { id: string; person_id: string }[]>() } = useQuery({
+    queryKey: ['shot-cast-by-shot-ids', shotIds.join(',')],
+    queryFn: () => listShotCastByShotIds(shotIds),
+    enabled: shotIds.length > 0,
+  })
+
+  const castById = useMemo(() => new Map(cast.map((c) => [c.id, c])), [cast])
+  const castInScene = useMemo(
+    () => sceneCastList.map((sc) => ({ sc, person: castById.get(sc.person_id) })).filter((x) => x.person != null),
+    [sceneCastList, castById]
+  )
+  const castAvailableToAdd = useMemo(
+    () => cast.filter((c) => !sceneCastList.some((sc) => sc.person_id === c.id)),
+    [cast, sceneCastList]
+  )
+
+  const addCastMutation = useMutation({
+    mutationFn: async (personIds: string[]) => {
+      if (!currentProductionId || !selectedSceneId) return
+      for (const personId of personIds) {
+        await addSceneCast({
+          production_id: currentProductionId,
+          scene_id: selectedSceneId,
+          person_id: personId,
+        })
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-scene', selectedSceneId] })
+      queryClient.invalidateQueries({ queryKey: ['cast-by-scene'] })
+      queryClient.invalidateQueries({ queryKey: ['dood-scenes-by-day', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
+      setAddCastOpen(false)
+    },
+  })
+
+  const removeCastMutation = useMutation({
+    mutationFn: (sceneCastId: string) => removeSceneCast(sceneCastId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-scene', selectedSceneId] })
+      queryClient.invalidateQueries({ queryKey: ['cast-by-scene'] })
+      queryClient.invalidateQueries({ queryKey: ['dood-scenes-by-day', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
+    },
+  })
+
+  const addShotCastMutation = useMutation({
+    mutationFn: async ({ shotId, personId }: { shotId: string; personId: string }) => {
+      if (!currentProductionId) return
+      await addShotCast({
+        production_id: currentProductionId,
+        shot_id: shotId,
+        person_id: personId,
+      })
+    },
+    onSuccess: (_, { shotId }) => {
+      queryClient.invalidateQueries({ queryKey: ['shot-cast-by-shot-ids'] })
+      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-scene', selectedSceneId] })
+      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
+      setAddShotCastShotId(null)
+    },
+  })
+
+  const removeShotCastMutation = useMutation({
+    mutationFn: (shotCastId: string) => removeShotCast(shotCastId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shot-cast-by-shot-ids'] })
+      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
+    },
   })
 
   const { data: lensTerms = [] } = useQuery({
@@ -275,6 +373,48 @@ export function ShotListPage() {
 
       {selectedSceneId && (
         <>
+          <Card className="border-zinc-700 bg-zinc-800/50">
+            <CardHeader className="border-b border-zinc-700 py-3 flex flex-row items-center justify-between gap-2">
+              <CardTitle className="text-sm font-medium text-zinc-200">Cast in this scene</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 border-zinc-600 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+                onClick={() => setAddCastOpen(true)}
+                disabled={castAvailableToAdd.length === 0}
+              >
+                <Plus className="mr-1.5 size-3.5" />
+                Add cast
+              </Button>
+            </CardHeader>
+            <CardContent className="py-3">
+              {castInScene.length === 0 ? (
+                <p className="text-sm text-zinc-500">No cast assigned. Use “Add cast” to assign cast to this scene.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {castInScene.map(({ sc, person }) => (
+                    <span
+                      key={sc.id}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-zinc-700/80 px-2.5 py-1 text-sm text-zinc-200"
+                    >
+                      {person!.name}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 shrink-0 text-zinc-400 hover:text-destructive"
+                        onClick={() => removeCastMutation.mutate(sc.id)}
+                        disabled={removeCastMutation.isPending}
+                        aria-label={`Remove ${person!.name} from scene`}
+                      >
+                        <Trash2 className="size-3" />
+                      </Button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm text-muted-foreground">
               {shots.length} shot{shots.length !== 1 ? 's' : ''}
@@ -321,12 +461,13 @@ export function ShotListPage() {
                   <TableHead className="text-zinc-100 font-medium h-11 px-3">Lens</TableHead>
                   <TableHead className="text-zinc-100 font-medium h-11 px-3">Support</TableHead>
                   <TableHead className="text-zinc-100 font-medium h-11 px-3">Notes</TableHead>
+                  <TableHead className="text-zinc-100 font-medium h-11 px-3 w-[180px]">Cast</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {shots.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-muted-foreground text-center py-8">
+                    <TableCell colSpan={11} className="text-muted-foreground text-center py-8">
                       No shots. Add shots to this scene to see them here and on the stripboard.
                     </TableCell>
                   </TableRow>
@@ -346,6 +487,11 @@ export function ShotListPage() {
                       lensOptions={lensTerms.map((t) => t.value)}
                       supportOptions={supportTerms.map((t) => t.value)}
                       isSaving={updateShotMutation.isPending}
+                      shotCastList={shotCastByShotId.get(shot.id) ?? []}
+                      castById={castById}
+                      onRemoveShotCast={removeShotCastMutation.mutate}
+                      onAddCastClick={() => setAddShotCastShotId(shot.id)}
+                      isRemovingShotCast={removeShotCastMutation.isPending}
                     />
                   ))
                 )}
@@ -358,6 +504,76 @@ export function ShotListPage() {
       {!selectedSceneId && scenes.length > 0 && (
         <p className="text-muted-foreground">Select a scene to view its shots.</p>
       )}
+
+      <Dialog open={addCastOpen} onOpenChange={setAddCastOpen}>
+        <DialogContent className="max-h-[85vh] flex flex-col bg-zinc-800 border-zinc-600">
+          <h3 className="text-base font-semibold text-zinc-100">Add cast to scene</h3>
+          <p className="text-sm text-zinc-400">Select cast members to add to this scene.</p>
+          {castAvailableToAdd.length === 0 ? (
+            <p className="py-4 text-sm text-zinc-500">All cast are already in this scene.</p>
+          ) : (
+            <div className="flex-1 min-h-0 overflow-auto py-2">
+              <div className="flex flex-col gap-1">
+                {castAvailableToAdd.map((person) => (
+                  <Button
+                    key={person.id}
+                    variant="ghost"
+                    className="justify-start text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
+                    onClick={() => {
+                      addCastMutation.mutate([person.id])
+                    }}
+                    disabled={addCastMutation.isPending}
+                  >
+                    {person.name}
+                    {person.cast_number && (
+                      <span className="ml-2 text-zinc-500">#{person.cast_number}</span>
+                    )}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add cast to shot dialog */}
+      <Dialog open={addShotCastShotId != null} onOpenChange={(open) => !open && setAddShotCastShotId(null)}>
+        <DialogContent className="max-h-[85vh] flex flex-col bg-zinc-800 border-zinc-600">
+          <h3 className="text-base font-semibold text-zinc-100">Add cast to shot</h3>
+          <p className="text-sm text-zinc-400">
+            {addShotCastShotId
+              ? `Select a cast member to add to shot ${shots.find((s) => s.id === addShotCastShotId)?.shot_number ?? ''}. They will be added to the scene if not already in it.`
+              : ''}
+          </p>
+          {addShotCastShotId && (() => {
+            const onShot = shotCastByShotId.get(addShotCastShotId) ?? []
+            const personIdsOnShot = new Set(onShot.map((sc) => sc.person_id))
+            const available = cast.filter((c) => !personIdsOnShot.has(c.id))
+            return available.length === 0 ? (
+              <p className="py-4 text-sm text-zinc-500">All cast are already on this shot.</p>
+            ) : (
+              <div className="flex-1 min-h-0 overflow-auto py-2">
+                <div className="flex flex-col gap-1">
+                  {available.map((person) => (
+                    <Button
+                      key={person.id}
+                      variant="ghost"
+                      className="justify-start text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
+                      onClick={() => addShotCastMutation.mutate({ shotId: addShotCastShotId, personId: person.id })}
+                      disabled={addShotCastMutation.isPending}
+                    >
+                      {person.name}
+                      {person.cast_number && (
+                        <span className="ml-2 text-zinc-500">#{person.cast_number}</span>
+                      )}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -375,6 +591,11 @@ function ShotRow({
   lensOptions,
   supportOptions,
   isSaving,
+  shotCastList,
+  castById,
+  onRemoveShotCast,
+  onAddCastClick,
+  isRemovingShotCast,
 }: {
   shot: Shot
   sceneNumber: string
@@ -388,6 +609,11 @@ function ShotRow({
   lensOptions: string[]
   supportOptions: string[]
   isSaving: boolean
+  shotCastList: ShotCast[]
+  castById: Map<string, { id: string; name: string; cast_number?: string | null }>
+  onRemoveShotCast: (shotCastId: string) => void
+  onAddCastClick: () => void
+  isRemovingShotCast: boolean
 }) {
   const isEditing = editingCell?.shotId === shot.id
   const editingField = isEditing ? editingCell!.field : null
@@ -714,6 +940,42 @@ function ShotRow({
             '—'
           )
         )}
+      </TableCell>
+
+      {/* Cast (shot-level) */}
+      <TableCell className="align-middle px-3 py-2 w-[180px]">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {shotCastList.map((sc) => {
+            const person = castById.get(sc.person_id)
+            return (
+              <span
+                key={sc.id}
+                className="inline-flex items-center gap-1 rounded bg-zinc-700/80 px-1.5 py-0.5 text-xs text-zinc-200"
+              >
+                {person?.name ?? '—'}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-4 w-4 shrink-0 text-zinc-400 hover:text-destructive"
+                  onClick={() => onRemoveShotCast(sc.id)}
+                  disabled={isRemovingShotCast}
+                  aria-label={`Remove from shot`}
+                >
+                  <Trash2 className="size-3" />
+                </Button>
+              </span>
+            )
+          })}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+            onClick={onAddCastClick}
+          >
+            <Plus className="mr-1 size-3" />
+            Add cast
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   )

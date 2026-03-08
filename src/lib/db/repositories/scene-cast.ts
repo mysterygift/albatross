@@ -25,6 +25,15 @@ export async function listSceneCastByScene(sceneId: string): Promise<SceneCast[]
   return rows.map(rowToSceneCast)
 }
 
+export async function listSceneCastByPerson(personId: string): Promise<SceneCast[]> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${TABLE} WHERE person_id = $1 AND deleted_at IS NULL ORDER BY scene_id`,
+    [personId]
+  )
+  return rows.map(rowToSceneCast)
+}
+
 export async function listPersonIdsByScene(sceneId: string): Promise<string[]> {
   const list = await listSceneCastByScene(sceneId)
   return list.map((c) => c.person_id)

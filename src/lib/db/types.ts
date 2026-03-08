@@ -32,6 +32,10 @@ export type Person = {
   phases: string | null
   notes: string | null
   contributor_form_status: 'not_requested' | 'requested' | 'signed' | 'expired'
+  cast_number: string | null
+  agent_name: string | null
+  agent_email: string | null
+  agent_phone: string | null
 } & SoftDeletable
 
 export type Location = {
@@ -379,6 +383,14 @@ export type SceneCast = {
   id: string
   production_id: string
   scene_id: string
+  person_id: string
+} & SoftDeletable
+
+/** Shot-level cast participation. Refinement layer on top of scene_cast; DooD still uses scene_cast only. */
+export type ShotCast = {
+  id: string
+  production_id: string
+  shot_id: string
   person_id: string
 } & SoftDeletable
 

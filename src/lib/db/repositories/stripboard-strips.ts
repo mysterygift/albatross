@@ -78,6 +78,20 @@ export async function getScheduledSceneIdsByShootDay(
   return map
 }
 
+/** For a production, return a map of shoot day id → list of shot ids scheduled on that day (from SCHEDULED strips with shot_id). Used for shot-level booking intelligence. */
+export async function getScheduledShotIdsByShootDay(
+  productionId: string
+): Promise<Map<string, string[]>> {
+  const days = await listShootDaysByProduction(productionId)
+  const map = new Map<string, string[]>()
+  for (const day of days) {
+    const strips = await listStripsByShootDay(day.id)
+    const shotIds = [...new Set(strips.map((s) => s.shot_id).filter(Boolean) as string[])]
+    map.set(day.id, shotIds)
+  }
+  return map
+}
+
 /** Set of shot ids that have at least one SCHEDULED (on-board) SHOT strip for this production. */
 export async function getScheduledShotIds(productionId: string): Promise<Set<string>> {
   const db = await getDb()

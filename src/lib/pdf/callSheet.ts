@@ -1,8 +1,11 @@
 /**
  * Call sheet PDF: A4 portrait, required sections.
  * Uses pdf-lib.
+ * Cast section: when castCalledRows is provided, renders cast number, name, primary phone,
+ * and agent name/phone as secondary; otherwise falls back to castCalled (names only).
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import type { CallSheetCastRow } from '@/lib/call-sheets/castRequirements'
 
 export interface CallSheetStrip {
   strip_type: 'SCENE' | 'MOVE' | 'CALL' | 'LUNCH' | 'WRAP' | 'NOTE'
@@ -43,13 +46,44 @@ export interface CallSheetData {
   mealTimes: Array<{ name: string; time: string }>
   specialNotes: string | null
   schedule: CallSheetStrip[]
+  /** Names only; kept for backward compatibility. */
   castCalled: string[]
+  /** Richer cast rows from the call-sheet cast requirements service (booked-and-required only). When present, the PDF cast section uses these for number, name, phone, agent. */
+  castCalledRows?: CallSheetCastRow[]
   locations: CallSheetLocation[]
 }
 
 const MARGIN = 54
 const LINE = 14
 const SEP = 8
+const CAST_LINE_MAX = 95
+
+/**
+ * Build cast section lines for the PDF. Priority: cast number, name, person phone; agent name/phone as secondary.
+ * When castCalledRows is provided, uses two-line rows where the second line is agent contact when present.
+ */
+function buildCastSectionLines(
+  castCalledRows: CallSheetCastRow[] | null,
+  fallbackNames: string[]
+): string[] {
+  if (castCalledRows?.length) {
+    const lines: string[] = []
+    for (const row of castCalledRows) {
+      const numPart = row.cast_number?.trim() ? `${row.cast_number}  ` : ''
+      const line1 = `${numPart}${row.name}${row.phone ? `  ${row.phone}` : ''}`.trim()
+      lines.push(line1.slice(0, CAST_LINE_MAX))
+      if (row.agent_name || row.agent_phone) {
+        const agentParts = ['Agent:'].concat(
+          row.agent_name ? [row.agent_name] : [],
+          row.agent_phone ? [row.agent_phone] : []
+        )
+        lines.push(`   ${agentParts.join('  ')}`.slice(0, CAST_LINE_MAX))
+      }
+    }
+    return lines
+  }
+  return fallbackNames
+}
 
 function drawSection(
   page: ReturnType<PDFDocument['getPages']>[0],
@@ -156,9 +190,10 @@ export async function generateCallSheetPdf(data: CallSheetData): Promise<Uint8Ar
   }
   if (scheduleLines.length) drawSection(page, font, bold, 'Schedule', scheduleLines, y)
 
-  // Cast called
-  if (data.castCalled.length) {
-    drawSection(page, font, bold, 'Cast called', data.castCalled, y)
+  // Cast called: richer rows when available (cast number, name, phone; agent as secondary)
+  const castSectionLines = buildCastSectionLines(data.castCalledRows ?? null, data.castCalled)
+  if (castSectionLines.length) {
+    drawSection(page, font, bold, 'Cast called', castSectionLines, y)
   }
 
   // Locations

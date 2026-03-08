@@ -16,6 +16,10 @@ function rowToPerson(r: Record<string, unknown>): Person {
     phases: r.phases as string | null,
     notes: r.notes as string | null,
     contributor_form_status: (r.contributor_form_status as Person['contributor_form_status']) ?? 'not_requested',
+    cast_number: r.cast_number as string | null,
+    agent_name: r.agent_name as string | null,
+    agent_email: r.agent_email as string | null,
+    agent_phone: r.agent_phone as string | null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
@@ -58,15 +62,16 @@ export async function getPersonById(id: string): Promise<Person | null> {
   return rows.length ? rowToPerson(rows[0]!) : null
 }
 
-type PersonInsert = Pick<Person, 'production_id' | 'name' | 'is_cast'> & Partial<Pick<Person, 'email' | 'phone' | 'department' | 'phases' | 'notes' | 'contributor_form_status'>>
+type PersonInsert = Pick<Person, 'production_id' | 'name' | 'is_cast'> &
+  Partial<Pick<Person, 'email' | 'phone' | 'department' | 'phases' | 'notes' | 'contributor_form_status' | 'cast_number' | 'agent_name' | 'agent_email' | 'agent_phone'>>
 
 export async function createPerson(data: PersonInsert): Promise<Person> {
   const db = await getDb()
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, name, is_cast, email, phone, department, phases, notes, contributor_form_status, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    `INSERT INTO ${TABLE} (id, production_id, name, is_cast, email, phone, department, phases, notes, contributor_form_status, cast_number, agent_name, agent_email, agent_phone, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
     [
       id,
       data.production_id,
@@ -78,6 +83,10 @@ export async function createPerson(data: PersonInsert): Promise<Person> {
       data.phases ?? null,
       data.notes ?? null,
       data.contributor_form_status ?? 'not_requested',
+      data.cast_number ?? null,
+      data.agent_name ?? null,
+      data.agent_email ?? null,
+      data.agent_phone ?? null,
       ts,
       ts,
     ]
@@ -95,7 +104,7 @@ export async function updatePerson(
   const cols: string[] = []
   const vals: unknown[] = []
   let i = 1
-  const allowed = ['name', 'is_cast', 'email', 'phone', 'department', 'phases', 'notes', 'contributor_form_status'] as const
+  const allowed = ['name', 'is_cast', 'email', 'phone', 'department', 'phases', 'notes', 'contributor_form_status', 'cast_number', 'agent_name', 'agent_email', 'agent_phone'] as const
   for (const k of allowed) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)

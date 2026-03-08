@@ -237,6 +237,18 @@ pub fn run() {
             sql: include_str!("../migrations/0039_vendor_purchase_order_expenses.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 40,
+            description: "people_cast_agent",
+            sql: include_str!("../migrations/0040_people_cast_agent.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 41,
+            description: "shot_cast",
+            sql: include_str!("../migrations/0041_shot_cast.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
