@@ -73,7 +73,7 @@ import {
 import type { Vendor } from '@/lib/db/types'
 import { VendorPicker } from '@/components/vendors/VendorPicker'
 import { cn } from '@/lib/utils'
-import { formatEquipmentLabel } from '@/features/equipment/formatEquipmentLabel'
+import { formatEquipmentLabel, formatEquipmentCategoryLabel } from '@/features/equipment/formatEquipmentLabel'
 import { generateEquipmentListPdf } from '@/lib/pdf/equipmentListPdf'
 import { saveFileWithDialog } from '@/lib/files'
 import {
@@ -84,9 +84,15 @@ import {
   type EquipmentListCsvRow,
   type MatchResult,
 } from '@/lib/equipment/csv'
+import {
+  getEffectiveCrewHierarchyOrDefault,
+  getResolvedCrewDepartmentNames,
+  getDefaultCrewHierarchyConfig,
+} from '@/lib/people/crewHierarchyResolver'
 
 const equipmentSchema = z.object({
   name: z.string().min(1),
+  quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
   source_type: z.enum(['owned', 'purchased', 'rented']),
   category: z.enum(EQUIPMENT_CATEGORY_VALUES as unknown as [EquipmentCategory, ...EquipmentCategory[]]),
   status: z.enum(EQUIPMENT_STATUS_VALUES as unknown as [EquipmentStatus, ...EquipmentStatus[]]),
@@ -188,6 +194,17 @@ export function EquipmentPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: hierarchyData } = useQuery({
+    queryKey: ['crew-hierarchy', currentProductionId],
+    queryFn: () => getEffectiveCrewHierarchyOrDefault(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+  const hierarchy = hierarchyData ?? getDefaultCrewHierarchyConfig()
+  const crewDepartmentOptions = useMemo(
+    () => getResolvedCrewDepartmentNames(hierarchy),
+    [hierarchy]
+  )
+
   const equipmentIdsWithReminder = useMemo(
     () => new Set((tasks || []).map((t) => t.equipment_id).filter(Boolean) as string[]),
     [tasks]
@@ -220,6 +237,7 @@ export function EquipmentPage() {
       createEquipmentWithReminderTask({
         production_id: currentProductionId!,
         name: d.name,
+        quantity: d.quantity ?? 1,
         source_type: d.source_type,
         category: d.category,
         status: d.status,
@@ -246,6 +264,7 @@ export function EquipmentPage() {
         id,
         {
           name: data.name,
+          quantity: data.quantity ?? 1,
           source_type: data.source_type,
           category: data.category,
           status: data.status,
@@ -291,9 +310,15 @@ export function EquipmentPage() {
         ),
       },
       {
+        accessorKey: 'quantity',
+        header: 'Qty',
+        cell: ({ getValue }) => (getValue() as number) ?? 1,
+        meta: { className: 'text-right tabular-nums' },
+      },
+      {
         accessorKey: 'category',
         header: 'Category',
-        cell: ({ getValue }) => formatEquipmentLabel((getValue() as string) ?? ''),
+        cell: ({ getValue }) => formatEquipmentCategoryLabel((getValue() as string) ?? ''),
       },
       {
         accessorKey: 'department',
@@ -376,10 +401,7 @@ export function EquipmentPage() {
     getFilteredRowModel: getFilteredRowModel(),
   })
 
-  const departments = useMemo(
-    () => [...new Set(equipment.map((e) => e.department).filter(Boolean))] as string[],
-    [equipment]
-  )
+  const departments = crewDepartmentOptions
 
   if (!currentProductionId) {
     return (
@@ -420,7 +442,8 @@ export function EquipmentPage() {
               <DialogContent className="max-h-[90vh] overflow-y-auto">
                 <EquipmentForm
                   productionId={currentProductionId}
-                  defaultValues={{ name: '', source_type: 'rented', category: 'other', status: 'planned' }}
+                  departmentOptions={crewDepartmentOptions}
+                  defaultValues={{ name: '', quantity: 1, source_type: 'rented', category: 'other', status: 'planned' }}
                   onSubmit={createMutation.mutate}
                   onCancel={() => setOpen(false)}
                   isLoading={createMutation.isPending}
@@ -447,7 +470,7 @@ export function EquipmentPage() {
           <SelectContent>
             <SelectItem value="__all__">All categories</SelectItem>
             {EQUIPMENT_CATEGORY_VALUES.map((c) => (
-              <SelectItem key={c} value={c}>{formatEquipmentLabel(c)}</SelectItem>
+              <SelectItem key={c} value={c}>{formatEquipmentCategoryLabel(c)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -542,6 +565,7 @@ export function EquipmentPage() {
               <DialogContent className="max-h-[90vh] overflow-y-auto">
                 <EquipmentForm
                   productionId={currentProductionId}
+                  departmentOptions={crewDepartmentOptions}
                   defaultValues={equipment.find((e) => e.id === editingId)!}
                   onSubmit={(d) => {
                     const current = equipment.find((e) => e.id === editingId)
@@ -562,11 +586,13 @@ export function EquipmentPage() {
               productionId={currentProductionId}
               productionName={currentProduction?.name ?? ''}
               equipment={equipment}
+              departmentOptions={crewDepartmentOptions}
               onBack={() => setSelectedListId(null)}
             />
           ) : (
             <EquipmentListsIndex
               productionId={currentProductionId}
+              departmentOptions={crewDepartmentOptions}
               onSelectList={setSelectedListId}
             />
           )}
@@ -578,21 +604,30 @@ export function EquipmentPage() {
 
 function EquipmentForm({
   productionId,
+  departmentOptions,
   defaultValues,
   onSubmit,
   onCancel,
   isLoading,
 }: {
   productionId: string
+  departmentOptions: string[]
   defaultValues: Partial<Equipment>
   onSubmit: (d: EquipmentForm) => void
   onCancel: () => void
   isLoading: boolean
 }) {
+  const departmentSelectOptions = useMemo(() => {
+    const opts = [...departmentOptions]
+    const current = defaultValues.department?.trim()
+    if (current && !opts.includes(current)) opts.unshift(current)
+    return opts
+  }, [departmentOptions, defaultValues.department])
   const form = useForm<EquipmentForm>({
     resolver: zodResolver(equipmentSchema) as never,
     defaultValues: {
       name: defaultValues.name ?? '',
+      quantity: defaultValues.quantity ?? 1,
       source_type: defaultValues.source_type ?? 'rented',
       category: defaultValues.category ?? 'other',
       status: defaultValues.status ?? 'planned',
@@ -626,6 +661,15 @@ function EquipmentForm({
           <Label>Name</Label>
           <Input {...form.register('name')} />
         </div>
+        <div>
+          <Label>Quantity</Label>
+          <Input
+            type="number"
+            min={1}
+            step={1}
+            {...form.register('quantity')}
+          />
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <Label>Category</Label>
@@ -637,7 +681,7 @@ function EquipmentForm({
               <SelectContent>
                 {EQUIPMENT_CATEGORY_VALUES.map((cat) => (
                   <SelectItem key={cat} value={cat}>
-                    {formatEquipmentLabel(cat)}
+                    {formatEquipmentCategoryLabel(cat)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -661,7 +705,18 @@ function EquipmentForm({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <Label>Department</Label>
-            <Input {...form.register('department')} placeholder="Optional" />
+            <Select
+              value={form.watch('department')?.trim() || '__none__'}
+              onValueChange={(v) => form.setValue('department', v === '__none__' ? '' : v)}
+            >
+              <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">None</SelectItem>
+                {departmentSelectOptions.map((d) => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label>Status</Label>
@@ -735,9 +790,11 @@ function EquipmentForm({
 
 function EquipmentListsIndex({
   productionId,
+  departmentOptions,
   onSelectList,
 }: {
   productionId: string
+  departmentOptions: string[]
   onSelectList: (listId: string) => void
 }) {
   const queryClient = useQueryClient()
@@ -814,6 +871,7 @@ function EquipmentListsIndex({
             </DialogTrigger>
             <DialogContent>
               <CreateListForm
+                departmentOptions={departmentOptions}
                 shootDays={shootDays}
                 equipment={equipment}
                 onSubmit={createMutation.mutate}
@@ -880,12 +938,14 @@ function EquipmentListsIndex({
 }
 
 function CreateListForm({
+  departmentOptions,
   shootDays,
   equipment,
   onSubmit,
   onCancel,
   isLoading,
 }: {
+  departmentOptions: string[]
   shootDays: { id: string; shoot_date: string }[]
   equipment: Equipment[]
   onSubmit: (d: {
@@ -941,7 +1001,18 @@ function CreateListForm({
         </div>
         <div>
           <Label>Department (optional)</Label>
-          <Input {...form.register('department')} placeholder="e.g. Camera" />
+          <Select
+            value={form.watch('department')?.trim() || '__none__'}
+            onValueChange={(v) => form.setValue('department', v === '__none__' ? '' : v)}
+          >
+            <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">None</SelectItem>
+              {departmentOptions.map((d) => (
+                <SelectItem key={d} value={d}>{d}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         {deptCount > 0 && (
           <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-3">
@@ -972,11 +1043,13 @@ function CreateListForm({
 function CreateEquipmentFromCsvRowDialog({
   row,
   productionId,
+  departmentOptions,
   onCreated,
   onCancel,
 }: {
   row: EquipmentListCsvRow
   productionId: string
+  departmentOptions: string[]
   onCreated: (eq: Equipment) => void
   onCancel: () => void
 }) {
@@ -1047,7 +1120,7 @@ function CreateEquipmentFromCsvRowDialog({
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {EQUIPMENT_CATEGORY_VALUES.map((c) => (
-                    <SelectItem key={c} value={c}>{formatEquipmentLabel(c)}</SelectItem>
+                    <SelectItem key={c} value={c}>{formatEquipmentCategoryLabel(c)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1070,7 +1143,18 @@ function CreateEquipmentFromCsvRowDialog({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label>Department</Label>
-              <Input {...form.register('department')} placeholder="Optional" />
+              <Select
+                value={form.watch('department')?.trim() || '__none__'}
+                onValueChange={(v) => form.setValue('department', v === '__none__' ? '' : v)}
+              >
+                <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {departmentOptions.map((d) => (
+                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Status</Label>
@@ -1130,12 +1214,14 @@ function EquipmentListDetail({
   productionId,
   productionName,
   equipment,
+  departmentOptions,
   onBack,
 }: {
   listId: string
   productionId: string
   productionName: string
   equipment: Equipment[]
+  departmentOptions: string[]
   onBack: () => void
 }) {
   const queryClient = useQueryClient()
@@ -1314,6 +1400,7 @@ function EquipmentListDetail({
           {editingList ? (
             <EditListForm
               list={list}
+              departmentOptions={departmentOptions}
               shootDays={shootDays}
               onSave={(patch) => updateListMutation.mutate(patch)}
               onCancel={() => setEditingList(false)}
@@ -1521,6 +1608,7 @@ function EquipmentListDetail({
           <CreateEquipmentFromCsvRowDialog
             row={importReview.new[newRowCreateIndex]!}
             productionId={productionId}
+            departmentOptions={departmentOptions}
             onCreated={(eq) => {
               setCreatedFromImport((prev) => new Map(prev).set(newRowCreateIndex, eq))
               setNewRowCreateIndex(null)
@@ -1593,7 +1681,7 @@ function EquipmentListDetail({
                     </TableCell>
                     <TableCell className="font-medium">{eq?.name ?? '—'}</TableCell>
                     <TableCell className="text-muted-foreground font-mono text-xs">{eq ? shortUuid(eq.item_uuid) : '—'}</TableCell>
-                    <TableCell>{eq ? formatEquipmentLabel(eq.category) : '—'}</TableCell>
+                    <TableCell>{eq ? formatEquipmentCategoryLabel(eq.category) : '—'}</TableCell>
                     <TableCell className="text-muted-foreground">{eq?.serial_number ?? '—'}</TableCell>
                     <TableCell className="text-center">
                       <Button
@@ -1644,12 +1732,14 @@ function EquipmentListDetail({
 
 function EditListForm({
   list,
+  departmentOptions,
   shootDays,
   onSave,
   onCancel,
   isLoading,
 }: {
   list: EquipmentList
+  departmentOptions: string[]
   shootDays: { id: string; shoot_date: string }[]
   onSave: (patch: Parameters<typeof updateEquipmentList>[1]) => void
   onCancel: () => void
@@ -1689,7 +1779,18 @@ function EditListForm({
             ))}
           </SelectContent>
         </Select>
-        <Input {...form.register('department')} placeholder="Department" className="h-9 w-[120px]" />
+        <Select
+          value={form.watch('department')?.trim() || '__none__'}
+          onValueChange={(v) => form.setValue('department', v === '__none__' ? '' : v)}
+        >
+          <SelectTrigger className="w-[140px] h-9"><SelectValue placeholder="Department" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">None</SelectItem>
+            {departmentOptions.map((d) => (
+              <SelectItem key={d} value={d}>{d}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <Input {...form.register('notes')} placeholder="Notes" className="h-9" />
       <div className="flex gap-2">

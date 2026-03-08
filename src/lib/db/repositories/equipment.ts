@@ -1,13 +1,25 @@
 import { getDb, now, uuid } from '../client'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { Equipment, EquipmentCategory, EquipmentStatus } from '../types'
+import { EQUIPMENT_CATEGORY_LEGACY_MAP, EQUIPMENT_CATEGORY_VALUES } from '../types'
 
 const TABLE = 'equipment'
+
+function normaliseCategory(value: unknown): EquipmentCategory {
+  const s = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (!s) return 'other'
+  const legacy = EQUIPMENT_CATEGORY_LEGACY_MAP[s]
+  if (legacy) return legacy
+  if (EQUIPMENT_CATEGORY_VALUES.includes(s as EquipmentCategory)) return s as EquipmentCategory
+  return 'other'
+}
 
 /** Data shape for creating equipment. Used by buildCreateEquipmentStatements for batch create. */
 export type CreateEquipmentData = {
   production_id: string
   name: string
+  /** Count of identical units. Defaults to 1 if omitted. */
+  quantity?: number
   source_type?: Equipment['source_type']
   vendor?: string | null
   shoot_day_id?: string | null
@@ -25,16 +37,19 @@ export type CreateEquipmentData = {
 }
 
 function rowToEquipment(r: Record<string, unknown>): Equipment {
+  const q = r.quantity
+  const quantity = typeof q === 'number' && Number.isInteger(q) && q >= 1 ? q : 1
   return {
     id: r.id as string,
     production_id: r.production_id as string,
     name: r.name as string,
+    quantity,
     source_type: (r.source_type as Equipment['source_type']) ?? 'rented',
     vendor: r.vendor as string | null,
     shoot_day_id: r.shoot_day_id as string | null,
     notes: r.notes as string | null,
     item_uuid: r.item_uuid as string,
-    category: (r.category as EquipmentCategory) ?? 'other',
+    category: normaliseCategory(r.category),
     status: (r.status as EquipmentStatus) ?? 'planned',
     department: r.department as string | null,
     vendor_id: r.vendor_id as string | null,
@@ -62,6 +77,7 @@ export async function listEquipmentByProduction(productionId: string): Promise<E
 export async function createEquipment(data: {
   production_id: string
   name: string
+  quantity?: number
   source_type?: Equipment['source_type']
   vendor?: string | null
   shoot_day_id?: string | null
@@ -81,13 +97,15 @@ export async function createEquipment(data: {
   const id = uuid()
   const itemUuid = uuid()
   const ts = now()
+  const quantity = (data.quantity != null && Number.isInteger(data.quantity) && data.quantity >= 1) ? data.quantity : 1
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, name, source_type, vendor, shoot_day_id, notes, item_uuid, category, status, department, vendor_id, invoice_id, rental_start_date, return_due_date, returned_at, replacement_value, serial_number, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+    `INSERT INTO ${TABLE} (id, production_id, name, quantity, source_type, vendor, shoot_day_id, notes, item_uuid, category, status, department, vendor_id, invoice_id, rental_start_date, return_due_date, returned_at, replacement_value, serial_number, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
     [
       id,
       data.production_id,
       data.name,
+      quantity,
       data.source_type ?? 'rented',
       data.vendor ?? null,
       data.shoot_day_id ?? null,
@@ -122,6 +140,7 @@ export async function updateEquipment(
   let i = 1
   const updatableKeys = [
     'name',
+    'quantity',
     'source_type',
     'vendor',
     'shoot_day_id',
@@ -140,7 +159,9 @@ export async function updateEquipment(
   for (const k of updatableKeys) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(data[k])
+      let val = data[k]
+      if (k === 'quantity' && (typeof val !== 'number' || !Number.isInteger(val) || val < 1)) val = 1
+      vals.push(val)
     }
   }
   if (cols.length === 0) {
@@ -177,6 +198,7 @@ export async function getEquipmentById(equipmentId: string): Promise<Equipment |
 
 const UPDATABLE_KEYS = [
   'name',
+  'quantity',
   'source_type',
   'vendor',
   'shoot_day_id',
@@ -207,13 +229,15 @@ export function buildCreateEquipmentStatements(
   ts: string,
   data: CreateEquipmentData
 ): Array<{ sql: string; bindValues: unknown[] }> {
+  const quantity = (data.quantity != null && Number.isInteger(data.quantity) && data.quantity >= 1) ? data.quantity : 1
   const insert = {
-    sql: `INSERT INTO ${TABLE} (id, production_id, name, source_type, vendor, shoot_day_id, notes, item_uuid, category, status, department, vendor_id, invoice_id, rental_start_date, return_due_date, returned_at, replacement_value, serial_number, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+    sql: `INSERT INTO ${TABLE} (id, production_id, name, quantity, source_type, vendor, shoot_day_id, notes, item_uuid, category, status, department, vendor_id, invoice_id, rental_start_date, return_due_date, returned_at, replacement_value, serial_number, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
     bindValues: [
       id,
       data.production_id,
       data.name,
+      quantity,
       data.source_type ?? 'rented',
       data.vendor ?? null,
       data.shoot_day_id ?? null,
@@ -257,7 +281,9 @@ export function buildUpdateEquipmentStatements(
   for (const k of UPDATABLE_KEYS) {
     if (patch[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(patch[k])
+      let val = patch[k]
+      if (k === 'quantity' && (typeof val !== 'number' || !Number.isInteger(val) || val < 1)) val = 1
+      vals.push(val)
     }
   }
   if (cols.length === 0) return []

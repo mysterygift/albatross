@@ -487,25 +487,52 @@ export type Booking = {
   notes: string | null
 } & SoftDeletable
 
-/** Stable machine-friendly equipment category identifiers. */
+/**
+ * Canonical equipment categories (grouped package model).
+ * Stored values are machine-friendly snake_case.
+ * Display labels are provided by formatEquipmentCategoryLabel / formatEquipmentLabel.
+ */
 export const EQUIPMENT_CATEGORY_VALUES = [
-  'camera_body',
-  'lens',
+  'camera',
+  'lenses',
   'camera_support',
-  'camera_accessory',
-  'wireless_video',
-  'wireless_fiz',
-  'lighting_fixture',
-  'lighting_accessory',
+  'camera_accessories',
+  'wireless_systems',
+  'lighting',
+  'lighting_accessories',
   'power_distribution',
   'grip',
   'sound',
-  'dit',
-  'monitor',
-  'consumable',
+  'dit_video_village',
+  'production_logistics',
+  'storage_cases',
+  'consumables',
   'other',
 ] as const
 export type EquipmentCategory = (typeof EQUIPMENT_CATEGORY_VALUES)[number]
+
+/**
+ * Mapping from legacy equipment category values to canonical categories.
+ * Used by DB migration and CSV import to normalize old data.
+ * Any category not in this map is treated as 'other'.
+ */
+export const EQUIPMENT_CATEGORY_LEGACY_MAP: Record<string, EquipmentCategory> = {
+  camera_body: 'camera',
+  lens: 'lenses',
+  camera_support: 'camera_support',
+  camera_accessory: 'camera_accessories',
+  wireless_video: 'wireless_systems',
+  wireless_fiz: 'wireless_systems',
+  lighting_fixture: 'lighting',
+  lighting_accessory: 'lighting_accessories',
+  power_distribution: 'power_distribution',
+  grip: 'grip',
+  sound: 'sound',
+  dit: 'dit_video_village',
+  monitor: 'dit_video_village',
+  consumable: 'consumables',
+  other: 'other',
+}
 
 /** Equipment lifecycle status. Default is planned. */
 export const EQUIPMENT_STATUS_VALUES = ['planned', 'active', 'returned', 'lost', 'damaged'] as const
@@ -515,6 +542,8 @@ export type Equipment = {
   id: string
   production_id: string
   name: string
+  /** Count of identical units (e.g. 8× Sandbags). Default 1. */
+  quantity: number
   source_type: 'owned' | 'purchased' | 'rented'
   vendor: string | null
   shoot_day_id: string | null

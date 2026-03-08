@@ -279,6 +279,24 @@ pub fn run() {
             sql: include_str!("../migrations/0046_equipment_lists.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 47,
+            description: "equipment_quantity",
+            sql: include_str!("../migrations/0047_equipment_quantity.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 48,
+            description: "equipment_category_normalisation",
+            sql: include_str!("../migrations/0048_equipment_category_normalisation.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 49,
+            description: "equipment_department_crew_alignment",
+            sql: include_str!("../migrations/0049_equipment_department_crew_alignment.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

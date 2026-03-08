@@ -36,9 +36,28 @@ import {
   type UpdateTaskPatch,
 } from './repositories/tasks'
 import type { Equipment } from './types'
-import { PRODUCTION_DEPARTMENTS } from '@/lib/productions/departments'
+import {
+  getEffectiveCrewHierarchy,
+  getResolvedTaskDepartmentsForCrewDepartment,
+} from '@/lib/people/crewHierarchyResolver'
+import type { CrewHierarchyConfig } from '@/lib/people/crewHierarchyTypes'
 
 const FALLBACK_DEPARTMENT = 'Production'
+
+/**
+ * Map equipment department (crew hierarchy name) to task assigned_department using
+ * the production's effective crew hierarchy. Tasks use PRODUCTION_DEPARTMENTS-style labels
+ * via hierarchy.task_department_labels.
+ */
+function taskDepartmentFromCrewHierarchy(
+  hierarchy: CrewHierarchyConfig,
+  equipment: Pick<Equipment, 'department'>
+): string {
+  const d = equipment.department?.trim()
+  if (!d) return FALLBACK_DEPARTMENT
+  const labels = getResolvedTaskDepartmentsForCrewDepartment(hierarchy, d)
+  return labels[0] ?? FALLBACK_DEPARTMENT
+}
 
 function reminderDescription(equipmentName: string): string {
   return `Return equipment — ${equipmentName}`
@@ -56,19 +75,6 @@ function taskNotesFromEquipment(e: Equipment): string | null {
   } else if (e.return_due_date) parts.push(`Due: ${e.return_due_date}`)
   if (e.serial_number?.trim()) parts.push(`Serial: ${e.serial_number.trim()}`)
   return parts.length > 0 ? parts.join(' · ') : null
-}
-
-/**
- * Map equipment department to a task assigned_department. Uses PRODUCTION_DEPARTMENTS;
- * falls back to Production if no match.
- */
-function departmentForTask(equipment: Pick<Equipment, 'department'>): string {
-  const d = equipment.department?.trim()
-  if (!d) return FALLBACK_DEPARTMENT
-  const match = PRODUCTION_DEPARTMENTS.find(
-    (dept) => dept.toLowerCase() === d.toLowerCase()
-  )
-  return match ?? FALLBACK_DEPARTMENT
 }
 
 export function isReminderEligible(equipment: Pick<Equipment, 'source_type' | 'return_due_date' | 'status'>): boolean {
@@ -100,16 +106,13 @@ export async function createEquipmentWithReminderTask(data: CreateEquipmentData)
     return createEquipment({ ...data, production_id: data.production_id })
   }
 
+  const hierarchy = await getEffectiveCrewHierarchy(data.production_id)
   const taskId = uuid()
   const taskData: CreateTaskData = {
     production_id: data.production_id,
     description: reminderDescription(data.name),
     due_date: data.return_due_date ?? null,
-    assigned_department: data.department?.trim()
-      ? (PRODUCTION_DEPARTMENTS.find(
-          (d) => d.toLowerCase() === data.department!.trim().toLowerCase()
-        ) ?? FALLBACK_DEPARTMENT)
-      : FALLBACK_DEPARTMENT,
+    assigned_department: taskDepartmentFromCrewHierarchy(hierarchy, data),
     equipment_id: id,
     is_complete: 0,
     notes: null,
@@ -157,6 +160,7 @@ export async function updateEquipmentWithReminderTask(
 ): Promise<Equipment> {
   const task = await getTaskByEquipmentId(equipmentId)
   const ts = now()
+  const hierarchy = await getEffectiveCrewHierarchy(current.production_id)
 
   const equipmentStatements = buildUpdateEquipmentStatements(equipmentId, patch, ts)
   const merged = { ...current, ...patch } as Equipment
@@ -169,7 +173,7 @@ export async function updateEquipmentWithReminderTask(
   }
 
   if (equipmentStatements.length === 0 && task) {
-    const taskPatch = buildEquipmentReminderTaskPatch(merged, patch, task)
+    const taskPatch = buildEquipmentReminderTaskPatch(hierarchy, merged, patch, task)
     if (taskPatch === null) {
       const { updateEquipment } = await import('./repositories/equipment')
       return updateEquipment(equipmentId, patch)
@@ -196,7 +200,7 @@ export async function updateEquipmentWithReminderTask(
     if (!stillEligible) {
       softDeleteTaskStatements = buildSoftDeleteTaskStatements(task.id, ts)
     } else {
-      const taskPatch = buildEquipmentReminderTaskPatch(merged, patch, task)
+      const taskPatch = buildEquipmentReminderTaskPatch(hierarchy, merged, patch, task)
       if (taskPatch) updateTaskStatements = buildUpdateTaskStatements(task.id, taskPatch, ts)
     }
   } else if (stillEligible) {
@@ -207,7 +211,7 @@ export async function updateEquipmentWithReminderTask(
         production_id: current.production_id,
         description: reminderDescription(merged.name),
         due_date: merged.return_due_date ?? null,
-        assigned_department: departmentForTask(merged),
+        assigned_department: taskDepartmentFromCrewHierarchy(hierarchy, merged),
         equipment_id: equipmentId,
         notes: taskNotesFromEquipment(merged),
       },
@@ -235,6 +239,7 @@ export async function updateEquipmentWithReminderTask(
 }
 
 function buildEquipmentReminderTaskPatch(
+  hierarchy: CrewHierarchyConfig,
   merged: Equipment,
   patch: UpdateEquipmentPatch,
   _task: { id: string }
@@ -247,7 +252,7 @@ function buildEquipmentReminderTaskPatch(
   const taskPatch: UpdateTaskPatch = {}
   if (descriptionChanged) taskPatch.description = reminderDescription(merged.name)
   if (dueDateChanged) taskPatch.due_date = merged.return_due_date ?? null
-  if (departmentChanged) taskPatch.assigned_department = departmentForTask(merged)
+  if (departmentChanged) taskPatch.assigned_department = taskDepartmentFromCrewHierarchy(hierarchy, merged)
   if (returned) taskPatch.is_complete = 1
   if (Object.keys(taskPatch).length === 0) return null
   return taskPatch

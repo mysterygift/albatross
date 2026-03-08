@@ -30,6 +30,12 @@ import {
 } from '@/lib/db/equipmentInvoiceIngestionService'
 import type { Equipment, EquipmentCategory, VendorInvoice } from '@/lib/db/types'
 import { EQUIPMENT_CATEGORY_VALUES } from '@/lib/db/types'
+import { formatEquipmentCategoryLabel } from '@/features/equipment/formatEquipmentLabel'
+import {
+  getEffectiveCrewHierarchyOrDefault,
+  getResolvedCrewDepartmentNames,
+  getDefaultCrewHierarchyConfig,
+} from '@/lib/people/crewHierarchyResolver'
 import { Plus, Trash2 } from 'lucide-react'
 
 type RowAction = 'create' | 'link' | 'skip'
@@ -87,6 +93,14 @@ export function IngestEquipmentFromInvoiceModal({
     queryFn: () => listEquipmentByProduction(productionId),
     enabled: open && !!productionId,
   })
+
+  const { data: hierarchyData } = useQuery({
+    queryKey: ['crew-hierarchy', productionId],
+    queryFn: () => getEffectiveCrewHierarchyOrDefault(productionId),
+    enabled: open && !!productionId,
+  })
+  const hierarchy = hierarchyData ?? getDefaultCrewHierarchyConfig()
+  const departmentOptions = getResolvedCrewDepartmentNames(hierarchy)
 
   const applyMutation = useMutation({
     mutationFn: async () => {
@@ -241,7 +255,7 @@ export function IngestEquipmentFromInvoiceModal({
                       <SelectContent>
                         {EQUIPMENT_CATEGORY_VALUES.map((c) => (
                           <SelectItem key={c} value={c}>
-                            {c.replace(/_/g, ' ')}
+                            {formatEquipmentCategoryLabel(c)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -267,12 +281,24 @@ export function IngestEquipmentFromInvoiceModal({
                   </div>
                   <div>
                     <Label className="text-xs">Department</Label>
-                    <Input
-                      className="mt-1 h-9"
-                      value={row.department}
-                      onChange={(e) => updateRow(row.id, { department: e.target.value })}
-                      placeholder="Optional"
-                    />
+                    <Select
+                      value={row.department?.trim() || '__none__'}
+                      onValueChange={(v) =>
+                        updateRow(row.id, { department: v === '__none__' ? '' : v })
+                      }
+                    >
+                      <SelectTrigger className="mt-1 h-9">
+                        <SelectValue placeholder="None" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">None</SelectItem>
+                        {departmentOptions.map((d) => (
+                          <SelectItem key={d} value={d}>
+                            {d}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <Label className="text-xs">Rental start</Label>

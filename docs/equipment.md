@@ -34,7 +34,7 @@ This document is both a **user guide** (how to use the Equipment features) and a
 
 ### 1. Overview and purpose
 
-- **Purpose:** Equipment is the production-scoped system for tracking gear (owned, purchased, rented): a **registry** of items with categories, status, vendor/invoice linkage, rental windows, and replacement value; **equipment lists** for day or department kits with **checklist state** (checked out / checked back in); **export** (PDF, CSV) and **import** (CSV with review); and **invoice-driven ingestion** so equipment can be created or linked from vendor invoices.
+- **Purpose:** Equipment is the production-scoped system for tracking gear (owned, purchased, rented): a **registry** of items with **quantity** (count of identical units), categories, status, department (aligned to Crew Hierarchy), vendor/invoice linkage, rental windows, and replacement value; **equipment lists** for day or department kits with **checklist state** (checked out / checked back in); **export** (PDF, CSV) and **import** (CSV with review); and **invoice-driven ingestion** so equipment can be created or linked from vendor invoices.
 - **Route:** `/equipment` — single page with two main tabs: **Registry** and **Equipment Lists**.
 - **Navigation:** "Equipment" in the main app nav (Film icon). See [src/app/navigation.ts](src/app/navigation.ts).
 - **Context:** A **current production** must be selected. All equipment data is scoped by `production_id`.
@@ -43,7 +43,7 @@ This document is both a **user guide** (how to use the Equipment features) and a
 
 | Feature | Description |
 |--------|-------------|
-| **Equipment registry** | Master list of equipment items. Fields: name, category, source (owned/purchased/rented), status, department, vendor (text + optional vendor_id), invoice_id, rental dates, serial number, replacement value, notes. Each item has a stable `item_uuid`. |
+| **Equipment registry** | Master list of equipment items. Fields: name, **quantity** (count of identical units, default 1), category, source (owned/purchased/rented), status, department, vendor (text + optional vendor_id), invoice_id, rental dates, serial number, replacement value, notes. Each item has a stable `item_uuid`. |
 | **Return reminder tasks** | Rented equipment with a return due date gets one linked task in Tasks ("Return equipment — {name}"). Marking the item returned or clearing the due date completes/removes the task. |
 | **Equipment lists** | Named lists (e.g. "Day 4 Lighting", "Main Unit Camera") with optional shoot day and department. Lists reference registry items; they do not duplicate them. |
 | **Checklist state** | Each list item has **OUT** and **IN** toggles for on-set check-out/check-in. This state lives only on the list item, not on the registry. Rows are highlighted when checked; the checklist table is scrollable for long lists. |
@@ -57,16 +57,16 @@ This document is both a **user guide** (how to use the Equipment features) and a
 **Managing the registry**
 
 1. Go to **Equipment** and open the **Registry** tab.
-2. Use filters (category, source, department, status) and search (name, UUID, serial) to find items.
-3. **Add Equipment** (top right) to create a new item; optionally set vendor, rental dates, and return due date (which creates a return reminder task).
-4. The registry table shows: Name, Category, Department, Source, Status, Vendor, Rental Window (combined start/return dates), Replacement Value (right-aligned), and Actions. Category, source, and status use readable labels (e.g. Camera Accessory, Rented, Planned). Items linked to an invoice show **(Invoice INV-xxx)** under the vendor name.
+2. Use filters (category, source, department, status) and search (name, UUID, serial) to find items. **Department** options come from the production’s **Crew Hierarchy** (same as Crew Manager); list and equipment department are aligned to that source of truth.
+3. **Add Equipment** (top right) to create a new item. Set **Quantity** (number of identical units; default 1, minimum 1) for items like "8× Sandbags" or "6× V-Lock Batteries". Optionally set vendor, rental dates, and return due date (which creates a return reminder task).
+4. The registry table shows: Name, **Qty** (quantity, right-aligned), Category, Department, Source, Status, Vendor, Rental Window (combined start/return dates), Replacement Value (right-aligned), and Actions. Category, source, and status use readable labels (e.g. Camera Accessories, Rented, Planned). Items linked to an invoice show **(Invoice INV-xxx)** under the vendor name.
 5. Edit or archive items from the table. Archiving soft-deletes the item and its linked reminder task.
 6. Empty state: "Add equipment to your production registry." with an **Add Equipment** button.
 
 **Using equipment lists**
 
 1. Open the **Equipment Lists** tab.
-2. **New Equipment List** (top right) to create a list. Set name, optional **shoot day**, optional **department**, and notes. If you enter a department that matches registry items, you can tick **Generate from department** to add all matching equipment to the new list (no silent creation; you confirm by creating).
+2. **New Equipment List** (top right) to create a list. Set name, optional **shoot day**, optional **department** (from the same Crew Hierarchy options as the registry), and notes. If you select a department that matches registry items, you can tick **Generate from department** to add all matching equipment to the new list (no silent creation; you confirm by creating).
 3. Open a list to see its items. **Add from registry** to attach existing equipment (no duplication).
 4. Use **OUT** / **IN** on each row for checklist state (larger check targets; rows highlight when checked). Reorder with up/down; remove items from the list (registry unchanged).
 5. **Export PDF** and **Export CSV** are grouped in the list view; **Import CSV** to add rows (with match/new review and optional new-equipment creation).
@@ -85,6 +85,7 @@ This document is both a **user guide** (how to use the Equipment features) and a
 |------|---------------|
 | **Tasks (Readiness)** | Rented equipment with `return_due_date` has a single linked task (`equipment_id`). Completing the task (or marking equipment returned) is reflected in both places. |
 | **Vendors / Invoices** | Equipment can have `vendor_id` and `invoice_id`. Invoice ingestion creates or links equipment from **Vendor detail → Invoices** (Package action). Vendors and invoices are not modified by equipment flows. |
+| **Crew Hierarchy** | Equipment and list **department** options come from the production’s effective crew hierarchy (Settings → Crew structure or default). Return reminder tasks map equipment department to task assigned department via the hierarchy. No separate equipment-only department list. |
 | **Schedule (shoot days)** | Lists can optionally be tied to a shoot day. Shoot day dropdowns use `listShootDaysByProduction`. Equipment registry has optional `shoot_day_id` (legacy; lists are the primary day-facing construct). |
 | **Shot list** | **Equipment terms** (e.g. LENS, SUPPORT) are used on the shot list for lens/support fields; stored in `equipment_terms` and managed via `equipment-terms` repository. They are separate from the equipment registry. |
 | **Budget** | Rental/purchase expenses and vendor spend are in the budget; equipment links to vendors/invoices for provenance but does not drive budget totals. |
@@ -99,7 +100,7 @@ This document is both a **user guide** (how to use the Equipment features) and a
 | Path | Purpose |
 |------|---------|
 | [src/features/equipment/page.tsx](src/features/equipment/page.tsx) | Single Equipment page: Registry tab (filters, table with readable labels and vendor/invoice provenance, add/edit/archive, reminder indicator) and Equipment Lists tab (list index, list detail, create with optional “generate from department”, add from registry, checklist with OUT/IN and row highlighting, reorder, PDF/CSV export and import, create-from-CSV dialog). |
-| [src/features/equipment/formatEquipmentLabel.ts](src/features/equipment/formatEquipmentLabel.ts) | Display helper: `formatEquipmentLabel(value)` — formats enum-style values for UI (split on underscore, capitalise words; returns "—" for null/empty). Used for category, source_type, status, etc. Does not change stored values. |
+| [src/features/equipment/formatEquipmentLabel.ts](src/features/equipment/formatEquipmentLabel.ts) | Display helpers: `formatEquipmentLabel(value)` for generic enum-style values; `formatEquipmentCategoryLabel(category)` for canonical equipment categories (e.g. DIT / Video Village, Storage / Cases). Category labels are the single source of truth for UI. |
 | [src/lib/db/repositories/equipment.ts](src/lib/db/repositories/equipment.ts) | Equipment registry CRUD: list by production, get by id, create, update, soft-delete; buildCreateEquipmentStatements / buildUpdateEquipmentStatements for transactional use. |
 | [src/lib/db/repositories/equipmentLists.ts](src/lib/db/repositories/equipmentLists.ts) | Equipment lists and list items: list lists by production, get list by id, create/update/delete list; list items by list, add item, update item, remove item, getMaxSortOrderForList, reorderEquipmentListItems. |
 | [src/lib/db/repositories/equipment-terms.ts](src/lib/db/repositories/equipment-terms.ts) | Equipment terms (LENS, SUPPORT etc.) for shot list; list by production and type, upsert. Not the same as the equipment registry. |
@@ -115,7 +116,10 @@ This document is both a **user guide** (how to use the Equipment features) and a
 
 **Equipment (registry)** — `equipment` table
 
-- `id`, `production_id`, `name`, `source_type` ('owned'|'purchased'|'rented'), `vendor` (text), `shoot_day_id`, `notes`, `item_uuid` (unique per production), `category`, `status`, `department`, `vendor_id`, `invoice_id`, `rental_start_date`, `return_due_date`, `returned_at`, `replacement_value`, `serial_number`, soft-delete timestamps.
+- `id`, `production_id`, `name`, **`quantity`** (integer, default 1, ≥1), `source_type` ('owned'|'purchased'|'rented'), `vendor` (text), `shoot_day_id`, `notes`, `item_uuid` (unique per production), `category`, `status`, `department`, `vendor_id`, `invoice_id`, `rental_start_date`, `return_due_date`, `returned_at`, `replacement_value`, `serial_number`, soft-delete timestamps.
+- **Quantity** is the count of identical units (e.g. 8× Sandbags). Default 1; validation enforces ≥1 in app and DB (CHECK). Omitted in create flows defaults to 1.
+- **Category** uses canonical values (e.g. `camera`, `lenses`, `camera_accessories`, `wireless_systems`, `dit_video_village`, `production_logistics`, `storage_cases`); see `EQUIPMENT_CATEGORY_VALUES` and `EQUIPMENT_CATEGORY_LEGACY_MAP` in types. Display via `formatEquipmentCategoryLabel`.
+- **Department** is aligned to the production’s **Crew Hierarchy**: equipment and list department options come from `getResolvedCrewDepartmentNames(effectiveHierarchy)`. Stored as crew department name; reminder tasks map to task `assigned_department` via `getResolvedTaskDepartmentsForCrewDepartment`.
 - Unique index: `(production_id, item_uuid)`.
 
 **EquipmentList** — `equipment_lists` table
@@ -141,6 +145,7 @@ Types and constants: [src/lib/db/types.ts](src/lib/db/types.ts) — `Equipment`,
 **equipment.ts**
 
 - `listEquipmentByProduction(productionId)`, `getEquipmentById(equipmentId)`, `createEquipment(data)`, `updateEquipment(id, patch)`, `softDeleteEquipment(id)`.
+- **Quantity:** `CreateEquipmentData` and create/update APIs accept optional `quantity`; default 1 when omitted. `rowToEquipment` normalises invalid/missing quantity to 1. DB enforces `quantity >= 1`.
 - `CreateEquipmentData` includes `vendor_id`, `invoice_id`; used by reminder service and invoice ingestion.
 - `buildCreateEquipmentStatements` / `buildUpdateEquipmentStatements` for use in transactions (e.g. with task creation).
 
@@ -153,8 +158,8 @@ Types and constants: [src/lib/db/types.ts](src/lib/db/types.ts) — `Equipment`,
 **equipmentReturnReminderService.ts**
 
 - `isReminderEligible(equipment)`: rented + return_due_date + status !== 'returned'.
-- `createEquipmentWithReminderTask(data)`: if eligible, creates equipment and task in one transaction; else creates equipment only.
-- `updateEquipmentWithReminderTask(id, patch, current)`: updates equipment and creates/updates/completes/deletes linked task as needed.
+- `createEquipmentWithReminderTask(data)`: if eligible, creates equipment and task in one transaction; else creates equipment only. Task `assigned_department` is derived from equipment department via the production’s **effective crew hierarchy** (`getResolvedTaskDepartmentsForCrewDepartment`); fallback "Production".
+- `updateEquipmentWithReminderTask(id, patch, current)`: updates equipment and creates/updates/completes/deletes linked task as needed. Uses same hierarchy for task department mapping.
 - `archiveEquipmentWithReminderTask(id)`: soft-deletes equipment and linked task in one transaction.
 
 **equipmentInvoiceIngestionService.ts**
@@ -164,9 +169,9 @@ Types and constants: [src/lib/db/types.ts](src/lib/db/types.ts) — `Equipment`,
 
 **equipment/csv.ts**
 
-- Export: `exportEquipmentListToCsv(listItems, equipmentById)` — registry data per item; notes from list item or equipment.
+- Export: `exportEquipmentListToCsv(listItems, equipmentById)` — registry data per item (includes category; quantity not in CSV columns in current format); notes from list item or equipment.
 - Import: `parseEquipmentListCsv(csvText)` → `{ rows, errors }`; `matchParsedRowsToRegistry(rows, productionEquipment)` → `{ matched, new }` by item_uuid only.
-- `csvRowToCreateEquipmentData(row, productionId)` for creating new equipment from CSV new rows (used with createEquipmentWithReminderTask in UI).
+- `csvRowToCreateEquipmentData(row, productionId)` for creating new equipment from CSV new rows (used with createEquipmentWithReminderTask in UI). Category normalised via `normalizeCategory` (legacy map + canonical list); department via `normalizeDepartment` (legacy → crew name). New equipment gets quantity default 1.
 
 ### 8. Key flows
 
@@ -204,6 +209,9 @@ Types and constants: [src/lib/db/types.ts](src/lib/db/types.ts) — `Equipment`,
 | 0044_equipment_registry.sql | Equipment table: production_id, name, source_type, vendor, shoot_day_id, notes, item_uuid, category, status, department, vendor_id, invoice_id, rental dates, returned_at, replacement_value, serial_number; unique (production_id, item_uuid). |
 | 0045_production_tasks_equipment_id.sql | Adds production_tasks.equipment_id FK to equipment; unique partial index for one task per equipment. |
 | 0046_equipment_lists.sql | equipment_lists (production_id, shoot_day_id, name, department, notes); equipment_list_items (equipment_list_id, equipment_id, sort_order, checked_out, checked_back_in, notes). |
+| 0047_equipment_quantity.sql | Adds `quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 1)` to equipment. Existing rows backfilled to 1. |
+| 0048_equipment_category_normalisation.sql | Updates equipment.category from legacy values to canonical grouped categories (e.g. camera_body→camera, lens→lenses, wireless_video/wireless_fiz→wireless_systems, dit/monitor→dit_video_village). |
+| 0049_equipment_department_crew_alignment.sql | Normalises equipment.department and equipment_lists.department to crew hierarchy names (e.g. Electrical→Lighting, DIT/Video→Camera); unknown values set to NULL. |
 
 Equipment terms (shot list) live in an earlier migration (0006_shots_rich_props_equipment_terms.sql).
 
@@ -214,11 +222,12 @@ Equipment terms (shot list) live in an earlier migration (0006_shots_rich_props_
 
 ### 12. UI polish (P1) and conventions
 
-- **Display labels:** Enum-style fields (category, source_type, status) are shown with human-readable labels via `formatEquipmentLabel` (e.g. `camera_accessory` → "Camera Accessory", `rented` → "Rented"). Stored values and database enums are unchanged.
-- **Registry table:** Column order is Name, Category, Department, Source, Status, Vendor, Rental Window, Replacement Value, Actions. Replacement value is right-aligned; missing values render as "—". Rental window combines start and return dates in one column.
+- **Display labels:** Category uses `formatEquipmentCategoryLabel` (canonical labels, e.g. "DIT / Video Village", "Storage / Cases"). Source and status use `formatEquipmentLabel`. Stored values are machine-friendly (snake_case); labels are for display only.
+- **Registry table:** Column order is Name, **Qty** (quantity, right-aligned), Category, Department, Source, Status, Vendor, Rental Window, Replacement Value, Actions. Quantity and replacement value are right-aligned; missing values render as "—". Rental window combines start and return dates in one column.
+- **Quantity (user):** Add/Edit equipment form has a **Quantity** field (integer, min 1, default 1). Use it for items that represent multiple identical units (e.g. 8× Sandbags, 6× V-Lock Batteries). Validation rejects zero or negative values.
 - **Status pills:** Equipment status uses small colour-coded pills: Planned (muted), Active (accent), Returned (neutral), Lost (destructive), Damaged (warning style). Readable in dark theme.
 - **Vendor/invoice provenance:** When an item has `invoice_id`, the Vendor column shows the vendor name and a second line "(Invoice INV-xxx)" so invoice-driven items are clearly identifiable.
-- **List workflows:** Creating or editing a list supports optional shoot day and department (stored on the list). When creating a list, if the user enters a department that matches registry items, a **Generate from department** option appears; if checked, the new list is created and all equipment with that department are added (user confirms by creating). No silent auto-creation.
+- **List workflows:** Creating or editing a list supports optional shoot day and **department** (from Crew Hierarchy dropdown). When creating a list, if the user selects a department that matches registry items, a **Generate from department** option appears; if checked, the new list is created and all equipment with that department are added (user confirms by creating). No silent auto-creation.
 - **Checklist UI:** Columns are labelled OUT and IN; check targets are larger; rows are highlighted when OUT and/or IN are checked; the checklist table is scrollable for long lists.
 - **Empty states and actions:** Registry empty state offers "Add equipment to your production registry." with an Add Equipment button; lists empty state offers "No equipment lists yet." and "Create a list for a shoot day or department kit." with a New Equipment List button. Add Equipment and New Equipment List live top-right in their tabs; PDF and CSV export are grouped in list detail view.
 
@@ -232,4 +241,4 @@ Equipment terms (shot list) live in an earlier migration (0006_shots_rich_props_
 
 ---
 
-*This document reflects the equipment system through E7 (invoice-driven ingestion) and the Equipment Polish Stage P1 (operational polish, label formatting, shoot-day kit list workflows). For vendor/invoice data model and reminder tasks, see [vendors.md](vendors.md) and the Tasks (Readiness) docs.*
+*This document reflects the equipment system through quantity support, category normalisation, department–crew alignment, invoice-driven ingestion, and Equipment Polish P1. For vendor/invoice data model and reminder tasks, see [vendors.md](vendors.md) and the Tasks (Readiness) docs. For Crew Hierarchy, see [crew-manager.md](crew-manager.md).*

@@ -3,6 +3,7 @@
  * Uses pdf-lib (same as call sheet, DooD). Read-only; does not modify list or registry.
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { formatEquipmentCategoryLabel } from '@/features/equipment/formatEquipmentLabel'
 import type { Equipment, EquipmentList, EquipmentListItem } from '@/lib/db/types'
 
 const MARGIN = 54
@@ -176,7 +177,7 @@ export async function generateEquipmentListPdf(params: EquipmentListPdfParams): 
 
     const eq = equipmentById.get(item.equipment_id)
     const name = orDash(eq?.name).slice(0, maxChars(colName))
-    const category = orDash(eq ? eq.category.replace(/_/g, ' ') : null).slice(0, maxChars(colCategory))
+    const category = orDash(eq ? formatEquipmentCategoryLabel(eq.category) : null).slice(0, maxChars(colCategory))
     const serial = orDash(eq?.serial_number ?? null).slice(0, maxChars(colSerial))
     const uuidShort = eq ? shortUuid(eq.item_uuid) : '—'
     const notes = orDash(item.notes ?? eq?.notes ?? null).slice(0, maxChars(colNotes))
