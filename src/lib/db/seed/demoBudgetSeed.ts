@@ -225,7 +225,7 @@ export const DEMO_BUDGET_ITEMS: {
   estimated_cost: number
   vendor?: string | null
 }[] = [
-  { account_code: '1101', description: 'Option – source novel', estimated_cost: 15000, vendor: 'Rights Holder Ltd' },
+  { account_code: '1101', description: 'Option – source novel', estimated_cost: 15000, vendor: 'Atlas Rights Management' },
   { account_code: '1102', description: 'Writer fees – screenplay', estimated_cost: 85000, vendor: null },
   { account_code: '1105', description: 'Script revisions – polish', estimated_cost: 12000, vendor: null },
   { account_code: '1201', description: 'Executive Producer fee', estimated_cost: 45000, vendor: null },
@@ -238,45 +238,45 @@ export const DEMO_BUDGET_ITEMS: {
   { account_code: '1401', description: 'Principal cast block booking', estimated_cost: 380000, vendor: null },
   { account_code: '1402', description: 'Supporting cast – 3 roles', estimated_cost: 72000, vendor: null },
   { account_code: '1403', description: 'Day players – 8 days', estimated_cost: 18500, vendor: null },
-  { account_code: '1502', description: 'Cast accommodation – 4 weeks', estimated_cost: 22000, vendor: 'Hotel Group' },
+  { account_code: '1502', description: 'Cast accommodation – 4 weeks', estimated_cost: 22000, vendor: 'Regent Stays Hospitality' },
   { account_code: '1503', description: 'Cast per diems', estimated_cost: 8400, vendor: null },
   { account_code: '2101', description: 'Health & Safety Supervisor', estimated_cost: 6200, vendor: null },
-  { account_code: '2103', description: 'Safety equipment & PPE', estimated_cost: 3100, vendor: 'Safety Supply Co' },
+  { account_code: '2103', description: 'Safety equipment & PPE', estimated_cost: 3100, vendor: 'SafeSet Supplies' },
   { account_code: '2301', description: 'Production Accountant', estimated_cost: 18500, vendor: null },
   { account_code: '2304', description: 'Legal retainer – production', estimated_cost: 15000, vendor: 'Screen Legal LLP' },
   { account_code: '2306', description: 'Production insurance', estimated_cost: 42000, vendor: 'Film Insure Ltd' },
   { account_code: '2401', description: 'DoP fee', estimated_cost: 38500, vendor: null },
   { account_code: '2406', description: 'Alexa Mini LF weekly rental', estimated_cost: 12500, vendor: 'Panavision London' },
   { account_code: '2408', description: 'Camera media – 4 weeks', estimated_cost: 2800, vendor: null },
-  { account_code: '2504', description: 'Grip package rental', estimated_cost: 8200, vendor: 'Grip Hire Co' },
-  { account_code: '2506', description: 'Production vehicles – 3x', estimated_cost: 9500, vendor: 'Unit Transport' },
+  { account_code: '2504', description: 'Grip package rental', estimated_cost: 8200, vendor: 'Lumen Grip & Light' },
+  { account_code: '2506', description: 'Production vehicles – 3x', estimated_cost: 9500, vendor: 'Keystone Transport' },
   { account_code: '2507', description: 'Vehicle fuel', estimated_cost: 2400, vendor: null },
   { account_code: '2601', description: 'Gaffer', estimated_cost: 18200, vendor: null },
-  { account_code: '2604', description: 'Lighting package rental', estimated_cost: 15500, vendor: 'Lighting Rentals' },
+  { account_code: '2604', description: 'Lighting package rental', estimated_cost: 15500, vendor: 'Lumen Grip & Light' },
   { account_code: '2701', description: 'Production Sound Mixer', estimated_cost: 14200, vendor: null },
   { account_code: '2704', description: 'Sound kit rental', estimated_cost: 4200, vendor: null },
   { account_code: '2901', description: 'Costume Designer fee', estimated_cost: 18500, vendor: null },
-  { account_code: '2905', description: 'Costume hire – principal', estimated_cost: 12000, vendor: 'Costume House' },
+  { account_code: '2905', description: 'Costume hire – principal', estimated_cost: 12000, vendor: 'Costume House London' },
   { account_code: '2908', description: 'Hair & Make-up team', estimated_cost: 9800, vendor: null },
   { account_code: '3001', description: 'Production Designer', estimated_cost: 32000, vendor: null },
   { account_code: '3004', description: 'Set dressing – bank interior', estimated_cost: 18500, vendor: null },
-  { account_code: '3009', description: 'Props purchase – hero items', estimated_cost: 4200, vendor: null },
+  { account_code: '3009', description: 'Props purchase – hero items', estimated_cost: 4200, vendor: 'Forge Art & Props' },
   { account_code: '3101', description: 'Location Manager', estimated_cost: 15800, vendor: null },
-  { account_code: '3104', description: 'Location fee – mint building', estimated_cost: 25000, vendor: 'Location Owner' },
-  { account_code: '3105', description: 'Location permit – town hall', estimated_cost: 850, vendor: 'Council' },
+  { account_code: '3104', description: 'Location fee – mint building', estimated_cost: 25000, vendor: 'Borough Film Locations' },
+  { account_code: '3105', description: 'Location permit – town hall', estimated_cost: 850, vendor: 'City Permissions Office' },
   { account_code: '3201', description: 'DIT – principal block', estimated_cost: 11200, vendor: null },
   { account_code: '3202', description: 'DIT cart package', estimated_cost: 2400, vendor: null },
-  { account_code: '3302', description: 'Background artists – 5 days', estimated_cost: 6500, vendor: 'Extras Agency' },
-  { account_code: '3404', description: 'Production office rent – 6 weeks', estimated_cost: 8400, vendor: null },
-  { account_code: '3409', description: 'Unit catering – 18 days', estimated_cost: 16200, vendor: 'Catering Co' },
+  { account_code: '3302', description: 'Background artists – 5 days', estimated_cost: 6500, vendor: 'CrowdLink Casting' },
+  { account_code: '3404', description: 'Production office rent – 6 weeks', estimated_cost: 8400, vendor: 'Meridian Production Offices' },
+  { account_code: '3409', description: 'Unit catering – 18 days', estimated_cost: 16200, vendor: 'Crown Unit Catering' },
   { account_code: '3410', description: 'Craft services', estimated_cost: 2100, vendor: null },
   { account_code: '4101', description: 'Picture Editor', estimated_cost: 28500, vendor: null },
-  { account_code: '4103', description: 'Edit suite rental – 8 weeks', estimated_cost: 12800, vendor: 'Post House' },
+  { account_code: '4103', description: 'Edit suite rental – 8 weeks', estimated_cost: 12800, vendor: 'The Post Yard' },
   { account_code: '4106', description: 'Grade – 5 days', estimated_cost: 9500, vendor: null },
   { account_code: '4201', description: 'Sound Editor', estimated_cost: 14200, vendor: null },
   { account_code: '4206', description: 'Re-recording mix – 3 days', estimated_cost: 7800, vendor: null },
   { account_code: '4301', description: 'Mastering', estimated_cost: 4200, vendor: null },
-  { account_code: '4302', description: 'DCP creation', estimated_cost: 3500, vendor: 'DCP Lab' },
+  { account_code: '4302', description: 'DCP creation', estimated_cost: 3500, vendor: 'DCP Lab UK' },
 ]
 
 /**
@@ -295,21 +295,21 @@ export const DEMO_EXPENSES: {
   { account_code: '2306', amount: 21000, date_offset: -7, vendor: 'Film Insure Ltd', notes: 'Insurance – first instalment', expense_type: 'other' },
   { account_code: '1102', amount: 42500, date_offset: 0, vendor: null, notes: 'Writer – first payment', expense_type: 'other' },
   { account_code: '2406', amount: 12500, date_offset: 2, vendor: 'Panavision London', notes: 'Camera package – week 1', expense_type: 'other' },
-  { account_code: '2604', amount: 7750, date_offset: 2, vendor: 'Lighting Rentals', notes: 'Lighting – week 1', expense_type: 'other' },
-  { account_code: '1502', amount: 5500, date_offset: 3, vendor: 'Hotel Group', notes: 'Cast hotel – week 1', expense_type: 'other' },
+  { account_code: '2604', amount: 7750, date_offset: 2, vendor: 'Lumen Grip & Light', notes: 'Lighting – week 1', expense_type: 'other' },
+  { account_code: '1502', amount: 5500, date_offset: 3, vendor: 'Regent Stays Hospitality', notes: 'Cast hotel – week 1', expense_type: 'other' },
   { account_code: '1503', amount: 2100, date_offset: 5, vendor: null, notes: 'Cast per diems – week 1', expense_type: 'per_diem' },
-  { account_code: '3409', amount: 5400, date_offset: 5, vendor: 'Catering Co', notes: 'Unit catering – days 1–3', expense_type: 'other' },
+  { account_code: '3409', amount: 5400, date_offset: 5, vendor: 'Crown Unit Catering', notes: 'Unit catering – days 1–3', expense_type: 'other' },
   { account_code: '2507', amount: 600, date_offset: 6, vendor: null, notes: 'Fuel – unit vehicles', expense_type: 'other' },
-  { account_code: '3105', amount: 850, date_offset: 4, vendor: 'Council', notes: 'Town hall permit', expense_type: 'other' },
-  { account_code: '2905', amount: 4000, date_offset: 1, vendor: 'Costume House', notes: 'Principal costume hire – deposit', expense_type: 'other' },
-  { account_code: '2103', amount: 1550, date_offset: 0, vendor: 'Safety Supply Co', notes: 'PPE & safety kit', expense_type: 'other' },
+  { account_code: '3105', amount: 850, date_offset: 4, vendor: 'City Permissions Office', notes: 'Town hall permit', expense_type: 'other' },
+  { account_code: '2905', amount: 4000, date_offset: 1, vendor: 'Costume House London', notes: 'Principal costume hire – deposit', expense_type: 'other' },
+  { account_code: '2103', amount: 1550, date_offset: 0, vendor: 'SafeSet Supplies', notes: 'PPE & safety kit', expense_type: 'other' },
   { account_code: '3202', amount: 600, date_offset: 3, vendor: null, notes: 'DIT cart – week 1', expense_type: 'other' },
-  { account_code: '3404', amount: 2800, date_offset: -7, vendor: null, notes: 'Office rent – month 1', expense_type: 'other' },
+  { account_code: '3404', amount: 2800, date_offset: -7, vendor: 'Meridian Production Offices', notes: 'Office rent – month 1', expense_type: 'other' },
   { account_code: '2301', amount: 4625, date_offset: 7, vendor: null, notes: 'Accountant – week 1', expense_type: 'other' },
-  { account_code: '4103', amount: 3200, date_offset: 45, vendor: 'Post House', notes: 'Edit suite – week 1', expense_type: 'other' },
-  { account_code: '4302', amount: 3500, date_offset: 95, vendor: 'DCP Lab', notes: 'DCP creation – delivery', expense_type: 'other' },
+  { account_code: '4103', amount: 3200, date_offset: 45, vendor: 'The Post Yard', notes: 'Edit suite – week 1', expense_type: 'other' },
+  { account_code: '4302', amount: 3500, date_offset: 95, vendor: 'DCP Lab UK', notes: 'DCP creation – delivery', expense_type: 'other' },
   { account_code: '3403', amount: 840, date_offset: 8, vendor: null, notes: 'Crew per diems – week 2', expense_type: 'per_diem' },
-  { account_code: '2506', amount: 3166, date_offset: 10, vendor: 'Unit Transport', notes: 'Vehicle hire – week 2', expense_type: 'other' },
+  { account_code: '2506', amount: 3166, date_offset: 10, vendor: 'Keystone Transport', notes: 'Vehicle hire – week 2', expense_type: 'other' },
   { account_code: '3009', amount: 1200, date_offset: 6, vendor: null, notes: 'Props purchase – hero safe', expense_type: 'other' },
 ]
 
@@ -408,6 +408,8 @@ export async function seedChartOfAccountsAndTotalsOnly(
  * Seed demo production budget: chart of accounts, budget items (account_id only), expenses (account_id only),
  * and optional production totals (Above the Line, Below the Line). Uses runInSerializedTransaction + executeBatch.
  * Does not seed legacy budget_categories; category_id is left null on items and expenses.
+ * When vendorIdByCompanyName is provided (e.g. from seedDemoVendors), expenses with a matching vendor string
+ * get vendor_id set for vendor spend and invoice/PO linking.
  */
 export async function seedDemoBudget(
   pid: string,
@@ -415,7 +417,8 @@ export async function seedDemoBudget(
   ts: string,
   addDaysLocal: (yyyyMmDd: string, days: number) => string,
   budgetItemId: (n: number) => string,
-  expenseId: (n: number) => string
+  expenseId: (n: number) => string,
+  vendorIdByCompanyName?: Record<string, string> | null
 ): Promise<void> {
   const { getDb, executeBatch, runInSerializedTransaction } = await import('../client')
   const TABLE_ACCOUNTS = 'budget_accounts'
@@ -470,17 +473,20 @@ export async function seedDemoBudget(
     })
 
     // 3) Insert expenses: account_id set, category_id null; date = startDate + date_offset.
+    // When vendorIdByCompanyName is provided, set vendor_id for expenses with matching vendor string.
     DEMO_EXPENSES.forEach((row, idx) => {
       const accountId = byCode.get(row.account_code)
       if (!accountId) return
       const id = expenseId(idx + 1)
       const date = addDaysLocal(startDate, row.date_offset)
+      const vendorId = vendorIdByCompanyName && row.vendor ? vendorIdByCompanyName[row.vendor] ?? null : null
       statements.push({
-        sql: `INSERT INTO ${TABLE_EXPENSES} (id, production_id, category_id, account_id, amount, date, vendor, notes, expense_type, created_at, updated_at) VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        sql: `INSERT INTO ${TABLE_EXPENSES} (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, created_at, updated_at) VALUES ($1, $2, NULL, $3, NULL, $4, $5, $6, $7, $8, $9, $10, $11)`,
         bindValues: [
           id,
           pid,
           accountId,
+          vendorId,
           row.amount,
           date,
           row.vendor ?? null,

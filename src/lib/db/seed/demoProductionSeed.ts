@@ -17,6 +17,8 @@ import { seedDemoBookings } from './demoBookingSeed'
 import { seedDemoDeliverables } from './demoDeliverableSeed'
 import { seedDemoReconciliation } from './demoReconciliationSeed'
 import { seedDemoTasks } from './demoTaskSeed'
+import { seedDemoVendorFinance } from './demoVendorFinanceSeed'
+import { seedDemoVendors } from './demoVendorSeed'
 import { listDocumentsByProduction } from '../repositories/document'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { generateCueSheet, generateLocationReleaseCover, generateContributorFormCover } from '@/lib/pdf'
@@ -809,14 +811,31 @@ async function runDemoContentSeed(
   await seedDemoBookings(productionId, ts, idSource)
 
   // -------------------------------------------------------------------------
+  // Vendors (singleton demo only): seed before budget so expenses can get vendor_id.
+  // -------------------------------------------------------------------------
+  const isSingletonDemo = productionId === IDS.production
+  let vendorIdByCompanyName: Record<string, string> | null = null
+  if (isSingletonDemo) {
+    vendorIdByCompanyName = await seedDemoVendors(productionId, ts)
+  }
+
+  // -------------------------------------------------------------------------
   // Budget: generated only via demoBudgetSeed (chart of accounts, budget items, expenses,
   // production totals). No legacy budget_categories; category_id left null. All values in GBP.
   // Uses runInSerializedTransaction + executeBatch. Do not add alternate budget seeding for demo.
+  // When singleton demo, vendorIdByCompanyName sets expense.vendor_id for vendor-linked spend.
   // -------------------------------------------------------------------------
-  await seedDemoBudget(productionId, startDate, ts, addDaysLocal, idSource.budgetItem, idSource.expense)
+  await seedDemoBudget(productionId, startDate, ts, addDaysLocal, idSource.budgetItem, idSource.expense, vendorIdByCompanyName ?? undefined)
   await seedDemoTasks(productionId, startDate, ts, addDaysLocal, idSource)
   await seedDemoReconciliation(productionId, ts, idSource.budgetItem, idSource.expense, idSource.reconciliationLink)
   await seedDemoDeliverables(productionId, startDate, ts, addDaysLocal, idSource)
+
+  // -------------------------------------------------------------------------
+  // Vendor finance (singleton demo only): invoices, POs, reminder tasks, invoice/PO↔expense links.
+  // -------------------------------------------------------------------------
+  if (isSingletonDemo && vendorIdByCompanyName) {
+    await seedDemoVendorFinance(productionId, startDate, ts, addDaysLocal, vendorIdByCompanyName)
+  }
 
   const hods = [
     ['Director', 'Jane Doe', '555-0100', 'director@demo.com'],

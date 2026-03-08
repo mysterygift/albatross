@@ -84,7 +84,8 @@ import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
 import { InvoiceStatusBadge } from '@/features/budget/vendors/InvoiceStatusBadge'
 import { PurchaseOrderStatusBadge } from '@/features/budget/vendors/PurchaseOrderStatusBadge'
 import type { BudgetItemExpenseLink, Expense, ExpenseReconciliationStatus, VendorInvoice, VendorPurchaseOrder } from '@/lib/db/types'
-import { ArrowLeft, Pencil, Eye, Archive, FilePlus, ArchiveIcon, FileText, Link2, X } from 'lucide-react'
+import { ArrowLeft, Pencil, Eye, Archive, FilePlus, ArchiveIcon, FileText, Link2, X, Receipt } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const editVendorSchema = z.object({
   company_name: z.string().min(1, 'Company name is required'),
@@ -551,23 +552,25 @@ export function VendorDetailPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Total spend</p>
-            <p className="text-lg font-semibold text-foreground">{format(overview.totalSpend, currency).formatted}</p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8 min-w-0">
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Total spend</p>
+            <p className="text-lg font-semibold text-foreground truncate" title={format(overview.totalSpend, currency).formatted}>
+              {format(overview.totalSpend, currency).formatted}
+            </p>
           </CardContent>
         </Card>
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Expenses</p>
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Expenses</p>
             <p className="text-lg font-semibold text-foreground">{overview.count}</p>
           </CardContent>
         </Card>
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Last transaction</p>
-            <p className="text-lg font-semibold text-foreground">
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Last transaction</p>
+            <p className="text-lg font-semibold text-foreground truncate" title={overview.lastDate ? new Date(overview.lastDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : undefined}>
               {overview.lastDate
                 ? new Date(overview.lastDate).toLocaleDateString('en-GB', {
                     day: 'numeric',
@@ -578,67 +581,67 @@ export function VendorDetailPage() {
             </p>
           </CardContent>
         </Card>
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Largest expense</p>
-            <p className="text-lg font-semibold text-foreground">
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Largest expense</p>
+            <p className="text-lg font-semibold text-foreground truncate" title={overview.largest ? format(overview.largest.amount, currency).formatted : undefined}>
               {overview.largest ? format(overview.largest.amount, currency).formatted : '—'}
             </p>
           </CardContent>
         </Card>
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Invoices outstanding</p>
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Invoices outstanding</p>
             <p className="text-lg font-semibold text-foreground">{invoiceSummary.outstandingCount}</p>
           </CardContent>
         </Card>
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Total unpaid</p>
-            <p className="text-lg font-semibold text-foreground">
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Total unpaid</p>
+            <p className="text-lg font-semibold text-foreground truncate" title={invoiceSummary.unpaidTotal > 0 ? format(invoiceSummary.unpaidTotal, currency).formatted : undefined}>
               {invoiceSummary.unpaidTotal > 0 ? format(invoiceSummary.unpaidTotal, currency).formatted : '—'}
             </p>
           </CardContent>
         </Card>
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Approved POs</p>
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Approved POs</p>
             <p className="text-lg font-semibold text-foreground">{poSummary.approvedCount}</p>
           </CardContent>
         </Card>
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Open POs</p>
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Open POs</p>
             <p className="text-lg font-semibold text-foreground">{poSummary.openCount}</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Liabilities foundations */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Open PO total</p>
-            <p className="text-lg font-semibold text-foreground">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 min-w-0">
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Open PO total</p>
+            <p className="text-lg font-semibold text-foreground truncate" title={poSummary.openTotal > 0 ? format(poSummary.openTotal, currency).formatted : undefined}>
               {poSummary.openTotal > 0 ? format(poSummary.openTotal, currency).formatted : '—'}
             </p>
           </CardContent>
         </Card>
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Invoices linked to PO</p>
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Invoices linked to PO</p>
             <p className="text-lg font-semibold text-foreground">{liabilitiesSummary.invoicesLinkedToPo}</p>
           </CardContent>
         </Card>
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Invoices not linked to PO</p>
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Invoices not linked to PO</p>
             <p className="text-lg font-semibold text-foreground">{liabilitiesSummary.invoicesUnlinked}</p>
           </CardContent>
         </Card>
-        <Card className="border-border bg-card">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground">Expenses unlinked</p>
+        <Card className="border-border bg-card min-w-0 overflow-hidden">
+          <CardContent className="px-4 pt-4 pb-4 min-w-0">
+            <p className="text-xs text-muted-foreground truncate">Expenses unlinked</p>
             <p className="text-lg font-semibold text-foreground">{liabilitiesSummary.expensesUnlinkedCount}</p>
           </CardContent>
         </Card>
@@ -1371,6 +1374,7 @@ function LinkExpensesToInvoiceDialog({
     [expenses, linkedExpenseIds]
   )
 
+  const navigate = useNavigate()
   const toggleCandidate = (expenseId: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -1382,6 +1386,9 @@ function LinkExpensesToInvoiceDialog({
   const handleLinkSelected = () => {
     selectedIds.forEach((id) => onLink(id))
     setSelectedIds(new Set())
+  }
+  const openInMatchSpend = (expenseId: string) => {
+    navigate('/budget', { state: { examineExpenseId: expenseId } })
   }
 
   return (
@@ -1405,16 +1412,32 @@ function LinkExpensesToInvoiceDialog({
                       <span className="min-w-0 truncate flex-1">{(e.notes || e.vendor || '—').slice(0, 40)}</span>
                       {acc && <span className="text-muted-foreground text-xs shrink-0">{acc.code}</span>}
                       <span className="tabular-nums shrink-0">{format(e.amount, currency).formatted}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-muted-foreground shrink-0"
-                        onClick={() => onUnlink(e.id)}
-                        disabled={isUnlinking}
-                        aria-label="Unlink"
-                      >
-                        <X className="size-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-muted-foreground"
+                              onClick={() => openInMatchSpend(e.id)}
+                              aria-label="Open in Match Spend"
+                            >
+                              <Receipt className="size-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Open in Match Spend</TooltipContent>
+                        </Tooltip>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-muted-foreground shrink-0"
+                          onClick={() => onUnlink(e.id)}
+                          disabled={isUnlinking}
+                          aria-label="Unlink"
+                        >
+                          <X className="size-3.5" />
+                        </Button>
+                      </div>
                     </li>
                   )
                 })}
@@ -1511,6 +1534,7 @@ function LinkExpensesToPODialog({
     [expenses, linkedExpenseIds]
   )
 
+  const navigate = useNavigate()
   const toggleCandidate = (expenseId: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -1522,6 +1546,9 @@ function LinkExpensesToPODialog({
   const handleLinkSelected = () => {
     selectedIds.forEach((id) => onLink(id))
     setSelectedIds(new Set())
+  }
+  const openInMatchSpend = (expenseId: string) => {
+    navigate('/budget', { state: { examineExpenseId: expenseId } })
   }
 
   return (
@@ -1545,16 +1572,32 @@ function LinkExpensesToPODialog({
                       <span className="min-w-0 truncate flex-1">{(e.notes || e.vendor || '—').slice(0, 40)}</span>
                       {acc && <span className="text-muted-foreground text-xs shrink-0">{acc.code}</span>}
                       <span className="tabular-nums shrink-0">{format(e.amount, currency).formatted}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-muted-foreground shrink-0"
-                        onClick={() => onUnlink(e.id)}
-                        disabled={isUnlinking}
-                        aria-label="Unlink"
-                      >
-                        <X className="size-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-muted-foreground"
+                              onClick={() => openInMatchSpend(e.id)}
+                              aria-label="Open in Match Spend"
+                            >
+                              <Receipt className="size-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Open in Match Spend</TooltipContent>
+                        </Tooltip>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-muted-foreground shrink-0"
+                          onClick={() => onUnlink(e.id)}
+                          disabled={isUnlinking}
+                          aria-label="Unlink"
+                        >
+                          <X className="size-3.5" />
+                        </Button>
+                      </div>
                     </li>
                   )
                 })}

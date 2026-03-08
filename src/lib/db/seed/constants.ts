@@ -62,6 +62,18 @@ export const IDS = {
   task: (n: number) => `${P}${String(8100 + n).padStart(4, '0')}`,
   // budget_item_expense_links (demo reconciliation)
   reconciliationLink: (n: number) => `${P}${String(8500 + n).padStart(4, '0')}`,
+  // vendors (demo only, 18 vendors)
+  vendor: (n: number) => `${P}${String(1700 + n).padStart(4, '0')}`,
+  // vendor invoices (demo only)
+  vendorInvoice: (n: number) => `${P}${String(1800 + n).padStart(4, '0')}`,
+  // vendor purchase orders (demo only)
+  vendorPO: (n: number) => `${P}${String(1900 + n).padStart(4, '0')}`,
+  // invoice reminder tasks (demo only; distinct from task sections/tasks)
+  invoiceReminderTask: (n: number) => `${P}${String(8200 + n).padStart(4, '0')}`,
+  // vendor_invoice_expenses link table (demo only)
+  vendorInvoiceExpenseLink: (n: number) => `${P}${String(8600 + n).padStart(4, '0')}`,
+  // vendor_purchase_order_expenses link table (demo only)
+  vendorPOExpenseLink: (n: number) => `${P}${String(8700 + n).padStart(4, '0')}`,
 } as const
 
 export const SEED_VERSION = '2'
