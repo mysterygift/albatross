@@ -21,7 +21,9 @@ import {
 } from '@/lib/call-sheets/castRequirements'
 import { getProductionById } from '@/lib/db/repositories/production'
 import { generateCallSheetPdf } from '@/lib/pdf/callSheet'
+import type { CallSheetData } from '@/lib/pdf/callSheet'
 import { saveFileWithDialog, openInSystem } from '@/lib/files'
+import { getWeatherSummaryForCallSheet } from '@/lib/weather/openMeteo'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -56,6 +58,7 @@ export function CallSheetsPage() {
   const [shootDayId, setShootDayId] = useState<string | null>(null)
   const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
   const [weatherSummary, setWeatherSummary] = useState('')
+  const [weatherFallbackMessage, setWeatherFallbackMessage] = useState<string | null>(null)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [numPages, setNumPages] = useState<number | null>(null)
 
@@ -227,7 +230,6 @@ export function CallSheetsPage() {
       }
     })
     const mealTimes = mealTimesFromDay.length ? mealTimesFromDay : [{ name: 'Lunch', time: '13:00' }]
-    const weather = weatherSummary || weatherFromDay || undefined
     return {
       productionName: production.name,
       shootDate: shootDay.shoot_date,
@@ -244,7 +246,7 @@ export function CallSheetsPage() {
       hospitalAddress: shootDay.hospital_address ?? null,
       policeStationName: shootDay.police_station_name ?? null,
       policeStationAddress: shootDay.police_station_address ?? null,
-      weatherSummary: weather ?? null,
+      weatherSummary: null,
       parkingBaseAddress: shootDay.parking_base_address ?? null,
       mealTimes,
       specialNotes: shootDay.special_notes ?? null,
@@ -263,17 +265,41 @@ export function CallSheetsPage() {
     scenes,
     keyContacts,
     mealTimesFromDay,
-    weatherSummary,
-    weatherFromDay,
     castCalledNames,
     castResult.castRows,
     locationsForDay,
   ])
 
   const generateMutation = useMutation({
-    mutationFn: async (options: { save: boolean; openAfter?: boolean }) => {
-      const data = buildCallSheetData
-      if (!data || !currentProductionId || !shootDay) throw new Error('Missing data')
+    mutationFn: async (options: {
+      save: boolean
+      openAfter?: boolean
+      baseData: CallSheetData | null
+      locationQuery: string
+      shootDate: string
+      fallbackWeather: string | null
+    }) => {
+      const { baseData, locationQuery, shootDate, fallbackWeather } = options
+      if (!baseData || !currentProductionId || !shootDay) throw new Error('Missing data')
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'page.tsx:generateMutation',message:'weather lookup inputs',data:{locationQuery,shootDate,locationQueryLength:locationQuery?.length,fallbackWeather:!!fallbackWeather},hypothesisId:'H1-H4',timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      let weather: string | null = null
+      let usedFallback = true
+      try {
+        weather = await getWeatherSummaryForCallSheet(locationQuery, shootDate)
+        if (weather != null) usedFallback = false
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'page.tsx:after getWeatherSummary',message:'weather result',data:{weather:weather??'null',usedFallback},hypothesisId:'H2-H4',timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+      } catch (e) {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'page.tsx:catch',message:'weather lookup threw',data:{message:String((e as Error)?.message)},hypothesisId:'H5',timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        // use fallback below
+      }
+      const finalWeather = weather ?? fallbackWeather ?? null
+      const data: CallSheetData = { ...baseData, weatherSummary: finalWeather }
       const pdfBytes = await generateCallSheetPdf(data)
       const bytes = new Uint8Array(pdfBytes)
       if (options.save) {
@@ -289,9 +315,9 @@ export function CallSheetsPage() {
         if (savedPath && options.openAfter) {
           await openInSystem(savedPath)
         }
-        return { bytes }
+        return { bytes, weatherFallback: usedFallback }
       }
-      return { bytes }
+      return { bytes, weatherFallback: usedFallback }
     },
     onSuccess: (result) => {
       if (result.bytes) {
@@ -302,11 +328,29 @@ export function CallSheetsPage() {
           return url
         })
       }
+      setWeatherFallbackMessage(
+        result.weatherFallback ? 'Weather lookup unavailable; used manual or stored weather.' : null
+      )
     },
   })
 
   const handleGenerate = (save: boolean, openAfter?: boolean) => {
-    generateMutation.mutate({ save, openAfter })
+    const baseData = buildCallSheetData
+    if (!baseData || !shootDay) return
+    setWeatherFallbackMessage(null)
+    const locationQuery =
+      locationsForDay.length > 0
+        ? [locationsForDay[0].name, locationsForDay[0].address].filter(Boolean).join(', ')
+        : ''
+    const fallbackWeather = weatherSummary || weatherFromDay || null
+    generateMutation.mutate({
+      save,
+      openAfter,
+      baseData,
+      locationQuery,
+      shootDate: shootDay.shoot_date,
+      fallbackWeather,
+    })
   }
 
   if (!currentProductionId) {
@@ -369,13 +413,16 @@ export function CallSheetsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Weather (manual)</Label>
+              <Label>Weather (manual fallback)</Label>
               <Input
                 className="bg-input border-border"
                 value={weatherSummary || weatherFromDay}
                 onChange={(e) => setWeatherSummary(e.target.value)}
-                placeholder="e.g. Sunny, 72°F"
+                placeholder="e.g. Sunny, 72°F — used if forecast lookup fails"
               />
+              {weatherFallbackMessage && (
+                <p className="text-muted-foreground text-xs">{weatherFallbackMessage}</p>
+              )}
             </div>
             {shootDayId && shootDayUnitId && (
               <>
