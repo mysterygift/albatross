@@ -1,7 +1,8 @@
 /**
  * Rich demo People / Cast seed. Used when initialising demo production or Demo template.
- * Seeds: cast (14), crew/HOD (14), scene_cast, shot_cast, cast_availability.
- * Deterministic and demo-only. Integrates with Cast Manager, DooD, Bookings, Call Sheets.
+ * Seeds: cast (14) only; scene_cast, shot_cast, cast_availability.
+ * Crew are seeded by demoCrewSeed.ts. Deterministic and demo-only.
+ * Integrates with Cast Manager, DooD, Bookings, Call Sheets.
  */
 import { executeBatch, getDb } from '../client'
 import type { DemoSeedIdSource } from './demoSeedContext'
@@ -284,31 +285,6 @@ const SHOT_CAST_ENTRIES: Array<{ scene: number; shot: number; castIndices: numbe
   { scene: 45, shot: 2, castIndices: [3] },
 ]
 
-/** Crew/HOD: name, email, phone, department, phases, notes. No cast_number or agent. */
-const DEMO_CREW: Array<{
-  name: string
-  email: string
-  phone: string
-  department: string
-  phases: string | null
-  notes: string | null
-}> = [
-  { name: 'Rebecca Shaw', email: 'rebecca.shaw@mintheist-demo.com', phone: '07700 900201', department: 'Director', phases: null, notes: null },
-  { name: 'James Foley', email: 'james.foley@mintheist-demo.com', phone: '07700 900202', department: '1st AD', phases: null, notes: null },
-  { name: 'Sienna Webb', email: 'sienna.webb@mintheist-demo.com', phone: '07700 900203', department: 'Script Supervisor', phases: null, notes: null },
-  { name: 'David Chen', email: 'david.chen@mintheist-demo.com', phone: '07700 900204', department: 'DoP', phases: null, notes: null },
-  { name: 'Anna Petrov', email: 'anna.petrov@mintheist-demo.com', phone: '07700 900205', department: 'Production Sound Mixer', phases: null, notes: null },
-  { name: 'Mike Torres', email: 'mike.torres@mintheist-demo.com', phone: '07700 900206', department: 'Gaffer', phases: null, notes: null },
-  { name: 'Chris Walsh', email: 'chris.walsh@mintheist-demo.com', phone: '07700 900207', department: 'Key Grip', phases: null, notes: null },
-  { name: 'Elena Vasquez', email: 'elena.vasquez@mintheist-demo.com', phone: '07700 900208', department: 'Production Designer', phases: null, notes: null },
-  { name: 'Fiona Reid', email: 'fiona.reid@mintheist-demo.com', phone: '07700 900209', department: 'Costume Designer', phases: null, notes: null },
-  { name: 'Kate Morrison', email: 'kate.morrison@mintheist-demo.com', phone: '07700 900210', department: 'Hair & Make-up Designer', phases: null, notes: null },
-  { name: 'Oliver Grant', email: 'oliver.grant@mintheist-demo.com', phone: '07700 900211', department: 'Location Manager', phases: null, notes: null },
-  { name: 'Luke Hayes', email: 'luke.hayes@mintheist-demo.com', phone: '07700 900212', department: 'Editor', phases: 'post', notes: null },
-  { name: 'Sarah Kim', email: 'sarah.kim@mintheist-demo.com', phone: '07700 900213', department: 'Line Producer', phases: null, notes: null },
-  { name: 'Nick Palmer', email: 'nick.palmer@mintheist-demo.com', phone: '07700 900214', department: 'Production Coordinator', phases: null, notes: null },
-]
-
 /** Cast availability clashes: cast index (1–14) → { dayNumber (1–12), notes }. */
 const DEMO_AVAILABILITY_CLASHES: Array<{ castIndex: number; dayNumber: number; notes: string }> = [
   { castIndex: 1, dayNumber: 4, notes: 'Press day clash' },
@@ -318,8 +294,9 @@ const DEMO_AVAILABILITY_CLASHES: Array<{ castIndex: number; dayNumber: number; n
 ]
 
 /**
- * Seed rich demo People (cast + crew), scene_cast, shot_cast, and cast_availability.
- * Call after scenes and shots are seeded. Uses idSource.person(1..28), sceneCast, shotCast, availability.
+ * Seed rich demo People (cast only), scene_cast, shot_cast, and cast_availability.
+ * Call after scenes and shots are seeded. Uses idSource.person(1..14), sceneCast, shotCast, availability.
+ * Crew are seeded by demoCrewSeed.ts.
  */
 export async function seedDemoPeople(
   productionId: string,
@@ -356,27 +333,6 @@ export async function seedDemoPeople(
         c.agent_phone,
         c.contributor_form_status,
         c.notes,
-        ts,
-        ts,
-      ],
-    })
-  }
-
-  // People: crew 15–28
-  for (let i = 0; i < DEMO_CREW.length; i++) {
-    const r = DEMO_CREW[i]!
-    statements.push({
-      sql: `INSERT INTO people (id, production_id, name, is_cast, email, phone, department, phases, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, 0, $4, $5, $6, $7, $8, $9, $10)`,
-      bindValues: [
-        idSource.person(DEMO_CAST_INDEX_MAX + i + 1),
-        productionId,
-        r.name,
-        r.email,
-        r.phone,
-        r.department,
-        r.phases,
-        r.notes,
         ts,
         ts,
       ],

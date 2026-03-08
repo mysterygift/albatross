@@ -15,8 +15,14 @@ export const IDS = {
   scene: (n: number) => `${P}${String(200 + n).padStart(4, '0')}`,
   // shots 1-120 (spread across scenes)
   shot: (n: number) => `${P}${String(400 + n).padStart(4, '0')}`,
-  // people: 14 cast + 14 crew = 28 (rich demo dataset)
+  // people: 14 cast + crew from demoCrewSeed (person 15..69)
   person: (n: number) => `${P}${String(500 + n).padStart(4, '0')}`,
+  // crew bookings (distinct range so cast bookings don't collide)
+  crewBooking: (n: number) => `${P}${String(6500 + n).padStart(4, '0')}`,
+  // crew labour vendors (demo only; 19..24 = 6 vendors)
+  crewVendor: (n: number) => `${P}${String(1718 + n).padStart(4, '0')}`,
+  // crew labour invoices (demo only; 16..21 = 6 invoices)
+  crewVendorInvoice: (n: number) => `${P}${String(1815 + n).padStart(4, '0')}`,
   // locations 1-14
   location: (n: number) => `${P}${String(600 + n).padStart(4, '0')}`,
   // budget categories 14

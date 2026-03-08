@@ -20,6 +20,7 @@ import { seedDemoReconciliation } from './demoReconciliationSeed'
 import { seedDemoTasks } from './demoTaskSeed'
 import { seedDemoVendorFinance } from './demoVendorFinanceSeed'
 import { seedDemoVendors } from './demoVendorSeed'
+import { seedDemoCrew } from './demoCrewSeed'
 import { listDocumentsByProduction } from '../repositories/document'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { generateCueSheet, generateLocationReleaseCover, generateContributorFormCover } from '@/lib/pdf'
@@ -742,6 +743,9 @@ async function runDemoContentSeed(
     await seedDemoVendorFinance(productionId, startDate, ts, addDaysLocal, vendorIdByCompanyName)
   }
 
+  // Crew: people (is_cast=0), bookings, and for singleton demo only: crew labour vendors and invoices
+  await seedDemoCrew(productionId, startDate, ts, idSource, addDaysLocal)
+
   const hods = [
     ['Director', 'Jane Doe', '555-0100', 'director@demo.com'],
     ['1st AD', 'John Smith', '555-0101', 'ad@demo.com'],
@@ -983,6 +987,7 @@ async function buildCallSheetDataForSeed(
     mealTimes: [{ name: 'Lunch', time: '13:00' }],
     specialNotes: (day?.special_notes as string) ?? null,
     schedule,
+    crewGroups: [],
     castCalled: peopleRows.map((r) => r.name as string),
     locations: locRows.map((r) => ({
       name: r.name as string,

@@ -33,6 +33,7 @@ export type DemoSeedIdSource = {
   clearance: (n: number) => string
   cueSheet: string
   booking: (n: number) => string
+  crewBooking: (n: number) => string
   taskSection: (n: number) => string
   task: (n: number) => string
   deliverable: (n: number) => string
@@ -65,6 +66,7 @@ export function makeDemoSeedIdSourceFromIDS(): DemoSeedIdSource {
     clearance: IDS.clearance,
     cueSheet: IDS.cueSheet,
     booking: IDS.booking,
+    crewBooking: IDS.crewBooking,
     taskSection: IDS.taskSection,
     task: IDS.task,
     deliverable: IDS.deliverable,
@@ -81,7 +83,7 @@ export function buildDemoSeedIdSourceWithUuid(): DemoSeedIdSource {
   const shootDayUnitIds = Array.from({ length: 12 * 2 }, () => uuid())
   const sceneIds = n(45)
   const shotIds = n(120)
-  const personIds = n(28)
+  const personIds = n(69) // 14 cast + 55 crew from demoCrewSeed
   const locationIds = n(14)
   const equipmentTermIds = n(17)
   const sceneCastCount = 200
@@ -99,6 +101,7 @@ export function buildDemoSeedIdSourceWithUuid(): DemoSeedIdSource {
   const musicTrackIds = n(10)
   const clearanceIds = n(10)
   const bookingIds = n(300)
+  const crewBookingIds = n(600)
   const taskSectionIds = n(3)
   const taskIds = n(25)
   const deliverableIds = n(12)
@@ -129,6 +132,7 @@ export function buildDemoSeedIdSourceWithUuid(): DemoSeedIdSource {
     clearance: (c) => clearanceIds[c - 1]!,
     cueSheet: cueSheetId,
     booking: (b) => bookingIds[b - 1]!,
+    crewBooking: (b) => crewBookingIds[b - 1]!,
     taskSection: (t) => taskSectionIds[t - 1]!,
     task: (t) => taskIds[t - 1]!,
     deliverable: (d) => deliverableIds[d - 1]!,
