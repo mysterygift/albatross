@@ -21,6 +21,7 @@ export type DemoSeedIdSource = {
   location: (n: number) => string
   equipmentTerm: (n: number) => string
   sceneCast: (n: number) => string
+  shotCast: (n: number) => string
   availability: (n: number) => string
   locationScene: (n: number) => string
   budgetItem: (n: number) => string
@@ -52,6 +53,7 @@ export function makeDemoSeedIdSourceFromIDS(): DemoSeedIdSource {
     location: IDS.location,
     equipmentTerm: IDS.equipmentTerm,
     sceneCast: IDS.sceneCast,
+    shotCast: IDS.shotCast,
     availability: IDS.availability,
     locationScene: IDS.locationScene,
     budgetItem: IDS.budgetItem,
@@ -79,12 +81,14 @@ export function buildDemoSeedIdSourceWithUuid(): DemoSeedIdSource {
   const shootDayUnitIds = Array.from({ length: 12 * 2 }, () => uuid())
   const sceneIds = n(45)
   const shotIds = n(120)
-  const personIds = n(40)
+  const personIds = n(28)
   const locationIds = n(14)
   const equipmentTermIds = n(17)
-  const sceneCastCount = 45 * 4
+  const sceneCastCount = 200
   const sceneCastIds = n(sceneCastCount)
-  const availabilityIds = n(5)
+  const shotCastCount = 60
+  const shotCastIds = n(shotCastCount)
+  const availabilityIds = n(4)
   const locationSceneIds = n(12)
   const budgetItemIds = n(DEMO_BUDGET_ITEMS.length)
   const expenseIds = n(DEMO_EXPENSES.length)
@@ -113,6 +117,7 @@ export function buildDemoSeedIdSourceWithUuid(): DemoSeedIdSource {
     location: (l) => locationIds[l - 1]!,
     equipmentTerm: (t) => equipmentTermIds[t - 1]!,
     sceneCast: (idx) => sceneCastIds[idx]!,
+    shotCast: (idx) => shotCastIds[idx]!,
     availability: (a) => availabilityIds[a - 1]!,
     locationScene: (s) => locationSceneIds[s - 1]!,
     budgetItem: (b) => budgetItemIds[b - 1]!,

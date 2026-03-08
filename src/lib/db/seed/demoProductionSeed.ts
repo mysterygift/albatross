@@ -14,6 +14,7 @@ import { executeBatch, getDb, now } from '../client'
 import { getProductionBySlug, hardDeleteProduction } from '../repositories/production'
 import { seedDemoBudget } from './demoBudgetSeed'
 import { seedDemoBookings } from './demoBookingSeed'
+import { seedDemoPeople } from './demoPeopleSeed'
 import { seedDemoDeliverables } from './demoDeliverableSeed'
 import { seedDemoReconciliation } from './demoReconciliationSeed'
 import { seedDemoTasks } from './demoTaskSeed'
@@ -698,103 +699,7 @@ async function runDemoContentSeed(
     )
   }
 
-  const castDepts = [
-    'Cast',
-    'Cast',
-    'Cast',
-    'Camera',
-    'Sound',
-    'Grip',
-    'Electric',
-    'Art',
-    'Wardrobe',
-    'Hair',
-    'Makeup',
-    'Transport',
-    'Catering',
-    'Security',
-    'Production',
-    'Director',
-    'AD',
-    'Script',
-    'Continuity',
-    'VFX',
-    'Stunts',
-  ]
-  const names = [
-    'Alex Rivera',
-    'Jordan Lee',
-    'Sam Chen',
-    'Morgan Taylor',
-    'Casey Brown',
-    'Riley Davis',
-    'Quinn Wilson',
-    'Avery Martinez',
-    'Blake Anderson',
-    'Skyler White',
-    'Dakota Moore',
-    'Finley Jackson',
-    'Emery Thomas',
-    'Hayden Garcia',
-    'Parker Robinson',
-    'River Clark',
-    'Sage Lewis',
-    'Phoenix Walker',
-    'Drew Hall',
-    'Cameron Young',
-  ]
-  for (let i = 0; i < 40; i++) {
-    const isCast = i < 18 ? 1 : 0
-    const dept = castDepts[i % castDepts.length]
-    const name = names[i % names.length] + (i >= 20 ? ` ${Math.floor(i / 20) + 1}` : '')
-    await db.execute(
-      `INSERT INTO people (id, production_id, name, is_cast, email, phone, department, contributor_form_status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [
-        idSource.person(i + 1),
-        productionId,
-        name,
-        isCast,
-        `person${i + 1}@demo.com`,
-        null,
-        dept,
-        i < 5 ? 'signed' : 'not_requested',
-        ts,
-        ts,
-      ]
-    )
-  }
-
-  for (let s = 1; s <= 45; s++) {
-    const numCast = 1 + (s % 4)
-    for (let c = 0; c < numCast && c < 18; c++) {
-      const personId = idSource.person((s % 18) + c + 1)
-      await db.execute(
-        `INSERT INTO scene_cast (id, production_id, scene_id, person_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [idSource.sceneCast((s - 1) * 4 + c), productionId, idSource.scene(s), personId, ts, ts]
-      )
-    }
-  }
-
-  const clashDates = [2, 4, 6, 9, 11].map((off) => addDaysLocal(startDate, off))
-  for (let i = 0; i < 5; i++) {
-    await db.execute(
-      `INSERT INTO cast_availability (id, production_id, person_id, start_date, end_date, availability, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        idSource.availability(i + 1),
-        productionId,
-        idSource.person(i + 1),
-        clashDates[i],
-        clashDates[i],
-        'UNAVAILABLE',
-        'Clash for demo',
-        ts,
-        ts,
-      ]
-    )
-  }
+  await seedDemoPeople(productionId, startDate, ts, idSource)
 
   for (let s = 1; s <= 12; s++) {
     const locId = idSource.location(((s - 1) % 14) + 1)
@@ -929,8 +834,8 @@ async function runDemoContentSeed(
 
     const contribPdf = await generateContributorFormCover({
       productionName: 'Demo: The Mint Heist',
-      contributorName: 'Alex Rivera',
-      role: 'Lead',
+      contributorName: 'Jade Mercer',
+      role: "Eleanor 'Jade' Mercer",
     })
     const contribPath = `${ATTACHMENTS}/demo-contributor-form.pdf`
     await writeFile(contribPath, contribPdf, { baseDir: BaseDirectory.AppData })
@@ -1057,13 +962,17 @@ async function buildCallSheetDataForSeed(
     productionName,
     shootDate,
     unitName: 'Main Unit',
+    dayNumber: (day?.day_number as number) ?? null,
     callTime: (day?.call_time as string) ?? '07:00',
     wrapTime: (day?.wrap_time as string) ?? '18:00',
+    dayNotes: (day?.notes as string) ?? null,
+    unitNotes: null,
     keyContacts: keyContactRows.map((r) => ({
       department: r.department as string,
       name: r.name as string | null,
       phone: r.phone as string | null,
       email: r.email as string | null,
+      notes: null,
     })),
     hospitalName: (day?.hospital_name as string) ?? null,
     hospitalAddress: (day?.hospital_address as string) ?? null,
@@ -1075,6 +984,11 @@ async function buildCallSheetDataForSeed(
     specialNotes: (day?.special_notes as string) ?? null,
     schedule,
     castCalled: peopleRows.map((r) => r.name as string),
-    locations: locRows.map((r) => ({ name: r.name as string, address: r.address as string | null })),
+    locations: locRows.map((r) => ({
+      name: r.name as string,
+      address: r.address as string | null,
+      what3words: null,
+      notes: null,
+    })),
   }
 }

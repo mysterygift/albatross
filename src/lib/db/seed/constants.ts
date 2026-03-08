@@ -15,7 +15,7 @@ export const IDS = {
   scene: (n: number) => `${P}${String(200 + n).padStart(4, '0')}`,
   // shots 1-120 (spread across scenes)
   shot: (n: number) => `${P}${String(400 + n).padStart(4, '0')}`,
-  // people: 18 cast + 22 crew = 40
+  // people: 14 cast + 14 crew = 28 (rich demo dataset)
   person: (n: number) => `${P}${String(500 + n).padStart(4, '0')}`,
   // locations 1-14
   location: (n: number) => `${P}${String(600 + n).padStart(4, '0')}`,
@@ -44,6 +44,8 @@ export const IDS = {
     `${P}${String(3000 + dayIdx * 2 + unitIdx).padStart(4, '0')}`,
   // scene_cast (many)
   sceneCast: (n: number) => `${P}${String(4000 + n).padStart(4, '0')}`,
+  // shot_cast (refinement layer; many)
+  shotCast: (n: number) => `${P}${String(4100 + n).padStart(4, '0')}`,
   // cast_availability
   availability: (n: number) => `${P}${String(5000 + n).padStart(4, '0')}`,
   // bookings (cast only for demo)
