@@ -1,26 +1,23 @@
 /**
  * Call-sheet crew requirements: read-only service that derives booked crew for a shoot day,
- * grouped by canonical crew department (C1), with HOD first and canonical role order.
+ * grouped by crew department from the effective hierarchy, with HOD first and role order.
  *
  * Rules:
  * - Crew on the call sheet = has a booking for the selected shoot day AND is crew (is_cast !== 1).
- * - Grouping uses canonical crew departments from C1 only (not task-mapped labels).
- * - Department order: CREW_DEPARTMENTS order; "Other" for non-canonical department at end.
- * - Within department: HOD first, then canonical role order, then name fallback.
- * - is_hod is derived from department + role_name via C1 hierarchy (not stored).
+ * - Grouping uses department names from the resolved hierarchy; "Other" for non-canonical department at end.
+ * - Department order: resolved hierarchy order; "Other" at end.
+ * - Within department: HOD first, then role order from hierarchy, then name fallback.
+ * - is_hod is derived from department + role_name via the resolved hierarchy (not stored).
  */
 
 import type { Person } from '@/lib/db/types'
 import type { Booking } from '@/lib/db/types'
+import type { CrewHierarchyConfig } from '@/lib/people/crewHierarchyTypes'
 import {
-  getCrewDepartmentNames,
-  getCrewRolesForDepartment,
-  getHodRoleForDepartment,
-  type CrewDepartmentName,
-} from '@/lib/people/crewDepartments'
-
-const CANONICAL_NAMES = getCrewDepartmentNames()
-const CANONICAL_SET = new Set<string>(CANONICAL_NAMES)
+  getResolvedCrewDepartmentNames,
+  getResolvedCrewRolesForDepartment,
+  getResolvedHodRoleForDepartment,
+} from '@/lib/people/crewHierarchyResolver'
 
 export type CallSheetCrewRow = {
   person_id: string
@@ -37,25 +34,45 @@ export type CallSheetCrewGroup = {
   rows: CallSheetCrewRow[]
 }
 
-function getCanonicalDepartment(person: Person): CrewDepartmentName | 'Other' {
-  const d = person.department?.trim()
-  if (!d || !CANONICAL_SET.has(d)) return 'Other'
-  return d as CrewDepartmentName
+function getResolvedDepartmentSet(hierarchy: CrewHierarchyConfig): Set<string> {
+  return new Set(getResolvedCrewDepartmentNames(hierarchy))
 }
 
-function isHod(person: Person, department: CrewDepartmentName): boolean {
-  const hodRole = getHodRoleForDepartment(department)
+function getCanonicalDepartment(
+  hierarchy: CrewHierarchyConfig,
+  person: Person
+): string | 'Other' {
+  const d = person.department?.trim()
+  if (!d) return 'Other'
+  const set = getResolvedDepartmentSet(hierarchy)
+  return set.has(d) ? d : 'Other'
+}
+
+function isHod(
+  hierarchy: CrewHierarchyConfig,
+  person: Person,
+  department: string
+): boolean {
+  const hodRole = getResolvedHodRoleForDepartment(hierarchy, department)
   return (person.role_name?.trim() ?? '') === hodRole
 }
 
-function roleOrderIndex(person: Person, department: CrewDepartmentName): number {
-  const roles = getCrewRolesForDepartment(department)
+function roleOrderIndex(
+  hierarchy: CrewHierarchyConfig,
+  person: Person,
+  department: string
+): number {
+  const roles = getResolvedCrewRolesForDepartment(hierarchy, department)
   const role = person.role_name?.trim() ?? ''
   const idx = roles.indexOf(role)
   return idx === -1 ? 999 : idx
 }
 
-function personToCrewRow(p: Person, department: CrewDepartmentName | 'Other', isHodRow: boolean): CallSheetCrewRow {
+function personToCrewRow(
+  p: Person,
+  department: string | 'Other',
+  isHodRow: boolean
+): CallSheetCrewRow {
   return {
     person_id: p.id,
     name: p.name,
@@ -68,11 +85,11 @@ function personToCrewRow(p: Person, department: CrewDepartmentName | 'Other', is
 }
 
 /**
- * Returns booked crew for the shoot day, grouped by canonical crew department,
- * with HOD first and canonical role order within each department.
- * Uses C1 hierarchy only; does not use task department mapping.
+ * Returns booked crew for the shoot day, grouped by crew department from the hierarchy,
+ * with HOD first and role order within each department.
  */
 export function getCallSheetCrewRequirements(
+  hierarchy: CrewHierarchyConfig,
   bookings: Pick<Booking, 'person_id'>[],
   crew: Person[]
 ): CallSheetCrewGroup[] {
@@ -80,15 +97,18 @@ export function getCallSheetCrewRequirements(
   const bookedCrew = crew.filter((p) => bookedPersonIds.has(p.id))
   if (bookedCrew.length === 0) return []
 
-  const byDepartment = new Map<string | CrewDepartmentName, Person[]>()
+  const byDepartment = new Map<string, Person[]>()
   for (const p of bookedCrew) {
-    const dept = getCanonicalDepartment(p)
+    const dept = getCanonicalDepartment(hierarchy, p)
     const list = byDepartment.get(dept) ?? []
     list.push(p)
     byDepartment.set(dept, list)
   }
 
-  const departmentOrder: (CrewDepartmentName | 'Other')[] = [...CANONICAL_NAMES, 'Other']
+  const departmentOrder: string[] = [
+    ...getResolvedCrewDepartmentNames(hierarchy),
+    'Other',
+  ]
   const groups: CallSheetCrewGroup[] = []
 
   for (const dept of departmentOrder) {
@@ -98,18 +118,22 @@ export function getCallSheetCrewRequirements(
     const isCanonical = dept !== 'Other'
     const sorted = [...people].sort((a, b) => {
       if (isCanonical) {
-        const hodA = isHod(a, dept as CrewDepartmentName) ? -1 : 0
-        const hodB = isHod(b, dept as CrewDepartmentName) ? -1 : 0
+        const hodA = isHod(hierarchy, a, dept) ? -1 : 0
+        const hodB = isHod(hierarchy, b, dept) ? -1 : 0
         if (hodA !== hodB) return hodA - hodB
-        const roleA = roleOrderIndex(a, dept as CrewDepartmentName)
-        const roleB = roleOrderIndex(b, dept as CrewDepartmentName)
+        const roleA = roleOrderIndex(hierarchy, a, dept)
+        const roleB = roleOrderIndex(hierarchy, b, dept)
         if (roleA !== roleB) return roleA - roleB
       }
       return (a.name ?? '').localeCompare(b.name ?? '')
     })
 
     const rows: CallSheetCrewRow[] = sorted.map((p) =>
-      personToCrewRow(p, dept, isCanonical && isHod(p, dept as CrewDepartmentName))
+      personToCrewRow(
+        p,
+        dept,
+        isCanonical && isHod(hierarchy, p, dept)
+      )
     )
     groups.push({ department: dept, rows })
   }

@@ -12,19 +12,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  getCrewDepartmentNames,
-  getHodRoleForDepartment,
-  type CrewDepartmentName,
-} from '@/lib/people/crewDepartments'
+import { getResolvedCrewDepartmentNames, getResolvedHodRoleForDepartment } from '@/lib/people/crewHierarchyResolver'
+import type { CrewHierarchyConfig } from '@/lib/people/crewHierarchyTypes'
 import type { CrewFormValues } from '@/features/people/components/CrewForm'
 
-const CANONICAL_DEPARTMENT_NAMES = getCrewDepartmentNames()
-
-type WizardStep = 'intro' | 'setup'
-
 type HodRow = {
-  department: CrewDepartmentName
+  department: string
   name: string
   role: string
   email: string
@@ -32,20 +25,27 @@ type HodRow = {
 }
 
 export function CrewSetupWizard({
+  hierarchy,
   open,
   onOpenChange,
   onCreateCrew,
 }: {
+  hierarchy: CrewHierarchyConfig
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreateCrew: (values: CrewFormValues) => Promise<void>
 }) {
-  const [step, setStep] = useState<WizardStep>('intro')
-  const [selectedDepartments, setSelectedDepartments] = useState<Set<CrewDepartmentName>>(new Set())
-  const [hodRows, setHodRows] = useState<Map<CrewDepartmentName, HodRow>>(new Map())
+  const [step, setStep] = useState<'intro' | 'setup'>('intro')
+  const [selectedDepartments, setSelectedDepartments] = useState<Set<string>>(new Set())
+  const [hodRows, setHodRows] = useState<Map<string, HodRow>>(new Map())
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const toggleDepartment = (dept: CrewDepartmentName) => {
+  const departmentNames = useMemo(
+    () => getResolvedCrewDepartmentNames(hierarchy),
+    [hierarchy]
+  )
+
+  const toggleDepartment = (dept: string) => {
     setSelectedDepartments((prev) => {
       const next = new Set(prev)
       if (next.has(dept)) {
@@ -62,7 +62,7 @@ export function CrewSetupWizard({
           m.set(dept, {
             department: dept,
             name: '',
-            role: getHodRoleForDepartment(dept),
+            role: getResolvedHodRoleForDepartment(hierarchy, dept),
             email: '',
             phone: '',
           })
@@ -73,13 +73,13 @@ export function CrewSetupWizard({
     })
   }
 
-  const updateHodRow = (dept: CrewDepartmentName, field: keyof HodRow, value: string) => {
+  const updateHodRow = (dept: string, field: keyof HodRow, value: string) => {
     setHodRows((prev) => {
       const m = new Map(prev)
       const row = m.get(dept) ?? {
         department: dept,
         name: '',
-        role: getHodRoleForDepartment(dept),
+        role: getResolvedHodRoleForDepartment(hierarchy, dept),
         email: '',
         phone: '',
       }
@@ -102,7 +102,7 @@ export function CrewSetupWizard({
         await onCreateCrew({
           name: row.name.trim(),
           department: row.department,
-          role_name: row.role.trim() || getHodRoleForDepartment(row.department),
+          role_name: row.role.trim() || getResolvedHodRoleForDepartment(hierarchy, row.department),
           email: row.email || '',
           phone: row.phone || '',
           phases: '',
@@ -177,10 +177,10 @@ export function CrewSetupWizard({
             </DialogHeader>
 
             <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-1">
-              {CANONICAL_DEPARTMENT_NAMES.map((dept) => {
+              {departmentNames.map((dept) => {
                 const checked = selectedDepartments.has(dept)
                 const row = hodRows.get(dept)
-                const hodRole = getHodRoleForDepartment(dept)
+                const hodRole = getResolvedHodRoleForDepartment(hierarchy, dept)
                 return (
                   <div
                     key={dept}

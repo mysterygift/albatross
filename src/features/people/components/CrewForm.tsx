@@ -20,11 +20,11 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import {
-  getCrewDepartmentNames,
-  getCrewRolesForDepartment,
-  getHodRoleForDepartment,
-  type CrewDepartmentName,
-} from '@/lib/people/crewDepartments'
+  getResolvedCrewDepartmentNames,
+  getResolvedCrewRolesForDepartment,
+  getResolvedHodRoleForDepartment,
+} from '@/lib/people/crewHierarchyResolver'
+import type { CrewHierarchyConfig } from '@/lib/people/crewHierarchyTypes'
 import type { Person } from '@/lib/db/types'
 
 const emailRefine = (v: string | undefined) =>
@@ -50,12 +50,16 @@ export const crewFormSchema = z
 
 export type CrewFormValues = z.infer<typeof crewFormSchema>
 
-function personToCrewFormValues(p: Partial<Person>): CrewFormValues {
+function personToCrewFormValues(
+  p: Partial<Person>,
+  hierarchy: CrewHierarchyConfig
+): CrewFormValues {
+  const deptNames = getResolvedCrewDepartmentNames(hierarchy)
+  const validDept =
+    p.department?.trim() && deptNames.includes(p.department.trim())
   return {
     name: p.name ?? '',
-    department: (p.department?.trim() && getCrewDepartmentNames().includes(p.department.trim() as CrewDepartmentName))
-      ? p.department.trim()!
-      : '',
+    department: validDept ? p.department!.trim() : '',
     role_name: p.role_name ?? '',
     email: p.email ?? '',
     phone: p.phone ?? '',
@@ -65,12 +69,14 @@ function personToCrewFormValues(p: Partial<Person>): CrewFormValues {
 }
 
 export function CrewForm({
+  hierarchy,
   defaultValues,
   mode,
   onSubmit,
   onCancel,
   isLoading,
 }: {
+  hierarchy: CrewHierarchyConfig
   defaultValues: Partial<Person>
   mode: 'add' | 'edit'
   onSubmit: (d: CrewFormValues) => void
@@ -79,23 +85,23 @@ export function CrewForm({
 }) {
   const form = useForm<CrewFormValues>({
     resolver: zodResolver(crewFormSchema) as never,
-    defaultValues: personToCrewFormValues(defaultValues),
+    defaultValues: personToCrewFormValues(defaultValues, hierarchy),
   })
 
   const department = form.watch('department')
   const roleName = form.watch('role_name')
 
+  const deptNames = getResolvedCrewDepartmentNames(hierarchy)
   const roleOptions = useMemo(() => {
-    if (!department || !getCrewDepartmentNames().includes(department as CrewDepartmentName))
-      return []
-    const canon = getCrewRolesForDepartment(department as CrewDepartmentName)
+    if (!department || !deptNames.includes(department)) return []
+    const canon = getResolvedCrewRolesForDepartment(hierarchy, department)
     const existing = mode === 'edit' ? defaultValues.role_name?.trim() : null
     if (existing && !canon.includes(existing)) return [...canon, existing]
     return canon
-  }, [department, mode, defaultValues.role_name])
+  }, [hierarchy, department, mode, defaultValues.role_name, deptNames])
 
   const hodRole = department
-    ? getHodRoleForDepartment(department as CrewDepartmentName)
+    ? getResolvedHodRoleForDepartment(hierarchy, department)
     : null
   const isHod = hodRole != null && roleName?.trim() === hodRole
 
@@ -130,16 +136,19 @@ export function CrewForm({
                 value={department || undefined}
                 onValueChange={(v) => {
                   form.setValue('department', v)
-                  const roles = v ? getCrewRolesForDepartment(v as CrewDepartmentName) : []
+                  const roles = v
+                    ? getResolvedCrewRolesForDepartment(hierarchy, v)
+                    : []
                   const current = form.getValues('role_name')?.trim()
-                  if (current && !roles.includes(current)) form.setValue('role_name', '')
+                  if (current && !roles.includes(current))
+                    form.setValue('role_name', '')
                 }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
-                  {getCrewDepartmentNames().map((d) => (
+                  {deptNames.map((d) => (
                     <SelectItem key={d} value={d}>
                       {d}
                     </SelectItem>

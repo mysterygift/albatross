@@ -255,6 +255,12 @@ pub fn run() {
             sql: include_str!("../migrations/0042_people_role_name.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 43,
+            description: "production_crew_hierarchy_configs",
+            sql: include_str!("../migrations/0043_production_crew_hierarchy_configs.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

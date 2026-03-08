@@ -20,6 +20,10 @@ import {
   type CallSheetCastRow,
 } from '@/lib/call-sheets/castRequirements'
 import { getCallSheetCrewRequirements } from '@/lib/call-sheets/crewRequirements'
+import {
+  getEffectiveCrewHierarchyOrDefault,
+  getDefaultCrewHierarchyConfig,
+} from '@/lib/people/crewHierarchyResolver'
 import { getProductionById } from '@/lib/db/repositories/production'
 import { generateCallSheetPdf } from '@/lib/pdf/callSheet'
 import type { CallSheetData } from '@/lib/pdf/callSheet'
@@ -53,6 +57,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url
 ).toString()
+
+const defaultCrewHierarchy = getDefaultCrewHierarchyConfig()
 
 export function CallSheetsPage() {
   const { currentProductionId } = useCurrentProduction()
@@ -117,6 +123,13 @@ export function CallSheetsPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: hierarchyData } = useQuery({
+    queryKey: ['crew-hierarchy', currentProductionId],
+    queryFn: () => getEffectiveCrewHierarchyOrDefault(currentProductionId),
+    enabled: !!currentProductionId,
+  })
+  const crewHierarchy = hierarchyData ?? defaultCrewHierarchy
+
   const { data: cast = [] } = useQuery({
     queryKey: ['cast', currentProductionId],
     queryFn: () => listCast(currentProductionId ?? ''),
@@ -176,8 +189,8 @@ export function CallSheetsPage() {
   const castCalledNames = useMemo(() => getCastCalledNames(castResult.castRows), [castResult.castRows])
 
   const crewGroupsForPreview = useMemo(
-    () => getCallSheetCrewRequirements(bookingsForDay, crew),
-    [bookingsForDay, crew]
+    () => getCallSheetCrewRequirements(crewHierarchy, bookingsForDay, crew),
+    [crewHierarchy, bookingsForDay, crew]
   )
 
   const locationIdsUsed = useMemo(() => {
@@ -279,7 +292,7 @@ export function CallSheetsPage() {
       schedule,
       castCalled: castCalledNames,
       castCalledRows: castResult.castRows,
-      crewGroups: getCallSheetCrewRequirements(bookingsForDay, crew),
+      crewGroups: getCallSheetCrewRequirements(crewHierarchy, bookingsForDay, crew),
       locations: locationsForDay.map((l) => ({
         name: l.name,
         address: l.address,
@@ -300,6 +313,7 @@ export function CallSheetsPage() {
     mealTimesFromDay,
     castCalledNames,
     castResult.castRows,
+    crewHierarchy,
     bookingsForDay,
     crew,
     locationsForDay,

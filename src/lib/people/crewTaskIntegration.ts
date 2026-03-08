@@ -2,29 +2,45 @@
  * Read-only task integration for Crew Manager.
  * Connects crew departments to task assigned_department and surfaces HOD responsibility.
  * No task mutations or schema changes; this layer is for summaries and visibility only.
+ *
+ * Uses the effective production hierarchy (resolved); callers pass hierarchy from
+ * getEffectiveCrewHierarchy / getEffectiveCrewHierarchyOrDefault.
  */
 
 import type { Person } from '@/lib/db/types'
 import type { ProductionTask } from '@/lib/db/types'
+import type { CrewHierarchyConfig } from '@/lib/people/crewHierarchyTypes'
 import {
-  getCrewDepartmentNames,
-  getHodRoleForDepartment,
-  getTaskDepartmentsForCrewDepartment,
-  type CrewDepartmentName,
-} from '@/lib/people/crewDepartments'
+  getResolvedCrewDepartmentNames,
+  getResolvedHodRoleForDepartment,
+  getResolvedTaskDepartmentsForCrewDepartment,
+} from '@/lib/people/crewHierarchyResolver'
 
-const CANONICAL_SET = new Set<string>(getCrewDepartmentNames())
-
-function getCanonicalDepartment(person: Person): CrewDepartmentName | null {
-  const d = person.department?.trim()
-  if (!d) return null
-  return CANONICAL_SET.has(d) ? (d as CrewDepartmentName) : null
+function getResolvedDepartmentSet(hierarchy: CrewHierarchyConfig): Set<string> {
+  return new Set(getResolvedCrewDepartmentNames(hierarchy))
 }
 
-function isPersonHodForDept(person: Person, department: CrewDepartmentName): boolean {
-  const dept = getCanonicalDepartment(person)
+function getCanonicalDepartment(
+  hierarchy: CrewHierarchyConfig,
+  person: Person
+): string | null {
+  const d = person.department?.trim()
+  if (!d) return null
+  const set = getResolvedDepartmentSet(hierarchy)
+  return set.has(d) ? d : null
+}
+
+function isPersonHodForDept(
+  hierarchy: CrewHierarchyConfig,
+  person: Person,
+  department: string
+): boolean {
+  const dept = getCanonicalDepartment(hierarchy, person)
   if (dept !== department) return false
-  return (person.role_name?.trim() ?? '') === getHodRoleForDepartment(department)
+  return (
+    (person.role_name?.trim() ?? '') ===
+    getResolvedHodRoleForDepartment(hierarchy, department)
+  )
 }
 
 export type TaskSummary = {
@@ -42,13 +58,17 @@ function todayLocal(): string {
 
 /**
  * Returns tasks whose assigned_department matches any of the task department labels
- * for the given crew department.
+ * for the given crew department in the hierarchy.
  */
 export function getTasksForCrewDepartment(
+  hierarchy: CrewHierarchyConfig,
   tasks: ProductionTask[],
-  crewDepartment: CrewDepartmentName
+  crewDepartment: string
 ): ProductionTask[] {
-  const taskDepts = getTaskDepartmentsForCrewDepartment(crewDepartment)
+  const taskDepts = getResolvedTaskDepartmentsForCrewDepartment(
+    hierarchy,
+    crewDepartment
+  )
   if (taskDepts.length === 0) return []
   const set = new Set(taskDepts)
   return tasks.filter(
@@ -60,10 +80,15 @@ export function getTasksForCrewDepartment(
  * Returns a task summary for the given crew department (total, incomplete, complete, overdue).
  */
 export function getTaskSummaryForCrewDepartment(
+  hierarchy: CrewHierarchyConfig,
   tasks: ProductionTask[],
-  crewDepartment: CrewDepartmentName
+  crewDepartment: string
 ): TaskSummary {
-  const deptTasks = getTasksForCrewDepartment(tasks, crewDepartment)
+  const deptTasks = getTasksForCrewDepartment(
+    hierarchy,
+    tasks,
+    crewDepartment
+  )
   const today = todayLocal()
   let incomplete = 0
   let complete = 0
@@ -82,7 +107,7 @@ export function getTaskSummaryForCrewDepartment(
 }
 
 export type HodResponsibilityRow = {
-  crewDepartment: CrewDepartmentName
+  crewDepartment: string
   taskSummary: TaskSummary
   hasHod: boolean
   hodPerson: Person | null
@@ -90,16 +115,23 @@ export type HodResponsibilityRow = {
 
 /**
  * Returns per-department HOD responsibility summary: task counts and whether an HOD is assigned.
+ * Department order and HOD derivation come from the resolved hierarchy.
  */
 export function getHodResponsibilitySummary(
+  hierarchy: CrewHierarchyConfig,
   crew: Person[],
   tasks: ProductionTask[]
 ): HodResponsibilityRow[] {
-  const departments = getCrewDepartmentNames()
+  const departments = getResolvedCrewDepartmentNames(hierarchy)
   return departments.map((crewDepartment) => {
-    const taskSummary = getTaskSummaryForCrewDepartment(tasks, crewDepartment)
+    const taskSummary = getTaskSummaryForCrewDepartment(
+      hierarchy,
+      tasks,
+      crewDepartment
+    )
     const hodPerson =
-      crew.find((p) => isPersonHodForDept(p, crewDepartment)) ?? null
+      crew.find((p) => isPersonHodForDept(hierarchy, p, crewDepartment)) ??
+      null
     return {
       crewDepartment,
       taskSummary,
@@ -113,10 +145,11 @@ export function getHodResponsibilitySummary(
  * Returns departments that have at least one incomplete task but no HOD in the crew list.
  */
 export function getDepartmentsWithTasksButNoHod(
+  hierarchy: CrewHierarchyConfig,
   crew: Person[],
   tasks: ProductionTask[]
 ): HodResponsibilityRow[] {
-  return getHodResponsibilitySummary(crew, tasks).filter(
+  return getHodResponsibilitySummary(hierarchy, crew, tasks).filter(
     (row) => row.taskSummary.incomplete > 0 && !row.hasHod
   )
 }

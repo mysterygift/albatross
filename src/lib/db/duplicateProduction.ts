@@ -53,7 +53,7 @@ export async function duplicateProduction(
   const notes = (prodRows[0]!.notes as string | null) ?? null
 
   // Load all source data first (reads only).
-  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs] = await Promise.all([
+  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs] = await Promise.all([
     db.select<Record<string, unknown>[]>(`SELECT * FROM units WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM people WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM locations WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -83,6 +83,7 @@ export async function duplicateProduction(
     db.select<Record<string, unknown>[]>(`SELECT * FROM clearances WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM equipment_terms WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM documents WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM production_crew_hierarchy_configs WHERE production_id = $1`, [sourceProductionId]),
   ])
 
   const taskIdMap: IdMap = new Map()
@@ -395,6 +396,16 @@ export async function duplicateProduction(
     statements.push({
       sql: `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       bindValues: [id, newProdId, r.entity_type, entityId, r.file_name, newRelPath, r.mime_type, ts, ts],
+    })
+  }
+
+  // Crew hierarchy is production-specific setup; Crew Manager, task mapping, and call-sheet
+  // ordering depend on it. Duplicate any stored config so the new production keeps the same
+  // operational structure. If source has no config row, none is created—resolver falls back to default.
+  for (const r of crewHierarchyConfigs) {
+    statements.push({
+      sql: `INSERT INTO production_crew_hierarchy_configs (id, production_id, config_json, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+      bindValues: [newId(), newProdId, r.config_json, ts, ts],
     })
   }
 

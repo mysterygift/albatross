@@ -13,12 +13,13 @@ import { listShootDayUnitsByProduction } from '@/lib/db/repositories/shoot-day-u
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import {
-  getCanonicalDepartmentName,
-  getHodRoleForDepartment,
-  getCrewRolesForDepartment,
-  isHodRole,
-  type CrewDepartmentName,
-} from '@/lib/people/crewDepartments'
+  getEffectiveCrewHierarchyOrDefault,
+  getDefaultCrewHierarchyConfig,
+  getResolvedCanonicalDepartmentName,
+  getResolvedHodRoleForDepartment,
+  getResolvedCrewRolesForDepartment,
+  isResolvedHodRole,
+} from '@/lib/people/crewHierarchyResolver'
 import {
   getHodResponsibilitySummary,
   getTaskSummaryForCrewDepartment,
@@ -45,6 +46,8 @@ function empty(s: string | null | undefined): string {
   const t = s?.trim()
   return t === '' || t == null ? '—' : t
 }
+
+const defaultCrewHierarchy = getDefaultCrewHierarchyConfig()
 
 export function CrewDetailPage() {
   const { personId } = useParams<{ personId: string }>()
@@ -100,6 +103,13 @@ export function CrewDetailPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: hierarchyData } = useQuery({
+    queryKey: ['crew-hierarchy', currentProductionId],
+    queryFn: () => getEffectiveCrewHierarchyOrDefault(currentProductionId),
+    enabled: !!currentProductionId,
+  })
+  const hierarchy = hierarchyData ?? defaultCrewHierarchy
+
   const shootDayById = useMemo(() => {
     const m = new Map<string, { shoot_date: string }>()
     for (const d of shootDays) m.set(d.id, { shoot_date: d.shoot_date })
@@ -121,27 +131,29 @@ export function CrewDetailPage() {
   }, [shootDayUnits, units])
 
   const hodResponsibilitySummary = useMemo(
-    () => getHodResponsibilitySummary(crew, tasks),
-    [crew, tasks]
+    () => getHodResponsibilitySummary(hierarchy, crew, tasks),
+    [hierarchy, crew, tasks]
   )
 
   const canonicalDept = useMemo(
-    () => (person ? getCanonicalDepartmentName(person.department) : null),
-    [person]
+    () => (person ? getResolvedCanonicalDepartmentName(hierarchy, person.department) : null),
+    [hierarchy, person]
   )
 
   const isHod = useMemo(
     () =>
       person && canonicalDept != null
-        ? isHodRole(canonicalDept, person.role_name?.trim() ?? '')
+        ? isResolvedHodRole(hierarchy, canonicalDept, person.role_name?.trim() ?? '')
         : false,
-    [person, canonicalDept]
+    [hierarchy, person, canonicalDept]
   )
 
   const deptTaskSummary = useMemo(
     () =>
-      canonicalDept ? getTaskSummaryForCrewDepartment(tasks, canonicalDept) : null,
-    [canonicalDept, tasks]
+      canonicalDept
+        ? getTaskSummaryForCrewDepartment(hierarchy, tasks, canonicalDept)
+        : null,
+    [hierarchy, canonicalDept, tasks]
   )
 
   const deptHodRow = useMemo(
@@ -371,7 +383,7 @@ export function CrewDetailPage() {
               <>
                 <p className="font-medium">{canonicalDept}</p>
                 <p className="text-muted-foreground">
-                  HOD role: {getHodRoleForDepartment(canonicalDept) || '—'}
+                  HOD role: {getResolvedHodRoleForDepartment(hierarchy, canonicalDept) || '—'}
                 </p>
                 {isHod ? (
                   <p className="text-primary font-medium">You are the departmental lead.</p>
@@ -482,7 +494,7 @@ export function CrewDetailPage() {
               )}
               {canonicalDept && person.role_name?.trim() && (
                 (() => {
-                  const roles = getCrewRolesForDepartment(canonicalDept as CrewDepartmentName)
+                  const roles = getResolvedCrewRolesForDepartment(hierarchy, canonicalDept)
                   const inHierarchy = roles.includes(person.role_name!.trim())
                   return !inHierarchy ? (
                     <p className="text-muted-foreground text-xs">
@@ -499,6 +511,7 @@ export function CrewDetailPage() {
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <CrewForm
+            hierarchy={hierarchy}
             key={person.id}
             defaultValues={person}
             mode="edit"

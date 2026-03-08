@@ -7,11 +7,13 @@ import { useCurrentProduction } from '@/features/productions/context'
 import { listCrew, createPerson, updatePerson } from '@/lib/db/repositories/person'
 import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import {
-  getCrewDepartmentNames,
-  getCrewRolesForDepartment,
-  isHodRole,
-  type CrewDepartmentName,
-} from '@/lib/people/crewDepartments'
+  getEffectiveCrewHierarchyOrDefault,
+  getDefaultCrewHierarchyConfig,
+  getResolvedCrewDepartmentNames,
+  getResolvedCrewRolesForDepartment,
+  isResolvedHodRole,
+} from '@/lib/people/crewHierarchyResolver'
+import type { CrewHierarchyConfig } from '@/lib/people/crewHierarchyTypes'
 import {
   getHodResponsibilitySummary,
   getDepartmentsWithTasksButNoHod,
@@ -44,35 +46,42 @@ import { Search, Plus, Pencil, Eye } from 'lucide-react'
 import { CrewForm, type CrewFormValues } from '@/features/people/components/CrewForm'
 import { CrewSetupWizard } from '@/features/people/crew-manager/CrewSetupWizard'
 
-const CANONICAL_DEPARTMENT_NAMES = getCrewDepartmentNames()
-const CANONICAL_DEPARTMENT_SET = new Set<string>(CANONICAL_DEPARTMENT_NAMES)
-
-function getCanonicalDepartment(person: Person): CrewDepartmentName | null {
+function getCanonicalDepartment(
+  hierarchy: CrewHierarchyConfig,
+  person: Person
+): string | null {
   const d = person.department?.trim()
   if (!d) return null
-  return CANONICAL_DEPARTMENT_SET.has(d) ? (d as CrewDepartmentName) : null
+  const set = new Set(getResolvedCrewDepartmentNames(hierarchy))
+  return set.has(d) ? d : null
 }
 
-function isPersonHod(person: Person): boolean {
-  const dept = getCanonicalDepartment(person)
+function isPersonHod(hierarchy: CrewHierarchyConfig, person: Person): boolean {
+  const dept = getCanonicalDepartment(hierarchy, person)
   if (!dept) return false
-  return isHodRole(dept, person.role_name?.trim() ?? '')
+  return isResolvedHodRole(hierarchy, dept, person.role_name?.trim() ?? '')
 }
 
-function getRoleOrderIndex(person: Person): number {
-  const dept = getCanonicalDepartment(person)
+function getRoleOrderIndex(
+  hierarchy: CrewHierarchyConfig,
+  person: Person
+): number {
+  const dept = getCanonicalDepartment(hierarchy, person)
   if (!dept) return 999
-  const roles = getCrewRolesForDepartment(dept)
+  const roles = getResolvedCrewRolesForDepartment(hierarchy, dept)
   const role = person.role_name?.trim() ?? ''
   const idx = roles.indexOf(role)
   if (idx === -1) return 999
   return idx
 }
 
-function isRoleInCanonicalHierarchy(person: Person): boolean {
-  const dept = getCanonicalDepartment(person)
+function isRoleInCanonicalHierarchy(
+  hierarchy: CrewHierarchyConfig,
+  person: Person
+): boolean {
+  const dept = getCanonicalDepartment(hierarchy, person)
   if (!dept) return false
-  const roles = getCrewRolesForDepartment(dept)
+  const roles = getResolvedCrewRolesForDepartment(hierarchy, dept)
   return roles.includes(person.role_name?.trim() ?? '')
 }
 
@@ -81,9 +90,11 @@ function trimOrNull(s: string | undefined): string | null {
   return t === '' ? null : t ?? null
 }
 
-type DepartmentFilter = 'all' | CrewDepartmentName | 'other'
+type DepartmentFilter = 'all' | 'other' | string
 type HodFilter = 'all' | 'hod_only' | 'non_hod'
 type MissingFilter = 'all' | 'missing_department' | 'missing_role'
+
+const defaultHierarchy = getDefaultCrewHierarchyConfig()
 
 export function CrewManagerPage() {
   const { currentProductionId } = useCurrentProduction()
@@ -96,6 +107,13 @@ export function CrewManagerPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const hasAutoOpenedWizardRef = useRef(false)
+
+  const { data: hierarchyData } = useQuery({
+    queryKey: ['crew-hierarchy', currentProductionId],
+    queryFn: () => getEffectiveCrewHierarchyOrDefault(currentProductionId),
+    enabled: !!currentProductionId,
+  })
+  const hierarchy = hierarchyData ?? defaultHierarchy
 
   const { data: crew = [], isLoading: crewLoading } = useQuery({
     queryKey: ['crew', currentProductionId],
@@ -149,12 +167,17 @@ export function CrewManagerPage() {
 
   const summary = useMemo(() => {
     const total = crew.length
-    const canonicalDepts = new Set(crew.map(getCanonicalDepartment).filter(Boolean))
-    const hodCount = crew.filter(isPersonHod).length
+    const canonicalDepts = new Set(
+      crew.map((p) => getCanonicalDepartment(hierarchy, p)).filter(Boolean)
+    )
+    const hodCount = crew.filter((p) => isPersonHod(hierarchy, p)).length
     const missingDept = crew.filter((p) => !p.department?.trim()).length
     const missingRole = crew.filter((p) => !p.role_name?.trim()).length
     const nonStandardRole = crew.filter(
-      (p) => p.role_name?.trim() && getCanonicalDepartment(p) && !isRoleInCanonicalHierarchy(p)
+      (p) =>
+        p.role_name?.trim() &&
+        getCanonicalDepartment(hierarchy, p) &&
+        !isRoleInCanonicalHierarchy(hierarchy, p)
     ).length
     return {
       total,
@@ -164,7 +187,7 @@ export function CrewManagerPage() {
       missingRole,
       nonStandardRole,
     }
-  }, [crew])
+  }, [crew, hierarchy])
 
   const filteredCrew = useMemo(() => {
     let list = crew
@@ -189,48 +212,53 @@ export function CrewManagerPage() {
 
     if (departmentFilter !== 'all') {
       if (departmentFilter === 'other') {
-        list = list.filter((p) => !getCanonicalDepartment(p))
+        list = list.filter((p) => !getCanonicalDepartment(hierarchy, p))
       } else {
-        list = list.filter((p) => getCanonicalDepartment(p) === departmentFilter)
+        list = list.filter(
+          (p) => getCanonicalDepartment(hierarchy, p) === departmentFilter
+        )
       }
     }
 
-    if (hodFilter === 'hod_only') list = list.filter(isPersonHod)
-    else if (hodFilter === 'non_hod') list = list.filter((p) => !isPersonHod(p))
+    if (hodFilter === 'hod_only')
+      list = list.filter((p) => isPersonHod(hierarchy, p))
+    else if (hodFilter === 'non_hod')
+      list = list.filter((p) => !isPersonHod(hierarchy, p))
 
     if (missingFilter === 'missing_department') list = list.filter((p) => !p.department?.trim())
     else if (missingFilter === 'missing_role') list = list.filter((p) => !p.role_name?.trim())
 
     return list
-  }, [crew, search, departmentFilter, hodFilter, missingFilter])
+  }, [crew, hierarchy, search, departmentFilter, hodFilter, missingFilter])
 
   const sortedCrew = useMemo(() => {
-    const deptOrder = new Map<CrewDepartmentName | 'other', number>()
-    CANONICAL_DEPARTMENT_NAMES.forEach((name, i) => deptOrder.set(name, i))
-    deptOrder.set('other', CANONICAL_DEPARTMENT_NAMES.length)
+    const canonicalNames = getResolvedCrewDepartmentNames(hierarchy)
+    const deptOrder = new Map<string, number>()
+    canonicalNames.forEach((name, i) => deptOrder.set(name, i))
+    deptOrder.set('other', canonicalNames.length)
 
     return [...filteredCrew].sort((a, b) => {
-      const deptA = getCanonicalDepartment(a) ?? 'other'
-      const deptB = getCanonicalDepartment(b) ?? 'other'
+      const deptA = getCanonicalDepartment(hierarchy, a) ?? 'other'
+      const deptB = getCanonicalDepartment(hierarchy, b) ?? 'other'
       const orderA = deptOrder.get(deptA) ?? 999
       const orderB = deptOrder.get(deptB) ?? 999
       if (orderA !== orderB) return orderA - orderB
 
-      const hodA = isPersonHod(a) ? -1 : getRoleOrderIndex(a)
-      const hodB = isPersonHod(b) ? -1 : getRoleOrderIndex(b)
+      const hodA = isPersonHod(hierarchy, a) ? -1 : getRoleOrderIndex(hierarchy, a)
+      const hodB = isPersonHod(hierarchy, b) ? -1 : getRoleOrderIndex(hierarchy, b)
       if (hodA !== hodB) return hodA - hodB
 
       return (a.name ?? '').localeCompare(b.name ?? '')
     })
-  }, [filteredCrew])
+  }, [filteredCrew, hierarchy])
 
   const hodResponsibilitySummary = useMemo(
-    () => getHodResponsibilitySummary(crew, tasks),
-    [crew, tasks]
+    () => getHodResponsibilitySummary(hierarchy, crew, tasks),
+    [hierarchy, crew, tasks]
   )
   const departmentsWithTasksButNoHod = useMemo(
-    () => getDepartmentsWithTasksButNoHod(crew, tasks),
-    [crew, tasks]
+    () => getDepartmentsWithTasksButNoHod(hierarchy, crew, tasks),
+    [hierarchy, crew, tasks]
   )
   const departmentRowsWithTasks = useMemo(
     () => hodResponsibilitySummary.filter((row) => row.taskSummary.total > 0),
@@ -409,7 +437,7 @@ export function CrewManagerPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All departments</SelectItem>
-            {CANONICAL_DEPARTMENT_NAMES.map((d) => (
+            {getResolvedCrewDepartmentNames(hierarchy).map((d) => (
               <SelectItem key={d} value={d}>
                 {d}
               </SelectItem>
@@ -504,13 +532,13 @@ export function CrewManagerPage() {
                       {p.role_name?.trim() || '—'}
                     </TableCell>
                     <TableCell>
-                      {isPersonHod(p) ? (
+                      {isPersonHod(hierarchy, p) ? (
                         <div className="flex flex-wrap items-center gap-1.5">
                           <Badge variant="secondary" className="font-normal text-xs">
                             HOD
                           </Badge>
                           {(() => {
-                            const dept = getCanonicalDepartment(p)
+                            const dept = getCanonicalDepartment(hierarchy, p)
                             if (!dept) return null
                             const row = hodResponsibilitySummary.find(
                               (r) => r.crewDepartment === dept
@@ -575,6 +603,7 @@ export function CrewManagerPage() {
       >
         <DialogContent>
           <CrewForm
+            hierarchy={hierarchy}
             key={editingId ?? 'add'}
             defaultValues={editingId ? crew.find((c) => c.id === editingId) ?? {} : {}}
             mode={editingId ? 'edit' : 'add'}
@@ -593,6 +622,7 @@ export function CrewManagerPage() {
       </Dialog>
 
       <CrewSetupWizard
+        hierarchy={hierarchy}
         open={wizardOpen}
         onOpenChange={setWizardOpen}
         onCreateCrew={async (values) => {

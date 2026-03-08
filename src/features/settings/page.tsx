@@ -62,7 +62,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown } from 'lucide-react'
+import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown, Users } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import {
   ensureDemoData,
@@ -73,6 +73,7 @@ import {
 } from '@/lib/db/seed/demoProductionSeed'
 import { getProductionBySlug } from '@/lib/db/repositories/production'
 import { getSetting, setSetting } from '@/lib/db/repositories/settings'
+import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { getRate } from '@/lib/money/exchangeRates'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
@@ -499,8 +500,26 @@ export function SettingsPage() {
         </DialogContent>
       </Dialog>
 
+      {currentProductionId && (
+        <Card className="border-zinc-700 bg-zinc-900 text-foreground">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-zinc-100">
+              <Users className="size-5" />
+              Crew Structure
+            </CardTitle>
+            <CardDescription className="text-zinc-400">
+              Configure departments, roles, Heads of Department, and task department mappings for this production.
+              This drives Crew Manager options, HOD derivation, task responsibility mapping, and call-sheet crew grouping and order.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <CrewStructureEditor productionId={currentProductionId} />
+          </CardContent>
+        </Card>
+      )}
+
       {!currentProductionId && (
-        <p className="text-muted-foreground">Select a production to manage cost report groups, chart of accounts, and other settings.</p>
+        <p className="text-muted-foreground">Select a production to manage cost report groups, chart of accounts, crew structure, and other settings.</p>
       )}
 
       <Card>
