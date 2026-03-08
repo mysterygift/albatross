@@ -59,6 +59,7 @@ export const navItems: NavItem[] = [
     sub: [
       { to: '/people/bookings', label: 'Bookings' },
       { to: '/people/day-out-of-days', label: 'Day Out of Days' },
+      { to: '/people/cast-manager', label: 'Cast Manager' },
     ],
   },
   { to: '/locations', label: 'Locations', icon: MapPin },

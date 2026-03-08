@@ -249,6 +249,12 @@ pub fn run() {
             sql: include_str!("../migrations/0041_shot_cast.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 42,
+            description: "people_role_name",
+            sql: include_str!("../migrations/0042_people_role_name.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

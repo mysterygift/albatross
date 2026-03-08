@@ -6,7 +6,7 @@ import { listShootDaysByProduction, getShootDayById } from '@/lib/db/repositorie
 import { listStripsByShootDay } from '@/lib/db/repositories/stripboard-strips'
 import { listShootDayUnitsByShootDay } from '@/lib/db/repositories/shoot-day-units'
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
-import { listScenesByProduction } from '@/lib/db/repositories/schedule'
+import { listScenesByProduction, listShotsByProduction } from '@/lib/db/repositories/schedule'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { listKeyContactsByProduction } from '@/lib/db/repositories/key-contacts'
 import { getCastIdsBySceneIds } from '@/lib/db/repositories/scene-cast'
@@ -95,6 +95,12 @@ export function CallSheetsPage() {
   const { data: scenes = [] } = useQuery({
     queryKey: ['scenes', currentProductionId],
     queryFn: () => listScenesByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: shots = [] } = useQuery({
+    queryKey: ['shots', currentProductionId],
+    queryFn: () => listShotsByProduction(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
 
@@ -205,6 +211,8 @@ export function CallSheetsPage() {
     const unit = dayUnit ? units.find((u) => u.id === dayUnit.unit_id) : null
     const unitName = unit?.name ?? 'Main Unit'
     const schedule = unitStrips.map((s) => {
+      const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
+      const shotNumber = shot?.shot_number ?? null
       if ((s.strip_type === 'SHOT' || s.strip_type === 'SCENE') && s.scene_id) {
         const scene = scenes.find((c) => c.id === s.scene_id)
         return {
@@ -214,6 +222,7 @@ export function CallSheetsPage() {
           int_ext: scene?.int_ext ?? null,
           day_night: scene?.day_night ?? null,
           page_eighths: scene?.page_eighths ?? null,
+          shot_number: shotNumber,
           title: null,
           description: null,
         }
@@ -225,6 +234,7 @@ export function CallSheetsPage() {
         int_ext: null,
         day_night: null,
         page_eighths: null,
+        shot_number: shotNumber,
         title: s.title ?? null,
         description: s.description ?? null,
       }
@@ -234,13 +244,17 @@ export function CallSheetsPage() {
       productionName: production.name,
       shootDate: shootDay.shoot_date,
       unitName,
+      dayNumber: shootDay.day_number ?? null,
       callTime: shootDay.call_time ?? null,
       wrapTime: shootDay.wrap_time ?? null,
+      dayNotes: shootDay.notes ?? null,
+      unitNotes: dayUnit?.notes ?? null,
       keyContacts: keyContacts.map((c) => ({
         department: c.department,
         name: c.name ?? null,
         phone: c.phone ?? null,
         email: c.email ?? null,
+        notes: c.notes ?? null,
       })),
       hospitalName: shootDay.hospital_name ?? null,
       hospitalAddress: shootDay.hospital_address ?? null,
@@ -253,7 +267,12 @@ export function CallSheetsPage() {
       schedule,
       castCalled: castCalledNames,
       castCalledRows: castResult.castRows,
-      locations: locationsForDay.map((l) => ({ name: l.name, address: l.address })),
+      locations: locationsForDay.map((l) => ({
+        name: l.name,
+        address: l.address,
+        what3words: l.what3words ?? null,
+        notes: l.notes ?? null,
+      })),
     }
   }, [
     production,
@@ -263,6 +282,7 @@ export function CallSheetsPage() {
     units,
     unitStrips,
     scenes,
+    shots,
     keyContacts,
     mealTimesFromDay,
     castCalledNames,

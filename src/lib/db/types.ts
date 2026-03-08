@@ -36,6 +36,8 @@ export type Person = {
   agent_name: string | null
   agent_email: string | null
   agent_phone: string | null
+  /** Cast role (e.g. character name); null for crew or when unset. */
+  role_name: string | null
 } & SoftDeletable
 
 export type Location = {

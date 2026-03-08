@@ -1,22 +1,34 @@
 # People, Booking & Day out of Days (DooD)
 
-This document describes the **current state** of the People, Booking, and Day-out-of-Days (DooD) systems and **dependencies** that may be affected by refactors. It is a developer guide for understanding the architecture and assessing impact of changes.
+**User guide and technical reference.**
+
+This document has two parts: a **user guide** (how to use the People area and Cast Manager in Albatross) and a **technical reference** (current state, dependencies, refactor impact, and file reference). It describes the People, Booking, and Day-out-of-Days (DooD) systems and dependencies that may be affected by refactors.
 
 ---
 
 ## Table of contents
 
+**Part 0 — User guide**
+
+- [1. What the People area is for](#1-what-the-people-area-is-for)
+- [2. Getting around: Bookings, Day Out of Days, Cast Manager](#2-getting-around-bookings-day-out-of-days-cast-manager)
+- [3. Cast Manager: managing cast and roles](#3-cast-manager-managing-cast-and-roles)
+- [4. People list: cast and crew in one place](#4-people-list-cast-and-crew-in-one-place)
+- [5. Bookings and Day Out of Days](#5-bookings-and-day-out-of-days)
+- [6. Person detail: single-person hub](#6-person-detail-single-person-hub)
+
 **Part I — Current state**
 
 - [1. Overview and purpose](#1-overview-and-purpose)
 - [2. People (Cast) list page](#2-people-cast-list-page)
-- [3. Person detail (People hub)](#3-person-detail-people-hub)
-- [4. Scene and shot participation](#4-scene-and-shot-participation)
-- [5. Bookings](#5-bookings)
-- [6. Booking intelligence](#6-booking-intelligence)
-- [7. Day out of Days (DooD)](#7-day-out-of-days-dood)
-- [8. Router and navigation](#8-router-and-navigation)
-- [9. Data flow: DooD work days and clashes](#9-data-flow-dood-work-days-and-clashes)
+- [3. Cast Manager](#3-cast-manager)
+- [4. Person detail (People hub)](#4-person-detail-people-hub)
+- [5. Scene and shot participation](#5-scene-and-shot-participation)
+- [6. Bookings](#6-bookings)
+- [7. Booking intelligence](#7-booking-intelligence)
+- [8. Day out of Days (DooD)](#8-day-out-of-days-dood)
+- [9. Router and navigation](#9-router-and-navigation)
+- [10. Data flow: DooD work days and clashes](#10-data-flow-dood-work-days-and-clashes)
 
 **Part II — Dependencies and refactor impact**
 
@@ -33,6 +45,50 @@ This document describes the **current state** of the People, Booking, and Day-ou
 
 ---
 
+## Part 0 — User guide
+
+### 1. What the People area is for
+
+The People area is the hub for everyone on your production: **cast and crew**. It covers who they are (names, contact and agent details, roles), which **scenes and shots** they appear in, which **shoot days** they are assigned to (**bookings**), and the **Day out of Days** view of who works when. Everything is scoped to the current production.
+
+### 2. Getting around: Bookings, Day Out of Days, Cast Manager
+
+In the app, **People** in the main navigation opens a submenu with three entries:
+
+- **Bookings** — See and manage who is assigned to which shoot days. This is the default People landing page.
+- **Day Out of Days** — A matrix of cast × shoot days (WORK, HOLD, OFF, CLASH) with PDF/CSV export.
+- **Cast Manager** — A cast-only list where you add and edit cast members, assign roles (e.g. character names), and manage agent and contact info.
+
+The full **People list** (all people, cast and crew together) lives at **People → Cast** in the app (route `/people/cast`). You can reach it from the app; from Cast Manager you can open individual person detail pages.
+
+### 3. Cast Manager: managing cast and roles
+
+**Cast Manager** is for **cast only** (no crew). Use it to:
+
+- **View** all cast in one table (cast number, name, role, agent, contact, contributor form status).
+- **Search** by name, role, cast number, or agent name.
+- **Filter** by contributor form status or by missing data (missing role, missing cast number, missing agent info).
+- **See summary counts** at the top: total cast, how many are missing cast number, role, or agent info.
+- **Add cast** — “Add cast” opens a cast-specific form; new records are always saved as cast.
+- **Edit cast** — Use the edit action on a row to update that cast member in the same form.
+
+The form is organised into: **Identity** (name, cast number, role), **Direct contact** (email, phone), **Agent** (name, email, phone), and **Production / admin** (contributor form status, phases, notes). Cast Manager uses the same underlying people data as the rest of the app (Call Sheets, scene/shot participation, etc.); there is no separate cast system.
+
+### 4. People list: cast and crew in one place
+
+The **People list** (route `/people/cast`) shows **all** people for the production — both cast and crew. You can filter by All, Crew, or Cast; create, edit, and delete any person; and open Person detail. The form here is the generic person form (including a cast/crew toggle). Use **Cast Manager** when you want a cast-focused workflow (roles, agent, completeness); use the **People list** when you need to manage crew or work with everyone in one list.
+
+### 5. Bookings and Day Out of Days
+
+- **Bookings** — Assign people to shoot days. The page shows calendar and list views, and **booking intelligence** highlights who is needed but not yet booked (or booked but not needed) based on the schedule and scene/shot participation.
+- **Day Out of Days** — See who works when. Work days are derived from the schedule (stripboard) and scene participation, not from bookings. Export to PDF or CSV.
+
+### 6. Person detail: single-person hub
+
+Opening a person (e.g. from the People list or Cast Manager) takes you to **Person detail** (`/people/:personId`). There you see summary cards (bookings count, next booked, clashes, DooD work days), the list of their bookings, booking need summary, availability, **Scene participation** (which scenes they are in), **Shot participation** (which shots; cast only), Day out of Days summary, and recent activity. You can edit the person via the edit dialog.
+
+---
+
 ## Part I — Current state
 
 ### 1. Overview and purpose
@@ -42,26 +98,35 @@ This document describes the **current state** of the People, Booking, and Day-ou
   1. **Scene participation (`scene_cast`)** — Scene-level source of truth: which cast members are in which scenes. DooD work days are derived from scheduled stripboard scenes + `scene_cast`.
   2. **Shot participation (`shot_cast`)** — Refinement layer: which cast members are in which shots within a scene. Used for scheduling intelligence and future logic; **DooD does not use `shot_cast`**.
   3. **Bookings** — Operational assignment of a person to a shoot day. Stored in `bookings`; not used by DooD for work-day derivation.
-- **Routes:** `/people` redirects to `/people/bookings`. Child routes: `/people/bookings`, `/people/day-out-of-days`, `/people/cast`, `/people/:personId` (Person detail).
-- **Navigation:** "People" (Users icon) in app nav with sub-items: Bookings, Day Out of Days. The Cast list is at `/people/cast` but is **not** in the People sub-nav. Person detail is reached via `/people/:personId` (e.g. from the Cast list).
+- **Routes:** `/people` redirects to `/people/bookings`. Child routes: `/people/bookings`, `/people/day-out-of-days`, `/people/cast-manager`, `/people/cast`, `/people/:personId` (Person detail). Cast Manager is in the People sub-nav.
+- **Navigation:** "People" (Users icon) in app nav with sub-items: **Bookings**, **Day Out of Days**, and **Cast Manager**. The full People list (cast and crew) is at `/people/cast`. Person detail is reached via `/people/:personId` (e.g. from the People list or Cast Manager).
+- **Cast and roles:** Cast records can store a **role** (e.g. character name) in the `role_name` field on the person record. Cast Manager is the main place to manage cast and roles; the generic People list also supports `role_name` for compatibility.
 - **Context:** All pages require a current production via `useCurrentProduction()`. Data is scoped by `production_id`.
 
 ### 2. People (Cast) list page
 
 - **Route:** `/people/cast`.
 - **File:** [src/features/people/page.tsx](src/features/people/page.tsx).
-- **Purpose:** List all people (cast and crew) for the production; filter by all/crew/cast; create, edit, delete persons. Rows can link to Person detail (`/people/:personId`).
-- **Form fields:** name, is_cast, email, phone, department, phases, notes, contributor_form_status; for cast: **cast_number**, **agent_name**, **agent_email**, **agent_phone**.
+- **Purpose:** Generic list of **all** people (cast and crew) for the production; filter by all/crew/cast; create, edit, delete persons. Rows can link to Person detail (`/people/:personId`). Distinct from **Cast Manager**, which is cast-only and role-focused.
+- **Form fields:** name, is_cast, email, phone, department, phases, notes, contributor_form_status; for cast: **cast_number**, **role_name**, **agent_name**, **agent_email**, **agent_phone** (role_name supported for compatibility).
 - **Data:** `Person` type in [src/lib/db/types.ts](src/lib/db/types.ts). Repository: [src/lib/db/repositories/person.ts](src/lib/db/repositories/person.ts) — `listPeopleByProduction`, `listCast`, `createPerson`, `updatePerson`, `deletePerson`. Table: `people` (production-scoped, `is_cast` flag).
 
-### 3. Person detail (People hub)
+### 3. Cast Manager
+
+- **Route:** `/people/cast-manager`.
+- **Files:** [src/features/people/cast-manager/page.tsx](src/features/people/cast-manager/page.tsx), [src/features/people/cast-manager/CastForm.tsx](src/features/people/cast-manager/CastForm.tsx).
+- **Purpose:** Cast-only management: list cast, search (name, role, cast number, agent), filter (contributor form status; missing role, cast number, or agent info), summary cards (total cast, missing data counts), **add cast** and **edit cast** via a cast-specific form. No crew; no cast/crew toggle in the form.
+- **Data:** Same `Person` type and `listCast` / `createPerson` / `updatePerson`; `role_name` on person. Create flow always sets `is_cast = 1`; edit flow does not change `is_cast` so cast remain cast.
+- **Form (CastForm):** Sections — **Identity** (name, cast number, role), **Direct contact** (email, phone), **Agent** (name, email, phone), **Production / admin** (contributor form status, phases, notes). Validation: name required; email and agent email valid if provided; contributor form status one of the allowed enum values.
+
+### 4. Person detail (People hub)
 
 - **Route:** `/people/:personId`.
 - **File:** [src/features/people/pages/PersonDetailPage.tsx](src/features/people/pages/PersonDetailPage.tsx).
 - **Purpose:** Single-person hub: summary cards (bookings count, next booked, clashes, DooD work days), **Bookings** section (list of bookings + link to Bookings page), **booking need summary** (days needed, days booked, missing, booked but not needed from [bookingIntelligence](#12-shared-libs-bookingssummary-and-bookingintelligence)), **Availability**, **Scene participation** (scene_cast: add/remove scenes), **Shot participation** (shot_cast: add/remove shots; cast only), **Day out of Days** summary (first/last work day, work days, clashes), **Recent activity**. Edit person via dialog.
 - **Data:** Person, bookings (listBookingsByPerson), availability, scene_cast (listSceneCastByPerson), shot_cast (listShotCastByPersonInProduction), shoot days, scheduled scenes per day, getPersonBookingsSummary, getPersonBookingNeedSummary.
 
-### 4. Scene and shot participation
+### 5. Scene and shot participation
 
 - **Scene participation (`scene_cast`):**
   - **Source of truth** for “this cast member is in this scene.” Used by DooD to derive work days (scheduled scenes per day → cast on those scenes).
@@ -73,14 +138,14 @@ This document describes the **current state** of the People, Booking, and Day-ou
   - **UI:** Person detail has a “Shot participation” section (cast only); Schedule → Shot list has per-shot cast with add/remove.
 - **Duplicate production:** Both `scene_cast` and `shot_cast` are copied (using scene/shot/person id maps). Bookings are **not** copied.
 
-### 5. Bookings
+### 6. Bookings
 
 - **Active UI:** [src/features/people/pages/BookingsPage.tsx](src/features/people/pages/BookingsPage.tsx). Route: `/people/bookings`.
 - **Purpose:** Calendar and list views of who is booked on which shoot days; filter by unit, department, cast/crew; create and delete bookings (person + shoot day). **Booking intelligence** (see below) surfaces needed-but-not-booked and booked-but-not-needed as advisory only; no automatic booking creation.
 - **Data:** `Booking` type in [src/lib/db/types.ts](src/lib/db/types.ts): `production_id`, `person_id`, `shoot_day_id` (nullable), `start_date`, `end_date`, `role`, `notes`. Repository: [src/lib/db/repositories/booking.ts](src/lib/db/repositories/booking.ts). Table: `bookings` with FK to `people(id)`; `shoot_day_id` references `shoot_days(id)` (e.g. ON DELETE SET NULL per migrations).
 - **Duplicate production:** When a production is duplicated via [src/lib/db/duplicateProduction.ts](src/lib/db/duplicateProduction.ts), **bookings are not copied**. The new production starts with no bookings.
 
-### 6. Booking intelligence
+### 7. Booking intelligence
 
 - **Purpose:** Read-only, advisory layer that compares **scheduled scenes/shots** + **scene_cast/shot_cast** with **bookings** to show who is needed vs booked, missing bookings, and unnecessary bookings. **Does not create or change bookings.**
 - **File:** [src/lib/people/bookingIntelligence.ts](src/lib/people/bookingIntelligence.ts).
@@ -92,7 +157,7 @@ This document describes the **current state** of the People, Booking, and Day-ou
 - **Stripboard:** Uses `getScheduledSceneIdsByShootDay` and `getScheduledShotIdsByShootDay` from [stripboard-strips](src/lib/db/repositories/stripboard-strips.ts).
 - **Consumers:** Bookings page (summary card, calendar badges, list view status and “Needed but not booked” section with “Add booking” links); Person detail (booking need summary in Bookings section).
 
-### 7. Day out of Days (DooD)
+### 8. Day out of Days (DooD)
 
 - **Active UI:** [src/features/people/pages/DayOutOfDaysPage.tsx](src/features/people/pages/DayOutOfDaysPage.tsx). Route: `/people/day-out-of-days`.
 - **Purpose:** Matrix of cast (rows) × shoot days (columns) with cell status: WORK (scheduled to work), HOLD (on hold), OFF (not working), CLASH (scheduled to work but marked unavailable). Export to PDF and CSV.
@@ -102,12 +167,12 @@ This document describes the **current state** of the People, Booking, and Day-ou
   - Result: which people “work” on which dates. Clashes come from `cast_availability`: if a person is scheduled to work (from stripboard + scene_cast) but has an UNAVAILABLE range covering that date, the cell is CLASH.
 - **Types:** `CastAvailability`, `CastAvailabilityStatus`, `SceneCast` in [src/lib/db/types.ts](src/lib/db/types.ts). Repositories: [cast-availability](src/lib/db/repositories/cast-availability.ts), [scene-cast](src/lib/db/repositories/scene-cast.ts), [stripboard-strips](src/lib/db/repositories/stripboard-strips.ts). PDF export: [src/lib/pdf/dood.ts](src/lib/pdf/dood.ts).
 
-### 8. Router and navigation
+### 9. Router and navigation
 
-- **Router:** [src/app/router.tsx](src/app/router.tsx) — `/people` → Navigate to `/people/bookings`; `/people/bookings` → BookingsPage; `/people/day-out-of-days` → DayOutOfDaysPage; `/people/cast` → PeoplePage; `/people/:personId` → PersonDetailPage.
-- **Navigation:** [src/app/navigation.ts](src/app/navigation.ts) — People group with `defaultChild: '/people/bookings'`, sub-items "Bookings" and "Day Out of Days" only (Cast and Person detail are not in sub-nav; reached via direct links).
+- **Router:** [src/app/router.tsx](src/app/router.tsx) — `/people` → Navigate to `/people/bookings`; `/people/bookings` → BookingsPage; `/people/day-out-of-days` → DayOutOfDaysPage; `/people/cast-manager` → CastManagerPage; `/people/cast` → PeoplePage; `/people/:personId` → PersonDetailPage.
+- **Navigation:** [src/app/navigation.ts](src/app/navigation.ts) — People group with `defaultChild: '/people/bookings'`, sub-items "Bookings", "Day Out of Days", and "Cast Manager". The full People list is at `/people/cast`; Person detail is reached via `/people/:personId`.
 
-### 9. Data flow: DooD work days and clashes
+### 10. Data flow: DooD work days and clashes
 
 ```mermaid
 flowchart LR
@@ -179,12 +244,13 @@ flowchart LR
 ### 13. Database and types
 
 - **Tables:** `people`, `bookings`, `cast_availability`, `scene_cast`, **`shot_cast`**; plus schedule tables `shoot_days`, `shoot_day_units`, `stripboard_strips`, `scenes`, `shots`. FK and cascade: see migrations (e.g. [src-tauri/migrations/0004_fk_cascade_refactor.sql](src-tauri/migrations/0004_fk_cascade_refactor.sql) and later migrations for shot_cast) — people → scene_cast, shot_cast, cast_availability, bookings (CASCADE); bookings.shoot_day_id SET NULL on delete.
-- **Shared types** in [src/lib/db/types.ts](src/lib/db/types.ts): `Person` (including cast_number, agent_name, agent_email, agent_phone), `Booking`, `CastAvailability`, `CastAvailabilityStatus`, `SceneCast`, **`ShotCast`**. Used across People, Budget, Schedule, Call Sheets, and PDF/duplicate logic.
+- **Shared types** in [src/lib/db/types.ts](src/lib/db/types.ts): `Person` (including cast_number, **role_name** (string | null — cast role/character name; nullable for crew or when unset), agent_name, agent_email, agent_phone), `Booking`, `CastAvailability`, `CastAvailabilityStatus`, `SceneCast`, **`ShotCast`**. Used across People, Budget, Schedule, Call Sheets, and PDF/duplicate logic. Duplicate production copies `role_name` when copying people.
 
 ### 14. Checklist for refactors
 
 When changing People, Booking, or DooD:
 
+- **Changing Cast Manager UI or CastForm:** Cast Manager uses the same person repo and Person type; ensure create always sets `is_cast = 1` and edit does not clear it.
 - **Changing Booking / Person or their repositories:** Check LabourTransactionEditor, bookingsSummary, PDF index, duplicateProduction (people/scene_cast/shot_cast/cast_availability).
 - **Changing DooD data source (how work days are computed):** DooD uses **only** stripboard + **scene_cast**. Do not switch DooD to shot_cast or bookings without an explicit product decision. Check stripboard_strips, scene_cast, cast_availability repos and types; DooD page and PDF dood module.
 - **Changing scene_cast or shot_cast:** Check DooD (scene_cast only), booking intelligence (both, with documented precedence), Person detail, Shot list page, duplicate production.
@@ -200,6 +266,8 @@ When changing People, Booking, or DooD:
 
 | Item | Path or route |
 |------|----------------|
+| Cast Manager page | [src/features/people/cast-manager/page.tsx](src/features/people/cast-manager/page.tsx) — `/people/cast-manager` |
+| Cast form (cast-specific) | [src/features/people/cast-manager/CastForm.tsx](src/features/people/cast-manager/CastForm.tsx) — used by Cast Manager only |
 | People (Cast) list page | [src/features/people/page.tsx](src/features/people/page.tsx) — `/people/cast` |
 | Person detail (People hub) | [src/features/people/pages/PersonDetailPage.tsx](src/features/people/pages/PersonDetailPage.tsx) — `/people/:personId` |
 | Bookings page | [src/features/people/pages/BookingsPage.tsx](src/features/people/pages/BookingsPage.tsx) — `/people/bookings` |

@@ -76,6 +76,7 @@ export function PeoplePage() {
         agent_name: d.agent_name?.trim() || null,
         agent_email: d.agent_email?.trim() || null,
         agent_phone: d.agent_phone?.trim() || null,
+        role_name: d.role_name?.trim() || null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['people'] })
@@ -92,6 +93,7 @@ export function PeoplePage() {
         agent_name: data.agent_name !== undefined ? (data.agent_name?.trim() || null) : undefined,
         agent_email: data.agent_email !== undefined ? (data.agent_email?.trim() || null) : undefined,
         agent_phone: data.agent_phone !== undefined ? (data.agent_phone?.trim() || null) : undefined,
+        role_name: data.role_name !== undefined ? (data.role_name?.trim() || null) : undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['people'] })
@@ -195,6 +197,7 @@ export function PeoplePage() {
                   agent_name: '',
                   agent_email: '',
                   agent_phone: '',
+                  role_name: '',
                 }}
                 onSubmit={createMutation.mutate}
                 onCancel={() => setOpen(false)}

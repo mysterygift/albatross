@@ -11,6 +11,7 @@ import { PeoplePage } from '@/features/people/page'
 import { BookingsPage } from '@/features/people/pages/BookingsPage'
 import { DayOutOfDaysPage } from '@/features/people/pages/DayOutOfDaysPage'
 import { PersonDetailPage } from '@/features/people/pages/PersonDetailPage'
+import { CastManagerPage } from '@/features/people/cast-manager/page'
 import { LocationsPage } from '@/features/locations/page'
 import { EquipmentPage } from '@/features/equipment/page'
 import { DocumentsPage } from '@/features/documents/page'
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
       { path: 'people', element: <Navigate to="/people/bookings" replace /> },
       { path: 'people/bookings', element: <BookingsPage /> },
       { path: 'people/day-out-of-days', element: <DayOutOfDaysPage /> },
+      { path: 'people/cast-manager', element: <CastManagerPage /> },
       { path: 'people/cast', element: <PeoplePage /> },
       { path: 'people/:personId', element: <PersonDetailPage /> },
       { path: 'locations', element: <LocationsPage /> },

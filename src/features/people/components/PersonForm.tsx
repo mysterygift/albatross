@@ -32,6 +32,7 @@ export const personSchema = z.object({
   agent_name: z.string().optional(),
   agent_email: z.string().optional().refine((v) => !v || v.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), { message: 'Invalid email' }),
   agent_phone: z.string().optional(),
+  role_name: z.string().optional(),
 })
 
 export type PersonFormValues = z.infer<typeof personSchema>
@@ -62,6 +63,7 @@ export function PersonForm({
       agent_name: defaultValues.agent_name ?? '',
       agent_email: defaultValues.agent_email ?? '',
       agent_phone: defaultValues.agent_phone ?? '',
+      role_name: defaultValues.role_name ?? '',
     },
   })
   return (

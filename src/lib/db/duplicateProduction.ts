@@ -123,8 +123,8 @@ export async function duplicateProduction(
     const id = newId()
     personIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO people (id, production_id, name, is_cast, email, phone, department, phases, notes, contributor_form_status, cast_number, agent_name, agent_email, agent_phone, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-      bindValues: [id, newProdId, r.name, r.is_cast ?? 0, r.email, r.phone, r.department, r.phases, r.notes, r.contributor_form_status ?? 'not_requested', r.cast_number ?? null, r.agent_name ?? null, r.agent_email ?? null, r.agent_phone ?? null, ts, ts],
+      sql: `INSERT INTO people (id, production_id, name, is_cast, email, phone, department, phases, notes, contributor_form_status, cast_number, agent_name, agent_email, agent_phone, role_name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+      bindValues: [id, newProdId, r.name, r.is_cast ?? 0, r.email, r.phone, r.department, r.phases, r.notes, r.contributor_form_status ?? 'not_requested', r.cast_number ?? null, r.agent_name ?? null, r.agent_email ?? null, r.agent_phone ?? null, r.role_name ?? null, ts, ts],
     })
   }
   for (const r of locations) {
