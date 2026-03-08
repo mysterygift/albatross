@@ -20,6 +20,7 @@ import { seedDemoReconciliation } from './demoReconciliationSeed'
 import { seedDemoTasks } from './demoTaskSeed'
 import { seedDemoVendorFinance } from './demoVendorFinanceSeed'
 import { seedDemoVendors } from './demoVendorSeed'
+import { seedDemoEquipment } from './demoEquipmentSeed'
 import { seedDemoCrew } from './demoCrewSeed'
 import { listDocumentsByProduction } from '../repositories/document'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
@@ -741,6 +742,7 @@ async function runDemoContentSeed(
   // -------------------------------------------------------------------------
   if (isSingletonDemo && vendorIdByCompanyName) {
     await seedDemoVendorFinance(productionId, startDate, ts, addDaysLocal, vendorIdByCompanyName)
+    await seedDemoEquipment(productionId, startDate, ts, addDaysLocal, vendorIdByCompanyName)
   }
 
   // Crew: people (is_cast=0), bookings, and for singleton demo only: crew labour vendors and invoices

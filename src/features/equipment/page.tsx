@@ -5,6 +5,7 @@ import {
   listEquipmentByProduction,
 } from '@/lib/db/repositories/equipment'
 import { listVendors } from '@/lib/db/repositories/vendors'
+import { listVendorInvoicesByProduction } from '@/lib/db/repositories/vendorInvoices'
 import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import {
   createEquipmentWithReminderTask,
@@ -72,6 +73,7 @@ import {
 import type { Vendor } from '@/lib/db/types'
 import { VendorPicker } from '@/components/vendors/VendorPicker'
 import { cn } from '@/lib/utils'
+import { formatEquipmentLabel } from '@/features/equipment/formatEquipmentLabel'
 import { generateEquipmentListPdf } from '@/lib/pdf/equipmentListPdf'
 import { saveFileWithDialog } from '@/lib/files'
 import {
@@ -121,26 +123,26 @@ function formatRentalWindow(e: Equipment): string {
   return '—'
 }
 
-const STATUS_LABELS: Record<EquipmentStatus, string> = {
-  planned: 'Planned',
-  active: 'Active',
-  returned: 'Returned',
-  lost: 'Lost',
-  damaged: 'Damaged',
-}
-
 function EquipmentStatusBadge({ status }: { status: EquipmentStatus }) {
   const variant =
     status === 'returned'
       ? 'secondary'
-      : status === 'lost' || status === 'damaged'
+      : status === 'lost'
         ? 'destructive'
-        : status === 'active'
-          ? 'default'
-          : 'outline'
+        : status === 'damaged'
+          ? 'destructive'
+          : status === 'active'
+            ? 'default'
+            : 'outline'
+  const colorClass =
+    status === 'damaged'
+      ? 'bg-amber-500/15 text-amber-800 border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-500/40'
+      : status === 'planned'
+        ? 'text-muted-foreground border-muted-foreground/30'
+        : ''
   return (
-    <Badge variant={variant} className="font-normal">
-      {STATUS_LABELS[status]}
+    <Badge variant={variant} className={cn('font-normal text-xs', colorClass)}>
+      {formatEquipmentLabel(status)}
     </Badge>
   )
 }
@@ -172,6 +174,13 @@ export function EquipmentPage() {
     queryFn: () => listVendors(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
+
+  const { data: invoices = [] } = useQuery({
+    queryKey: ['vendorInvoices', currentProductionId],
+    queryFn: () => listVendorInvoicesByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+  const invoiceById = useMemo(() => new Map(invoices.map((inv) => [inv.id, inv])), [invoices])
 
   const { data: tasks = [] } = useQuery({
     queryKey: ['tasks', currentProductionId],
@@ -282,24 +291,19 @@ export function EquipmentPage() {
         ),
       },
       {
-        id: 'uuid',
-        header: 'UUID',
-        cell: ({ row }) => shortUuid(row.original.item_uuid),
-      },
-      {
         accessorKey: 'category',
         header: 'Category',
-        cell: ({ getValue }) => (getValue() as string).replace(/_/g, ' '),
-      },
-      {
-        accessorKey: 'source_type',
-        header: 'Source',
-        cell: ({ getValue }) => (getValue() as string).charAt(0).toUpperCase() + (getValue() as string).slice(1),
+        cell: ({ getValue }) => formatEquipmentLabel((getValue() as string) ?? ''),
       },
       {
         accessorKey: 'department',
         header: 'Department',
-        cell: ({ getValue }) => (getValue() as string) || '—',
+        cell: ({ getValue }) => (getValue() as string)?.trim() || '—',
+      },
+      {
+        accessorKey: 'source_type',
+        header: 'Source',
+        cell: ({ getValue }) => formatEquipmentLabel((getValue() as string) ?? ''),
       },
       {
         accessorKey: 'status',
@@ -309,21 +313,33 @@ export function EquipmentPage() {
       {
         id: 'vendor',
         header: 'Vendor',
-        cell: ({ row }) => getVendorDisplay(row.original, vendors),
+        cell: ({ row }) => {
+          const vendorText = getVendorDisplay(row.original, vendors)
+          const inv = row.original.invoice_id ? invoiceById.get(row.original.invoice_id) : null
+          if (inv) {
+            return (
+              <span className="flex flex-col gap-0.5">
+                <span>{vendorText}</span>
+                <span className="text-xs text-muted-foreground">(Invoice {inv.invoice_number})</span>
+              </span>
+            )
+          }
+          return vendorText
+        },
       },
       {
         id: 'rental_window',
-        header: 'Rental window',
+        header: 'Rental Window',
         cell: ({ row }) => formatRentalWindow(row.original),
       },
       {
         accessorKey: 'replacement_value',
-        header: 'Replacement value',
+        header: 'Replacement Value',
         cell: ({ getValue }) => {
           const v = getValue() as number | null
           return v != null ? v.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
         },
-        meta: { className: 'text-right' },
+        meta: { className: 'text-right tabular-nums' },
       },
       {
         id: 'actions',
@@ -350,7 +366,7 @@ export function EquipmentPage() {
         ),
       },
     ],
-    [vendors, equipmentIdsWithReminder, deleteMutation.mutate]
+    [vendors, invoiceById, equipmentIdsWithReminder, deleteMutation.mutate]
   )
 
   const table = useReactTable({
@@ -393,13 +409,14 @@ export function EquipmentPage() {
 
         <TabsContent value="registry" className="mt-4 space-y-4">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 size-4" />
-                  Add equipment
-                </Button>
-              </DialogTrigger>
+            <div className="flex justify-end sm:flex-1 sm:justify-end">
+              <Dialog open={open} onOpenChange={setOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="mr-2 size-4" />
+                    Add Equipment
+                  </Button>
+                </DialogTrigger>
               <DialogContent className="max-h-[90vh] overflow-y-auto">
                 <EquipmentForm
                   productionId={currentProductionId}
@@ -409,7 +426,8 @@ export function EquipmentPage() {
                   isLoading={createMutation.isPending}
                 />
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
@@ -429,7 +447,7 @@ export function EquipmentPage() {
           <SelectContent>
             <SelectItem value="__all__">All categories</SelectItem>
             {EQUIPMENT_CATEGORY_VALUES.map((c) => (
-              <SelectItem key={c} value={c}>{c.replace(/_/g, ' ')}</SelectItem>
+              <SelectItem key={c} value={c}>{formatEquipmentLabel(c)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -439,9 +457,9 @@ export function EquipmentPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">All sources</SelectItem>
-            <SelectItem value="owned">Owned</SelectItem>
-            <SelectItem value="purchased">Purchased</SelectItem>
-            <SelectItem value="rented">Rented</SelectItem>
+            <SelectItem value="owned">{formatEquipmentLabel('owned')}</SelectItem>
+            <SelectItem value="purchased">{formatEquipmentLabel('purchased')}</SelectItem>
+            <SelectItem value="rented">{formatEquipmentLabel('rented')}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filterDepartment || '__all__'} onValueChange={(v) => setFilterDepartment(v === '__all__' ? '' : v)}>
@@ -462,7 +480,7 @@ export function EquipmentPage() {
           <SelectContent>
             <SelectItem value="__all__">All statuses</SelectItem>
             {EQUIPMENT_STATUS_VALUES.map((s) => (
-              <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+              <SelectItem key={s} value={s}>{formatEquipmentLabel(s)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -488,9 +506,17 @@ export function EquipmentPage() {
             {table.getRowModel().rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={columns.length} className="text-center text-muted-foreground py-8">
-                  {equipment.length === 0
-                    ? 'No equipment yet. Add equipment to build your registry.'
-                    : 'No equipment matches the current filters.'}
+                  {equipment.length === 0 ? (
+                    <>
+                      <p className="mb-3">Add equipment to your production registry.</p>
+                      <Button onClick={() => setOpen(true)}>
+                        <Plus className="mr-2 size-4" />
+                        Add Equipment
+                      </Button>
+                    </>
+                  ) : (
+                    'No equipment matches the current filters.'
+                  )}
                 </TableCell>
               </TableRow>
             ) : (
@@ -611,7 +637,7 @@ function EquipmentForm({
               <SelectContent>
                 {EQUIPMENT_CATEGORY_VALUES.map((cat) => (
                   <SelectItem key={cat} value={cat}>
-                    {cat.replace(/_/g, ' ')}
+                    {formatEquipmentLabel(cat)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -625,9 +651,9 @@ function EquipmentForm({
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="owned">Owned</SelectItem>
-                <SelectItem value="purchased">Purchased</SelectItem>
-                <SelectItem value="rented">Rented</SelectItem>
+                <SelectItem value="owned">{formatEquipmentLabel('owned')}</SelectItem>
+                <SelectItem value="purchased">{formatEquipmentLabel('purchased')}</SelectItem>
+                <SelectItem value="rented">{formatEquipmentLabel('rented')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -646,7 +672,7 @@ function EquipmentForm({
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {EQUIPMENT_STATUS_VALUES.map((s) => (
-                  <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+                  <SelectItem key={s} value={s}>{formatEquipmentLabel(s)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -726,12 +752,48 @@ function EquipmentListsIndex({
     queryFn: () => listShootDaysByProduction(productionId),
     enabled: !!productionId,
   })
+  const { data: equipment = [] } = useQuery({
+    queryKey: ['equipment', productionId],
+    queryFn: () => listEquipmentByProduction(productionId),
+    enabled: !!productionId && createOpen,
+  })
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; shoot_day_id?: string | null; department?: string | null; notes?: string | null }) =>
-      createEquipmentList({ production_id: productionId, ...data }),
-    onSuccess: () => {
+    mutationFn: async (data: {
+      name: string
+      shoot_day_id?: string | null
+      department?: string | null
+      notes?: string | null
+      addFromDepartment?: boolean
+    }) => {
+      const list = await createEquipmentList({
+        production_id: productionId,
+        name: data.name,
+        shoot_day_id: data.shoot_day_id ?? null,
+        department: data.department ?? null,
+        notes: data.notes ?? null,
+      })
+      if (data.addFromDepartment && data.department?.trim()) {
+        const dept = data.department.trim()
+        const toAdd = equipment.filter((e) => (e.department ?? '').trim() === dept)
+        let order = await getMaxSortOrderForList(list.id)
+        for (const e of toAdd) {
+          await addEquipmentItemToList({
+            equipment_list_id: list.id,
+            equipment_id: e.id,
+            sort_order: order,
+          })
+          order += 1
+        }
+      }
+      return list
+    },
+    onSuccess: (list, variables) => {
       queryClient.invalidateQueries({ queryKey: ['equipmentLists'] })
+      queryClient.invalidateQueries({ queryKey: ['equipmentListItems', list.id] })
       setCreateOpen(false)
+      if (variables.addFromDepartment) {
+        onSelectList(list.id)
+      }
     },
   })
   const deleteMutation = useMutation({
@@ -742,22 +804,25 @@ function EquipmentListsIndex({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 size-4" />
-              New list
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <CreateListForm
-              shootDays={shootDays}
-              onSubmit={createMutation.mutate}
-              onCancel={() => setCreateOpen(false)}
-              isLoading={createMutation.isPending}
-            />
-          </DialogContent>
-        </Dialog>
+        <div className="flex justify-end sm:flex-1 sm:justify-end">
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 size-4" />
+                New Equipment List
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <CreateListForm
+                shootDays={shootDays}
+                equipment={equipment}
+                onSubmit={createMutation.mutate}
+                onCancel={() => setCreateOpen(false)}
+                isLoading={createMutation.isPending}
+              />
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
       <div className="rounded-md border">
         <Table>
@@ -774,7 +839,12 @@ function EquipmentListsIndex({
             {lists.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                  No equipment lists yet. Create a list to build day or department kits.
+                  <p className="mb-3">No equipment lists yet.</p>
+                  <p className="text-sm mb-4">Create a list for a shoot day or department kit.</p>
+                  <Button onClick={() => setCreateOpen(true)}>
+                    <Plus className="mr-2 size-4" />
+                    New Equipment List
+                  </Button>
                 </TableCell>
               </TableRow>
             ) : (
@@ -811,18 +881,28 @@ function EquipmentListsIndex({
 
 function CreateListForm({
   shootDays,
+  equipment,
   onSubmit,
   onCancel,
   isLoading,
 }: {
   shootDays: { id: string; shoot_date: string }[]
-  onSubmit: (d: { name: string; shoot_day_id?: string | null; department?: string | null; notes?: string | null }) => void
+  equipment: Equipment[]
+  onSubmit: (d: {
+    name: string
+    shoot_day_id?: string | null
+    department?: string | null
+    notes?: string | null
+    addFromDepartment?: boolean
+  }) => void
   onCancel: () => void
   isLoading: boolean
 }) {
-  const form = useForm<{ name: string; shoot_day_id: string; department: string; notes: string }>({
-    defaultValues: { name: '', shoot_day_id: '__none__', department: '', notes: '' },
+  const form = useForm<{ name: string; shoot_day_id: string; department: string; notes: string; addFromDepartment: boolean }>({
+    defaultValues: { name: '', shoot_day_id: '__none__', department: '', notes: '', addFromDepartment: false },
   })
+  const watchedDept = form.watch('department')?.trim() ?? ''
+  const deptCount = watchedDept ? equipment.filter((e) => (e.department ?? '').trim() === watchedDept).length : 0
   return (
     <>
       <DialogHeader>
@@ -835,6 +915,7 @@ function CreateListForm({
             shoot_day_id: d.shoot_day_id?.trim() === '__none__' || !d.shoot_day_id?.trim() ? null : d.shoot_day_id.trim(),
             department: d.department?.trim() || null,
             notes: d.notes?.trim() || null,
+            addFromDepartment: d.addFromDepartment && !!d.department?.trim(),
           })
         )}
         className="space-y-4"
@@ -862,6 +943,19 @@ function CreateListForm({
           <Label>Department (optional)</Label>
           <Input {...form.register('department')} placeholder="e.g. Camera" />
         </div>
+        {deptCount > 0 && (
+          <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-3">
+            <input
+              type="checkbox"
+              id="addFromDepartment"
+              className="h-4 w-4 rounded border-input"
+              {...form.register('addFromDepartment')}
+            />
+            <Label htmlFor="addFromDepartment" className="cursor-pointer font-normal text-sm">
+              Generate from department — add all {deptCount} item{deptCount !== 1 ? 's' : ''} with this department to the list
+            </Label>
+          </div>
+        )}
         <div>
           <Label>Notes (optional)</Label>
           <Input {...form.register('notes')} placeholder="Optional" />
@@ -953,7 +1047,7 @@ function CreateEquipmentFromCsvRowDialog({
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {EQUIPMENT_CATEGORY_VALUES.map((c) => (
-                    <SelectItem key={c} value={c}>{c.replace(/_/g, ' ')}</SelectItem>
+                    <SelectItem key={c} value={c}>{formatEquipmentLabel(c)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -966,9 +1060,9 @@ function CreateEquipmentFromCsvRowDialog({
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="owned">Owned</SelectItem>
-                  <SelectItem value="purchased">Purchased</SelectItem>
-                  <SelectItem value="rented">Rented</SelectItem>
+                  <SelectItem value="owned">{formatEquipmentLabel('owned')}</SelectItem>
+                  <SelectItem value="purchased">{formatEquipmentLabel('purchased')}</SelectItem>
+                  <SelectItem value="rented">{formatEquipmentLabel('rented')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -987,7 +1081,7 @@ function CreateEquipmentFromCsvRowDialog({
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {EQUIPMENT_STATUS_VALUES.map((s) => (
-                    <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+                    <SelectItem key={s} value={s}>{formatEquipmentLabel(s)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1437,7 +1531,7 @@ function EquipmentListDetail({
         )}
       </div>
 
-      <div className="rounded-md border">
+      <div className="rounded-md border overflow-auto max-h-[60vh]">
         <Table>
           <TableHeader>
             <TableRow>
@@ -1447,8 +1541,8 @@ function EquipmentListDetail({
               <TableHead>UUID</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Serial</TableHead>
-              <TableHead className="text-center w-24">Out</TableHead>
-              <TableHead className="text-center w-24">Back in</TableHead>
+              <TableHead className="text-center w-28">OUT</TableHead>
+              <TableHead className="text-center w-28">IN</TableHead>
               <TableHead>Notes</TableHead>
               <TableHead className="w-[120px]">Actions</TableHead>
             </TableRow>
@@ -1463,8 +1557,15 @@ function EquipmentListDetail({
             ) : (
               items.map((item, index) => {
                 const eq = equipmentById.get(item.equipment_id)
+                const checked = item.checked_out && item.checked_back_in
                 return (
-                  <TableRow key={item.id}>
+                  <TableRow
+                    key={item.id}
+                    className={cn(
+                      (item.checked_out || item.checked_back_in) && 'bg-muted/30',
+                      checked && 'bg-muted/50'
+                    )}
+                  >
                     <TableCell className="text-muted-foreground">{index + 1}</TableCell>
                     <TableCell>
                       <div className="flex gap-0.5">
@@ -1492,28 +1593,28 @@ function EquipmentListDetail({
                     </TableCell>
                     <TableCell className="font-medium">{eq?.name ?? '—'}</TableCell>
                     <TableCell className="text-muted-foreground font-mono text-xs">{eq ? shortUuid(eq.item_uuid) : '—'}</TableCell>
-                    <TableCell>{eq ? eq.category.replace(/_/g, ' ') : '—'}</TableCell>
+                    <TableCell>{eq ? formatEquipmentLabel(eq.category) : '—'}</TableCell>
                     <TableCell className="text-muted-foreground">{eq?.serial_number ?? '—'}</TableCell>
                     <TableCell className="text-center">
                       <Button
                         variant={item.checked_out ? 'default' : 'outline'}
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-10 w-10"
                         aria-label={item.checked_out ? 'Mark not out' : 'Mark out'}
                         onClick={() => updateItemMutation.mutate({ itemId: item.id, patch: { checked_out: item.checked_out ? 0 : 1 } })}
                       >
-                        {item.checked_out ? <CheckSquare className="size-4" /> : <Package className="size-4" />}
+                        {item.checked_out ? <CheckSquare className="size-5" /> : <Package className="size-5" />}
                       </Button>
                     </TableCell>
                     <TableCell className="text-center">
                       <Button
                         variant={item.checked_back_in ? 'default' : 'outline'}
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-10 w-10"
                         aria-label={item.checked_back_in ? 'Mark not back in' : 'Mark back in'}
                         onClick={() => updateItemMutation.mutate({ itemId: item.id, patch: { checked_back_in: item.checked_back_in ? 0 : 1 } })}
                       >
-                        {item.checked_back_in ? <CheckSquare className="size-4" /> : <Package className="size-4" />}
+                        {item.checked_back_in ? <CheckSquare className="size-5" /> : <Package className="size-5" />}
                       </Button>
                     </TableCell>
                     <TableCell className="max-w-[120px] truncate text-muted-foreground text-sm">{item.notes ?? '—'}</TableCell>

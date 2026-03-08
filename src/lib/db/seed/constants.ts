@@ -82,6 +82,16 @@ export const IDS = {
   vendorInvoiceExpenseLink: (n: number) => `${P}${String(8600 + n).padStart(4, '0')}`,
   // vendor_purchase_order_expenses link table (demo only)
   vendorPOExpenseLink: (n: number) => `${P}${String(8700 + n).padStart(4, '0')}`,
+  // equipment registry (demo only; ~120 items)
+  equipment: (n: number) => `${P}${String(8300 + n).padStart(4, '0')}`,
+  // equipment item_uuid (unique per production; demo only)
+  equipmentItemUuid: (n: number) => `${P}${String(8400 + n).padStart(4, '0')}`,
+  // equipment lists (demo only)
+  equipmentList: (n: number) => `${P}${String(8500 + n).padStart(4, '0')}`,
+  // equipment list items (demo only; 8750+ to avoid collision with vendorInvoiceExpenseLink 8600+)
+  equipmentListItem: (n: number) => `${P}${String(8750 + n).padStart(4, '0')}`,
+  // equipment return reminder tasks (demo only; distinct from invoice reminder tasks)
+  equipmentReminderTask: (n: number) => `${P}${String(8220 + n).padStart(4, '0')}`,
 } as const
 
 export const SEED_VERSION = '2'

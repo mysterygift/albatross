@@ -25,7 +25,8 @@ This document is both a **user guide** (how to use the Equipment features) and a
 
 - [10. Database migrations](#10-database-migrations)
 - [11. Router and navigation](#11-router-and-navigation)
-- [12. Gaps and future work](#12-gaps-and-future-work)
+- [12. UI polish (P1) and conventions](#12-ui-polish-p1-and-conventions)
+- [13. Gaps and future work](#13-gaps-and-future-work)
 
 ---
 
@@ -45,7 +46,7 @@ This document is both a **user guide** (how to use the Equipment features) and a
 | **Equipment registry** | Master list of equipment items. Fields: name, category, source (owned/purchased/rented), status, department, vendor (text + optional vendor_id), invoice_id, rental dates, serial number, replacement value, notes. Each item has a stable `item_uuid`. |
 | **Return reminder tasks** | Rented equipment with a return due date gets one linked task in Tasks ("Return equipment — {name}"). Marking the item returned or clearing the due date completes/removes the task. |
 | **Equipment lists** | Named lists (e.g. "Day 4 Lighting", "Main Unit Camera") with optional shoot day and department. Lists reference registry items; they do not duplicate them. |
-| **Checklist state** | Each list item has **Out** and **Back in** toggles for on-set check-out/check-in. This state lives only on the list item, not on the registry. |
+| **Checklist state** | Each list item has **OUT** and **IN** toggles for on-set check-out/check-in. This state lives only on the list item, not on the registry. Rows are highlighted when checked; the checklist table is scrollable for long lists. |
 | **PDF export** | Export any equipment list as a printable checklist (production name, list name, department, shoot day, timestamp; table with OUT/IN checkboxes, name, category, serial, UUID, notes). |
 | **CSV export** | Export a list as CSV with stable columns (item_uuid, name, category, department, source_type, vendor, rental dates, serial_number, notes, status, replacement_value). |
 | **CSV import** | Import CSV into a list. Rows are matched to the registry by `item_uuid` only. Rows with missing or unknown UUID are flagged as **new**; user must confirm creation before new equipment is added. No silent creation. |
@@ -57,16 +58,19 @@ This document is both a **user guide** (how to use the Equipment features) and a
 
 1. Go to **Equipment** and open the **Registry** tab.
 2. Use filters (category, source, department, status) and search (name, UUID, serial) to find items.
-3. **Add equipment** to create a new item; optionally set vendor, rental dates, and return due date (which creates a return reminder task).
-4. Edit or archive items from the table. Archiving soft-deletes the item and its linked reminder task.
+3. **Add Equipment** (top right) to create a new item; optionally set vendor, rental dates, and return due date (which creates a return reminder task).
+4. The registry table shows: Name, Category, Department, Source, Status, Vendor, Rental Window (combined start/return dates), Replacement Value (right-aligned), and Actions. Category, source, and status use readable labels (e.g. Camera Accessory, Rented, Planned). Items linked to an invoice show **(Invoice INV-xxx)** under the vendor name.
+5. Edit or archive items from the table. Archiving soft-deletes the item and its linked reminder task.
+6. Empty state: "Add equipment to your production registry." with an **Add Equipment** button.
 
 **Using equipment lists**
 
 1. Open the **Equipment Lists** tab.
-2. **New list** to create a list (name, optional shoot day, optional department, notes).
+2. **New Equipment List** (top right) to create a list. Set name, optional **shoot day**, optional **department**, and notes. If you enter a department that matches registry items, you can tick **Generate from department** to add all matching equipment to the new list (no silent creation; you confirm by creating).
 3. Open a list to see its items. **Add from registry** to attach existing equipment (no duplication).
-4. Use **Out** / **Back in** on each row for checklist state. Reorder with up/down; remove items from the list (registry unchanged).
-5. **Export PDF** for a printable checklist; **Export CSV** to save the list as CSV; **Import CSV** to add rows (with match/new review and optional new-equipment creation).
+4. Use **OUT** / **IN** on each row for checklist state (larger check targets; rows highlight when checked). Reorder with up/down; remove items from the list (registry unchanged).
+5. **Export PDF** and **Export CSV** are grouped in the list view; **Import CSV** to add rows (with match/new review and optional new-equipment creation).
+6. Empty state: "No equipment lists yet." / "Create a list for a shoot day or department kit." with a **New Equipment List** button.
 
 **Linking equipment to an invoice**
 
@@ -94,7 +98,8 @@ This document is both a **user guide** (how to use the Equipment features) and a
 
 | Path | Purpose |
 |------|---------|
-| [src/features/equipment/page.tsx](src/features/equipment/page.tsx) | Single Equipment page: Registry tab (filters, table, add/edit/archive, reminder indicator) and Equipment Lists tab (list index, list detail, add from registry, checklist, reorder, PDF/CSV export and import, create-from-CSV dialog). |
+| [src/features/equipment/page.tsx](src/features/equipment/page.tsx) | Single Equipment page: Registry tab (filters, table with readable labels and vendor/invoice provenance, add/edit/archive, reminder indicator) and Equipment Lists tab (list index, list detail, create with optional “generate from department”, add from registry, checklist with OUT/IN and row highlighting, reorder, PDF/CSV export and import, create-from-CSV dialog). |
+| [src/features/equipment/formatEquipmentLabel.ts](src/features/equipment/formatEquipmentLabel.ts) | Display helper: `formatEquipmentLabel(value)` — formats enum-style values for UI (split on underscore, capitalise words; returns "—" for null/empty). Used for category, source_type, status, etc. Does not change stored values. |
 | [src/lib/db/repositories/equipment.ts](src/lib/db/repositories/equipment.ts) | Equipment registry CRUD: list by production, get by id, create, update, soft-delete; buildCreateEquipmentStatements / buildUpdateEquipmentStatements for transactional use. |
 | [src/lib/db/repositories/equipmentLists.ts](src/lib/db/repositories/equipmentLists.ts) | Equipment lists and list items: list lists by production, get list by id, create/update/delete list; list items by list, add item, update item, remove item, getMaxSortOrderForList, reorderEquipmentListItems. |
 | [src/lib/db/repositories/equipment-terms.ts](src/lib/db/repositories/equipment-terms.ts) | Equipment terms (LENS, SUPPORT etc.) for shot list; list by production and type, upsert. Not the same as the equipment registry. |
@@ -104,6 +109,7 @@ This document is both a **user guide** (how to use the Equipment features) and a
 | [src/lib/pdf/equipmentListPdf.ts](src/lib/pdf/equipmentListPdf.ts) | PDF checklist: generateEquipmentListPdf (pdf-lib, A4 portrait, header + table with OUT/IN checkboxes). Read-only. |
 | [src/features/budget/vendors/IngestEquipmentFromInvoiceModal.tsx](src/features/budget/vendors/IngestEquipmentFromInvoiceModal.tsx) | Modal from vendor invoice: rows with action create/link/skip; create uses prefilled form and createEquipmentFromInvoiceContext; link uses equipment picker and linkExistingEquipmentToInvoice. |
 | [src/features/budget/vendors/VendorDetailPage.tsx](src/features/budget/vendors/VendorDetailPage.tsx) | Renders invoice table and passes onAddEquipment to open IngestEquipmentFromInvoiceModal. |
+| [src/lib/db/seed/demoEquipmentSeed.ts](src/lib/db/seed/demoEquipmentSeed.ts) | **Demo seed (D1):** ~120 registry items (camera, lenses, lighting, grip, sound, DIT, production), return reminder tasks for rented items, and 5 equipment lists tied to shoot days with checklist state. Runs only for singleton demo production after seedDemoVendorFinance. Links to existing demo vendors/invoices (Panavision London, Lumen Grip & Light, Signal Sound, Keystone Transport). |
 
 ### 6. Data model
 
@@ -171,6 +177,7 @@ Types and constants: [src/lib/db/types.ts](src/lib/db/types.ts) — `Equipment`,
 - **CSV export:** exportEquipmentListToCsv(items, equipmentById) → string; save via saveFileWithDialog.
 - **CSV import:** Parse file → matchParsedRowsToRegistry; review modal shows matched vs new; for new, user confirms via CreateEquipmentFromCsvRowDialog (createEquipmentWithReminderTask); then add matched + created to list (skip already-on-list).
 - **Invoice ingestion:** Vendor detail → invoice row Package button → IngestEquipmentFromInvoiceModal; create rows use createEquipmentFromInvoiceContext; link rows use linkExistingEquipmentToInvoice.
+- **Demo seed (D1):** For the singleton demo production only, `seedDemoEquipment` runs after `seedDemoVendorFinance`. It inserts ~120 equipment items (realistic TV drama/commercial kit), creates return reminder tasks for rented items with `return_due_date`, and creates 5 equipment lists (e.g. Camera Package – Shoot Day 1, Lighting Package – Night Exterior) with 15–30 items each and sample OUT/IN checklist state. Equipment links to existing demo vendors (Panavision London, Lumen Grip & Light, Signal Sound Services, Keystone Transport) and invoices where applicable. PDF and CSV export from these lists produce meaningful data.
 
 ### 9. Query keys and invalidation
 
@@ -183,6 +190,7 @@ Types and constants: [src/lib/db/types.ts](src/lib/db/types.ts) — `Equipment`,
 | `['equipmentListItems', listId]` | After add/update/remove/reorder items; after CSV import add to list. |
 | `['shootDays', productionId]` | Used by list forms; invalidated by schedule changes elsewhere. |
 | `['vendors', productionId]` | Used by equipment form vendor picker. |
+| `['vendorInvoices', productionId]` | Used on Equipment page to resolve invoice numbers for Vendor column when equipment has `invoice_id`. |
 | `['equipment-terms', productionId, type]` | Shot list equipment terms (LENS, SUPPORT); invalidated when terms change. |
 
 ---
@@ -204,7 +212,17 @@ Equipment terms (shot list) live in an earlier migration (0006_shots_rich_props_
 - **Route:** `/equipment` → `EquipmentPage` ([src/app/router.tsx](src/app/router.tsx)).
 - **Nav:** Top-level "Equipment" (Film icon) in [src/app/navigation.ts](src/app/navigation.ts).
 
-### 12. Gaps and future work
+### 12. UI polish (P1) and conventions
+
+- **Display labels:** Enum-style fields (category, source_type, status) are shown with human-readable labels via `formatEquipmentLabel` (e.g. `camera_accessory` → "Camera Accessory", `rented` → "Rented"). Stored values and database enums are unchanged.
+- **Registry table:** Column order is Name, Category, Department, Source, Status, Vendor, Rental Window, Replacement Value, Actions. Replacement value is right-aligned; missing values render as "—". Rental window combines start and return dates in one column.
+- **Status pills:** Equipment status uses small colour-coded pills: Planned (muted), Active (accent), Returned (neutral), Lost (destructive), Damaged (warning style). Readable in dark theme.
+- **Vendor/invoice provenance:** When an item has `invoice_id`, the Vendor column shows the vendor name and a second line "(Invoice INV-xxx)" so invoice-driven items are clearly identifiable.
+- **List workflows:** Creating or editing a list supports optional shoot day and department (stored on the list). When creating a list, if the user enters a department that matches registry items, a **Generate from department** option appears; if checked, the new list is created and all equipment with that department are added (user confirms by creating). No silent auto-creation.
+- **Checklist UI:** Columns are labelled OUT and IN; check targets are larger; rows are highlighted when OUT and/or IN are checked; the checklist table is scrollable for long lists.
+- **Empty states and actions:** Registry empty state offers "Add equipment to your production registry." with an Add Equipment button; lists empty state offers "No equipment lists yet." and "Create a list for a shoot day or department kit." with a New Equipment List button. Add Equipment and New Equipment List live top-right in their tabs; PDF and CSV export are grouped in list detail view.
+
+### 13. Gaps and future work
 
 - **Duplicate production:** Equipment and equipment lists are not copied when duplicating a production; only equipment_terms are. Copying registry/lists could be added later.
 - **OCR / invoice line items:** Invoice-driven ingestion is manual (user-entered rows). If invoice line items exist in the future, the ingestion flow could be adapted to use them as candidates.
@@ -214,4 +232,4 @@ Equipment terms (shot list) live in an earlier migration (0006_shots_rich_props_
 
 ---
 
-*This document reflects the equipment system as implemented through the E7 (invoice-driven ingestion) stage. For vendor/invoice data model and reminder tasks, see [vendors.md](vendors.md) and the Tasks (Readiness) docs.*
+*This document reflects the equipment system through E7 (invoice-driven ingestion) and the Equipment Polish Stage P1 (operational polish, label formatting, shoot-day kit list workflows). For vendor/invoice data model and reminder tasks, see [vendors.md](vendors.md) and the Tasks (Readiness) docs.*
