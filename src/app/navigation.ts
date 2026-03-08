@@ -60,6 +60,7 @@ export const navItems: NavItem[] = [
       { to: '/people/bookings', label: 'Bookings' },
       { to: '/people/day-out-of-days', label: 'Day Out of Days' },
       { to: '/people/cast-manager', label: 'Cast Manager' },
+      { to: '/people/crew-manager', label: 'Crew Manager' },
     ],
   },
   { to: '/locations', label: 'Locations', icon: MapPin },

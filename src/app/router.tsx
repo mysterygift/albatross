@@ -12,6 +12,7 @@ import { BookingsPage } from '@/features/people/pages/BookingsPage'
 import { DayOutOfDaysPage } from '@/features/people/pages/DayOutOfDaysPage'
 import { PersonDetailPage } from '@/features/people/pages/PersonDetailPage'
 import { CastManagerPage } from '@/features/people/pages/CastManagerPage'
+import { CrewManagerPage } from '@/features/people/crew-manager/page'
 import { LocationsPage } from '@/features/locations/page'
 import { EquipmentPage } from '@/features/equipment/page'
 import { DocumentsPage } from '@/features/documents/page'
@@ -44,6 +45,7 @@ export const router = createBrowserRouter([
       { path: 'people/bookings', element: <BookingsPage /> },
       { path: 'people/day-out-of-days', element: <DayOutOfDaysPage /> },
       { path: 'people/cast-manager', element: <CastManagerPage /> },
+      { path: 'people/crew-manager', element: <CrewManagerPage /> },
       { path: 'people/cast', element: <PeoplePage /> },
       { path: 'people/:personId', element: <PersonDetailPage /> },
       { path: 'locations', element: <LocationsPage /> },

@@ -5,6 +5,7 @@
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import type { CallSheetCastRow } from '@/lib/call-sheets/castRequirements'
+import type { CallSheetCrewGroup } from '@/lib/call-sheets/crewRequirements'
 
 export interface CallSheetStrip {
   strip_type: 'SCENE' | 'MOVE' | 'CALL' | 'LUNCH' | 'WRAP' | 'NOTE'
@@ -54,6 +55,8 @@ export interface CallSheetData {
   schedule: CallSheetStrip[]
   castCalled: string[]
   castCalledRows?: CallSheetCastRow[]
+  /** Booked crew grouped by canonical crew department (C1), HOD first. */
+  crewGroups: CallSheetCrewGroup[]
   locations: CallSheetLocation[]
 }
 
@@ -371,6 +374,60 @@ export async function generateCallSheetPdf(data: CallSheetData): Promise<Uint8Ar
   }
   if (castRows.length) {
     drawTable(page, font, bold, y, castCols, castRows)
+  }
+
+  // ---------- 5b. Crew (booked crew by department, HOD first) ----------
+  const crewGroups = data.crewGroups ?? []
+  if (crewGroups.length > 0) {
+    tableResult = addPageIfNeeded(doc, page, y, 8)
+    page = tableResult.page
+    if (tableResult.isNew) {
+      page.drawText(`CALL SHEET – ${data.shootDate} (cont'd)`, {
+        x: MARGIN,
+        y: page.getSize().height - MARGIN,
+        size: FONT_SECTION,
+        font: bold,
+        color: GRAY,
+      })
+      y.current -= LINE_BODY + SEP_SECTION
+    }
+    page.drawText('Crew', { x: MARGIN, y: y.current, size: FONT_SECTION, font: bold })
+    y.current -= LINE_BODY + 2
+    for (const group of crewGroups) {
+      if (group.rows.length === 0) continue
+      const needLines = 3 + group.rows.length * (ROW_HEIGHT / 10)
+      tableResult = addPageIfNeeded(doc, page, y, Math.ceil(needLines))
+      page = tableResult.page
+      if (tableResult.isNew) {
+        page.drawText(`CALL SHEET – ${data.shootDate} (cont'd)`, {
+          x: MARGIN,
+          y: page.getSize().height - MARGIN,
+          size: FONT_SECTION,
+          font: bold,
+          color: GRAY,
+        })
+        y.current -= LINE_BODY + SEP_SECTION
+      }
+      page.drawText(group.department, {
+        x: MARGIN,
+        y: y.current,
+        size: FONT_TABLE,
+        font: bold,
+      })
+      y.current -= ROW_HEIGHT
+      const crewCols = [
+        { label: 'Name', width: 140 },
+        { label: 'Role', width: 160 },
+        { label: 'Phone', width: 120 },
+      ]
+      const crewRows: string[][] = group.rows.map((r) => [
+        (r.name ?? '—').slice(0, 28),
+        (r.role_name ?? '—').slice(0, 32),
+        (r.phone ?? '—').slice(0, 22),
+      ])
+      drawTable(page, font, bold, y, crewCols, crewRows)
+      y.current -= SEP_SECTION
+    }
   }
 
   // ---------- 6. Key crew / contacts (table) ----------

@@ -12,13 +12,14 @@ import { listKeyContactsByProduction } from '@/lib/db/repositories/key-contacts'
 import { getCastIdsBySceneIds } from '@/lib/db/repositories/scene-cast'
 import { getCastIdsByShotIds } from '@/lib/db/repositories/shot-cast'
 import { listBookingsByShootDay } from '@/lib/db/repositories/booking'
-import { listCast } from '@/lib/db/repositories/person'
+import { listCast, listCrew } from '@/lib/db/repositories/person'
 import {
   getCallSheetCastRequirements,
   getCastCalledNames,
   type CallSheetCastResult,
   type CallSheetCastRow,
 } from '@/lib/call-sheets/castRequirements'
+import { getCallSheetCrewRequirements } from '@/lib/call-sheets/crewRequirements'
 import { getProductionById } from '@/lib/db/repositories/production'
 import { generateCallSheetPdf } from '@/lib/pdf/callSheet'
 import type { CallSheetData } from '@/lib/pdf/callSheet'
@@ -122,6 +123,12 @@ export function CallSheetsPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: crew = [] } = useQuery({
+    queryKey: ['crew', currentProductionId],
+    queryFn: () => listCrew(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
   const { data: units = [] } = useQuery({
     queryKey: ['units', currentProductionId],
     queryFn: () => listUnitsByProduction(currentProductionId ?? ''),
@@ -167,6 +174,11 @@ export function CallSheetsPage() {
   }, [sceneIdsScheduled, shotIdsScheduled, castBySceneId, castByShotId, bookingsForDay, cast])
 
   const castCalledNames = useMemo(() => getCastCalledNames(castResult.castRows), [castResult.castRows])
+
+  const crewGroupsForPreview = useMemo(
+    () => getCallSheetCrewRequirements(bookingsForDay, crew),
+    [bookingsForDay, crew]
+  )
 
   const locationIdsUsed = useMemo(() => {
     const set = new Set<string>()
@@ -267,6 +279,7 @@ export function CallSheetsPage() {
       schedule,
       castCalled: castCalledNames,
       castCalledRows: castResult.castRows,
+      crewGroups: getCallSheetCrewRequirements(bookingsForDay, crew),
       locations: locationsForDay.map((l) => ({
         name: l.name,
         address: l.address,
@@ -287,6 +300,8 @@ export function CallSheetsPage() {
     mealTimesFromDay,
     castCalledNames,
     castResult.castRows,
+    bookingsForDay,
+    crew,
     locationsForDay,
   ])
 
@@ -502,6 +517,40 @@ export function CallSheetsPage() {
                 )}
               </div>
                 )}
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                    Crew called (booked crew by department)
+                  </Label>
+                  {crewGroupsForPreview.length > 0 ? (
+                    <div className="rounded-md border border-border overflow-hidden">
+                      {crewGroupsForPreview.map((group) => (
+                        <div key={group.department} className="border-b border-border last:border-b-0">
+                          <div className="bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                            {group.department}
+                          </div>
+                          <Table>
+                            <TableBody>
+                              {group.rows.map((row) => (
+                                <TableRow key={row.person_id} className="border-border">
+                                  <TableCell className="py-1.5">{row.name}</TableCell>
+                                  <TableCell className="text-muted-foreground py-1.5">
+                                    {row.role_name ?? '—'}
+                                    {row.is_hod && (
+                                      <span className="ml-1.5 text-xs text-muted-foreground">(HOD)</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground py-1.5">{row.phone ?? '—'}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">No crew booked for this day.</p>
+                  )}
+                </div>
               </>
             )}
             <div className="flex flex-wrap gap-2">
