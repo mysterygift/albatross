@@ -223,7 +223,7 @@ export function IngestEquipmentFromInvoiceModal({
                         <SelectItem key={e.id} value={e.id}>
                           {e.name}
                           <span className="ml-2 text-muted-foreground font-mono text-xs">
-                            {e.item_uuid.slice(0, 8)}
+                            {e.item_uuid.length >= 8 ? e.item_uuid.slice(-8) : e.item_uuid}
                           </span>
                         </SelectItem>
                       ))}

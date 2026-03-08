@@ -18,9 +18,9 @@ const FONT_TABLE = 8
 const FONT_FOOTER = 8
 const GRAY = rgb(0.45, 0.45, 0.45)
 
-/** Short UUID for display (first 8 chars). */
+/** Short UUID for display (last 8 chars so demo IDs with shared prefix look unique). */
 function shortUuid(itemUuid: string): string {
-  return itemUuid.slice(0, 8)
+  return itemUuid.length >= 8 ? itemUuid.slice(-8) : itemUuid
 }
 
 /** Placeholder for null/empty values in PDF. */

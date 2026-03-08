@@ -108,8 +108,9 @@ const equipmentSchema = z.object({
 })
 type EquipmentForm = z.infer<typeof equipmentSchema>
 
+/** Last 8 chars so demo IDs (shared prefix) still look unique. */
 function shortUuid(itemUuid: string): string {
-  return itemUuid.slice(0, 8)
+  return itemUuid.length >= 8 ? itemUuid.slice(-8) : itemUuid
 }
 
 function getVendorDisplay(equipment: Equipment, vendors: Vendor[]): string {
@@ -1547,7 +1548,7 @@ function EquipmentListDetail({
                         {importReview.matched.map((m, i) => (
                           <li key={i} className="flex justify-between gap-2">
                             <span>{m.equipment.name}</span>
-                            <span className="font-mono text-xs text-muted-foreground">{m.equipment.item_uuid.slice(0, 8)}</span>
+                            <span className="font-mono text-xs text-muted-foreground">{shortUuid(m.equipment.item_uuid)}</span>
                           </li>
                         ))}
                       </ul>
