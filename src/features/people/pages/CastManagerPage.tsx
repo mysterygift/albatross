@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/select'
 import { Search, Plus, Pencil, Eye } from 'lucide-react'
 import type { Person } from '@/lib/db/types'
-import { CastForm, type CastFormValues } from '@/features/people/cast-manager/CastForm'
+import { CastForm, type CastFormValues } from '@/features/people/components/CastForm'
 
 const CONTRIBUTOR_FORM_LABELS: Record<Person['contributor_form_status'], string> = {
   not_requested: 'Not requested',

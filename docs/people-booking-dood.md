@@ -114,7 +114,7 @@ Opening a person (e.g. from the People list or Cast Manager) takes you to **Pers
 ### 3. Cast Manager
 
 - **Route:** `/people/cast-manager`.
-- **Files:** [src/features/people/cast-manager/page.tsx](src/features/people/cast-manager/page.tsx), [src/features/people/cast-manager/CastForm.tsx](src/features/people/cast-manager/CastForm.tsx).
+- **Files:** [src/features/people/pages/CastManagerPage.tsx](src/features/people/pages/CastManagerPage.tsx), [src/features/people/components/CastForm.tsx](src/features/people/components/CastForm.tsx).
 - **Purpose:** Cast-only management: list cast, search (name, role, cast number, agent), filter (contributor form status; missing role, cast number, or agent info), summary cards (total cast, missing data counts), **add cast** and **edit cast** via a cast-specific form. No crew; no cast/crew toggle in the form.
 - **Data:** Same `Person` type and `listCast` / `createPerson` / `updatePerson`; `role_name` on person. Create flow always sets `is_cast = 1`; edit flow does not change `is_cast` so cast remain cast.
 - **Form (CastForm):** Sections — **Identity** (name, cast number, role), **Direct contact** (email, phone), **Agent** (name, email, phone), **Production / admin** (contributor form status, phases, notes). Validation: name required; email and agent email valid if provided; contributor form status one of the allowed enum values.
@@ -169,7 +169,7 @@ Opening a person (e.g. from the People list or Cast Manager) takes you to **Pers
 
 ### 9. Router and navigation
 
-- **Router:** [src/app/router.tsx](src/app/router.tsx) — `/people` → Navigate to `/people/bookings`; `/people/bookings` → BookingsPage; `/people/day-out-of-days` → DayOutOfDaysPage; `/people/cast-manager` → CastManagerPage; `/people/cast` → PeoplePage; `/people/:personId` → PersonDetailPage.
+- **Router:** [src/app/router.tsx](src/app/router.tsx) — `/people` → Navigate to `/people/bookings`; `/people/bookings` → BookingsPage; `/people/day-out-of-days` → DayOutOfDaysPage; `/people/cast-manager` → CastManagerPage (from people/pages); `/people/cast` → PeoplePage; `/people/:personId` → PersonDetailPage.
 - **Navigation:** [src/app/navigation.ts](src/app/navigation.ts) — People group with `defaultChild: '/people/bookings'`, sub-items "Bookings", "Day Out of Days", and "Cast Manager". The full People list is at `/people/cast`; Person detail is reached via `/people/:personId`.
 
 ### 10. Data flow: DooD work days and clashes
@@ -250,7 +250,7 @@ flowchart LR
 
 When changing People, Booking, or DooD:
 
-- **Changing Cast Manager UI or CastForm:** Cast Manager uses the same person repo and Person type; ensure create always sets `is_cast = 1` and edit does not clear it.
+- **Changing Cast Manager UI or CastForm:** Cast Manager (people/pages/CastManagerPage) and CastForm (people/components/CastForm) use the same person repo and Person type; ensure create always sets `is_cast = 1` and edit does not clear it.
 - **Changing Booking / Person or their repositories:** Check LabourTransactionEditor, bookingsSummary, PDF index, duplicateProduction (people/scene_cast/shot_cast/cast_availability).
 - **Changing DooD data source (how work days are computed):** DooD uses **only** stripboard + **scene_cast**. Do not switch DooD to shot_cast or bookings without an explicit product decision. Check stripboard_strips, scene_cast, cast_availability repos and types; DooD page and PDF dood module.
 - **Changing scene_cast or shot_cast:** Check DooD (scene_cast only), booking intelligence (both, with documented precedence), Person detail, Shot list page, duplicate production.
@@ -266,8 +266,8 @@ When changing People, Booking, or DooD:
 
 | Item | Path or route |
 |------|----------------|
-| Cast Manager page | [src/features/people/cast-manager/page.tsx](src/features/people/cast-manager/page.tsx) — `/people/cast-manager` |
-| Cast form (cast-specific) | [src/features/people/cast-manager/CastForm.tsx](src/features/people/cast-manager/CastForm.tsx) — used by Cast Manager only |
+| Cast Manager page | [src/features/people/pages/CastManagerPage.tsx](src/features/people/pages/CastManagerPage.tsx) — `/people/cast-manager` |
+| Cast form (cast-specific) | [src/features/people/components/CastForm.tsx](src/features/people/components/CastForm.tsx) — used by Cast Manager only |
 | People (Cast) list page | [src/features/people/page.tsx](src/features/people/page.tsx) — `/people/cast` |
 | Person detail (People hub) | [src/features/people/pages/PersonDetailPage.tsx](src/features/people/pages/PersonDetailPage.tsx) — `/people/:personId` |
 | Bookings page | [src/features/people/pages/BookingsPage.tsx](src/features/people/pages/BookingsPage.tsx) — `/people/bookings` |

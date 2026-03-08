@@ -393,8 +393,8 @@ export function BookingsPage() {
 
       {bookingIntelligence && hasIntelligenceWarnings && (
         <Card className="rounded-lg border-amber-500/30 bg-amber-500/5 dark:border-amber-600/40 dark:bg-amber-950/30">
-          <CardContent className="py-3 px-4">
-            <div className="flex flex-wrap items-center gap-4 text-sm">
+          <CardContent className="py-2 px-4">
+            <div className="flex flex-wrap items-center gap-8 text-sm">
               {bookingIntelligence.totalMissingThisProduction > 0 && (
                 <span className="flex items-center gap-1.5 text-amber-800 dark:text-amber-200">
                   <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -421,7 +421,7 @@ export function BookingsPage() {
       {bookingIntelligence && bookingIntelligence.shootDays.length > 0 && (
         <Card className="rounded-lg border-border bg-card">
           <CardHeader className="py-3 px-4 border-b border-border">
-            <CardTitle className="text-sm font-medium text-foreground">Shoot day coverage</CardTitle>
+            <CardTitle className="text-sm font-medium text-foreground">Shoot Day Booking Overview</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 pt-0">
             <div className="overflow-x-auto">

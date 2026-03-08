@@ -478,7 +478,7 @@ export function PersonDetailPage() {
 
       {/* Overview */}
       <Card className="border-border bg-card">
-        <CardHeader className="border-b border-border py-3">
+        <CardHeader className="border-b border-border py-1">
           <CardTitle className="text-base">Overview</CardTitle>
         </CardHeader>
         <CardContent className="pt-4 space-y-4">
@@ -508,7 +508,7 @@ export function PersonDetailPage() {
 
       {/* Bookings */}
       <Card className="border-border bg-card">
-        <CardHeader className="border-b border-border py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader className="border-b border-border py-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base">Bookings</CardTitle>
           <Button variant="outline" size="sm" asChild>
             <Link to="/people/bookings">
@@ -569,7 +569,7 @@ export function PersonDetailPage() {
 
       {/* Availability */}
       <Card className="border-border bg-card">
-        <CardHeader className="border-b border-border py-3">
+        <CardHeader className="border-b border-border py-1">
           <CardTitle className="text-base">Availability</CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
@@ -602,7 +602,7 @@ export function PersonDetailPage() {
 
       {/* Scene participation (cast) */}
       <Card className="border-border bg-card">
-        <CardHeader className="border-b border-border py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader className="border-b border-border py-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base">Scene participation</CardTitle>
           {person.is_cast && (
             <Button variant="outline" size="sm" onClick={() => setAddScenesOpen(true)}>
@@ -671,7 +671,7 @@ export function PersonDetailPage() {
 
       {/* Shot participation (cast) */}
       <Card className="border-border bg-card">
-        <CardHeader className="border-b border-border py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader className="border-b border-border py-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base">Shot participation</CardTitle>
           {person.is_cast && (
             <Button variant="outline" size="sm" onClick={() => setAddShotsOpen(true)}>
