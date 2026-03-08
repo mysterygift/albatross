@@ -26,13 +26,8 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -40,25 +35,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Plus, Pencil, Trash2, Eye } from 'lucide-react'
 import type { Person } from '@/lib/db/types'
-
-const personSchema = z.object({
-  name: z.string().min(1),
-  is_cast: z.boolean(),
-  email: z.string().optional(),
-  phone: z.string().optional(),
-  department: z.string().optional(),
-  phases: z.string().optional(),
-  notes: z.string().optional(),
-  contributor_form_status: z.enum(['not_requested', 'requested', 'signed', 'expired']),
-})
-
-type PersonForm = z.infer<typeof personSchema>
+import { PersonForm, type PersonFormValues } from '@/features/people/components/PersonForm'
 
 export function PeoplePage() {
   const { currentProductionId } = useCurrentProduction()
@@ -81,7 +61,7 @@ export function PeoplePage() {
         : people
 
   const createMutation = useMutation({
-    mutationFn: (d: PersonForm) =>
+    mutationFn: (d: PersonFormValues) =>
       createPerson({
         production_id: currentProductionId!,
         name: d.name,
@@ -92,6 +72,11 @@ export function PeoplePage() {
         phases: d.phases ?? null,
         notes: d.notes ?? null,
         contributor_form_status: d.contributor_form_status,
+        cast_number: d.cast_number?.trim() || null,
+        agent_name: d.agent_name?.trim() || null,
+        agent_email: d.agent_email?.trim() || null,
+        agent_phone: d.agent_phone?.trim() || null,
+        role_name: d.role_name?.trim() || null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['people'] })
@@ -100,10 +85,15 @@ export function PeoplePage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<PersonForm> }) =>
+    mutationFn: ({ id, data }: { id: string; data: Partial<PersonFormValues> }) =>
       updatePerson(id, {
         ...data,
         is_cast: data.is_cast !== undefined ? (data.is_cast ? 1 : 0) : undefined,
+        cast_number: data.cast_number !== undefined ? (data.cast_number?.trim() || null) : undefined,
+        agent_name: data.agent_name !== undefined ? (data.agent_name?.trim() || null) : undefined,
+        agent_email: data.agent_email !== undefined ? (data.agent_email?.trim() || null) : undefined,
+        agent_phone: data.agent_phone !== undefined ? (data.agent_phone?.trim() || null) : undefined,
+        role_name: data.role_name !== undefined ? (data.role_name?.trim() || null) : undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['people'] })
@@ -117,11 +107,24 @@ export function PeoplePage() {
   })
 
   const columns: ColumnDef<Person>[] = [
-    { accessorKey: 'name', header: 'Name' },
+    {
+      accessorKey: 'name',
+      header: 'Name',
+      cell: ({ row }) => (
+        <Link to={`/people/${row.original.id}`} className="font-medium text-primary hover:underline">
+          {row.original.name}
+        </Link>
+      ),
+    },
     {
       accessorKey: 'is_cast',
       header: 'Type',
       cell: ({ getValue }) => ((getValue() as number) ? 'Cast' : 'Crew'),
+    },
+    {
+      id: 'cast_number',
+      header: 'Cast #',
+      cell: ({ row }) => (row.original.is_cast ? (row.original.cast_number?.trim() || '—') : '—'),
     },
     { accessorKey: 'department', header: 'Department' },
     { accessorKey: 'email', header: 'Email' },
@@ -133,6 +136,11 @@ export function PeoplePage() {
       id: 'actions',
       cell: ({ row }) => (
         <div className="flex gap-2">
+          <Button variant="ghost" size="icon" asChild>
+            <Link to={`/people/${row.original.id}`} aria-label="View">
+              <Eye className="size-4" />
+            </Link>
+          </Button>
           <Button variant="ghost" size="icon" onClick={() => setEditingId(row.original.id)}>
             <Pencil className="size-4" />
           </Button>
@@ -185,6 +193,11 @@ export function PeoplePage() {
                   name: '',
                   is_cast: 0,
                   contributor_form_status: 'not_requested',
+                  cast_number: '',
+                  agent_name: '',
+                  agent_email: '',
+                  agent_phone: '',
+                  role_name: '',
                 }}
                 onSubmit={createMutation.mutate}
                 onCancel={() => setOpen(false)}
@@ -229,95 +242,5 @@ export function PeoplePage() {
         </Dialog>
       )}
     </div>
-  )
-}
-
-function PersonForm({
-  defaultValues,
-  onSubmit,
-  onCancel,
-  isLoading,
-}: {
-  defaultValues: Partial<Person>
-  onSubmit: (d: PersonForm) => void
-  onCancel: () => void
-  isLoading: boolean
-}) {
-  const form = useForm<PersonForm>({
-    resolver: zodResolver(personSchema) as never,
-    defaultValues: {
-      name: defaultValues.name ?? '',
-      is_cast: Number(defaultValues.is_cast) !== 0,
-      email: defaultValues.email ?? '',
-      phone: defaultValues.phone ?? '',
-      department: defaultValues.department ?? '',
-      phases: defaultValues.phases ?? '',
-      notes: defaultValues.notes ?? '',
-      contributor_form_status: defaultValues.contributor_form_status ?? 'not_requested',
-    },
-  })
-  return (
-    <>
-      <DialogHeader>
-        <DialogTitle>{defaultValues.id ? 'Edit person' : 'Add person'}</DialogTitle>
-      </DialogHeader>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <div>
-          <Label>Name</Label>
-          <Input {...form.register('name')} />
-          {form.formState.errors.name && <p className="text-destructive text-sm">{form.formState.errors.name.message}</p>}
-        </div>
-        <div className="flex items-center gap-2">
-          <Checkbox
-            checked={form.watch('is_cast')}
-            onCheckedChange={(v) => form.setValue('is_cast', !!v)}
-          />
-          <Label>Cast (otherwise crew)</Label>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label>Email</Label>
-            <Input {...form.register('email')} />
-          </div>
-          <div>
-            <Label>Phone</Label>
-            <Input {...form.register('phone')} />
-          </div>
-        </div>
-        <div>
-          <Label>Department</Label>
-          <Input {...form.register('department')} />
-        </div>
-        <div>
-          <Label>Phases</Label>
-          <Input {...form.register('phases')} placeholder="pre/production/post" />
-        </div>
-        {form.watch('is_cast') && (
-          <div>
-            <Label>Contributor form status</Label>
-            <Select
-              value={form.watch('contributor_form_status')}
-              onValueChange={(v) => form.setValue('contributor_form_status', v as PersonForm['contributor_form_status'])}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="not_requested">Not requested</SelectItem>
-                <SelectItem value="requested">Requested</SelectItem>
-                <SelectItem value="signed">Signed</SelectItem>
-                <SelectItem value="expired">Expired</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-        <div>
-          <Label>Notes</Label>
-          <Input {...form.register('notes')} />
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button type="submit" disabled={isLoading}>Save</Button>
-        </DialogFooter>
-      </form>
-    </>
   )
 }

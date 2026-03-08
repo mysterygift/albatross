@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useCurrency } from '@/hooks/useCurrency'
 import {
   listLocationsByProduction,
   createLocation,
@@ -46,22 +47,36 @@ import { z } from 'zod'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import type { Location } from '@/lib/db/types'
 
+const feeSchema = z
+  .union([z.coerce.number(), z.literal('')])
+  .transform((v) => (v === '' ? undefined : Number(v)))
+  .pipe(
+    z
+      .number()
+      .min(0, { message: 'Must be 0 or greater' })
+      .optional()
+  )
+
 const locationSchema = z.object({
   name: z.string().min(1),
   booked_status: z.enum(['unbooked', 'hold', 'booked', 'wrap']),
   address: z.string().optional(),
+  what3words: z.string().optional(),
   availability_constraints: z.string().optional(),
-  permit_fee: z.coerce.number().optional(),
-  location_fee: z.coerce.number().optional(),
+  permit_fee: feeSchema,
+  location_fee: feeSchema,
   notes: z.string().optional(),
 })
 
 type LocationForm = z.infer<typeof locationSchema>
 
 export function LocationsPage() {
-  const { currentProductionId } = useCurrentProduction()
+  const { currentProductionId, currentProduction } = useCurrentProduction()
+  const { format } = useCurrency()
+  const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const { data: locations = [] } = useQuery({
@@ -89,6 +104,9 @@ export function LocationsPage() {
       queryClient.invalidateQueries({ queryKey: ['locations'] })
       setEditingId(null)
     },
+    onError: () => {
+      setUpdateError('Failed to save location.')
+    },
   })
 
   const deleteMutation = useMutation({
@@ -102,17 +120,17 @@ export function LocationsPage() {
     { accessorKey: 'address', header: 'Address', cell: ({ getValue }) => (getValue() as string) ?? '—' },
     {
       accessorKey: 'location_fee',
-      header: 'Fee',
+      header: 'Location Fee',
       cell: ({ getValue }) => {
         const v = getValue() as number | null
-        return v != null ? `$${v}` : '—'
+        return v != null ? format(v, productionCurrency).formatted : '—'
       },
     },
     {
       id: 'actions',
       cell: ({ row }) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="icon" onClick={() => setEditingId(row.original.id)}>
+          <Button variant="ghost" size="icon" onClick={() => { setUpdateError(null); setEditingId(row.original.id) }}>
             <Pencil className="size-4" />
           </Button>
           <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(row.original.id)}>
@@ -179,8 +197,11 @@ export function LocationsPage() {
         </Table>
       </div>
       {editingId && (
-        <Dialog open={!!editingId} onOpenChange={() => setEditingId(null)}>
+        <Dialog open={!!editingId} onOpenChange={() => { setUpdateError(null); setEditingId(null) }}>
           <DialogContent>
+            {updateError && (
+              <p className="text-sm text-destructive">{updateError}</p>
+            )}
             <LocationForm
               defaultValues={locations.find((l) => l.id === editingId)!}
               onSubmit={(d) => updateMutation.mutate({ id: editingId, data: d })}
@@ -211,6 +232,7 @@ function LocationForm({
       name: defaultValues.name ?? '',
       booked_status: defaultValues.booked_status ?? 'unbooked',
       address: defaultValues.address ?? '',
+      what3words: defaultValues.what3words ?? '',
       availability_constraints: defaultValues.availability_constraints ?? '',
       permit_fee: defaultValues.permit_fee ?? undefined,
       location_fee: defaultValues.location_fee ?? undefined,
@@ -223,11 +245,11 @@ function LocationForm({
         <DialogTitle>{defaultValues.id ? 'Edit location' : 'Add location'}</DialogTitle>
       </DialogHeader>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <div>
+        <div className="space-y-1.5">
           <Label>Name</Label>
           <Input {...form.register('name')} />
         </div>
-        <div>
+        <div className="space-y-1.5">
           <Label>Booked status</Label>
           <Select
             value={form.watch('booked_status')}
@@ -242,25 +264,30 @@ function LocationForm({
             </SelectContent>
           </Select>
         </div>
-        <div>
+        <div className="space-y-1.5">
           <Label>Address</Label>
           <Input {...form.register('address')} />
         </div>
-        <div>
+        <div className="space-y-1.5">
+            <Label>what3words</Label>
+            <Input {...form.register('what3words')} />
+        </div>
+        <div className="space-y-1.5">
           <Label>Availability constraints</Label>
           <Input {...form.register('availability_constraints')} />
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <div>
+          <div className="space-y-1.5">
             <Label>Permit fee</Label>
-            <Input type="number" step={0.01} {...form.register('permit_fee')} />
+            <Input type="number" step={0.01} min={0} {...form.register('permit_fee')} />
           </div>
-          <div>
+          <div className="space-y-1.5">
             <Label>Location fee</Label>
-            <Input type="number" step={0.01} {...form.register('location_fee')} />
+            <Input type="number" step={0.01} min={0} {...form.register('location_fee')} />
           </div>
         </div>
-        <div>
+        <p className="text-sm text-muted-foreground">Fees must be 0 or greater.</p>
+        <div className="space-y-1.5">
           <Label>Notes</Label>
           <Textarea {...form.register('notes')} rows={2} />
         </div>

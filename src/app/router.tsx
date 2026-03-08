@@ -10,6 +10,10 @@ import { ScriptImportPage } from '@/features/schedule/script-import-page'
 import { PeoplePage } from '@/features/people/page'
 import { BookingsPage } from '@/features/people/pages/BookingsPage'
 import { DayOutOfDaysPage } from '@/features/people/pages/DayOutOfDaysPage'
+import { PersonDetailPage } from '@/features/people/pages/PersonDetailPage'
+import { CrewDetailPage } from '@/features/people/pages/CrewDetailPage'
+import { CastManagerPage } from '@/features/people/pages/CastManagerPage'
+import { CrewManagerPage } from '@/features/people/crew-manager/page'
 import { LocationsPage } from '@/features/locations/page'
 import { EquipmentPage } from '@/features/equipment/page'
 import { DocumentsPage } from '@/features/documents/page'
@@ -19,6 +23,8 @@ import { DeliverablesPage } from '@/features/deliverables/page'
 import { MusicClearancePage } from '@/features/music-clearance/page'
 import { SettingsPage } from '@/features/settings/page'
 import { WrapProductionPage } from '@/features/wrap-production/page'
+import { VendorsIndexPage } from '@/features/budget/vendors/VendorsIndexPage'
+import { VendorDetailPage } from '@/features/budget/vendors/VendorDetailPage'
 
 export const router = createBrowserRouter([
   {
@@ -29,6 +35,8 @@ export const router = createBrowserRouter([
       { path: 'wrap-production', element: <WrapProductionPage /> },
       { path: 'productions', element: <ProductionsPage /> },
       { path: 'budget', element: <BudgetPage /> },
+      { path: 'budget/vendors', element: <VendorsIndexPage /> },
+      { path: 'budget/vendors/:vendorId', element: <VendorDetailPage /> },
       { path: 'schedule', element: <Navigate to="/schedule/calendar" replace /> },
       { path: 'schedule/calendar', element: <ScheduleCalendarPage /> },
       { path: 'schedule/stripboard', element: <StripboardPage /> },
@@ -37,7 +45,11 @@ export const router = createBrowserRouter([
       { path: 'people', element: <Navigate to="/people/bookings" replace /> },
       { path: 'people/bookings', element: <BookingsPage /> },
       { path: 'people/day-out-of-days', element: <DayOutOfDaysPage /> },
+      { path: 'people/cast-manager', element: <CastManagerPage /> },
+      { path: 'people/crew-manager', element: <CrewManagerPage /> },
+      { path: 'people/crew/:personId', element: <CrewDetailPage /> },
       { path: 'people/cast', element: <PeoplePage /> },
+      { path: 'people/:personId', element: <PersonDetailPage /> },
       { path: 'locations', element: <LocationsPage /> },
       { path: 'equipment', element: <EquipmentPage /> },
       { path: 'documents', element: <DocumentsPage /> },

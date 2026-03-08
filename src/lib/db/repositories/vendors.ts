@@ -1,5 +1,5 @@
-import { getDb, now, uuid } from '../client'
-import { outboxPush } from '../outbox'
+import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { outboxStatementForRow } from '../outbox'
 import type { Vendor } from '../types'
 
 const TABLE = 'vendors'
@@ -26,33 +26,74 @@ export async function listVendors(productionId: string): Promise<Vendor[]> {
   return rows.map(rowToVendor)
 }
 
+/** Returns active vendor by id (excludes soft-deleted). Use for pickers and active lists. */
+export async function getVendor(id: string): Promise<Vendor | null> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+    [id]
+  )
+  return rows.length > 0 ? rowToVendor(rows[0]!) : null
+}
+
+/** Returns vendor by id including archived (deleted_at set). Use for detail page to show archived state. */
+export async function getVendorById(id: string): Promise<Vendor | null> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${TABLE} WHERE id = $1 LIMIT 1`,
+    [id]
+  )
+  return rows.length > 0 ? rowToVendor(rows[0]!) : null
+}
+
+/**
+ * Creates a vendor. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * so the INSERT and outbox row are in the same transaction.
+ */
 export async function createVendor(data: {
   production_id: string
   company_name: string
   primary_contact_full_name?: string | null
   primary_contact_email?: string | null
 }): Promise<Vendor> {
-  const db = await getDb()
   const id = uuid()
   const ts = now()
-  await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [
-      id,
-      data.production_id,
-      data.company_name,
-      data.primary_contact_full_name ?? null,
-      data.primary_contact_email ?? null,
-      ts,
-      ts,
-    ]
-  )
-  await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, id }))
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+    { sql: 'BEGIN', bindValues: [] },
+    {
+      sql: `INSERT INTO ${TABLE} (id, production_id, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      bindValues: [
+        id,
+        data.production_id,
+        data.company_name,
+        data.primary_contact_full_name ?? null,
+        data.primary_contact_email ?? null,
+        ts,
+        ts,
+      ],
+    },
+    outboxStatementForRow({
+      entity: TABLE,
+      entityId: id,
+      operation: 'create',
+      payloadJson: JSON.stringify({ ...data, id }),
+    }),
+    { sql: 'COMMIT', bindValues: [] },
+  ]
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    await executeBatch(db, statements)
+  })
+  const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [id])
   return rowToVendor(rows[0]!)
 }
 
+/**
+ * Updates a vendor. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * so the UPDATE and outbox row are in the same transaction.
+ */
 export async function updateVendor(
   id: string,
   data: Partial<Pick<Vendor, 'company_name' | 'primary_contact_full_name' | 'primary_contact_email'>>
@@ -74,16 +115,51 @@ export async function updateVendor(
   }
   cols.push(`updated_at = $${i}`)
   vals.push(ts, id)
-  await db.execute(`UPDATE ${TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1} AND deleted_at IS NULL`, vals)
-  await outboxPush(TABLE, id, 'update', JSON.stringify(data))
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+    { sql: 'BEGIN', bindValues: [] },
+    {
+      sql: `UPDATE ${TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1} AND deleted_at IS NULL`,
+      bindValues: vals,
+    },
+    outboxStatementForRow({
+      entity: TABLE,
+      entityId: id,
+      operation: 'update',
+      payloadJson: JSON.stringify(data),
+    }),
+    { sql: 'COMMIT', bindValues: [] },
+  ]
+  await runInSerializedTransaction(async () => {
+    const conn = await getDb()
+    await executeBatch(conn, statements)
+  })
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [id])
   return rowToVendor(rows[0]!)
 }
 
+/**
+ * Soft-deletes a vendor. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * so the UPDATE and outbox row are in the same transaction.
+ */
 export async function softDeleteVendor(id: string): Promise<void> {
-  const db = await getDb()
   const ts = now()
-  await db.execute(`UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`, [ts, ts, id])
-  await outboxPush(TABLE, id, 'delete', null)
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+    { sql: 'BEGIN', bindValues: [] },
+    {
+      sql: `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+      bindValues: [ts, ts, id],
+    },
+    outboxStatementForRow({
+      entity: TABLE,
+      entityId: id,
+      operation: 'delete',
+      payloadJson: null,
+    }),
+    { sql: 'COMMIT', bindValues: [] },
+  ]
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    await executeBatch(db, statements)
+  })
 }
 

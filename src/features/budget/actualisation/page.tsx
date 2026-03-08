@@ -12,6 +12,7 @@ import {
   updateBudgetItemExpenseLink,
   deleteBudgetItemExpenseLink,
 } from '@/lib/db/repositories/budgetReconciliation'
+import { riskWatchQueryKey } from '@/lib/budget/vendors/riskWatch'
 import {
   getReconciliationSummary,
   getBudgetItemMatchStatus,
@@ -275,6 +276,7 @@ export function ActualisationPage() {
     queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', productionId] })
     queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId] })
     queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item', budgetItemId] })
+    queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(productionId) })
   }
 
   useEffect(() => {

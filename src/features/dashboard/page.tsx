@@ -7,6 +7,16 @@ import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import { listDeliverablesByProduction } from '@/lib/db/repositories/deliverable'
 import { getDashboardBudgetHealthData } from '@/lib/dashboard/budgetHealth'
 import { getDashboardNextShootDayData } from '@/lib/dashboard/nextShootDay'
+import {
+  getDashboardVendorFinanceData,
+  dashboardVendorFinanceQueryKey,
+  type DashboardVendorFinanceData,
+} from '@/lib/dashboard/vendorFinance'
+import {
+  getVendorFinanceRiskItems,
+  riskWatchQueryKey,
+  type RiskWatchItem,
+} from '@/lib/budget/vendors/riskWatch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -492,6 +502,210 @@ function TasksDueSoonCard({
 
 const DUE_SOON_DAYS = 14
 
+function RiskWatchCard({
+  items,
+  isLoading,
+  isError,
+  format,
+  currency,
+}: {
+  items: RiskWatchItem[]
+  isLoading: boolean
+  isError?: boolean
+  format: (amount: number, currency: string) => { formatted: string }
+  currency: string
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Risk Watch</CardTitle>
+          <CardDescription>Vendor finance and other exception conditions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-12 rounded bg-muted/50 animate-pulse" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Risk Watch</CardTitle>
+          <CardDescription>Vendor finance and other exception conditions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load risk items.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Risk Watch</CardTitle>
+        <CardDescription>Vendor finance and other exception conditions</CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
+        {items.length === 0 ? (
+          <div className="px-4 py-6 text-sm text-muted-foreground">
+            No vendor finance alerts.
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {items.map((item) => (
+              <li key={item.id}>
+                <Link
+                  to={item.href ?? '#'}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/30 transition-colors"
+                >
+                  <span
+                    className={`shrink-0 w-1 h-10 rounded-full ${
+                      item.severity === 'critical' ? 'bg-destructive' : 'bg-amber-500 dark:bg-amber-600'
+                    }`}
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-foreground truncate">{item.title}</p>
+                    {item.subtitle && (
+                      <p className="text-xs text-muted-foreground truncate">{item.subtitle}</p>
+                    )}
+                  </div>
+                  {item.amount != null && item.amount > 0 && (
+                    <span className="shrink-0 text-muted-foreground tabular-nums text-xs">
+                      {format(item.amount, currency).formatted}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function VendorFinanceCards({
+  data,
+  isLoading,
+  isError,
+  format,
+  currency,
+  onNavigate,
+}: {
+  data: DashboardVendorFinanceData | null | undefined
+  isLoading: boolean
+  isError?: boolean
+  format: (amount: number, currency: string) => { formatted: string }
+  currency: string
+  onNavigate: () => void
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Vendor finance</CardTitle>
+          <CardDescription>Invoices and purchase orders</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-16 rounded bg-muted/50 animate-pulse" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Vendor finance</CardTitle>
+          <CardDescription>Invoices and purchase orders</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load vendor finance summary.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!data) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Vendor finance</CardTitle>
+          <CardDescription>Invoices and purchase orders</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-sm">No vendor finance data.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const items = [
+    { label: 'Overdue invoices', count: data.overdueInvoices.count, total: data.overdueInvoices.total },
+    { label: 'Invoices due soon', count: data.invoicesDueSoon.count, total: data.invoicesDueSoon.total },
+    { label: 'Open POs', count: data.openPOs.count, total: data.openPOs.total },
+    { label: 'POs awaiting approval', count: data.posAwaitingApproval.count, total: data.posAwaitingApproval.total },
+  ]
+
+  return (
+    <Card
+      className="cursor-pointer transition-colors hover:bg-muted/30 hover:border-muted-foreground/20"
+      onClick={onNavigate}
+      role="button"
+      tabIndex={0}
+      aria-label="Vendor finance — click to view vendors"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onNavigate()
+        }
+      }}
+    >
+      <CardHeader>
+        <CardTitle>Vendor finance</CardTitle>
+        <CardDescription>Invoices and purchase orders</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {items.map((item) => (
+            <div key={item.label} className="rounded border border-border bg-muted/20 px-3 py-2">
+              <p className="text-xs text-muted-foreground">{item.label}</p>
+              <p className="mt-0.5 font-semibold tabular-nums">{item.count}</p>
+              {item.total > 0 && (
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  {format(item.total, currency).formatted}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+        <Link
+          to="/budget/vendors"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-3"
+        >
+          View vendors
+          <ChevronRight className="size-3.5" />
+        </Link>
+      </CardContent>
+    </Card>
+  )
+}
+
 function DeliverablesCard({
   deliverables,
   isLoading,
@@ -644,6 +858,26 @@ export function DashboardPage() {
     enabled: !!currentProductionId,
   })
 
+  const {
+    data: vendorFinanceData,
+    isLoading: vendorFinanceLoading,
+    isError: vendorFinanceError,
+  } = useQuery({
+    queryKey: dashboardVendorFinanceQueryKey(currentProductionId ?? ''),
+    queryFn: () => getDashboardVendorFinanceData(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
+  const {
+    data: riskWatchItems = [],
+    isLoading: riskWatchLoading,
+    isError: riskWatchError,
+  } = useQuery({
+    queryKey: riskWatchQueryKey(currentProductionId ?? ''),
+    queryFn: () => getVendorFinanceRiskItems(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
   const required = tasks.filter((t) => t.priority === 1)
   const requiredComplete = required.filter((t) => t.is_complete === 1).length
   const requiredScore = required.length === 0 ? 100 : Math.round((requiredComplete / required.length) * 100)
@@ -743,6 +977,23 @@ export function DashboardPage() {
             isLoading={deliverablesLoading}
             isError={deliverablesError}
             onNavigate={() => navigate('/deliverables')}
+          />
+
+          <VendorFinanceCards
+            data={vendorFinanceData}
+            isLoading={vendorFinanceLoading}
+            isError={vendorFinanceError}
+            format={format}
+            currency={productionCurrency}
+            onNavigate={() => navigate('/budget/vendors')}
+          />
+
+          <RiskWatchCard
+            items={riskWatchItems}
+            isLoading={riskWatchLoading}
+            isError={riskWatchError}
+            format={format}
+            currency={productionCurrency}
           />
 
           {warnings.length > 0 && (

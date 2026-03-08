@@ -17,6 +17,8 @@ export type Production = {
   wrapped_at: string | null
   /** When set, production is archived (hidden from default list); reversible. */
   archived_at: string | null
+  /** When set to 'demo', production was created from the Demo template (used for override confirmation). */
+  created_from_template: string | null
 } & SoftDeletable
 
 export type Person = {
@@ -30,6 +32,12 @@ export type Person = {
   phases: string | null
   notes: string | null
   contributor_form_status: 'not_requested' | 'requested' | 'signed' | 'expired'
+  cast_number: string | null
+  agent_name: string | null
+  agent_email: string | null
+  agent_phone: string | null
+  /** Cast role (e.g. character name); null for crew or when unset. */
+  role_name: string | null
 } & SoftDeletable
 
 export type Location = {
@@ -38,6 +46,7 @@ export type Location = {
   name: string
   booked_status: 'unbooked' | 'hold' | 'booked' | 'wrap'
   address: string | null
+  what3words: string | null
   availability_constraints: string | null
   permit_fee: number | null
   location_fee: number | null
@@ -125,6 +134,65 @@ export type Vendor = {
   company_name: string
   primary_contact_full_name: string | null
   primary_contact_email: string | null
+} & SoftDeletable
+
+/** Invoice lifecycle status. Enforced in DB via CHECK; use this union in TS. */
+export type VendorInvoiceStatus = 'draft' | 'received' | 'approved' | 'paid' | 'overdue'
+
+export type VendorInvoice = {
+  id: string
+  production_id: string
+  vendor_id: string
+  /** Optional link to a vendor purchase order. */
+  po_id: string | null
+  invoice_number: string
+  issue_date: string | null
+  due_date: string | null
+  amount: number | null
+  tax: number | null
+  currency_code: string | null
+  status: VendorInvoiceStatus
+  notes: string | null
+} & SoftDeletable
+
+/** Link between a vendor invoice and an expense (one invoice, many expenses). */
+export type VendorInvoiceExpenseLink = {
+  id: string
+  vendor_invoice_id: string
+  expense_id: string
+  created_at: string
+  updated_at: string
+}
+
+/** Link between a vendor purchase order and an expense (one PO, many expenses). */
+export type VendorPurchaseOrderExpenseLink = {
+  id: string
+  vendor_purchase_order_id: string
+  expense_id: string
+  created_at: string
+  updated_at: string
+}
+
+/** Purchase order lifecycle status. Enforced in DB via CHECK; use this union in TS. */
+export type PurchaseOrderStatus =
+  | 'draft'
+  | 'issued'
+  | 'approved'
+  | 'closed'
+  | 'cancelled'
+
+export type VendorPurchaseOrder = {
+  id: string
+  production_id: string
+  vendor_id: string
+  po_number: string
+  description: string | null
+  issue_date: string | null
+  due_date: string | null
+  amount: number | null
+  status: PurchaseOrderStatus
+  approval: number
+  notes: string | null
 } & SoftDeletable
 
 export type ExpenseTransactionType = 'labour' | 'purchase' | 'rental' | 'allow' | 'deposit'
@@ -320,6 +388,14 @@ export type SceneCast = {
   person_id: string
 } & SoftDeletable
 
+/** Shot-level cast participation. Refinement layer on top of scene_cast; DooD still uses scene_cast only. */
+export type ShotCast = {
+  id: string
+  production_id: string
+  shot_id: string
+  person_id: string
+} & SoftDeletable
+
 export type CastAvailabilityStatus = 'AVAILABLE' | 'UNAVAILABLE' | 'TENTATIVE'
 
 export type CastAvailability = {
@@ -442,6 +518,8 @@ export type ProductionTask = {
   parent_task_id: string | null
   /** Null = unsectioned; non-null = task belongs to a section in the same production. */
   section_id: string | null
+  /** Null = normal task; non-null = reminder task for this vendor invoice (at most one task per invoice). */
+  vendor_invoice_id: string | null
 } & SoftDeletable
 
 /** Global task template (not production-scoped). */

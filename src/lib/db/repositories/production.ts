@@ -34,6 +34,7 @@ function rowToProduction(r: Record<string, unknown>): Production {
     deleted_at: r.deleted_at as string | null,
     wrapped_at: (r.wrapped_at as string | null) ?? null,
     archived_at: (r.archived_at as string | null) ?? null,
+    created_from_template: (r.created_from_template as string | null) ?? null,
   }
 }
 
@@ -127,6 +128,31 @@ export async function getProductionBySlug(slug: string): Promise<Production | nu
   return rows.length ? rowToProduction(rows[0]!) : null
 }
 
+/**
+ * Find an existing user-created demo-template production (created_from_template = 'demo').
+ * Used for override confirmation before creating another demo-style project.
+ * Does not include the singleton DEMO_SLUG production (that one is never created via template flow).
+ */
+export async function findExistingDemoTemplateProduction(): Promise<Production | null> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${TABLE} WHERE created_from_template = 'demo' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1`,
+    []
+  )
+  return rows.length ? rowToProduction(rows[0]!) : null
+}
+
+/** Set the created_from_template marker (e.g. 'demo' for Demo template). Used after creating a production from a template. */
+export async function setProductionCreatedFromTemplate(id: string, value: 'demo' | null): Promise<void> {
+  const db = await getDb()
+  const ts = now()
+  await db.execute(
+    `UPDATE ${TABLE} SET created_from_template = $1, updated_at = $2 WHERE id = $3`,
+    [value, ts, id]
+  )
+  await outboxPush(TABLE, id, 'update', JSON.stringify({ created_from_template: value }))
+}
+
 /** Ensure slug is unique; if taken, append -2, -3, etc. */
 export async function ensureUniqueSlug(baseSlug: string): Promise<string> {
   const db = await getDb()
@@ -179,13 +205,20 @@ export async function reserveSlugAndInsertProduction(
   })
 }
 
+export type CreateProductionOptions = {
+  /** When true, skip default budget categories, accounts, and contingency. Used by Default template which seeds its own chart. */
+  skipBudgetSeed?: boolean
+}
+
 export async function createProduction(
-  data: Pick<Production, 'name' | 'notes'>
+  data: Pick<Production, 'name' | 'notes'>,
+  options?: CreateProductionOptions
 ): Promise<Production> {
   const db = await getDb()
   const id = uuid()
   const ts = now()
   const currencyCode = (data as { currency_code?: string }).currency_code ?? 'GBP'
+  const skipBudgetSeed = options?.skipBudgetSeed === true
   const { slug } = await withSlugLock(async () => {
     const s = await ensureUniqueSlug(slugify(data.name))
     await db.execute(
@@ -195,24 +228,25 @@ export async function createProduction(
     return { slug: s }
   })
   await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, slug, id, created_at: ts, updated_at: ts }))
-  await seedDefaultBudgetCategories(id)
-  await seedDefaultBudgetAccounts(id)
-  // Optional: seed one default Contingency rule scoped to all root accounts (production-wide base).
-  try {
-    const accounts = await listAccounts(id)
-    const rootIds = accounts.filter((a) => a.parent_account_id == null).map((a) => a.id)
-    if (rootIds.length > 0) {
-      await createContingencyRule({
-        production_id: id,
-        name: 'Contingency',
-        rate: 0.1,
-        base_kind: 'budget',
-        scope_mode: 'include_subtrees',
-        scope_account_ids: rootIds,
-      })
+  if (!skipBudgetSeed) {
+    await seedDefaultBudgetCategories(id)
+    await seedDefaultBudgetAccounts(id)
+    try {
+      const accounts = await listAccounts(id)
+      const rootIds = accounts.filter((a) => a.parent_account_id == null).map((a) => a.id)
+      if (rootIds.length > 0) {
+        await createContingencyRule({
+          production_id: id,
+          name: 'Contingency',
+          rate: 0.1,
+          base_kind: 'budget',
+          scope_mode: 'include_subtrees',
+          scope_account_ids: rootIds,
+        })
+      }
+    } catch {
+      // Non-fatal: user can add rules manually.
     }
-  } catch {
-    // Non-fatal: user can add rules manually.
   }
   return (await getProductionById(id))!
 }

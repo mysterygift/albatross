@@ -6,18 +6,42 @@ import { listShootDaysByProduction, getShootDayById } from '@/lib/db/repositorie
 import { listStripsByShootDay } from '@/lib/db/repositories/stripboard-strips'
 import { listShootDayUnitsByShootDay } from '@/lib/db/repositories/shoot-day-units'
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
-import { listScenesByProduction } from '@/lib/db/repositories/schedule'
+import { listScenesByProduction, listShotsByProduction } from '@/lib/db/repositories/schedule'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { listKeyContactsByProduction } from '@/lib/db/repositories/key-contacts'
 import { getCastIdsBySceneIds } from '@/lib/db/repositories/scene-cast'
-import { listCast } from '@/lib/db/repositories/person'
+import { getCastIdsByShotIds } from '@/lib/db/repositories/shot-cast'
+import { listBookingsByShootDay } from '@/lib/db/repositories/booking'
+import { listCast, listCrew } from '@/lib/db/repositories/person'
+import {
+  getCallSheetCastRequirements,
+  getCastCalledNames,
+  type CallSheetCastResult,
+  type CallSheetCastRow,
+} from '@/lib/call-sheets/castRequirements'
+import { getCallSheetCrewRequirements } from '@/lib/call-sheets/crewRequirements'
+import {
+  getEffectiveCrewHierarchyOrDefault,
+  getDefaultCrewHierarchyConfig,
+} from '@/lib/people/crewHierarchyResolver'
 import { getProductionById } from '@/lib/db/repositories/production'
 import { generateCallSheetPdf } from '@/lib/pdf/callSheet'
+import type { CallSheetData } from '@/lib/pdf/callSheet'
 import { saveFileWithDialog, openInSystem } from '@/lib/files'
+import { getWeatherSummaryForCallSheet } from '@/lib/weather/openMeteo'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   Select,
   SelectContent,
@@ -34,11 +58,14 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString()
 
+const defaultCrewHierarchy = getDefaultCrewHierarchyConfig()
+
 export function CallSheetsPage() {
   const { currentProductionId } = useCurrentProduction()
   const [shootDayId, setShootDayId] = useState<string | null>(null)
   const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
   const [weatherSummary, setWeatherSummary] = useState('')
+  const [weatherFallbackMessage, setWeatherFallbackMessage] = useState<string | null>(null)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [numPages, setNumPages] = useState<number | null>(null)
 
@@ -78,6 +105,12 @@ export function CallSheetsPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: shots = [] } = useQuery({
+    queryKey: ['shots', currentProductionId],
+    queryFn: () => listShotsByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
   const { data: locations = [] } = useQuery({
     queryKey: ['locations', currentProductionId],
     queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
@@ -90,9 +123,22 @@ export function CallSheetsPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: hierarchyData } = useQuery({
+    queryKey: ['crew-hierarchy', currentProductionId],
+    queryFn: () => getEffectiveCrewHierarchyOrDefault(currentProductionId),
+    enabled: !!currentProductionId,
+  })
+  const crewHierarchy = hierarchyData ?? defaultCrewHierarchy
+
   const { data: cast = [] } = useQuery({
     queryKey: ['cast', currentProductionId],
     queryFn: () => listCast(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: crew = [] } = useQuery({
+    queryKey: ['crew', currentProductionId],
+    queryFn: () => listCrew(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
 
@@ -108,20 +154,43 @@ export function CallSheetsPage() {
   )
 
   const sceneIdsScheduled = useMemo(() => unitStrips.filter((s) => s.scene_id).map((s) => s.scene_id!), [unitStrips])
+  const shotIdsScheduled = useMemo(() => unitStrips.filter((s) => s.shot_id).map((s) => s.shot_id!), [unitStrips])
+
   const { data: castBySceneId = new Map<string, string[]>() } = useQuery({
     queryKey: ['cast-by-scene-callsheet', sceneIdsScheduled.join(',')],
     queryFn: () => getCastIdsBySceneIds(sceneIdsScheduled),
     enabled: sceneIdsScheduled.length > 0,
   })
 
-  const castCalledIds = useMemo(() => {
-    const set = new Set<string>()
-    for (const ids of castBySceneId.values()) for (const id of ids) set.add(id)
-    return Array.from(set)
-  }, [castBySceneId])
-  const castCalledNames = useMemo(
-    () => castCalledIds.map((id) => cast.find((p) => p.id === id)?.name ?? id).sort(),
-    [castCalledIds, cast]
+  const { data: castByShotId = new Map<string, string[]>() } = useQuery({
+    queryKey: ['cast-by-shot-callsheet', shotIdsScheduled.join(',')],
+    queryFn: () => getCastIdsByShotIds(shotIdsScheduled),
+    enabled: shotIdsScheduled.length > 0,
+  })
+
+  const { data: bookingsForDay = [] } = useQuery({
+    queryKey: ['bookings-by-shoot-day', shootDayId],
+    queryFn: () => listBookingsByShootDay(shootDayId!),
+    enabled: !!shootDayId,
+  })
+
+  const castResult: CallSheetCastResult = useMemo(() => {
+    const bookedPersonIds = new Set(bookingsForDay.map((b) => b.person_id))
+    return getCallSheetCastRequirements({
+      sceneIdsScheduled,
+      shotIdsScheduled,
+      castBySceneId,
+      castByShotId,
+      bookedPersonIds,
+      cast,
+    })
+  }, [sceneIdsScheduled, shotIdsScheduled, castBySceneId, castByShotId, bookingsForDay, cast])
+
+  const castCalledNames = useMemo(() => getCastCalledNames(castResult.castRows), [castResult.castRows])
+
+  const crewGroupsForPreview = useMemo(
+    () => getCallSheetCrewRequirements(crewHierarchy, bookingsForDay, crew),
+    [crewHierarchy, bookingsForDay, crew]
   )
 
   const locationIdsUsed = useMemo(() => {
@@ -167,6 +236,8 @@ export function CallSheetsPage() {
     const unit = dayUnit ? units.find((u) => u.id === dayUnit.unit_id) : null
     const unitName = unit?.name ?? 'Main Unit'
     const schedule = unitStrips.map((s) => {
+      const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
+      const shotNumber = shot?.shot_number ?? null
       if ((s.strip_type === 'SHOT' || s.strip_type === 'SCENE') && s.scene_id) {
         const scene = scenes.find((c) => c.id === s.scene_id)
         return {
@@ -176,6 +247,7 @@ export function CallSheetsPage() {
           int_ext: scene?.int_ext ?? null,
           day_night: scene?.day_night ?? null,
           page_eighths: scene?.page_eighths ?? null,
+          shot_number: shotNumber,
           title: null,
           description: null,
         }
@@ -187,35 +259,46 @@ export function CallSheetsPage() {
         int_ext: null,
         day_night: null,
         page_eighths: null,
+        shot_number: shotNumber,
         title: s.title ?? null,
         description: s.description ?? null,
       }
     })
     const mealTimes = mealTimesFromDay.length ? mealTimesFromDay : [{ name: 'Lunch', time: '13:00' }]
-    const weather = weatherSummary || weatherFromDay || undefined
     return {
       productionName: production.name,
       shootDate: shootDay.shoot_date,
       unitName,
+      dayNumber: shootDay.day_number ?? null,
       callTime: shootDay.call_time ?? null,
       wrapTime: shootDay.wrap_time ?? null,
+      dayNotes: shootDay.notes ?? null,
+      unitNotes: dayUnit?.notes ?? null,
       keyContacts: keyContacts.map((c) => ({
         department: c.department,
         name: c.name ?? null,
         phone: c.phone ?? null,
         email: c.email ?? null,
+        notes: c.notes ?? null,
       })),
       hospitalName: shootDay.hospital_name ?? null,
       hospitalAddress: shootDay.hospital_address ?? null,
       policeStationName: shootDay.police_station_name ?? null,
       policeStationAddress: shootDay.police_station_address ?? null,
-      weatherSummary: weather ?? null,
+      weatherSummary: null,
       parkingBaseAddress: shootDay.parking_base_address ?? null,
       mealTimes,
       specialNotes: shootDay.special_notes ?? null,
       schedule,
       castCalled: castCalledNames,
-      locations: locationsForDay.map((l) => ({ name: l.name, address: l.address })),
+      castCalledRows: castResult.castRows,
+      crewGroups: getCallSheetCrewRequirements(crewHierarchy, bookingsForDay, crew),
+      locations: locationsForDay.map((l) => ({
+        name: l.name,
+        address: l.address,
+        what3words: l.what3words ?? null,
+        notes: l.notes ?? null,
+      })),
     }
   }, [
     production,
@@ -225,18 +308,47 @@ export function CallSheetsPage() {
     units,
     unitStrips,
     scenes,
+    shots,
     keyContacts,
     mealTimesFromDay,
-    weatherSummary,
-    weatherFromDay,
     castCalledNames,
+    castResult.castRows,
+    crewHierarchy,
+    bookingsForDay,
+    crew,
     locationsForDay,
   ])
 
   const generateMutation = useMutation({
-    mutationFn: async (options: { save: boolean; openAfter?: boolean }) => {
-      const data = buildCallSheetData
-      if (!data || !currentProductionId || !shootDay) throw new Error('Missing data')
+    mutationFn: async (options: {
+      save: boolean
+      openAfter?: boolean
+      baseData: CallSheetData | null
+      locationQuery: string
+      shootDate: string
+      fallbackWeather: string | null
+    }) => {
+      const { baseData, locationQuery, shootDate, fallbackWeather } = options
+      if (!baseData || !currentProductionId || !shootDay) throw new Error('Missing data')
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'page.tsx:generateMutation',message:'weather lookup inputs',data:{locationQuery,shootDate,locationQueryLength:locationQuery?.length,fallbackWeather:!!fallbackWeather},hypothesisId:'H1-H4',timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      let weather: string | null = null
+      let usedFallback = true
+      try {
+        weather = await getWeatherSummaryForCallSheet(locationQuery, shootDate)
+        if (weather != null) usedFallback = false
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'page.tsx:after getWeatherSummary',message:'weather result',data:{weather:weather??'null',usedFallback},hypothesisId:'H2-H4',timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+      } catch (e) {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'page.tsx:catch',message:'weather lookup threw',data:{message:String((e as Error)?.message)},hypothesisId:'H5',timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        // use fallback below
+      }
+      const finalWeather = weather ?? fallbackWeather ?? null
+      const data: CallSheetData = { ...baseData, weatherSummary: finalWeather }
       const pdfBytes = await generateCallSheetPdf(data)
       const bytes = new Uint8Array(pdfBytes)
       if (options.save) {
@@ -252,9 +364,9 @@ export function CallSheetsPage() {
         if (savedPath && options.openAfter) {
           await openInSystem(savedPath)
         }
-        return { bytes }
+        return { bytes, weatherFallback: usedFallback }
       }
-      return { bytes }
+      return { bytes, weatherFallback: usedFallback }
     },
     onSuccess: (result) => {
       if (result.bytes) {
@@ -265,11 +377,29 @@ export function CallSheetsPage() {
           return url
         })
       }
+      setWeatherFallbackMessage(
+        result.weatherFallback ? 'Weather lookup unavailable; used manual or stored weather.' : null
+      )
     },
   })
 
   const handleGenerate = (save: boolean, openAfter?: boolean) => {
-    generateMutation.mutate({ save, openAfter })
+    const baseData = buildCallSheetData
+    if (!baseData || !shootDay) return
+    setWeatherFallbackMessage(null)
+    const locationQuery =
+      locationsForDay.length > 0
+        ? [locationsForDay[0].name, locationsForDay[0].address].filter(Boolean).join(', ')
+        : ''
+    const fallbackWeather = weatherSummary || weatherFromDay || null
+    generateMutation.mutate({
+      save,
+      openAfter,
+      baseData,
+      locationQuery,
+      shootDate: shootDay.shoot_date,
+      fallbackWeather,
+    })
   }
 
   if (!currentProductionId) {
@@ -332,14 +462,120 @@ export function CallSheetsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Weather (manual)</Label>
+              <Label>Weather (manual fallback)</Label>
               <Input
                 className="bg-input border-border"
                 value={weatherSummary || weatherFromDay}
                 onChange={(e) => setWeatherSummary(e.target.value)}
-                placeholder="e.g. Sunny, 72°F"
+                placeholder="e.g. Sunny, 72°F — used if forecast lookup fails"
               />
+              {weatherFallbackMessage && (
+                <p className="text-muted-foreground text-xs">{weatherFallbackMessage}</p>
+              )}
             </div>
+            {shootDayId && shootDayUnitId && (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Cast called (booked & required)</Label>
+                  {castResult.castRows.length > 0 ? (
+                    <div className="rounded-md border border-border overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-border">
+                            <TableHead className="w-[4rem] text-muted-foreground">#</TableHead>
+                            <TableHead className="text-muted-foreground">Name</TableHead>
+                            <TableHead className="text-muted-foreground">Phone</TableHead>
+                            <TableHead className="text-muted-foreground hidden sm:table-cell">Agent</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {castResult.castRows.map((row: CallSheetCastRow) => (
+                            <TableRow key={row.person_id} className="border-border">
+                              <TableCell className="font-mono text-muted-foreground">{row.cast_number ?? '—'}</TableCell>
+                              <TableCell>{row.name}</TableCell>
+                              <TableCell className="text-muted-foreground">{row.phone ?? '—'}</TableCell>
+                              <TableCell className="text-muted-foreground hidden sm:table-cell">
+                                {[row.agent_name, row.agent_phone].filter(Boolean).join('  ') || '—'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">No cast called for this day/unit.</p>
+                  )}
+                </div>
+                {(castResult.requiredButNotBooked.length > 0 || castResult.bookedButNotRequired.length > 0) && (
+              <div className="space-y-2">
+                {castResult.requiredButNotBooked.length > 0 && (
+                  <Alert variant="destructive" className="py-2">
+                    <AlertTitle>
+                      {castResult.requiredButNotBooked.length} required cast not booked for this day
+                    </AlertTitle>
+                    <AlertDescription>
+                      {castResult.requiredButNotBooked.map((w) => w.name).join(', ')}
+                      {' — add bookings to include them on the call sheet.'}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {castResult.bookedButNotRequired.length > 0 && (
+                  <Alert className="py-2">
+                    <AlertTitle>
+                      {castResult.bookedButNotRequired.length} booked cast not required by scheduled material
+                    </AlertTitle>
+                    <AlertDescription>
+                      {castResult.bookedButNotRequired.map((w) => w.name).join(', ')}
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+                )}
+                <div className="space-y-2 border-t border-border pt-4 mt-1">
+                  <Label className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                    Crew called (booked crew by department)
+                  </Label>
+                  {crewGroupsForPreview.length > 0 ? (
+                    <div className="rounded-md border border-border overflow-hidden">
+                      {crewGroupsForPreview.map((group) => (
+                        <div key={group.department} className="border-b border-border last:border-b-0">
+                          <div className="bg-muted/60 px-3 py-2 text-xs font-semibold text-foreground">
+                            {group.department}
+                          </div>
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="border-border">
+                                <TableHead className="h-8 text-muted-foreground font-medium">Name</TableHead>
+                                <TableHead className="h-8 text-muted-foreground font-medium">Role</TableHead>
+                                <TableHead className="h-8 text-muted-foreground font-medium">Phone</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {group.rows.map((row) => (
+                                <TableRow key={row.person_id} className="border-border">
+                                  <TableCell className="py-1.5 font-medium">{row.name}</TableCell>
+                                  <TableCell className="py-1.5 text-muted-foreground">
+                                    {row.role_name ?? '—'}
+                                    {row.is_hod && (
+                                      <span className="ml-1 text-muted-foreground">(HOD)</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="py-1.5 text-muted-foreground tabular-nums">
+                                    {row.phone ?? '—'}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">No crew booked for this day.</p>
+                  )}
+                </div>
+              </>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 onClick={() => handleGenerate(false)}

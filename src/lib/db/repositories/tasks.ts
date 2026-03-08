@@ -1,5 +1,5 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
-import { outboxPush, outboxStatementForRows } from '../outbox'
+import { outboxPush, outboxStatementForRow, outboxStatementForRows } from '../outbox'
 import type { ProductionTask } from '../types'
 
 const TABLE = 'production_tasks'
@@ -17,6 +17,7 @@ function rowToTask(r: Record<string, unknown>): ProductionTask {
     priority: p === 1 || p === 2 || p === 3 ? (p as 1 | 2 | 3) : null,
     parent_task_id: (r.parent_task_id as string | null) ?? null,
     section_id: (r.section_id as string | null) ?? null,
+    vendor_invoice_id: (r.vendor_invoice_id as string | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: (r.deleted_at as string | null) ?? null,
@@ -130,25 +131,31 @@ export type CreateTaskData = {
   priority?: 1 | 2 | 3 | null
   parent_task_id?: string | null
   section_id?: string | null
+  vendor_invoice_id?: string | null
+  /** Default 0. Set 1 for e.g. invoice reminder when invoice is already paid. */
+  is_complete?: number
 }
 
 export async function createTask(data: CreateTaskData): Promise<ProductionTask> {
   const db = await getDb()
   const id = uuid()
   const ts = now()
+  const isComplete = data.is_complete ?? 0
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, created_at, updated_at)
-     VALUES ($1, $2, $3, 0, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, vendor_invoice_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       id,
       data.production_id,
       data.description,
+      isComplete,
       data.notes ?? null,
       data.due_date ?? null,
       data.assigned_department ?? null,
       data.priority ?? null,
       data.parent_task_id ?? null,
       data.section_id ?? null,
+      data.vendor_invoice_id ?? null,
       ts,
       ts,
     ]
@@ -156,6 +163,54 @@ export async function createTask(data: CreateTaskData): Promise<ProductionTask> 
   await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, id }))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [id])
   return rowToTask(rows[0]!)
+}
+
+/** Returns the active (non-deleted) task linked to this vendor invoice, if any. At most one per invoice. */
+export async function getTaskByVendorInvoiceId(invoiceId: string): Promise<ProductionTask | null> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${TABLE} WHERE vendor_invoice_id = $1 AND deleted_at IS NULL LIMIT 1`,
+    [invoiceId]
+  )
+  return rows.length > 0 ? rowToTask(rows[0]!) : null
+}
+
+/**
+ * Returns statements to create a task for use in executeBatch (e.g. with invoice create).
+ * Does not include BEGIN/COMMIT. Caller must provide task id and include these in the batch.
+ */
+export function buildCreateTaskStatements(
+  taskId: string,
+  data: CreateTaskData,
+  ts: string
+): Array<{ sql: string; bindValues: unknown[] }> {
+  const isComplete = data.is_complete ?? 0
+  const insert = {
+    sql: `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, vendor_invoice_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    bindValues: [
+      taskId,
+      data.production_id,
+      data.description,
+      isComplete,
+      data.notes ?? null,
+      data.due_date ?? null,
+      data.assigned_department ?? null,
+      data.priority ?? null,
+      data.parent_task_id ?? null,
+      data.section_id ?? null,
+      data.vendor_invoice_id ?? null,
+      ts,
+      ts,
+    ],
+  }
+  const outbox = outboxStatementForRow({
+    entity: TABLE,
+    entityId: taskId,
+    operation: 'create',
+    payloadJson: JSON.stringify({ ...data, id: taskId }),
+  })
+  return [insert, outbox]
 }
 
 export type UpdateTaskPatch = Partial<{
@@ -167,6 +222,7 @@ export type UpdateTaskPatch = Partial<{
   priority: 1 | 2 | 3 | null
   parent_task_id: string | null
   section_id: string | null
+  vendor_invoice_id: string | null
 }>
 
 const UPDATE_KEYS = [
@@ -178,6 +234,7 @@ const UPDATE_KEYS = [
   'priority',
   'parent_task_id',
   'section_id',
+  'vendor_invoice_id',
 ] as const
 
 /**
@@ -265,6 +322,58 @@ export async function updateTask(id: string, patch: UpdateTaskPatch): Promise<Pr
  * Soft-delete a task. When deleting a parent, also soft-deletes all subtasks (recursive).
  * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
  */
+/**
+ * Returns statements to update a task for use in executeBatch.
+ * Does not include BEGIN/COMMIT.
+ */
+export function buildUpdateTaskStatements(
+  taskId: string,
+  patch: UpdateTaskPatch,
+  ts: string
+): Array<{ sql: string; bindValues: unknown[] }> {
+  const cols: string[] = []
+  const vals: unknown[] = []
+  let i = 1
+  for (const k of UPDATE_KEYS) {
+    if (patch[k] !== undefined) {
+      cols.push(`${k} = $${i++}`)
+      vals.push(patch[k])
+    }
+  }
+  if (cols.length === 0) return []
+  cols.push(`updated_at = $${i}`)
+  vals.push(ts, taskId)
+  const update = {
+    sql: `UPDATE ${TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1}`,
+    bindValues: vals,
+  }
+  const outbox = outboxStatementForRow({
+    entity: TABLE,
+    entityId: taskId,
+    operation: 'update',
+    payloadJson: JSON.stringify(patch),
+  })
+  return [update, outbox]
+}
+
+/**
+ * Returns statements to soft-delete a single task for use in executeBatch.
+ * Use for invoice reminder tasks (no descendants). Does not include BEGIN/COMMIT.
+ */
+export function buildSoftDeleteTaskStatements(taskId: string, ts: string): Array<{ sql: string; bindValues: unknown[] }> {
+  const update = {
+    sql: `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+    bindValues: [ts, ts, taskId],
+  }
+  const outbox = outboxStatementForRow({
+    entity: TABLE,
+    entityId: taskId,
+    operation: 'delete',
+    payloadJson: null,
+  })
+  return [update, outbox]
+}
+
 export async function deleteTask(id: string): Promise<void> {
   await runInSerializedTransaction(async () => {
     const db = await getDb()

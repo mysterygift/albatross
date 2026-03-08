@@ -3,7 +3,7 @@ import { useCurrentProduction } from '@/features/productions/context'
 import { listDocumentsByProduction } from '@/lib/db/repositories/document'
 import { pickAndSaveAttachment } from '@/lib/files'
 import { createDocument } from '@/lib/db/repositories/document'
-import { getFileUrl, openInSystem } from '@/lib/files'
+import { resolveAppDataPath } from '@/lib/files'
 import {
   Table,
   TableBody,
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Upload, ExternalLink } from 'lucide-react'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 
 export function DocumentsPage() {
   const { currentProductionId } = useCurrentProduction()
@@ -43,9 +44,9 @@ export function DocumentsPage() {
     },
   })
 
-  const handleOpen = async (filePath: string) => {
-    const url = await getFileUrl(filePath)
-    await openInSystem(url)
+  const handleReveal = async (filePath: string) => {
+    const fullPath = await resolveAppDataPath(filePath)
+    await revealItemInDir(fullPath)
   }
 
   if (!currentProductionId) {
@@ -84,7 +85,7 @@ export function DocumentsPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleOpen(doc.file_path)}
+                    onClick={() => handleReveal(doc.file_path)}
                   >
                     <ExternalLink className="mr-1 size-4" />
                     Open in Finder

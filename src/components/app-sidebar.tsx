@@ -42,7 +42,7 @@ export function AppSidebar() {
                     <SidebarMenuItem key={item.to}>
                       <SidebarMenuButton asChild isActive={isParentActive}>
                         <NavLink
-                          to={item.defaultChild}
+                          to={item.to}
                           aria-expanded={isExpanded}
                           className={({ isActive }) =>
                             cn(

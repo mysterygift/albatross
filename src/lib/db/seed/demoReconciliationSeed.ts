@@ -14,7 +14,7 @@ const TABLE_LINKS = 'budget_item_expense_links'
  * Deterministic demo links: expense_idx (0-based), budget_item_index (1-based), matched_amount.
  * Some use full amount, some partial (to show expense "partially allocated" state).
  */
-const DEMO_LINKS: { expenseIdx: number; budgetItemIndex: number; matchedAmount: number }[] = [
+export const DEMO_LINKS: { expenseIdx: number; budgetItemIndex: number; matchedAmount: number }[] = [
   { expenseIdx: 0, budgetItemIndex: 19, matchedAmount: 5000 }, // 2304 legal: full
   { expenseIdx: 3, budgetItemIndex: 22, matchedAmount: 12500 }, // 2406 camera: full
   { expenseIdx: 5, budgetItemIndex: 14, matchedAmount: 5500 }, // 1502 cast accommodation: partial line
@@ -38,7 +38,8 @@ export async function seedDemoReconciliation(
   pid: string,
   ts: string,
   budgetItemId: (n: number) => string,
-  expenseId: (n: number) => string
+  expenseId: (n: number) => string,
+  linkId: (n: number) => string = (n) => IDS.reconciliationLink(n)
 ): Promise<void> {
   // Validate: budget item indices exist and matched_amount <= expense.amount
   for (const link of DEMO_LINKS) {
@@ -66,12 +67,12 @@ export async function seedDemoReconciliation(
       const link = DEMO_LINKS[i]!
       const expenseIdVal = expenseId(link.expenseIdx + 1)
       const budgetItemIdVal = budgetItemId(link.budgetItemIndex)
-      const linkId = IDS.reconciliationLink(i + 1)
+      const linkIdVal = linkId(i + 1)
 
       statements.push({
         sql: `INSERT INTO ${TABLE_LINKS} (id, production_id, budget_item_id, expense_id, matched_amount, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         bindValues: [
-          linkId,
+          linkIdVal,
           pid,
           budgetItemIdVal,
           expenseIdVal,

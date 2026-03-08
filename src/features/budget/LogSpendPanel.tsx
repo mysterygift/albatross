@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { riskWatchQueryKey } from '@/lib/budget/vendors/riskWatch'
 import { typedExpenseRegistry, getTypedExpenseConfig } from '@/lib/budget/transactions/registry'
 import { createTypedExpense } from '@/lib/db/repositories/createTypedExpense'
 import type { ExpenseTransactionType } from '@/lib/db/types'
@@ -76,6 +77,7 @@ export function LogSpendPanel({
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['expenses', variables.productionId] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', variables.productionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(variables.productionId) })
       queryClient.invalidateQueries({ queryKey: ['expense-with-details', data.id] })
       if (variables.transactionType === 'allow') {
         queryClient.invalidateQueries({ queryKey: ['allow-expense-details', variables.productionId] })

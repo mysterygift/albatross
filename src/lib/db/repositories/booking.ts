@@ -82,14 +82,14 @@ export async function createBooking(data: {
 
 export async function updateBooking(
   id: string,
-  data: Partial<Pick<Booking, 'shoot_day_id' | 'start_date' | 'end_date' | 'role' | 'notes'>>
+  data: Partial<Pick<Booking, 'person_id' | 'shoot_day_id' | 'start_date' | 'end_date' | 'role' | 'notes'>>
 ): Promise<Booking> {
   const db = await getDb()
   const ts = now()
   const cols: string[] = []
   const vals: unknown[] = []
   let i = 1
-  for (const k of ['shoot_day_id', 'start_date', 'end_date', 'role', 'notes'] as const) {
+  for (const k of ['person_id', 'shoot_day_id', 'start_date', 'end_date', 'role', 'notes'] as const) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
       vals.push(data[k])

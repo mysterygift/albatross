@@ -23,6 +23,11 @@ type TaskRow = {
   priority: number | null
 }
 
+export type DemoTaskSeedIdSource = {
+  taskSection: (n: number) => string
+  task: (n: number) => string
+}
+
 /**
  * Seed demo production task sections and tasks. Call after seedDemoBudget.
  * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
@@ -31,16 +36,17 @@ export async function seedDemoTasks(
   pid: string,
   startDate: string,
   ts: string,
-  addDaysLocal: (yyyyMmDd: string, days: number) => string
+  addDaysLocal: (yyyyMmDd: string, days: number) => string,
+  idSource: DemoTaskSeedIdSource = IDS
 ): Promise<void> {
-  const preProd = IDS.taskSection(1)
-  const principal = IDS.taskSection(2)
-  const postProd = IDS.taskSection(3)
+  const preProd = idSource.taskSection(1)
+  const principal = idSource.taskSection(2)
+  const postProd = idSource.taskSection(3)
 
   const tasks: TaskRow[] = [
     // Pre-Production
     {
-      id: IDS.task(1),
+      id: idSource.task(1),
       section_id: preProd,
       parent_task_id: null,
       description: 'Lock budget',
@@ -51,9 +57,9 @@ export async function seedDemoTasks(
       priority: 1,
     },
     {
-      id: IDS.task(2),
+      id: idSource.task(2),
       section_id: preProd,
-      parent_task_id: IDS.task(1),
+      parent_task_id: idSource.task(1),
       description: 'Confirm ATL assumptions',
       is_complete: 1,
       notes: null,
@@ -62,9 +68,9 @@ export async function seedDemoTasks(
       priority: 2,
     },
     {
-      id: IDS.task(3),
+      id: idSource.task(3),
       section_id: preProd,
-      parent_task_id: IDS.task(1),
+      parent_task_id: idSource.task(1),
       description: 'Confirm BTL assumptions',
       is_complete: 1,
       notes: null,
@@ -73,7 +79,7 @@ export async function seedDemoTasks(
       priority: 2,
     },
     {
-      id: IDS.task(4),
+      id: idSource.task(4),
       section_id: preProd,
       parent_task_id: null,
       description: 'Secure key locations',
@@ -84,9 +90,9 @@ export async function seedDemoTasks(
       priority: 1,
     },
     {
-      id: IDS.task(5),
+      id: idSource.task(5),
       section_id: preProd,
-      parent_task_id: IDS.task(4),
+      parent_task_id: idSource.task(4),
       description: 'Trafalgar Square permit',
       is_complete: 0,
       notes: 'Council application in progress',
@@ -95,9 +101,9 @@ export async function seedDemoTasks(
       priority: 1,
     },
     {
-      id: IDS.task(6),
+      id: idSource.task(6),
       section_id: preProd,
-      parent_task_id: IDS.task(4),
+      parent_task_id: idSource.task(4),
       description: 'Bank interior agreement',
       is_complete: 1,
       notes: null,
@@ -106,7 +112,7 @@ export async function seedDemoTasks(
       priority: 2,
     },
     {
-      id: IDS.task(7),
+      id: idSource.task(7),
       section_id: preProd,
       parent_task_id: null,
       description: 'Confirm camera package',
@@ -117,9 +123,9 @@ export async function seedDemoTasks(
       priority: 2,
     },
     {
-      id: IDS.task(8),
+      id: idSource.task(8),
       section_id: preProd,
-      parent_task_id: IDS.task(7),
+      parent_task_id: idSource.task(7),
       description: 'Finalise lens list',
       is_complete: 0,
       notes: null,
@@ -128,9 +134,9 @@ export async function seedDemoTasks(
       priority: null,
     },
     {
-      id: IDS.task(9),
+      id: idSource.task(9),
       section_id: preProd,
-      parent_task_id: IDS.task(7),
+      parent_task_id: idSource.task(7),
       description: 'Schedule camera prep day',
       is_complete: 0,
       notes: null,
@@ -139,7 +145,7 @@ export async function seedDemoTasks(
       priority: 1,
     },
     {
-      id: IDS.task(10),
+      id: idSource.task(10),
       section_id: preProd,
       parent_task_id: null,
       description: 'Issue cast contracts',
@@ -151,7 +157,7 @@ export async function seedDemoTasks(
     },
     // Principal Photography
     {
-      id: IDS.task(11),
+      id: idSource.task(11),
       section_id: principal,
       parent_task_id: null,
       description: 'Day 1 readiness',
@@ -162,9 +168,9 @@ export async function seedDemoTasks(
       priority: 1,
     },
     {
-      id: IDS.task(12),
+      id: idSource.task(12),
       section_id: principal,
-      parent_task_id: IDS.task(11),
+      parent_task_id: idSource.task(11),
       description: 'Confirm call sheet issued',
       is_complete: 0,
       notes: null,
@@ -173,9 +179,9 @@ export async function seedDemoTasks(
       priority: 1,
     },
     {
-      id: IDS.task(13),
+      id: idSource.task(13),
       section_id: principal,
-      parent_task_id: IDS.task(11),
+      parent_task_id: idSource.task(11),
       description: 'Confirm transport call times',
       is_complete: 0,
       notes: null,
@@ -184,9 +190,9 @@ export async function seedDemoTasks(
       priority: 2,
     },
     {
-      id: IDS.task(14),
+      id: idSource.task(14),
       section_id: principal,
-      parent_task_id: IDS.task(11),
+      parent_task_id: idSource.task(11),
       description: 'Confirm catering numbers',
       is_complete: 0,
       notes: null,
@@ -195,7 +201,7 @@ export async function seedDemoTasks(
       priority: 2,
     },
     {
-      id: IDS.task(15),
+      id: idSource.task(15),
       section_id: principal,
       parent_task_id: null,
       description: 'Stunt day prep',
@@ -206,9 +212,9 @@ export async function seedDemoTasks(
       priority: 1,
     },
     {
-      id: IDS.task(16),
+      id: idSource.task(16),
       section_id: principal,
-      parent_task_id: IDS.task(15),
+      parent_task_id: idSource.task(15),
       description: 'Confirm stunt coordinator',
       is_complete: 0,
       notes: null,
@@ -217,9 +223,9 @@ export async function seedDemoTasks(
       priority: 1,
     },
     {
-      id: IDS.task(17),
+      id: idSource.task(17),
       section_id: principal,
-      parent_task_id: IDS.task(15),
+      parent_task_id: idSource.task(15),
       description: 'Confirm medic booked',
       is_complete: 0,
       notes: null,
@@ -228,7 +234,7 @@ export async function seedDemoTasks(
       priority: 2,
     },
     {
-      id: IDS.task(18),
+      id: idSource.task(18),
       section_id: principal,
       parent_task_id: null,
       description: 'Daily camera media workflow',
@@ -240,7 +246,7 @@ export async function seedDemoTasks(
     },
     // Post-Production
     {
-      id: IDS.task(19),
+      id: idSource.task(19),
       section_id: postProd,
       parent_task_id: null,
       description: 'Picture lock prep',
@@ -251,9 +257,9 @@ export async function seedDemoTasks(
       priority: 2,
     },
     {
-      id: IDS.task(20),
+      id: idSource.task(20),
       section_id: postProd,
-      parent_task_id: IDS.task(19),
+      parent_task_id: idSource.task(19),
       description: 'Confirm editor handoff',
       is_complete: 0,
       notes: null,
@@ -262,9 +268,9 @@ export async function seedDemoTasks(
       priority: null,
     },
     {
-      id: IDS.task(21),
+      id: idSource.task(21),
       section_id: postProd,
-      parent_task_id: IDS.task(19),
+      parent_task_id: idSource.task(19),
       description: 'Confirm turnover notes',
       is_complete: 0,
       notes: null,
@@ -273,7 +279,7 @@ export async function seedDemoTasks(
       priority: null,
     },
     {
-      id: IDS.task(22),
+      id: idSource.task(22),
       section_id: postProd,
       parent_task_id: null,
       description: 'Music clearance review',
@@ -284,7 +290,7 @@ export async function seedDemoTasks(
       priority: 2,
     },
     {
-      id: IDS.task(23),
+      id: idSource.task(23),
       section_id: postProd,
       parent_task_id: null,
       description: 'Delivery prep',
@@ -295,9 +301,9 @@ export async function seedDemoTasks(
       priority: 1,
     },
     {
-      id: IDS.task(24),
+      id: idSource.task(24),
       section_id: postProd,
-      parent_task_id: IDS.task(23),
+      parent_task_id: idSource.task(23),
       description: 'Confirm broadcaster specs',
       is_complete: 0,
       notes: null,
@@ -306,9 +312,9 @@ export async function seedDemoTasks(
       priority: 2,
     },
     {
-      id: IDS.task(25),
+      id: idSource.task(25),
       section_id: postProd,
-      parent_task_id: IDS.task(23),
+      parent_task_id: idSource.task(23),
       description: 'QC deliverables checklist',
       is_complete: 0,
       notes: null,

@@ -291,6 +291,11 @@ const DEMO_DELIVERABLES: DemoDeliverableRow[] = [
   },
 ]
 
+export type DemoDeliverableSeedIdSource = {
+  deliverable: (n: number) => string
+  technicalSpec: (n: number) => string
+}
+
 /**
  * Seed demo deliverables and technical_specs. Call after production and other demo data exist.
  * Due dates: startDate + 60 + i*7 days. Deterministic.
@@ -299,7 +304,8 @@ export async function seedDemoDeliverables(
   pid: string,
   startDate: string,
   ts: string,
-  addDaysLocal: (yyyyMmDd: string, days: number) => string
+  addDaysLocal: (yyyyMmDd: string, days: number) => string,
+  idSource: DemoDeliverableSeedIdSource = IDS
 ): Promise<void> {
   const db = await getDb()
 
@@ -310,7 +316,7 @@ export async function seedDemoDeliverables(
       `INSERT INTO deliverables (id, production_id, name, due_date, status, recipient, delivery_method, delivered_by, delivered_at, approval_status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
-        IDS.deliverable(i),
+        idSource.deliverable(i),
         pid,
         d.name,
         dueDate,
@@ -332,8 +338,8 @@ export async function seedDemoDeliverables(
       `INSERT INTO technical_specs (id, deliverable_id, resolution, codec, audio, captions, aspect_ratio, platform, notes, bitrate, subtitles, graphics, language, audio_mix, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
-        IDS.technicalSpec(i),
-        IDS.deliverable(i),
+        idSource.technicalSpec(i),
+        idSource.deliverable(i),
         d.resolution,
         d.codec,
         d.audio,

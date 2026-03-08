@@ -14,15 +14,21 @@ import { executeBatch, getDb, now } from '../client'
 import { getProductionBySlug, hardDeleteProduction } from '../repositories/production'
 import { seedDemoBudget } from './demoBudgetSeed'
 import { seedDemoBookings } from './demoBookingSeed'
+import { seedDemoPeople } from './demoPeopleSeed'
 import { seedDemoDeliverables } from './demoDeliverableSeed'
 import { seedDemoReconciliation } from './demoReconciliationSeed'
 import { seedDemoTasks } from './demoTaskSeed'
+import { seedDemoVendorFinance } from './demoVendorFinanceSeed'
+import { seedDemoVendors } from './demoVendorSeed'
+import { seedDemoCrew } from './demoCrewSeed'
 import { listDocumentsByProduction } from '../repositories/document'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { generateCueSheet, generateLocationReleaseCover, generateContributorFormCover } from '@/lib/pdf'
 import type { CameraMovement, ShotSize } from '../types'
 import { CAMERA_MOVEMENT_VALUES, SHOT_SIZE_VALUES } from '../types'
 import { DEMO_EXCHANGE_RATE_ID, DEMO_SLUG, IDS, SEED_VERSION } from './constants'
+import type { DemoSeedIdSource } from './demoSeedContext'
+import { buildDemoSeedIdSourceWithUuid, makeDemoSeedIdSourceFromIDS } from './demoSeedContext'
 import { getLastSeededAt, getSeedVersion, setSeedMeta } from './seedMeta'
 
 const ATTACHMENTS = 'attachments'
@@ -234,20 +240,63 @@ async function runFullSeed(): Promise<void> {
     [pid, 'Demo: The Mint Heist', DEMO_SLUG, 'GBP', 'Demo production for Albatross', ts, ts]
   )
 
+  const startDate = todayLocalYYYYMMDD()
+  await runDemoContentSeed(pid, makeDemoSeedIdSourceFromIDS(), startDate, ts, {
+    includeDocuments: true,
+    includeExchangeRate: true,
+  })
+  await setSeedMeta('last_seeded_at', ts)
+  await setSeedMeta('seed_version', SEED_VERSION)
+}
+
+export type RunDemoContentSeedOptions = {
+  includeDocuments: boolean
+  includeExchangeRate: boolean
+}
+
+/**
+ * Seed demo-style content into an arbitrary production (user-created Demo template).
+ * Uses uuid-based ids so it does not collide with the singleton DEMO_SLUG production.
+ * Does not insert the production row; does not write document files or seed exchange rate.
+ */
+export async function seedDemoStyleContentIntoProduction(productionId: string): Promise<void> {
+  const startDate = todayLocalYYYYMMDD()
+  const ts = now()
+  const idSource = buildDemoSeedIdSourceWithUuid()
+  await runDemoContentSeed(productionId, idSource, startDate, ts, {
+    includeDocuments: false,
+    includeExchangeRate: false,
+  })
+}
+
+/**
+ * Seed demo-style content into a production (chart of accounts, tasks, deliverables,
+ * scenes, schedule, cast, budget, reconciliation, etc.). Used by (1) singleton demo
+ * (runFullSeed) with makeDemoSeedIdSourceFromIDS, and (2) user-created Demo template
+ * with buildDemoSeedIdSourceWithUuid. Does not insert the production row.
+ */
+async function runDemoContentSeed(
+  productionId: string,
+  idSource: DemoSeedIdSource,
+  startDate: string,
+  ts: string,
+  options: RunDemoContentSeedOptions
+): Promise<void> {
+  const db = await getDb()
+
   await db.execute(
     `INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5), ($6, $7, $8, $9, $10)`,
-    [IDS.unitMain, pid, 'Main Unit', ts, ts, IDS.unitSecond, pid, 'Second Unit', ts, ts]
+    [idSource.unitMain, productionId, 'Main Unit', ts, ts, idSource.unitSecond, productionId, 'Second Unit', ts, ts]
   )
 
-  const startDate = todayLocalYYYYMMDD()
   for (let d = 0; d < 12; d++) {
     const shootDate = addDaysLocal(startDate, d)
     await db.execute(
       `INSERT INTO shoot_days (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
-        IDS.shootDay(d + 1),
-        pid,
+        idSource.shootDay(d + 1),
+        productionId,
         shootDate,
         d + 1,
         '07:00',
@@ -264,14 +313,14 @@ async function runFullSeed(): Promise<void> {
       `INSERT INTO shoot_day_units (id, shoot_day_id, unit_id, is_locked, created_at, updated_at)
        VALUES ($1, $2, $3, 0, $4, $5), ($6, $7, $8, 0, $9, $10)`,
       [
-        IDS.shootDayUnit(d - 1, 0),
-        IDS.shootDay(d),
-        IDS.unitMain,
+        idSource.shootDayUnit(d - 1, 0),
+        idSource.shootDay(d),
+        idSource.unitMain,
         ts,
         ts,
-        IDS.shootDayUnit(d - 1, 1),
-        IDS.shootDay(d),
-        IDS.unitSecond,
+        idSource.shootDayUnit(d - 1, 1),
+        idSource.shootDay(d),
+        idSource.unitSecond,
         ts,
         ts,
       ]
@@ -421,8 +470,8 @@ async function runFullSeed(): Promise<void> {
       `INSERT INTO locations (id, production_id, name, booked_status, address, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
-        IDS.location(i),
-        pid,
+        idSource.location(i),
+        productionId,
         loc.name,
         loc.booked_status,
         loc.address,
@@ -439,13 +488,13 @@ async function runFullSeed(): Promise<void> {
   const intExt = ['INT', 'EXT', 'EXT', 'INT', 'EXT'] as const
   const dayNight = ['DAY', 'NIGHT', 'DAY', 'NIGHT', 'DAY'] as const
   for (let s = 1; s <= 45; s++) {
-    const locId = s <= 14 ? IDS.location(((s - 1) % 14) + 1) : null
+    const locId = s <= 14 ? idSource.location(((s - 1) % 14) + 1) : null
     await db.execute(
       `INSERT INTO scenes (id, production_id, scene_number, heading, title, description, int_ext, day_night, page_eighths, location_id, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
-        IDS.scene(s),
-        pid,
+        idSource.scene(s),
+        productionId,
         String(s),
         `${intExt[(s - 1) % 5]} - ${dayNight[(s - 1) % 5]}`,
         `Scene ${s}`,
@@ -471,14 +520,14 @@ async function runFullSeed(): Promise<void> {
     await db.execute(
       `INSERT INTO equipment_terms (id, production_id, type, value, created_at, updated_at)
        VALUES ($1, $2, 'LENS', $3, $4, $5)`,
-      [IDS.equipmentTerm(termN++), pid, value, ts, ts]
+      [idSource.equipmentTerm(termN++), productionId, value, ts, ts]
     )
   }
   for (const value of SUPPORT_SEED) {
     await db.execute(
       `INSERT INTO equipment_terms (id, production_id, type, value, created_at, updated_at)
        VALUES ($1, $2, 'SUPPORT', $3, $4, $5)`,
-      [IDS.equipmentTerm(termN++), pid, value, ts, ts]
+      [idSource.equipmentTerm(termN++), productionId, value, ts, ts]
     )
   }
 
@@ -548,8 +597,8 @@ async function runFullSeed(): Promise<void> {
     const isCoverageScene = sceneIdx < 5
     for (let si = 0; si < count; si++) {
       globalShotIndex++
-      const shotId = IDS.shot(globalShotIndex)
-      const sceneId = IDS.scene(sceneNum)
+      const shotId = idSource.shot(globalShotIndex)
+      const sceneId = idSource.scene(sceneNum)
       const shotNumber = String(si + 1) // integer per scene; display elsewhere as scene_number/shot_number (e.g. 10/2)
 
       // Test case A: null/incomplete (shots 1–10)
@@ -651,127 +700,51 @@ async function runFullSeed(): Promise<void> {
     )
   }
 
-  const castDepts = [
-    'Cast',
-    'Cast',
-    'Cast',
-    'Camera',
-    'Sound',
-    'Grip',
-    'Electric',
-    'Art',
-    'Wardrobe',
-    'Hair',
-    'Makeup',
-    'Transport',
-    'Catering',
-    'Security',
-    'Production',
-    'Director',
-    'AD',
-    'Script',
-    'Continuity',
-    'VFX',
-    'Stunts',
-  ]
-  const names = [
-    'Alex Rivera',
-    'Jordan Lee',
-    'Sam Chen',
-    'Morgan Taylor',
-    'Casey Brown',
-    'Riley Davis',
-    'Quinn Wilson',
-    'Avery Martinez',
-    'Blake Anderson',
-    'Skyler White',
-    'Dakota Moore',
-    'Finley Jackson',
-    'Emery Thomas',
-    'Hayden Garcia',
-    'Parker Robinson',
-    'River Clark',
-    'Sage Lewis',
-    'Phoenix Walker',
-    'Drew Hall',
-    'Cameron Young',
-  ]
-  for (let i = 0; i < 40; i++) {
-    const isCast = i < 18 ? 1 : 0
-    const dept = castDepts[i % castDepts.length]
-    const name = names[i % names.length] + (i >= 20 ? ` ${Math.floor(i / 20) + 1}` : '')
-    await db.execute(
-      `INSERT INTO people (id, production_id, name, is_cast, email, phone, department, contributor_form_status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [
-        IDS.person(i + 1),
-        pid,
-        name,
-        isCast,
-        `person${i + 1}@demo.com`,
-        null,
-        dept,
-        i < 5 ? 'signed' : 'not_requested',
-        ts,
-        ts,
-      ]
-    )
-  }
-
-  for (let s = 1; s <= 45; s++) {
-    const numCast = 1 + (s % 4)
-    for (let c = 0; c < numCast && c < 18; c++) {
-      const personId = IDS.person((s % 18) + c + 1)
-      await db.execute(
-        `INSERT INTO scene_cast (id, production_id, scene_id, person_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [IDS.sceneCast((s - 1) * 4 + c), pid, IDS.scene(s), personId, ts, ts]
-      )
-    }
-  }
-
-  const clashDates = [2, 4, 6, 9, 11].map((off) => addDaysLocal(startDate, off))
-  for (let i = 0; i < 5; i++) {
-    await db.execute(
-      `INSERT INTO cast_availability (id, production_id, person_id, start_date, end_date, availability, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        IDS.availability(i + 1),
-        pid,
-        IDS.person(i + 1),
-        clashDates[i],
-        clashDates[i],
-        'UNAVAILABLE',
-        'Clash for demo',
-        ts,
-        ts,
-      ]
-    )
-  }
+  await seedDemoPeople(productionId, startDate, ts, idSource)
 
   for (let s = 1; s <= 12; s++) {
-    const locId = IDS.location(((s - 1) % 14) + 1)
+    const locId = idSource.location(((s - 1) % 14) + 1)
     await db.execute(
       `INSERT INTO location_scene (id, location_id, scene_id, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5)`,
-      [IDS.locationScene(s), locId, IDS.scene(s), ts, ts]
+      [idSource.locationScene(s), locId, idSource.scene(s), ts, ts]
     )
   }
 
   // -------------------------------------------------------------------------
   // Cast bookings: aligned with scene_cast and stripboard; respects cast availability clashes
   // -------------------------------------------------------------------------
-  await seedDemoBookings(pid, ts)
+  await seedDemoBookings(productionId, ts, idSource)
+
+  // -------------------------------------------------------------------------
+  // Vendors (singleton demo only): seed before budget so expenses can get vendor_id.
+  // -------------------------------------------------------------------------
+  const isSingletonDemo = productionId === IDS.production
+  let vendorIdByCompanyName: Record<string, string> | null = null
+  if (isSingletonDemo) {
+    vendorIdByCompanyName = await seedDemoVendors(productionId, ts)
+  }
 
   // -------------------------------------------------------------------------
   // Budget: generated only via demoBudgetSeed (chart of accounts, budget items, expenses,
   // production totals). No legacy budget_categories; category_id left null. All values in GBP.
   // Uses runInSerializedTransaction + executeBatch. Do not add alternate budget seeding for demo.
+  // When singleton demo, vendorIdByCompanyName sets expense.vendor_id for vendor-linked spend.
   // -------------------------------------------------------------------------
-  await seedDemoBudget(pid, startDate, ts, addDaysLocal, IDS.budgetItem, IDS.expense)
-  await seedDemoTasks(pid, startDate, ts, addDaysLocal)
-  await seedDemoReconciliation(pid, ts, IDS.budgetItem, IDS.expense)
-  await seedDemoDeliverables(pid, startDate, ts, addDaysLocal)
+  await seedDemoBudget(productionId, startDate, ts, addDaysLocal, idSource.budgetItem, idSource.expense, vendorIdByCompanyName ?? undefined)
+  await seedDemoTasks(productionId, startDate, ts, addDaysLocal, idSource)
+  await seedDemoReconciliation(productionId, ts, idSource.budgetItem, idSource.expense, idSource.reconciliationLink)
+  await seedDemoDeliverables(productionId, startDate, ts, addDaysLocal, idSource)
+
+  // -------------------------------------------------------------------------
+  // Vendor finance (singleton demo only): invoices, POs, reminder tasks, invoice/PO↔expense links.
+  // -------------------------------------------------------------------------
+  if (isSingletonDemo && vendorIdByCompanyName) {
+    await seedDemoVendorFinance(productionId, startDate, ts, addDaysLocal, vendorIdByCompanyName)
+  }
+
+  // Crew: people (is_cast=0), bookings, and for singleton demo only: crew labour vendors and invoices
+  await seedDemoCrew(productionId, startDate, ts, idSource, addDaysLocal)
 
   const hods = [
     ['Director', 'Jane Doe', '555-0100', 'director@demo.com'],
@@ -785,14 +758,14 @@ async function runFullSeed(): Promise<void> {
     await db.execute(
       `INSERT INTO key_contacts (id, production_id, department, name, phone, email, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [IDS.keyContact(i + 1), pid, hods[i][0], hods[i][1], hods[i][2], hods[i][3], ts, ts]
+      [idSource.keyContact(i + 1), productionId, hods[i][0], hods[i][1], hods[i][2], hods[i][3], ts, ts]
     )
   }
 
   let stripIdx = 0
   for (let day = 1; day <= 12; day++) {
-    const dayId = IDS.shootDay(day)
-    for (const unitId of [IDS.unitMain, IDS.unitSecond]) {
+    const dayId = idSource.shootDay(day)
+    for (const unitId of [idSource.unitMain, idSource.unitSecond]) {
       const sduRows = await db.select<Record<string, unknown>[]>(
         `SELECT id FROM shoot_day_units WHERE shoot_day_id = $1 AND unit_id = $2 AND deleted_at IS NULL`,
         [dayId, unitId]
@@ -802,85 +775,34 @@ async function runFullSeed(): Promise<void> {
       await db.execute(
         `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, sort_index, strip_status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'SCHEDULED', $8, $9)`,
-        [IDS.strip(stripIdx++), pid, dayId, sduId, 'CALL', 'Call 07:00', sortIndex++, ts, ts]
+        [idSource.strip(stripIdx++), productionId, dayId, sduId, 'CALL', 'Call 07:00', sortIndex++, ts, ts]
       )
       for (let sc = 1; sc <= 5; sc++) {
         const sceneNum = (day - 1) * 4 + sc
-        const sceneId = IDS.scene(sceneNum)
+        const sceneId = idSource.scene(sceneNum)
         const shotId = firstShotIdBySceneId.get(sceneId) ?? null
         await db.execute(
           `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, sort_index, strip_status, created_at, updated_at)
            VALUES ($1, $2, $3, $4, 'SHOT', $5, $6, $7, 'SCHEDULED', $8, $9)`,
-          [IDS.strip(stripIdx++), pid, dayId, sduId, sceneId, shotId, sortIndex++, ts, ts]
+          [idSource.strip(stripIdx++), productionId, dayId, sduId, sceneId, shotId, sortIndex++, ts, ts]
         )
       }
       await db.execute(
         `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, sort_index, strip_status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'SCHEDULED', $8, $9)`,
-        [IDS.strip(stripIdx++), pid, dayId, sduId, 'LUNCH', 'Lunch 13:00', sortIndex++, ts, ts]
+        [idSource.strip(stripIdx++), productionId, dayId, sduId, 'LUNCH', 'Lunch 13:00', sortIndex++, ts, ts]
       )
       await db.execute(
         `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, sort_index, strip_status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'SCHEDULED', $8, $9)`,
-        [IDS.strip(stripIdx++), pid, dayId, sduId, 'WRAP', 'Wrap 18:00', sortIndex++, ts, ts]
+        [idSource.strip(stripIdx++), productionId, dayId, sduId, 'WRAP', 'Wrap 18:00', sortIndex++, ts, ts]
       )
       await db.execute(
         `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, title, description, sort_index, strip_status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'SCHEDULED', $9, $10)`,
-        [IDS.strip(stripIdx++), pid, dayId, sduId, 'NOTE', 'Unit note', 'Demo note', sortIndex++, ts, ts]
+        [idSource.strip(stripIdx++), productionId, dayId, sduId, 'NOTE', 'Unit note', 'Demo note', sortIndex++, ts, ts]
       )
     }
-  }
-
-  const locReleasePdf = await generateLocationReleaseCover({
-    productionName: 'Demo: The Mint Heist',
-    locationName: 'Mint Building',
-    address: '105 Main St',
-  })
-  const locPath = `${ATTACHMENTS}/demo-location-release.pdf`
-  await writeFile(locPath, locReleasePdf, { baseDir: BaseDirectory.AppData })
-  await db.execute(
-    `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [IDS.document(1), pid, 'location_release', IDS.location(5), 'demo-location-release.pdf', locPath, 'application/pdf', ts, ts]
-  )
-
-  const contribPdf = await generateContributorFormCover({
-    productionName: 'Demo: The Mint Heist',
-    contributorName: 'Alex Rivera',
-    role: 'Lead',
-  })
-  const contribPath = `${ATTACHMENTS}/demo-contributor-form.pdf`
-  await writeFile(contribPath, contribPdf, { baseDir: BaseDirectory.AppData })
-  await db.execute(
-    `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [IDS.document(2), pid, 'contributor_form', IDS.person(1), 'demo-contributor-form.pdf', contribPath, 'application/pdf', ts, ts]
-  )
-
-  const callSheetPath = `${ATTACHMENTS}/demo-call-sheet.pdf`
-  const { generateCallSheetPdf } = await import('@/lib/pdf/callSheet')
-  const shootDay = await db.select<Record<string, unknown>[]>(`SELECT * FROM shoot_days WHERE id = $1`, [IDS.shootDay(1)])
-  if (shootDay.length) {
-    const data = await buildCallSheetDataForSeed(pid, IDS.shootDay(1), startDate)
-    const callPdfBytes = await generateCallSheetPdf(data)
-    await writeFile(callSheetPath, new Uint8Array(callPdfBytes), { baseDir: BaseDirectory.AppData })
-  }
-  await db.execute(
-    `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [IDS.document(3), pid, 'call_sheet', IDS.shootDay(1), 'demo-call-sheet.pdf', callSheetPath, 'application/pdf', ts, ts]
-  )
-
-  for (let i = 4; i <= 10; i++) {
-    const fileName = `demo-doc-${i}.txt`
-    const path = `${ATTACHMENTS}/${fileName}`
-    await writeTextFile(path, `Demo document ${i} for Albatross.\nGenerated at ${ts}`, { baseDir: BaseDirectory.AppData })
-    await db.execute(
-      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [IDS.document(i), pid, null, null, fileName, path, 'text/plain', ts, ts]
-    )
   }
 
   const trackTitles = ['Opening Theme', 'Chase Sequence', 'Love Scene', 'Tension Build', 'End Credits', 'Ambient 1', 'Ambient 2', 'Action Sting', 'Emotional', 'Transition']
@@ -888,7 +810,7 @@ async function runFullSeed(): Promise<void> {
     await db.execute(
       `INSERT INTO music_tracks (id, production_id, title, artist, publisher_label, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [IDS.musicTrack(i), pid, trackTitles[i - 1], 'Demo Artist', 'Demo Music Co', ts, ts]
+      [idSource.musicTrack(i), productionId, trackTitles[i - 1], 'Demo Artist', 'Demo Music Co', ts, ts]
     )
   }
 
@@ -896,42 +818,93 @@ async function runFullSeed(): Promise<void> {
     await db.execute(
       `INSERT INTO clearances (id, production_id, type, item_id, status, requested_at, granted_at, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [IDS.clearance(i), pid, 'music', IDS.musicTrack(i), i % 2 === 0 ? 'granted' : 'pending', ts, i % 2 === 0 ? ts : null, ts, ts]
+      [idSource.clearance(i), productionId, 'music', idSource.musicTrack(i), i % 2 === 0 ? 'granted' : 'pending', ts, i % 2 === 0 ? ts : null, ts, ts]
     )
   }
 
-  const cueRows = trackTitles.map((title) => ({
-    title,
-    artist: 'Demo Artist',
-    publisher: 'Demo Music Co',
-  }))
-  const cuePdf = await generateCueSheet('Demo: The Mint Heist', cueRows)
-  const cuePath = `${ATTACHMENTS}/demo-cue-sheet.pdf`
-  await writeFile(cuePath, cuePdf, { baseDir: BaseDirectory.AppData })
-  await db.execute(
-    `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [IDS.document(11), pid, 'cue_sheet', null, 'demo-cue-sheet.pdf', cuePath, 'application/pdf', ts, ts]
-  )
-  await db.execute(
-    `INSERT INTO cue_sheets (id, production_id, generated_at, document_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [IDS.cueSheet, pid, ts, IDS.document(11), ts, ts]
-  )
-
-  await setSeedMeta('last_seeded_at', ts)
-  await setSeedMeta('seed_version', SEED_VERSION)
-
-  // Seed one GBP→USD rate for offline conversion testing; do not overwrite existing user-fetched rate.
-  const existingRate = await db.select<Record<string, unknown>[]>(
-    `SELECT 1 FROM exchange_rates WHERE base_currency = 'gbp' AND quote_currency = 'usd'`
-  )
-  if (existingRate.length === 0) {
+  if (options.includeDocuments) {
+    const locReleasePdf = await generateLocationReleaseCover({
+      productionName: 'Demo: The Mint Heist',
+      locationName: 'Mint Building',
+      address: '105 Main St',
+    })
+    const locPath = `${ATTACHMENTS}/demo-location-release.pdf`
+    await writeFile(locPath, locReleasePdf, { baseDir: BaseDirectory.AppData })
     await db.execute(
-      `INSERT INTO exchange_rates (id, base_currency, quote_currency, rate, fetched_at)
-       VALUES ($1, 'gbp', 'usd', 1.25, $2)`,
-      [DEMO_EXCHANGE_RATE_ID, ts]
+      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [idSource.document(1), productionId, 'location_release', idSource.location(5), 'demo-location-release.pdf', locPath, 'application/pdf', ts, ts]
     )
+
+    const contribPdf = await generateContributorFormCover({
+      productionName: 'Demo: The Mint Heist',
+      contributorName: 'Jade Mercer',
+      role: "Eleanor 'Jade' Mercer",
+    })
+    const contribPath = `${ATTACHMENTS}/demo-contributor-form.pdf`
+    await writeFile(contribPath, contribPdf, { baseDir: BaseDirectory.AppData })
+    await db.execute(
+      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [idSource.document(2), productionId, 'contributor_form', idSource.person(1), 'demo-contributor-form.pdf', contribPath, 'application/pdf', ts, ts]
+    )
+
+    const callSheetPath = `${ATTACHMENTS}/demo-call-sheet.pdf`
+    const { generateCallSheetPdf } = await import('@/lib/pdf/callSheet')
+    const shootDay = await db.select<Record<string, unknown>[]>(`SELECT * FROM shoot_days WHERE id = $1`, [idSource.shootDay(1)])
+    if (shootDay.length) {
+      const data = await buildCallSheetDataForSeed(productionId, idSource.shootDay(1), startDate)
+      const callPdfBytes = await generateCallSheetPdf(data)
+      await writeFile(callSheetPath, new Uint8Array(callPdfBytes), { baseDir: BaseDirectory.AppData })
+    }
+    await db.execute(
+      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [idSource.document(3), productionId, 'call_sheet', idSource.shootDay(1), 'demo-call-sheet.pdf', callSheetPath, 'application/pdf', ts, ts]
+    )
+
+    for (let i = 4; i <= 10; i++) {
+      const fileName = `demo-doc-${i}.txt`
+      const path = `${ATTACHMENTS}/${fileName}`
+      await writeTextFile(path, `Demo document ${i} for Albatross.\nGenerated at ${ts}`, { baseDir: BaseDirectory.AppData })
+      await db.execute(
+        `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [idSource.document(i), productionId, null, null, fileName, path, 'text/plain', ts, ts]
+      )
+    }
+
+    const cueRows = trackTitles.map((title) => ({
+      title,
+      artist: 'Demo Artist',
+      publisher: 'Demo Music Co',
+    }))
+    const cuePdf = await generateCueSheet('Demo: The Mint Heist', cueRows)
+    const cuePath = `${ATTACHMENTS}/demo-cue-sheet.pdf`
+    await writeFile(cuePath, cuePdf, { baseDir: BaseDirectory.AppData })
+    await db.execute(
+      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [idSource.document(11), productionId, 'cue_sheet', null, 'demo-cue-sheet.pdf', cuePath, 'application/pdf', ts, ts]
+    )
+    await db.execute(
+      `INSERT INTO cue_sheets (id, production_id, generated_at, document_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [idSource.cueSheet, productionId, ts, idSource.document(11), ts, ts]
+    )
+  }
+
+  if (options.includeExchangeRate) {
+    const existingRate = await db.select<Record<string, unknown>[]>(
+      `SELECT 1 FROM exchange_rates WHERE base_currency = 'gbp' AND quote_currency = 'usd'`
+    )
+    if (existingRate.length === 0) {
+      await db.execute(
+        `INSERT INTO exchange_rates (id, base_currency, quote_currency, rate, fetched_at)
+         VALUES ($1, 'gbp', 'usd', 1.25, $2)`,
+        [DEMO_EXCHANGE_RATE_ID, ts]
+      )
+    }
   }
 }
 
@@ -993,13 +966,17 @@ async function buildCallSheetDataForSeed(
     productionName,
     shootDate,
     unitName: 'Main Unit',
+    dayNumber: (day?.day_number as number) ?? null,
     callTime: (day?.call_time as string) ?? '07:00',
     wrapTime: (day?.wrap_time as string) ?? '18:00',
+    dayNotes: (day?.notes as string) ?? null,
+    unitNotes: null,
     keyContacts: keyContactRows.map((r) => ({
       department: r.department as string,
       name: r.name as string | null,
       phone: r.phone as string | null,
       email: r.email as string | null,
+      notes: null,
     })),
     hospitalName: (day?.hospital_name as string) ?? null,
     hospitalAddress: (day?.hospital_address as string) ?? null,
@@ -1010,7 +987,13 @@ async function buildCallSheetDataForSeed(
     mealTimes: [{ name: 'Lunch', time: '13:00' }],
     specialNotes: (day?.special_notes as string) ?? null,
     schedule,
+    crewGroups: [],
     castCalled: peopleRows.map((r) => r.name as string),
-    locations: locRows.map((r) => ({ name: r.name as string, address: r.address as string | null })),
+    locations: locRows.map((r) => ({
+      name: r.name as string,
+      address: r.address as string | null,
+      what3words: null,
+      notes: null,
+    })),
   }
 }

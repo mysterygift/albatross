@@ -15,8 +15,14 @@ export const IDS = {
   scene: (n: number) => `${P}${String(200 + n).padStart(4, '0')}`,
   // shots 1-120 (spread across scenes)
   shot: (n: number) => `${P}${String(400 + n).padStart(4, '0')}`,
-  // people: 18 cast + 22 crew = 40
+  // people: 14 cast + crew from demoCrewSeed (person 15..69)
   person: (n: number) => `${P}${String(500 + n).padStart(4, '0')}`,
+  // crew bookings (distinct range so cast bookings don't collide)
+  crewBooking: (n: number) => `${P}${String(6500 + n).padStart(4, '0')}`,
+  // crew labour vendors (demo only; 8 vendors)
+  crewVendor: (n: number) => `${P}${String(1718 + n).padStart(4, '0')}`,
+  // crew labour invoices (demo only; 7 invoices)
+  crewVendorInvoice: (n: number) => `${P}${String(1815 + n).padStart(4, '0')}`,
   // locations 1-14
   location: (n: number) => `${P}${String(600 + n).padStart(4, '0')}`,
   // budget categories 14
@@ -44,6 +50,8 @@ export const IDS = {
     `${P}${String(3000 + dayIdx * 2 + unitIdx).padStart(4, '0')}`,
   // scene_cast (many)
   sceneCast: (n: number) => `${P}${String(4000 + n).padStart(4, '0')}`,
+  // shot_cast (refinement layer; many)
+  shotCast: (n: number) => `${P}${String(4100 + n).padStart(4, '0')}`,
   // cast_availability
   availability: (n: number) => `${P}${String(5000 + n).padStart(4, '0')}`,
   // bookings (cast only for demo)
@@ -62,6 +70,18 @@ export const IDS = {
   task: (n: number) => `${P}${String(8100 + n).padStart(4, '0')}`,
   // budget_item_expense_links (demo reconciliation)
   reconciliationLink: (n: number) => `${P}${String(8500 + n).padStart(4, '0')}`,
+  // vendors (demo only, 18 vendors)
+  vendor: (n: number) => `${P}${String(1700 + n).padStart(4, '0')}`,
+  // vendor invoices (demo only)
+  vendorInvoice: (n: number) => `${P}${String(1800 + n).padStart(4, '0')}`,
+  // vendor purchase orders (demo only)
+  vendorPO: (n: number) => `${P}${String(1900 + n).padStart(4, '0')}`,
+  // invoice reminder tasks (demo only; distinct from task sections/tasks)
+  invoiceReminderTask: (n: number) => `${P}${String(8200 + n).padStart(4, '0')}`,
+  // vendor_invoice_expenses link table (demo only)
+  vendorInvoiceExpenseLink: (n: number) => `${P}${String(8600 + n).padStart(4, '0')}`,
+  // vendor_purchase_order_expenses link table (demo only)
+  vendorPOExpenseLink: (n: number) => `${P}${String(8700 + n).padStart(4, '0')}`,
 } as const
 
 export const SEED_VERSION = '2'

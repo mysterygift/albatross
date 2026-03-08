@@ -62,7 +62,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown, Users } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import {
   ensureDemoData,
@@ -73,6 +74,7 @@ import {
 } from '@/lib/db/seed/demoProductionSeed'
 import { getProductionBySlug } from '@/lib/db/repositories/production'
 import { getSetting, setSetting } from '@/lib/db/repositories/settings'
+import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { getRate } from '@/lib/money/exchangeRates'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
@@ -99,6 +101,7 @@ export function SettingsPage() {
   const [accountToDelete, setAccountToDelete] = useState<BudgetAccount | null>(null)
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
   const [colorToast, setColorToast] = useState<string | null>(null)
+  const [settingsTab, setSettingsTab] = useState<'budget' | 'people' | 'developer_tools'>('budget')
   const queryClient = useQueryClient()
 
   const toggleAccountExpanded = useCallback((accountId: string) => {
@@ -266,9 +269,17 @@ export function SettingsPage() {
 
   return (
     <TooltipProvider>
-    <div className="space-y-6">
+    <div className="space-y-5">
       <h1 className="text-2xl font-semibold">Settings</h1>
 
+      <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as 'budget' | 'people' | 'developer_tools')} className="w-full">
+        <TabsList className="h-9 rounded-md border border-border bg-muted/30 w-fit">
+          <TabsTrigger value="budget" className="px-4 text-sm data-[state=active]:bg-background">Budget</TabsTrigger>
+          <TabsTrigger value="people" className="px-4 text-sm data-[state=active]:bg-background">People</TabsTrigger>
+          <TabsTrigger value="developer_tools" className="px-4 text-sm data-[state=active]:bg-background">Developer Tools</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="budget" className="space-y-5 mt-5 outline-none">
       <Card className="bg-[hsl(var(--card))] border-border">
         <CardHeader>
           <CardTitle>Currency</CardTitle>
@@ -373,40 +384,6 @@ export function SettingsPage() {
         </Card>
       )}
 
-      <Dialog open={addGroupOpen} onOpenChange={setAddGroupOpen}>
-        <DialogContent className="max-w-lg">
-          {addGroupOpen && currentProductionId && (
-            <CostReportGroupForm
-              accounts={accounts.filter((a) => !a.archived_at)}
-              initialName=""
-              initialCode=""
-              initialAccountIds={[]}
-              onSubmit={(data) => createGroupMutation.mutate(data)}
-              onCancel={() => setAddGroupOpen(false)}
-              isLoading={createGroupMutation.isPending}
-              submitLabel="Add"
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={editGroup != null} onOpenChange={(open) => !open && setEditGroup(null)}>
-        <DialogContent className="max-w-lg">
-          {editGroup && currentProductionId && (
-            <CostReportGroupForm
-              accounts={accounts.filter((a) => !a.archived_at)}
-              initialName={editGroup.name}
-              initialCode={editGroup.code ?? ''}
-              initialAccountIds={editGroup.id ? editGroupAccountIds : []}
-              onSubmit={(data) => updateGroupMutation.mutate(data)}
-              onCancel={() => setEditGroup(null)}
-              isLoading={updateGroupMutation.isPending}
-              submitLabel="Save"
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
       {currentProductionId && (
         <Card>
           <CardHeader>
@@ -446,63 +423,40 @@ export function SettingsPage() {
         </Card>
       )}
 
-      <Dialog open={addAccountOpen} onOpenChange={setAddAccountOpen}>
-        <DialogContent className="max-w-lg">
-          {addAccountOpen && currentProductionId && (
-            <AddAccountForm
-              productionId={currentProductionId}
-              accounts={accounts.filter((a) => !a.archived_at)}
-              onSubmit={(data) => createAccountMutation.mutate(data)}
-              onCancel={() => setAddAccountOpen(false)}
-              isLoading={createAccountMutation.isPending}
-              error={createAccountMutation.error instanceof Error ? createAccountMutation.error.message : undefined}
-            />
+          {!currentProductionId && (
+            <div className="rounded-lg border border-border bg-muted/20 py-6 px-4 text-center">
+              <p className="text-sm text-muted-foreground">Select a production to configure cost report groups and chart of accounts.</p>
+            </div>
           )}
-        </DialogContent>
-      </Dialog>
+        </TabsContent>
 
-      <Dialog open={editAccount != null} onOpenChange={(open) => !open && setEditAccount(null)}>
-        <DialogContent className="max-w-md">
-          {editAccount && (
-            <EditAccountNameForm
-              account={editAccount}
-              onSubmit={(name) => updateAccountNameMutation.mutate({ accountId: editAccount.id, name })}
-              onCancel={() => setEditAccount(null)}
-              isLoading={updateAccountNameMutation.isPending}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={accountToDelete != null} onOpenChange={(open) => !open && setAccountToDelete(null)}>
-        <DialogContent className="max-w-md">
-          {accountToDelete && (
-            <>
-              <DialogHeader>
-                <DialogTitle>Delete account</DialogTitle>
-              </DialogHeader>
-              <p className="text-sm text-muted-foreground">
-                Permanently remove &quot;{accountToDelete.code} — {accountToDelete.name}&quot;? This cannot be undone.
-              </p>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setAccountToDelete(null)}>Cancel</Button>
-                <Button
-                  variant="destructive"
-                  disabled={hardDeleteAccountMutation.isPending}
-                  onClick={() => hardDeleteAccountMutation.mutate(accountToDelete.id)}
-                >
-                  Delete
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {!currentProductionId && (
-        <p className="text-muted-foreground">Select a production to manage cost report groups, chart of accounts, and other settings.</p>
+        <TabsContent value="people" className="space-y-5 mt-5 outline-none">
+      {currentProductionId && (
+        <Card className="border-zinc-700 bg-zinc-900 text-foreground">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-zinc-100">
+              <Users className="size-5" />
+              Crew Structure
+            </CardTitle>
+            <CardDescription className="text-zinc-400">
+              Configure departments, roles, Heads of Department, and task department mappings for this production.
+              This drives Crew Manager options, HOD derivation, task responsibility mapping, and call-sheet crew grouping and order.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <CrewStructureEditor productionId={currentProductionId} />
+          </CardContent>
+        </Card>
       )}
 
+      {!currentProductionId && (
+            <div className="rounded-lg border border-border bg-muted/20 py-6 px-4 text-center">
+              <p className="text-sm text-muted-foreground">Select a production to configure crew structure.</p>
+            </div>
+      )}
+        </TabsContent>
+
+        <TabsContent value="developer_tools" className="space-y-5 mt-5 outline-none">
       <Card>
         <CardHeader>
           <CardTitle>Data location</CardTitle>
@@ -513,7 +467,7 @@ export function SettingsPage() {
       </Card>
 
       {import.meta.env.DEV && (
-        <Card>
+        <Card className="mt-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Wrench className="size-5" />
@@ -657,6 +611,95 @@ export function SettingsPage() {
           </CardContent>
         </Card>
       )}
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={addGroupOpen} onOpenChange={setAddGroupOpen}>
+        <DialogContent className="max-w-lg">
+          {addGroupOpen && currentProductionId && (
+            <CostReportGroupForm
+              accounts={accounts.filter((a) => !a.archived_at)}
+              initialName=""
+              initialCode=""
+              initialAccountIds={[]}
+              onSubmit={(data) => createGroupMutation.mutate(data)}
+              onCancel={() => setAddGroupOpen(false)}
+              isLoading={createGroupMutation.isPending}
+              submitLabel="Add"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editGroup != null} onOpenChange={(open) => !open && setEditGroup(null)}>
+        <DialogContent className="max-w-lg">
+          {editGroup && currentProductionId && (
+            <CostReportGroupForm
+              accounts={accounts.filter((a) => !a.archived_at)}
+              initialName={editGroup.name}
+              initialCode={editGroup.code ?? ''}
+              initialAccountIds={editGroup.id ? editGroupAccountIds : []}
+              onSubmit={(data) => updateGroupMutation.mutate(data)}
+              onCancel={() => setEditGroup(null)}
+              isLoading={updateGroupMutation.isPending}
+              submitLabel="Save"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addAccountOpen} onOpenChange={setAddAccountOpen}>
+        <DialogContent className="max-w-lg">
+          {addAccountOpen && currentProductionId && (
+            <AddAccountForm
+              productionId={currentProductionId}
+              accounts={accounts.filter((a) => !a.archived_at)}
+              onSubmit={(data) => createAccountMutation.mutate(data)}
+              onCancel={() => setAddAccountOpen(false)}
+              isLoading={createAccountMutation.isPending}
+              error={createAccountMutation.error instanceof Error ? createAccountMutation.error.message : undefined}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editAccount != null} onOpenChange={(open) => !open && setEditAccount(null)}>
+        <DialogContent className="max-w-md">
+          {editAccount && (
+            <EditAccountNameForm
+              account={editAccount}
+              onSubmit={(name) => updateAccountNameMutation.mutate({ accountId: editAccount.id, name })}
+              onCancel={() => setEditAccount(null)}
+              isLoading={updateAccountNameMutation.isPending}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={accountToDelete != null} onOpenChange={(open) => !open && setAccountToDelete(null)}>
+        <DialogContent className="max-w-md">
+          {accountToDelete && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Delete account</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">
+                Permanently remove &quot;{accountToDelete.code} — {accountToDelete.name}&quot;? This cannot be undone.
+              </p>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAccountToDelete(null)}>Cancel</Button>
+                <Button
+                  variant="destructive"
+                  disabled={hardDeleteAccountMutation.isPending}
+                  onClick={() => hardDeleteAccountMutation.mutate(accountToDelete.id)}
+                >
+                  Delete
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
     </TooltipProvider>
   )

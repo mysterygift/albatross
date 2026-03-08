@@ -29,7 +29,16 @@ export type NavItem =
 export const navItems: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/productions', label: 'Productions', icon: FolderOpen },
-  { to: '/budget', label: 'Budget', icon: DollarSign },
+  {
+    to: '/budget',
+    label: 'Budget',
+    icon: DollarSign,
+    defaultChild: '/budget',
+    sub: [
+      { to: '/budget', label: 'Budget' },
+      { to: '/budget/vendors', label: 'Vendors' },
+    ],
+  },
   {
     to: '/schedule',
     label: 'Schedule',
@@ -50,6 +59,8 @@ export const navItems: NavItem[] = [
     sub: [
       { to: '/people/bookings', label: 'Bookings' },
       { to: '/people/day-out-of-days', label: 'Day Out of Days' },
+      { to: '/people/cast-manager', label: 'Cast Manager' },
+      { to: '/people/crew-manager', label: 'Crew Manager' },
     ],
   },
   { to: '/locations', label: 'Locations', icon: MapPin },

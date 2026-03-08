@@ -2,14 +2,15 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listProductions,
-  createProduction,
   updateProduction,
   permanentlyDeleteProduction,
   duplicateProduction,
   deleteProduction,
   archiveProduction,
   unarchiveProduction,
+  findExistingDemoTemplateProduction,
 } from '@/lib/db/repositories/production'
+import { createProductionFromTemplate } from '@/lib/db/createProductionFromTemplate'
 import {
   useReactTable,
   getCoreRowModel,
@@ -46,16 +47,59 @@ import { Textarea } from '@/components/ui/textarea'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Pencil, Trash2, Copy, Archive, PackageOpen } from 'lucide-react'
+import { Plus, Pencil, Trash2, Copy, Archive, PackageOpen, File, FileStack, FileText } from 'lucide-react'
 import type { Production } from '@/lib/db/types'
 import { useCurrentProduction } from './context'
+import { Controller } from 'react-hook-form'
 
+const templateEnum = z.enum(['blank', 'demo', 'default'])
 const productionSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   notes: z.string().optional(),
+  template: templateEnum,
 })
-
 type ProductionForm = z.infer<typeof productionSchema>
+
+const TEMPLATE_OPTIONS: {
+  value: ProductionForm['template']
+  label: string
+  description: string
+  preview: string
+  Icon: typeof File
+  cardClass: string
+  selectedClass: string
+}[] = [
+  {
+    value: 'blank',
+    label: 'Blank',
+    description: 'A truly clean slate. No accounts, tasks, or deliverables—you add everything yourself.',
+    preview: 'No starter data',
+    Icon: File,
+    cardClass: 'border-border hover:border-muted-foreground/40',
+    selectedClass: 'border-muted-foreground/60 bg-muted/30 ring-2 ring-primary/30 ring-offset-2 ring-offset-background',
+  },
+  {
+    value: 'demo',
+    label: 'Demo',
+    description: 'A full sample production: scenes, cast, schedule, budget, tasks, and deliverables. Perfect for exploring Albatross.',
+    preview: 'Scenes, schedule, budget, tasks, deliverables',
+    Icon: FileStack,
+    cardClass: 'border-border hover:border-indigo-500/40',
+    selectedClass: 'border-indigo-500/60 bg-indigo-500/5 ring-2 ring-indigo-500/30 ring-offset-2 ring-offset-background',
+  },
+  {
+    value: 'default',
+    label: 'Default',
+    description: 'A practical starting point: chart of accounts, starter tasks (Pre-Production, Principal, Post), and a small deliverables set.',
+    preview: 'Budget codes + starter tasks + deliverables',
+    Icon: FileText,
+    cardClass: 'border-border hover:border-primary/40',
+    selectedClass: 'border-primary/50 bg-primary/10 ring-2 ring-primary/40 ring-offset-2 ring-offset-background',
+  },
+]
+
+/** Template options visible in the New Production modal. Demo is hidden for now. */
+const VISIBLE_TEMPLATE_OPTIONS = TEMPLATE_OPTIONS.filter((opt) => opt.value !== 'demo')
 
 export function ProductionsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -68,6 +112,9 @@ export function ProductionsPage() {
   const [actionToast, setActionToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [verifyDeleteResult, setVerifyDeleteResult] = useState<string | null>(null)
   const [verifyDeletePending, setVerifyDeletePending] = useState(false)
+  const [demoOverrideTarget, setDemoOverrideTarget] = useState<{ production: Production; formData: ProductionForm } | null>(null)
+  const [demoOverrideError, setDemoOverrideError] = useState<string | null>(null)
+  const [overrideDeletePending, setOverrideDeletePending] = useState(false)
   const [showArchived, setShowArchived] = useState(() => {
     try {
       return localStorage.getItem('showArchivedProductions') === 'true'
@@ -94,10 +141,19 @@ export function ProductionsPage() {
 
   const createMutation = useMutation({
     mutationFn: (data: ProductionForm) =>
-      createProduction({ name: data.name, notes: data.notes ?? null }),
-    onSuccess: () => {
+      createProductionFromTemplate({
+        name: data.name,
+        notes: data.notes ?? null,
+        template: data.template,
+      }),
+    onSuccess: (production) => {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
+      setCurrentProductionId(production.id)
       setOpen(false)
+    },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ['productions'] })
+      refetchProductions()
     },
   })
 
@@ -332,11 +388,86 @@ export function ProductionsPage() {
             </DialogTrigger>
           <DialogContent>
             <ProductionFormDialog
-              onSubmit={(data) => createMutation.mutate(data)}
+              onSubmit={async (data) => {
+                if (data.template !== 'demo') {
+                  createMutation.mutate(data)
+                  return
+                }
+                const existing = await findExistingDemoTemplateProduction()
+                if (!existing) {
+                  createMutation.mutate(data)
+                  return
+                }
+                setDemoOverrideError(null)
+                setDemoOverrideTarget({ production: existing, formData: data })
+              }}
               onCancel={() => setOpen(false)}
               isLoading={createMutation.isPending}
+              error={createMutation.isError ? (createMutation.error instanceof Error ? createMutation.error.message : 'Something went wrong') : null}
+              onDismissError={() => createMutation.reset()}
             />
           </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={demoOverrideTarget !== null}
+            onOpenChange={(open) => {
+              if (!open) {
+                setDemoOverrideTarget(null)
+                setDemoOverrideError(null)
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Creating a new project will override the existing demo project.</DialogTitle>
+                <p className="text-muted-foreground text-sm leading-snug">
+                  The current demo project will be permanently deleted. A new demo project will then be created with the name and description you entered.
+                </p>
+              </DialogHeader>
+              {demoOverrideError && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-destructive text-sm">
+                  {demoOverrideError}
+                </div>
+              )}
+              <DialogFooter className="gap-2 sm:gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setDemoOverrideTarget(null)
+                    setDemoOverrideError(null)
+                  }}
+                  disabled={overrideDeletePending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={overrideDeletePending || createMutation.isPending}
+                  onClick={async () => {
+                    if (!demoOverrideTarget) return
+                    setDemoOverrideError(null)
+                    setOverrideDeletePending(true)
+                    try {
+                      await permanentlyDeleteProduction(demoOverrideTarget.production.id)
+                      if (currentProductionId === demoOverrideTarget.production.id) {
+                        setCurrentProductionId(null)
+                      }
+                      setDemoOverrideTarget(null)
+                      createMutation.mutate(demoOverrideTarget.formData)
+                    } catch (err) {
+                      setDemoOverrideError(err instanceof Error ? err.message : 'Delete failed')
+                    } finally {
+                      setOverrideDeletePending(false)
+                    }
+                  }}
+                >
+                  {overrideDeletePending || createMutation.isPending ? 'Overriding…' : 'Override demo project'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
           </Dialog>
         </div>
       </div>
@@ -407,7 +538,7 @@ export function ProductionsPage() {
             <EditProductionForm
               production={productions.find((p) => p.id === editingId)!}
               onSubmit={(data) =>
-                updateMutation.mutate({ id: editingId, data })
+                updateMutation.mutate({ id: editingId, data: { name: data.name, notes: data.notes } })
               }
               onCancel={() => setEditingId(null)}
               isLoading={updateMutation.isPending}
@@ -533,27 +664,34 @@ function ProductionFormDialog({
   onSubmit,
   onCancel,
   isLoading,
+  error,
+  onDismissError,
 }: {
   onSubmit: (data: ProductionForm) => void
   onCancel: () => void
   isLoading: boolean
+  error?: string | null
+  onDismissError?: () => void
 }) {
   const form = useForm<ProductionForm>({
     resolver: zodResolver(productionSchema),
-    defaultValues: { name: '', notes: '' },
+    defaultValues: { name: '', notes: '', template: 'default' },
   })
   return (
     <>
-      <DialogHeader>
+      <DialogHeader className="space-y-1.5">
         <DialogTitle>New production</DialogTitle>
+        <p className="text-muted-foreground text-sm leading-snug">
+          Choose a template, then name your project. You can add a description below if you like.
+        </p>
       </DialogHeader>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-5"
       >
         <div className="space-y-2">
           <Label htmlFor="name">Name</Label>
-          <Input id="name" {...form.register('name')} />
+          <Input id="name" {...form.register('name')} placeholder="e.g. My Feature" />
           {form.formState.errors.name && (
             <p className="text-destructive text-sm">
               {form.formState.errors.name.message}
@@ -561,15 +699,64 @@ function ProductionFormDialog({
           )}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="notes">Notes</Label>
-          <Textarea id="notes" {...form.register('notes')} rows={3} />
+          <Label htmlFor="notes">Project description</Label>
+          <Textarea id="notes" {...form.register('notes')} rows={2} placeholder="Optional" className="resize-none" />
         </div>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel}>
+        <div className="space-y-2.5">
+          <Label className="text-foreground">Project template</Label>
+          <Controller
+            name="template"
+            control={form.control}
+            render={({ field }) => (
+              <div className="grid gap-2" role="radiogroup" aria-label="Project template">
+                {VISIBLE_TEMPLATE_OPTIONS.map((opt) => {
+                  const isSelected = field.value === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => field.onChange(opt.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          field.onChange(opt.value)
+                        }
+                      }}
+                      className={`flex w-full items-start gap-3.5 rounded-xl border p-3.5 text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${isSelected ? opt.selectedClass : opt.cardClass}`}
+                    >
+                      <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg aria-hidden ${isSelected ? 'bg-primary/15 text-primary' : 'bg-muted/50 text-muted-foreground'}`}>
+                        <opt.Icon className="size-4" />
+                      </span>
+                      <div className="min-w-0 flex-1 space-y-0.5 pt-px">
+                        <p className="font-medium text-foreground">{opt.label}</p>
+                        <p className="text-muted-foreground text-sm leading-snug">{opt.description}</p>
+                        <p className="text-muted-foreground/80 text-xs">Preview: {opt.preview}</p>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          />
+        </div>
+        {error && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-destructive text-sm flex items-start justify-between gap-2">
+            <span>{error}</span>
+            {onDismissError && (
+              <Button type="button" variant="ghost" size="sm" className="shrink-0 h-auto py-1 text-destructive hover:bg-destructive/20" onClick={onDismissError}>
+                Dismiss
+              </Button>
+            )}
+          </div>
+        )}
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={isLoading}>
             Cancel
           </Button>
           <Button type="submit" disabled={isLoading}>
-            Create
+            {isLoading ? 'Creating…' : 'Create'}
           </Button>
         </DialogFooter>
       </form>
@@ -590,7 +777,7 @@ function EditProductionForm({
 }) {
   const form = useForm<ProductionForm>({
     resolver: zodResolver(productionSchema),
-    defaultValues: { name: production.name, notes: production.notes ?? '' },
+    defaultValues: { name: production.name, notes: production.notes ?? '', template: 'default' },
   })
   return (
     <>

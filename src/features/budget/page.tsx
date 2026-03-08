@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback, Fragment, type ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
@@ -14,6 +15,7 @@ import {
   backfillAccountIdsFromLegacyCategories,
 } from '@/lib/db/repositories/budget'
 import { listBudgetItemExpenseLinksForExpense } from '@/lib/db/repositories/budgetReconciliation'
+import { riskWatchQueryKey } from '@/lib/budget/vendors/riskWatch'
 import { listAccounts, listPostableAccounts } from '@/lib/db/repositories/budgetAccounts'
 import {
   listProductionTotals,
@@ -153,6 +155,8 @@ const derivedRuleSchema = z.object({
 type DerivedRuleFormValues = z.infer<typeof derivedRuleSchema>
 
 export function BudgetPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const { format, ensureRate, conversionBanner } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
@@ -191,6 +195,17 @@ export function BudgetPage() {
   useEffect(() => {
     localStorage.setItem(COST_REPORT_LAYOUT_MODE_KEY, costReportLayoutMode)
   }, [costReportLayoutMode])
+
+  // Open expense panel when navigating from vendor ledger (Examine Spend)
+  const state = location.state as { examineExpenseId?: string } | null
+  useEffect(() => {
+    if (state?.examineExpenseId) {
+      setExaminedExpenseId(state.examineExpenseId)
+      setViewMode('actualisation')
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  }, [state?.examineExpenseId, location.pathname, navigate])
+
   const queryClient = useQueryClient()
   const backfillRanForProduction = useRef<Set<string>>(new Set())
 
@@ -233,6 +248,7 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
     })
   }, [currentProductionId, queryClient])
 
@@ -335,6 +351,7 @@ export function BudgetPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setAddItemOpen(false)
     },
   })
@@ -353,6 +370,7 @@ export function BudgetPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setAddItemForAccountId(null)
     },
   })
@@ -363,6 +381,7 @@ export function BudgetPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setRecodeToast('Expense recoded.')
       setTimeout(() => setRecodeToast(null), 3000)
     },
@@ -385,6 +404,7 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setAddExpenseOpen(false)
     },
   })
@@ -408,6 +428,7 @@ export function BudgetPage() {
     if (currentProductionId) {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
       queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
     }
   }, [examinedExpenseId, currentProductionId, queryClient])
@@ -440,6 +461,7 @@ export function BudgetPage() {
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId] })
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item'] })
+        queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
       }
     },
   })
@@ -1083,6 +1105,7 @@ export function BudgetPage() {
                     if (currentProductionId) {
                       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
                       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+                      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
                     }
                     if (examinedLineItemId)
                       queryClient.invalidateQueries({
