@@ -487,16 +487,75 @@ export type Booking = {
   notes: string | null
 } & SoftDeletable
 
+/** Stable machine-friendly equipment category identifiers. */
+export const EQUIPMENT_CATEGORY_VALUES = [
+  'camera_body',
+  'lens',
+  'camera_support',
+  'camera_accessory',
+  'wireless_video',
+  'wireless_fiz',
+  'lighting_fixture',
+  'lighting_accessory',
+  'power_distribution',
+  'grip',
+  'sound',
+  'dit',
+  'monitor',
+  'consumable',
+  'other',
+] as const
+export type EquipmentCategory = (typeof EQUIPMENT_CATEGORY_VALUES)[number]
+
+/** Equipment lifecycle status. Default is planned. */
+export const EQUIPMENT_STATUS_VALUES = ['planned', 'active', 'returned', 'lost', 'damaged'] as const
+export type EquipmentStatus = (typeof EQUIPMENT_STATUS_VALUES)[number]
+
 export type Equipment = {
   id: string
   production_id: string
   name: string
   source_type: 'owned' | 'purchased' | 'rented'
   vendor: string | null
-  cost: number | null
   shoot_day_id: string | null
   notes: string | null
+  item_uuid: string
+  category: EquipmentCategory
+  status: EquipmentStatus
+  department: string | null
+  vendor_id: string | null
+  invoice_id: string | null
+  rental_start_date: string | null
+  return_due_date: string | null
+  returned_at: string | null
+  replacement_value: number | null
+  serial_number: string | null
 } & SoftDeletable
+
+/** Production-scoped equipment list (e.g. day kit, department package). References registry items via list items. */
+export type EquipmentList = {
+  id: string
+  production_id: string
+  shoot_day_id: string | null
+  name: string
+  department: string | null
+  notes: string | null
+} & SoftDeletable
+
+/** Row on an equipment list: references one registry equipment item and holds checklist state. */
+export type EquipmentListItem = {
+  id: string
+  equipment_list_id: string
+  equipment_id: string
+  sort_order: number
+  /** 1 = checked out, 0 = not. Operational checklist state only. */
+  checked_out: number
+  /** 1 = checked back in, 0 = not. Operational checklist state only. */
+  checked_back_in: number
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
 
 export type ProductionTaskSection = {
   id: string
@@ -520,6 +579,8 @@ export type ProductionTask = {
   section_id: string | null
   /** Null = normal task; non-null = reminder task for this vendor invoice (at most one task per invoice). */
   vendor_invoice_id: string | null
+  /** Null = normal task; non-null = return reminder task for this equipment item (at most one task per equipment). */
+  equipment_id: string | null
 } & SoftDeletable
 
 /** Global task template (not production-scoped). */

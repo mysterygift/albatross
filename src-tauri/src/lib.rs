@@ -261,6 +261,24 @@ pub fn run() {
             sql: include_str!("../migrations/0043_production_crew_hierarchy_configs.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 44,
+            description: "equipment_registry",
+            sql: include_str!("../migrations/0044_equipment_registry.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 45,
+            description: "production_tasks_equipment_id",
+            sql: include_str!("../migrations/0045_production_tasks_equipment_id.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 46,
+            description: "equipment_lists",
+            sql: include_str!("../migrations/0046_equipment_lists.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

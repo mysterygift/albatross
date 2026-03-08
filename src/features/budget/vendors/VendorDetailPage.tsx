@@ -82,9 +82,10 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ExpenseAllocationStatusBadge } from '@/features/budget/actualisation/ExpenseAllocationStatusBadge'
 import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
 import { InvoiceStatusBadge } from '@/features/budget/vendors/InvoiceStatusBadge'
+import { IngestEquipmentFromInvoiceModal } from '@/features/budget/vendors/IngestEquipmentFromInvoiceModal'
 import { PurchaseOrderStatusBadge } from '@/features/budget/vendors/PurchaseOrderStatusBadge'
 import type { BudgetItemExpenseLink, Expense, ExpenseReconciliationStatus, VendorInvoice, VendorPurchaseOrder } from '@/lib/db/types'
-import { ArrowLeft, Pencil, Eye, Archive, FilePlus, ArchiveIcon, FileText, Link2, X, Receipt } from 'lucide-react'
+import { ArrowLeft, Pencil, Eye, Archive, FilePlus, ArchiveIcon, FileText, Link2, X, Receipt, Package } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const editVendorSchema = z.object({
@@ -184,6 +185,7 @@ export function VendorDetailPage() {
   const [archivePOId, setArchivePOId] = useState<string | null>(null)
   const [linkExpensesInvoice, setLinkExpensesInvoice] = useState<VendorInvoice | null>(null)
   const [linkExpensesPO, setLinkExpensesPO] = useState<VendorPurchaseOrder | null>(null)
+  const [ingestEquipmentInvoice, setIngestEquipmentInvoice] = useState<VendorInvoice | null>(null)
 
   const { data: vendor, isLoading: vendorLoading } = useQuery({
     queryKey: ['vendor', vendorId],
@@ -791,6 +793,7 @@ export function VendorDetailPage() {
                       onEdit={() => setEditInvoice(inv)}
                       onArchive={() => setArchiveInvoiceId(inv.id)}
                       onLinkExpenses={() => setLinkExpensesInvoice(inv)}
+                      onAddEquipment={() => setIngestEquipmentInvoice(inv)}
                       showActions={!isArchived}
                     />
                   ))
@@ -1036,6 +1039,16 @@ export function VendorDetailPage() {
         />
       )}
 
+      {ingestEquipmentInvoice && currentProductionId && (
+        <IngestEquipmentFromInvoiceModal
+          open={!!ingestEquipmentInvoice}
+          onOpenChange={(open) => !open && setIngestEquipmentInvoice(null)}
+          invoice={ingestEquipmentInvoice}
+          productionId={currentProductionId}
+          vendorName={vendor?.company_name ?? ''}
+        />
+      )}
+
       <Dialog open={!!archiveInvoiceId} onOpenChange={(open) => !open && setArchiveInvoiceId(null)}>
         <DialogContent>
           <DialogHeader>
@@ -1201,6 +1214,7 @@ function VendorInvoiceRow({
   onEdit,
   onArchive,
   onLinkExpenses,
+  onAddEquipment,
   showActions,
 }: {
   invoice: VendorInvoice
@@ -1211,6 +1225,7 @@ function VendorInvoiceRow({
   onEdit: () => void
   onArchive: () => void
   onLinkExpenses: () => void
+  onAddEquipment?: () => void
   showActions: boolean
 }) {
   const cur = invoice.currency_code ?? currency
@@ -1253,6 +1268,16 @@ function VendorInvoiceRow({
       {showActions && (
         <TableCell className="py-2 w-[88px]">
           <div className="flex items-center gap-1">
+            {onAddEquipment && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={onAddEquipment} aria-label="Add equipment from invoice">
+                    <Package className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Add equipment from invoice</TooltipContent>
+              </Tooltip>
+            )}
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit} aria-label="Edit invoice">
               <Pencil className="size-4" />
             </Button>
