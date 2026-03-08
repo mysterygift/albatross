@@ -378,6 +378,7 @@ export async function generateCallSheetPdf(data: CallSheetData): Promise<Uint8Ar
 
   // ---------- 5b. Crew (booked crew by department, HOD first) ----------
   const crewGroups = data.crewGroups ?? []
+  const CREW_TABLE_WIDTH = 140 + 160 + 120
   if (crewGroups.length > 0) {
     tableResult = addPageIfNeeded(doc, page, y, 8)
     page = tableResult.page
@@ -393,6 +394,7 @@ export async function generateCallSheetPdf(data: CallSheetData): Promise<Uint8Ar
     }
     page.drawText('Crew', { x: MARGIN, y: y.current, size: FONT_SECTION, font: bold })
     y.current -= LINE_BODY + 2
+    let firstCrewGroup = true
     for (const group of crewGroups) {
       if (group.rows.length === 0) continue
       const needLines = 3 + group.rows.length * (ROW_HEIGHT / 10)
@@ -408,6 +410,13 @@ export async function generateCallSheetPdf(data: CallSheetData): Promise<Uint8Ar
         })
         y.current -= LINE_BODY + SEP_SECTION
       }
+      // Subtle separator between departments (not before the first)
+      if (!firstCrewGroup) {
+        drawRule(page, y.current, MARGIN, MARGIN + CREW_TABLE_WIDTH, GRAY)
+        y.current -= 4
+      }
+      firstCrewGroup = false
+      // Department header row
       page.drawText(group.department, {
         x: MARGIN,
         y: y.current,
@@ -420,13 +429,15 @@ export async function generateCallSheetPdf(data: CallSheetData): Promise<Uint8Ar
         { label: 'Role', width: 160 },
         { label: 'Phone', width: 120 },
       ]
-      const crewRows: string[][] = group.rows.map((r) => [
-        (r.name ?? '—').slice(0, 28),
-        (r.role_name ?? '—').slice(0, 32),
-        (r.phone ?? '—').slice(0, 22),
-      ])
+      const crewRows: string[][] = group.rows.map((r) => {
+        const roleCell = (r.role_name ?? '—') + (r.is_hod ? ' (HOD)' : '')
+        return [
+          (r.name ?? '—').slice(0, 28),
+          roleCell.slice(0, 32),
+          (r.phone ?? '—').slice(0, 22),
+        ]
+      })
       drawTable(page, font, bold, y, crewCols, crewRows)
-      y.current -= SEP_SECTION
     }
   }
 

@@ -517,7 +517,7 @@ export function CallSheetsPage() {
                 )}
               </div>
                 )}
-                <div className="space-y-2">
+                <div className="space-y-2 border-t border-border pt-4 mt-1">
                   <Label className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
                     Crew called (booked crew by department)
                   </Label>
@@ -525,21 +525,30 @@ export function CallSheetsPage() {
                     <div className="rounded-md border border-border overflow-hidden">
                       {crewGroupsForPreview.map((group) => (
                         <div key={group.department} className="border-b border-border last:border-b-0">
-                          <div className="bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                          <div className="bg-muted/60 px-3 py-2 text-xs font-semibold text-foreground">
                             {group.department}
                           </div>
                           <Table>
+                            <TableHeader>
+                              <TableRow className="border-border">
+                                <TableHead className="h-8 text-muted-foreground font-medium">Name</TableHead>
+                                <TableHead className="h-8 text-muted-foreground font-medium">Role</TableHead>
+                                <TableHead className="h-8 text-muted-foreground font-medium">Phone</TableHead>
+                              </TableRow>
+                            </TableHeader>
                             <TableBody>
                               {group.rows.map((row) => (
                                 <TableRow key={row.person_id} className="border-border">
-                                  <TableCell className="py-1.5">{row.name}</TableCell>
-                                  <TableCell className="text-muted-foreground py-1.5">
+                                  <TableCell className="py-1.5 font-medium">{row.name}</TableCell>
+                                  <TableCell className="py-1.5 text-muted-foreground">
                                     {row.role_name ?? '—'}
                                     {row.is_hod && (
-                                      <span className="ml-1.5 text-xs text-muted-foreground">(HOD)</span>
+                                      <span className="ml-1 text-muted-foreground">(HOD)</span>
                                     )}
                                   </TableCell>
-                                  <TableCell className="text-muted-foreground py-1.5">{row.phone ?? '—'}</TableCell>
+                                  <TableCell className="py-1.5 text-muted-foreground tabular-nums">
+                                    {row.phone ?? '—'}
+                                  </TableCell>
                                 </TableRow>
                               ))}
                             </TableBody>

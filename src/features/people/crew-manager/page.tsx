@@ -445,7 +445,7 @@ export function CrewManagerPage() {
                   <TableRow key={p.id}>
                     <TableCell>
                       <Link
-                        to={`/people/${p.id}`}
+                        to={`/people/crew/${p.id}`}
                         className="font-medium text-primary hover:underline"
                       >
                         {p.name}
@@ -496,7 +496,7 @@ export function CrewManagerPage() {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" asChild>
-                          <Link to={`/people/${p.id}`} aria-label="View">
+                          <Link to={`/people/crew/${p.id}`} aria-label="View">
                             <Eye className="size-4" />
                           </Link>
                         </Button>

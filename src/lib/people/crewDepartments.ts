@@ -194,6 +194,15 @@ export function getCrewDepartmentNames(): CrewDepartmentName[] {
   return [...CREW_DEPARTMENT_NAMES]
 }
 
+/** Returns the canonical department name if the given string matches a crew department, else null. */
+export function getCanonicalDepartmentName(
+  department: string | null | undefined
+): CrewDepartmentName | null {
+  const d = department?.trim()
+  if (!d) return null
+  return CREW_DEPARTMENT_NAMES.includes(d as CrewDepartmentName) ? (d as CrewDepartmentName) : null
+}
+
 /** Returns ordered roles for the given department. */
 export function getCrewRolesForDepartment(department: CrewDepartmentName): string[] {
   const def = CREW_DEPARTMENTS.find((d) => d.name === department)

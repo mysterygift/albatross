@@ -4,7 +4,8 @@ TO–DO
 3. When adding a cast member to a shot via the shot participation window, the single search bar filters the scene, shot and description using a single search bar. They should be filtered by scene number/description only.
 ~~4. Reduce padding in header elements in the Cast detail view.~~
 5. When clicking back/exit out of the person detail view it takes you to the 'Person' page (which is not accessible via the sidebar). This can confuse users. Instead, we want cast to return to the cast manager page when exit/back is clicked, and we want to return to the crew manager page if they're crew instead.
-
+6. No way to edit availability of cast even though this data is stored – add to availability section on person detail page.
+7. Add way for users to configure the crew hierachy and roles in the settings page to allow them to tailor crew structure to their production.
 
 EQUIPMENT
 1. Order Forms in from relevant crew (e.g. Best Boy Electric)
@@ -13,3 +14,7 @@ EQUIPMENT
 3. Bookings can be associated with many pieces of equipment, but individual pieces of equipment cannot be associated with many bookings. A booking should have an invoice associated with it, a pickup date and a return date. Bookings should be tagged by department.
 4. Rental Houses – who are we sourcing what kit from (this is from the vendor system).
 5. If equipment is being supplied by a crew member (e.g. some camera operators or DoPs/1st ACs/Boom Operators provide their own equipment packages as part of their fee), who owns what kit?
+
+CALL SHEET
+1. Need to add text field to Call Sheet Form for safety information.
+2. Need to APPEND LOCATIONS type + form to include a parking address/w3w – this then needs to feed into the call sheet.
