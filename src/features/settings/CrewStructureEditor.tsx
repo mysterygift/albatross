@@ -99,6 +99,18 @@ export function validateCrewHierarchyConfig(
   }
 }
 
+function trimNamesInConfig(config: CrewHierarchyConfig): CrewHierarchyConfig {
+  return {
+    ...config,
+    departments: config.departments.map((d) => ({
+      ...d,
+      name: d.name?.trim() ?? d.name,
+      hod_role_name: d.hod_role_name?.trim() || null,
+      roles: d.roles.map((r) => ({ ...r, name: r.name?.trim() ?? r.name })),
+    })),
+  }
+}
+
 function renumberSortOrders(config: CrewHierarchyConfig): CrewHierarchyConfig {
   const departments = config.departments
     .slice()
@@ -154,13 +166,15 @@ export function CrewStructureEditor({ productionId }: Props) {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!editedConfig || !validation?.valid) return
-      const normalized = renumberSortOrders(editedConfig)
+      const trimmed = trimNamesInConfig(editedConfig)
+      const normalized = renumberSortOrders(trimmed)
       await upsertCrewHierarchyConfig(productionId, normalized)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['crew-hierarchy', productionId] })
-      if (loadedConfig) {
-        const normalized = renumberSortOrders(editedConfig!)
+      if (loadedConfig && editedConfig) {
+        const trimmed = trimNamesInConfig(editedConfig)
+        const normalized = renumberSortOrders(trimmed)
         setInitialConfig(deepClone(normalized))
         setEditedConfig(deepClone(normalized))
       }
@@ -196,11 +210,10 @@ export function CrewStructureEditor({ productionId }: Props) {
     )
     const j = index + dir
     if (j < 0 || j >= depts.length) return
-    ;[depts[index], depts[j]] = [depts[j], depts[index]]
-    depts.forEach((d, i) => {
-      d.sort_order = i
-    })
-    setEditedConfig({ ...editedConfig, departments: depts })
+    const reordered = [...depts]
+    ;[reordered[index], reordered[j]] = [reordered[j], reordered[index]]
+    const withNewOrder = reordered.map((d, i) => ({ ...d, sort_order: i }))
+    setEditedConfig({ ...editedConfig, departments: withNewOrder })
   }
 
   const setDepartmentName = (deptIndex: number, name: string) => {
@@ -274,7 +287,7 @@ export function CrewStructureEditor({ productionId }: Props) {
           ? {
               ...x,
               roles: x.roles.map((r) =>
-                r.id === roleId ? { ...r, name: name.trim() || r.name } : r
+                r.id === roleId ? { ...r, name: name === '' ? r.name : name } : r
               ),
             }
           : x
@@ -290,12 +303,11 @@ export function CrewStructureEditor({ productionId }: Props) {
       const roles = [...d.roles].sort((a, b) => a.sort_order - b.sort_order)
       const j = roleIndex + dir
       if (j < 0 || j >= roles.length) return depts
-      ;[roles[roleIndex], roles[j]] = [roles[j], roles[roleIndex]]
-      roles.forEach((r, i) => {
-        r.sort_order = i
-      })
+      const reordered = [...roles]
+      ;[reordered[roleIndex], reordered[j]] = [reordered[j], reordered[roleIndex]]
+      const rolesWithNewOrder = reordered.map((r, i) => ({ ...r, sort_order: i }))
       return depts.map((x) =>
-        x.id === d.id ? { ...x, roles } : x
+        x.id === d.id ? { ...x, roles: rolesWithNewOrder } : x
       )
     })
   }
@@ -485,10 +497,10 @@ export function CrewStructureEditor({ productionId }: Props) {
                 </Button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-10">
-                <div>
-                  <Label className="text-xs text-muted-foreground">
-                    HOD role
+              <div className="pl-10 space-y-3">
+                <div className="rounded-md border-l-2 border-mint-500/60 bg-mint-500/5 pl-3 pr-3 py-2">
+                  <Label className="text-xs font-medium text-mint-400">
+                    Head of Department (HOD)
                   </Label>
                   <Select
                     value={
@@ -503,7 +515,7 @@ export function CrewStructureEditor({ productionId }: Props) {
                       )
                     }
                   >
-                    <SelectTrigger className="mt-1 bg-zinc-900 border-zinc-600 text-foreground">
+                    <SelectTrigger className="mt-1.5 bg-zinc-900 border-zinc-600 text-foreground">
                       <SelectValue placeholder="Select HOD" />
                     </SelectTrigger>
                     <SelectContent>
@@ -523,7 +535,10 @@ export function CrewStructureEditor({ productionId }: Props) {
                   <Label className="text-xs text-muted-foreground">
                     Task department labels
                   </Label>
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-1.5 max-w-md">
+                    Link this crew department to task assignments elsewhere. Use when the crew department name differs from the task department name used on tasks.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {taskLabels.map((l) => (
                       <span
                         key={l}
@@ -545,70 +560,70 @@ export function CrewStructureEditor({ productionId }: Props) {
                     />
                   </div>
                 </div>
-              </div>
 
-              <div className="pl-10 space-y-2">
-                <Label className="text-xs text-muted-foreground">Roles</Label>
-                <ul className="space-y-1.5">
-                  {roles.map((role, roleIndex) => (
-                    <li
-                      key={role.id}
-                      className="flex flex-wrap items-center gap-2"
-                    >
-                      <div className="flex items-center gap-0.5">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-zinc-500 hover:text-zinc-300"
-                          onClick={() => moveRole(deptIndex, roleIndex, -1)}
-                          disabled={roleIndex === 0}
-                          aria-label="Move role up"
-                        >
-                          <ChevronUp className="size-3" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-zinc-500 hover:text-zinc-300"
-                          onClick={() => moveRole(deptIndex, roleIndex, 1)}
-                          disabled={roleIndex === roles.length - 1}
-                          aria-label="Move role down"
-                        >
-                          <ChevronDown className="size-3" />
-                        </Button>
-                      </div>
-                      <Input
-                        value={role.name}
-                        onChange={(e) =>
-                          setRoleName(deptIndex, role.id, e.target.value)
-                        }
-                        className="h-8 w-48 bg-zinc-900 border-zinc-600 text-sm text-foreground"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-zinc-500 hover:text-destructive"
-                        onClick={() => removeRole(deptIndex, role.id)}
-                        aria-label="Remove role"
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Roles</Label>
+                  <ul className="space-y-1.5">
+                    {roles.map((role, roleIndex) => (
+                      <li
+                        key={role.id}
+                        className="flex flex-wrap items-center gap-2"
                       >
-                        <Trash2 className="size-3" />
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="border-zinc-600 text-zinc-300 hover:bg-zinc-700"
-                  onClick={() => addRole(deptIndex)}
-                >
-                  <Plus className="mr-1 size-3" />
-                  Add role
-                </Button>
+                        <div className="inline-flex flex-col gap-0 rounded border border-zinc-600 bg-zinc-900/50 p-0.5">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-zinc-500 hover:text-zinc-300"
+                            onClick={() => moveRole(deptIndex, roleIndex, -1)}
+                            disabled={roleIndex === 0}
+                            aria-label="Move role up"
+                          >
+                            <ChevronUp className="size-3" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-zinc-500 hover:text-zinc-300"
+                            onClick={() => moveRole(deptIndex, roleIndex, 1)}
+                            disabled={roleIndex === roles.length - 1}
+                            aria-label="Move role down"
+                          >
+                            <ChevronDown className="size-3" />
+                          </Button>
+                        </div>
+                        <Input
+                          value={role.name}
+                          onChange={(e) =>
+                            setRoleName(deptIndex, role.id, e.target.value)
+                          }
+                          className="h-8 w-48 bg-zinc-900 border-zinc-600 text-sm text-foreground"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-zinc-500 hover:text-destructive"
+                          onClick={() => removeRole(deptIndex, role.id)}
+                          aria-label="Remove role"
+                        >
+                          <Trash2 className="size-3" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-zinc-600 text-zinc-300 hover:bg-zinc-700"
+                    onClick={() => addRole(deptIndex)}
+                  >
+                    <Plus className="mr-1 size-3" />
+                    Add role
+                  </Button>
+                </div>
               </div>
             </div>
           )
