@@ -12,6 +12,7 @@ function rowToVendorInvoice(r: Record<string, unknown>): VendorInvoice {
     id: r.id as string,
     production_id: r.production_id as string,
     vendor_id: r.vendor_id as string,
+    po_id: (r.po_id as string | null) ?? null,
     invoice_number: r.invoice_number as string,
     issue_date: (r.issue_date as string | null) ?? null,
     due_date: (r.due_date as string | null) ?? null,
@@ -39,6 +40,16 @@ export async function listVendorInvoicesByVendorId(
   return rows.map(rowToVendorInvoice)
 }
 
+/** List active (non-deleted) invoices for a production. Order by issue_date desc, then created_at desc. */
+export async function listVendorInvoicesByProduction(productionId: string): Promise<VendorInvoice[]> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY issue_date DESC, created_at DESC`,
+    [productionId]
+  )
+  return rows.map(rowToVendorInvoice)
+}
+
 /** Get a single invoice by id (active only). Returns null if not found or soft-deleted. */
 export async function getVendorInvoiceById(invoiceId: string): Promise<VendorInvoice | null> {
   const db = await getDb()
@@ -58,6 +69,7 @@ const EDITABLE_KEYS = [
   'currency_code',
   'status',
   'notes',
+  'po_id',
 ] as const
 
 export type CreateVendorInvoiceData = {
@@ -71,6 +83,7 @@ export type CreateVendorInvoiceData = {
   currency_code?: string | null
   status?: VendorInvoiceStatus
   notes?: string | null
+  po_id?: string | null
 }
 
 /** @internal use CreateVendorInvoiceData for orchestration */
@@ -87,12 +100,13 @@ export function buildCreateVendorInvoiceStatements(
 ): Array<{ sql: string; bindValues: unknown[] }> {
   const status = data.status ?? 'draft'
   const insert = {
-    sql: `INSERT INTO ${TABLE} (id, production_id, vendor_id, invoice_number, issue_date, due_date, amount, tax, currency_code, status, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    sql: `INSERT INTO ${TABLE} (id, production_id, vendor_id, po_id, invoice_number, issue_date, due_date, amount, tax, currency_code, status, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     bindValues: [
       id,
       data.production_id,
       data.vendor_id,
+      data.po_id ?? null,
       data.invoice_number,
       data.issue_date ?? null,
       data.due_date ?? null,

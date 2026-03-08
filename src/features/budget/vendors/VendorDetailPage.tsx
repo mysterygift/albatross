@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { useForm } from 'react-hook-form'
+import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -23,6 +23,26 @@ import {
   updateInvoiceWithReminderTask,
   archiveInvoiceWithReminderTask,
 } from '@/lib/db/vendorInvoiceReminderService'
+import {
+  listExpenseLinksByInvoice,
+  listExpenseLinksByPurchaseOrder,
+  createVendorInvoiceExpenseLink,
+  deleteVendorInvoiceExpenseLink,
+  createVendorPurchaseOrderExpenseLink,
+  deleteVendorPurchaseOrderExpenseLink,
+  listExpenseLinkCountsByInvoiceIds,
+  listExpenseLinkCountsByPurchaseOrderIds,
+  getLinkedExpenseIdsForVendor,
+  vendorInvoiceExpenseLinksQueryKey,
+  vendorPurchaseOrderExpenseLinksQueryKey,
+} from '@/lib/db/repositories/vendorFinanceLinks'
+import {
+  listRecentVendorActivity,
+  vendorRecentActivityQueryKey,
+  type VendorActivityItem,
+} from '@/lib/db/repositories/vendorActivity'
+import { dashboardVendorFinanceQueryKey } from '@/lib/dashboard/vendorFinance'
+import { riskWatchQueryKey } from '@/lib/budget/vendors/riskWatch'
 import { listExpensesByVendorId } from '@/lib/db/repositories/budget'
 import { listAccounts } from '@/lib/db/repositories/budgetAccounts'
 import { listBudgetItemExpenseLinksByProduction } from '@/lib/db/repositories/budgetReconciliation'
@@ -64,7 +84,7 @@ import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
 import { InvoiceStatusBadge } from '@/features/budget/vendors/InvoiceStatusBadge'
 import { PurchaseOrderStatusBadge } from '@/features/budget/vendors/PurchaseOrderStatusBadge'
 import type { BudgetItemExpenseLink, Expense, ExpenseReconciliationStatus, VendorInvoice, VendorPurchaseOrder } from '@/lib/db/types'
-import { ArrowLeft, Pencil, Eye, Archive, FilePlus, ArchiveIcon, FileText } from 'lucide-react'
+import { ArrowLeft, Pencil, Eye, Archive, FilePlus, ArchiveIcon, FileText, Link2, X } from 'lucide-react'
 
 const editVendorSchema = z.object({
   company_name: z.string().min(1, 'Company name is required'),
@@ -95,6 +115,7 @@ const invoiceFormSchema = z.object({
   currency_code: z.string().optional(),
   status: z.enum(['draft', 'received', 'approved', 'paid', 'overdue']),
   notes: z.string().optional(),
+  po_id: z.string().nullable().optional(),
 })
 
 const INVOICE_STATUS_OPTIONS: { value: VendorInvoice['status']; label: string }[] = [
@@ -160,6 +181,8 @@ export function VendorDetailPage() {
   const [createPOOpen, setCreatePOOpen] = useState(false)
   const [editPO, setEditPO] = useState<VendorPurchaseOrder | null>(null)
   const [archivePOId, setArchivePOId] = useState<string | null>(null)
+  const [linkExpensesInvoice, setLinkExpensesInvoice] = useState<VendorInvoice | null>(null)
+  const [linkExpensesPO, setLinkExpensesPO] = useState<VendorPurchaseOrder | null>(null)
 
   const { data: vendor, isLoading: vendorLoading } = useQuery({
     queryKey: ['vendor', vendorId],
@@ -197,6 +220,41 @@ export function VendorDetailPage() {
     enabled: !!currentProductionId && !!vendorId,
   })
 
+  const { data: invoiceExpenseCounts = {} } = useQuery({
+    queryKey: ['vendor-invoice-expense-link-counts', currentProductionId, vendorId],
+    queryFn: async () => {
+      const invs = await listVendorInvoicesByVendorId(currentProductionId!, vendorId!)
+      return listExpenseLinkCountsByInvoiceIds(invs.map((i) => i.id))
+    },
+    enabled: !!currentProductionId && !!vendorId,
+  })
+
+  const { data: poExpenseCounts = {} } = useQuery({
+    queryKey: ['vendor-po-expense-link-counts', currentProductionId, vendorId],
+    queryFn: async () => {
+      const pos = await listVendorPurchaseOrdersByVendorId(currentProductionId!, vendorId!)
+      return listExpenseLinkCountsByPurchaseOrderIds(pos.map((p) => p.id))
+    },
+    enabled: !!currentProductionId && !!vendorId,
+  })
+
+  const { data: linkedExpenseIds = new Set<string>() } = useQuery({
+    queryKey: ['vendor-linked-expense-ids', currentProductionId, vendorId],
+    queryFn: () => getLinkedExpenseIdsForVendor(currentProductionId!, vendorId!),
+    enabled: !!currentProductionId && !!vendorId,
+  })
+
+  const { data: recentActivity = [] } = useQuery({
+    queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!),
+    queryFn: () => listRecentVendorActivity(currentProductionId!, vendorId!, 8),
+    enabled: !!currentProductionId && !!vendorId,
+  })
+
+  const activePurchaseOrders = useMemo(
+    () => purchaseOrders.filter((po) => po.status !== 'closed' && po.status !== 'cancelled'),
+    [purchaseOrders]
+  )
+
   const activeLinks = useMemo(() => links.filter((l) => !l.deleted_at), [links])
 
   const invoiceSummary = useMemo(() => {
@@ -208,8 +266,16 @@ export function VendorDetailPage() {
   const poSummary = useMemo(() => {
     const approved = purchaseOrders.filter((po) => po.approval === 1)
     const open = purchaseOrders.filter((po) => po.status !== 'closed' && po.status !== 'cancelled')
-    return { approvedCount: approved.length, openCount: open.length }
+    const openTotal = open.reduce((sum, po) => sum + (po.amount ?? 0), 0)
+    return { approvedCount: approved.length, openCount: open.length, openTotal }
   }, [purchaseOrders])
+
+  const liabilitiesSummary = useMemo(() => {
+    const invoicesLinkedToPo = invoices.filter((i) => i.po_id != null).length
+    const invoicesUnlinked = invoices.filter((i) => i.po_id == null).length
+    const expensesUnlinkedCount = expenses.filter((e) => !linkedExpenseIds.has(e.id)).length
+    return { invoicesLinkedToPo, invoicesUnlinked, expensesUnlinkedCount }
+  }, [invoices, expenses, linkedExpenseIds])
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts])
 
   const overview = useMemo(() => {
@@ -254,7 +320,6 @@ export function VendorDetailPage() {
       topAccounts,
       matchedTotal,
       unmatchedTotal,
-      recentExpenses: sortedByDate.slice(0, 8),
     }
   }, [expenses, activeLinks])
 
@@ -316,6 +381,9 @@ export function VendorDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: invoiceListKey })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
+      queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setCreateInvoiceOpen(false)
     },
   })
@@ -332,6 +400,9 @@ export function VendorDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: invoiceListKey })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
+      queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setEditInvoice(null)
     },
   })
@@ -340,6 +411,9 @@ export function VendorDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: invoiceListKey })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
+      queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setArchiveInvoiceId(null)
     },
   })
@@ -349,6 +423,9 @@ export function VendorDetailPage() {
     mutationFn: (data: Parameters<typeof createVendorPurchaseOrder>[0]) => createVendorPurchaseOrder(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: poListKey })
+      queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
+      queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setCreatePOOpen(false)
     },
   })
@@ -357,6 +434,9 @@ export function VendorDetailPage() {
       updateVendorPurchaseOrder(id, patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: poListKey })
+      queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
+      queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setEditPO(null)
     },
   })
@@ -364,7 +444,55 @@ export function VendorDetailPage() {
     mutationFn: (id: string) => softDeleteVendorPurchaseOrder(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: poListKey })
+      queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
+      queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setArchivePOId(null)
+    },
+  })
+
+  const invalidateVendorFinance = () => {
+    if (!currentProductionId || !vendorId) return
+    queryClient.invalidateQueries({ queryKey: invoiceListKey })
+    queryClient.invalidateQueries({ queryKey: poListKey })
+    queryClient.invalidateQueries({ queryKey: ['vendor-invoice-expense-link-counts', currentProductionId, vendorId] })
+    queryClient.invalidateQueries({ queryKey: ['vendor-po-expense-link-counts', currentProductionId, vendorId] })
+    queryClient.invalidateQueries({ queryKey: ['vendor-linked-expense-ids', currentProductionId, vendorId] })
+    queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId, vendorId) })
+    queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId) })
+    queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
+  }
+
+  const linkInvoiceExpenseMutation = useMutation({
+    mutationFn: ({ invoiceId, expenseId }: { invoiceId: string; expenseId: string }) =>
+      createVendorInvoiceExpenseLink(invoiceId, expenseId),
+    onSuccess: (_, { invoiceId }) => {
+      queryClient.invalidateQueries({ queryKey: vendorInvoiceExpenseLinksQueryKey(invoiceId) })
+      invalidateVendorFinance()
+    },
+  })
+  const unlinkInvoiceExpenseMutation = useMutation({
+    mutationFn: ({ invoiceId, expenseId }: { invoiceId: string; expenseId: string }) =>
+      deleteVendorInvoiceExpenseLink(invoiceId, expenseId),
+    onSuccess: (_, { invoiceId }) => {
+      queryClient.invalidateQueries({ queryKey: vendorInvoiceExpenseLinksQueryKey(invoiceId) })
+      invalidateVendorFinance()
+    },
+  })
+  const linkPOExpenseMutation = useMutation({
+    mutationFn: ({ poId, expenseId }: { poId: string; expenseId: string }) =>
+      createVendorPurchaseOrderExpenseLink(poId, expenseId),
+    onSuccess: (_, { poId }) => {
+      queryClient.invalidateQueries({ queryKey: vendorPurchaseOrderExpenseLinksQueryKey(poId) })
+      invalidateVendorFinance()
+    },
+  })
+  const unlinkPOExpenseMutation = useMutation({
+    mutationFn: ({ poId, expenseId }: { poId: string; expenseId: string }) =>
+      deleteVendorPurchaseOrderExpenseLink(poId, expenseId),
+    onSuccess: (_, { poId }) => {
+      queryClient.invalidateQueries({ queryKey: vendorPurchaseOrderExpenseLinksQueryKey(poId) })
+      invalidateVendorFinance()
     },
   })
 
@@ -482,6 +610,36 @@ export function VendorDetailPage() {
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground">Open POs</p>
             <p className="text-lg font-semibold text-foreground">{poSummary.openCount}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Liabilities foundations */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card className="border-border bg-card">
+          <CardContent className="pt-4 pb-4">
+            <p className="text-xs text-muted-foreground">Open PO total</p>
+            <p className="text-lg font-semibold text-foreground">
+              {poSummary.openTotal > 0 ? format(poSummary.openTotal, currency).formatted : '—'}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-border bg-card">
+          <CardContent className="pt-4 pb-4">
+            <p className="text-xs text-muted-foreground">Invoices linked to PO</p>
+            <p className="text-lg font-semibold text-foreground">{liabilitiesSummary.invoicesLinkedToPo}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border bg-card">
+          <CardContent className="pt-4 pb-4">
+            <p className="text-xs text-muted-foreground">Invoices not linked to PO</p>
+            <p className="text-lg font-semibold text-foreground">{liabilitiesSummary.invoicesUnlinked}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border bg-card">
+          <CardContent className="pt-4 pb-4">
+            <p className="text-xs text-muted-foreground">Expenses unlinked</p>
+            <p className="text-lg font-semibold text-foreground">{liabilitiesSummary.expensesUnlinkedCount}</p>
           </CardContent>
         </Card>
       </div>
@@ -606,13 +764,15 @@ export function VendorDetailPage() {
                   <TableHead className="text-right text-muted-foreground w-[70px]">Tax</TableHead>
                   <TableHead className="text-muted-foreground w-[56px]">Cur</TableHead>
                   <TableHead className="text-muted-foreground w-[90px]">Status</TableHead>
+                  <TableHead className="text-muted-foreground w-[72px]">PO</TableHead>
+                  <TableHead className="text-muted-foreground w-[72px]">Expenses</TableHead>
                   {!isArchived && <TableHead className="w-[88px]" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {invoices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isArchived ? 7 : 8} className="text-muted-foreground text-center py-8">
+                    <TableCell colSpan={isArchived ? 9 : 10} className="text-muted-foreground text-center py-8">
                       No invoices yet. Add one to track vendor invoices.
                     </TableCell>
                   </TableRow>
@@ -621,10 +781,13 @@ export function VendorDetailPage() {
                     <VendorInvoiceRow
                       key={inv.id}
                       invoice={inv}
+                      linkedPo={inv.po_id ? purchaseOrders.find((p) => p.id === inv.po_id) ?? null : null}
+                      expenseLinkCount={invoiceExpenseCounts[inv.id] ?? 0}
                       format={format}
                       currency={currency}
                       onEdit={() => setEditInvoice(inv)}
                       onArchive={() => setArchiveInvoiceId(inv.id)}
+                      onLinkExpenses={() => setLinkExpensesInvoice(inv)}
                       showActions={!isArchived}
                     />
                   ))
@@ -658,13 +821,15 @@ export function VendorDetailPage() {
                   <TableHead className="text-right text-muted-foreground w-[90px]">Amount</TableHead>
                   <TableHead className="text-muted-foreground w-[82px]">Status</TableHead>
                   <TableHead className="text-muted-foreground w-[80px]">Approval</TableHead>
+                  <TableHead className="text-muted-foreground w-[72px]">Invoices</TableHead>
+                  <TableHead className="text-muted-foreground w-[72px]">Expenses</TableHead>
                   {!isArchived && <TableHead className="w-[88px]" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {purchaseOrders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isArchived ? 7 : 8} className="text-muted-foreground text-center py-8">
+                    <TableCell colSpan={isArchived ? 9 : 10} className="text-muted-foreground text-center py-8">
                       No purchase orders yet. Add one to track vendor POs.
                     </TableCell>
                   </TableRow>
@@ -673,10 +838,13 @@ export function VendorDetailPage() {
                     <VendorPORow
                       key={po.id}
                       po={po}
+                      linkedInvoiceCount={invoices.filter((i) => i.po_id === po.id).length}
+                      expenseLinkCount={poExpenseCounts[po.id] ?? 0}
                       format={format}
                       currency={currency}
                       onEdit={() => setEditPO(po)}
                       onArchive={() => setArchivePOId(po.id)}
+                      onLinkExpenses={() => setLinkExpensesPO(po)}
                       showActions={!isArchived}
                     />
                   ))
@@ -688,29 +856,42 @@ export function VendorDetailPage() {
       </Card>
 
       {/* Recent activity */}
-      {overview.recentExpenses.length > 0 && (
+      {recentActivity.length > 0 && (
         <Card className="border-border bg-card">
           <CardHeader className="border-b border-border py-3">
             <CardTitle className="text-base">Recent activity</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <ul className="divide-y divide-border">
-              {overview.recentExpenses.map((e) => {
-                const acc = e.account_id ? accountById.get(e.account_id) : null
-                const desc = (e.notes || e.vendor || 'Expense').trim().slice(0, 50)
-                return (
-                  <li key={e.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                    <span className="text-muted-foreground shrink-0 w-[86px]">
-                      {new Date(e.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })}
-                    </span>
-                    <span className="min-w-0 truncate text-foreground">{desc || '—'}</span>
-                    {acc && (
-                      <span className="text-muted-foreground shrink-0 text-xs">{acc.code}</span>
+              {recentActivity.map((item: VendorActivityItem) => (
+                <li key={item.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                  <span className="shrink-0 w-[52px] text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {item.entity_type === 'expense'
+                      ? 'Expense'
+                      : item.entity_type === 'invoice'
+                        ? 'Invoice'
+                        : 'PO'}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-foreground font-medium">{item.title}</p>
+                    {item.subtitle && (
+                      <p className="truncate text-xs text-muted-foreground">{item.subtitle}</p>
                     )}
-                    <span className="font-medium text-foreground shrink-0">{format(e.amount, currency).formatted}</span>
-                  </li>
-                )
-              })}
+                  </div>
+                  <span className="text-muted-foreground shrink-0 w-[82px] text-right">
+                    {new Date(item.activity_at).toLocaleDateString('en-GB', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: '2-digit',
+                    })}
+                  </span>
+                  {item.amount != null && (
+                    <span className="font-medium text-foreground shrink-0 w-[72px] text-right tabular-nums">
+                      {format(item.amount, currency).formatted}
+                    </span>
+                  )}
+                </li>
+              ))}
             </ul>
           </CardContent>
         </Card>
@@ -835,6 +1016,7 @@ export function VendorDetailPage() {
         productionId={currentProductionId!}
         vendorId={vendorId!}
         currency={currency}
+        activePurchaseOrders={activePurchaseOrders}
         onSubmit={(data) => createInvoiceMutation.mutate(data)}
         isLoading={createInvoiceMutation.isPending}
       />
@@ -845,6 +1027,7 @@ export function VendorDetailPage() {
           onOpenChange={(open) => !open && setEditInvoice(null)}
           invoice={editInvoice}
           currency={currency}
+          activePurchaseOrders={activePurchaseOrders}
           onSubmit={(patch) => updateInvoiceMutation.mutate({ id: editInvoice.id, patch, invoice: editInvoice })}
           isLoading={updateInvoiceMutation.isPending}
         />
@@ -914,6 +1097,38 @@ export function VendorDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {linkExpensesInvoice && (
+        <LinkExpensesToInvoiceDialog
+          open={!!linkExpensesInvoice}
+          onOpenChange={(open) => !open && setLinkExpensesInvoice(null)}
+          invoice={linkExpensesInvoice}
+          expenses={expenses}
+          accountById={accountById}
+          format={format}
+          currency={currency}
+          onLink={(expenseId) => linkInvoiceExpenseMutation.mutate({ invoiceId: linkExpensesInvoice.id, expenseId })}
+          onUnlink={(expenseId) => unlinkInvoiceExpenseMutation.mutate({ invoiceId: linkExpensesInvoice.id, expenseId })}
+          isLinking={linkInvoiceExpenseMutation.isPending}
+          isUnlinking={unlinkInvoiceExpenseMutation.isPending}
+        />
+      )}
+
+      {linkExpensesPO && (
+        <LinkExpensesToPODialog
+          open={!!linkExpensesPO}
+          onOpenChange={(open) => !open && setLinkExpensesPO(null)}
+          po={linkExpensesPO}
+          expenses={expenses}
+          accountById={accountById}
+          format={format}
+          currency={currency}
+          onLink={(expenseId) => linkPOExpenseMutation.mutate({ poId: linkExpensesPO.id, expenseId })}
+          onUnlink={(expenseId) => unlinkPOExpenseMutation.mutate({ poId: linkExpensesPO.id, expenseId })}
+          isLinking={linkPOExpenseMutation.isPending}
+          isUnlinking={unlinkPOExpenseMutation.isPending}
+        />
+      )}
     </div>
   )
 }
@@ -976,17 +1191,23 @@ function VendorExpenseRow({
 
 function VendorInvoiceRow({
   invoice,
+  linkedPo,
+  expenseLinkCount,
   format,
   currency,
   onEdit,
   onArchive,
+  onLinkExpenses,
   showActions,
 }: {
   invoice: VendorInvoice
+  linkedPo: VendorPurchaseOrder | null
+  expenseLinkCount: number
   format: (amount: number, currency: string) => { formatted: string }
   currency: string
   onEdit: () => void
   onArchive: () => void
+  onLinkExpenses: () => void
   showActions: boolean
 }) {
   const cur = invoice.currency_code ?? currency
@@ -1015,6 +1236,17 @@ function VendorInvoiceRow({
       <TableCell className="py-2 w-[90px]">
         <InvoiceStatusBadge status={invoice.status} isOverdue={isOverdue} className="text-xs" />
       </TableCell>
+      <TableCell className="text-muted-foreground text-sm py-2 w-[72px]">
+        {linkedPo ? linkedPo.po_number : '—'}
+      </TableCell>
+      <TableCell className="py-2 w-[72px]">
+        <span className="text-sm text-muted-foreground">{expenseLinkCount}</span>
+        {showActions && (
+          <Button variant="ghost" size="icon" className="h-7 w-7 ml-0.5 align-middle" onClick={onLinkExpenses} aria-label="Link expenses">
+            <Link2 className="size-3.5" />
+          </Button>
+        )}
+      </TableCell>
       {showActions && (
         <TableCell className="py-2 w-[88px]">
           <div className="flex items-center gap-1">
@@ -1033,17 +1265,23 @@ function VendorInvoiceRow({
 
 function VendorPORow({
   po,
+  linkedInvoiceCount,
+  expenseLinkCount,
   format,
   currency,
   onEdit,
   onArchive,
+  onLinkExpenses,
   showActions,
 }: {
   po: VendorPurchaseOrder
+  linkedInvoiceCount: number
+  expenseLinkCount: number
   format: (amount: number, currency: string) => { formatted: string }
   currency: string
   onEdit: () => void
   onArchive: () => void
+  onLinkExpenses: () => void
   showActions: boolean
 }) {
   const dateFmt = (d: string | null) =>
@@ -1067,6 +1305,15 @@ function VendorPORow({
       <TableCell className="py-2 w-[80px] text-xs text-muted-foreground">
         {po.approval === 1 ? 'Approved' : 'Not approved'}
       </TableCell>
+      <TableCell className="text-muted-foreground text-sm py-2 w-[72px]">{linkedInvoiceCount}</TableCell>
+      <TableCell className="py-2 w-[72px]">
+        <span className="text-sm text-muted-foreground">{expenseLinkCount}</span>
+        {showActions && (
+          <Button variant="ghost" size="icon" className="h-7 w-7 ml-0.5 align-middle" onClick={onLinkExpenses} aria-label="Link expenses">
+            <Link2 className="size-3.5" />
+          </Button>
+        )}
+      </TableCell>
       {showActions && (
         <TableCell className="py-2 w-[88px]">
           <div className="flex items-center gap-1">
@@ -1080,6 +1327,286 @@ function VendorPORow({
         </TableCell>
       )}
     </TableRow>
+  )
+}
+
+function LinkExpensesToInvoiceDialog({
+  open,
+  onOpenChange,
+  invoice,
+  expenses,
+  accountById,
+  format,
+  currency,
+  onLink,
+  onUnlink,
+  isLinking,
+  isUnlinking,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  invoice: VendorInvoice
+  expenses: Expense[]
+  accountById: Map<string, { id: string; code: string; name: string }>
+  format: (amount: number, currency: string) => { formatted: string }
+  currency: string
+  onLink: (expenseId: string) => void
+  onUnlink: (expenseId: string) => void
+  isLinking: boolean
+  isUnlinking: boolean
+}) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const { data: links = [] } = useQuery({
+    queryKey: vendorInvoiceExpenseLinksQueryKey(invoice.id),
+    queryFn: () => listExpenseLinksByInvoice(invoice.id),
+    enabled: open,
+  })
+  const linkedExpenseIds = useMemo(() => new Set(links.map((l) => l.expense_id)), [links])
+  const linkedExpenses = useMemo(
+    () => expenses.filter((e) => linkedExpenseIds.has(e.id)),
+    [expenses, linkedExpenseIds]
+  )
+  const candidates = useMemo(
+    () => expenses.filter((e) => !linkedExpenseIds.has(e.id)),
+    [expenses, linkedExpenseIds]
+  )
+
+  const toggleCandidate = (expenseId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(expenseId)) next.delete(expenseId)
+      else next.add(expenseId)
+      return next
+    })
+  }
+  const handleLinkSelected = () => {
+    selectedIds.forEach((id) => onLink(id))
+    setSelectedIds(new Set())
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Link expenses to invoice {invoice.invoice_number}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4 overflow-hidden min-h-0">
+          {linkedExpenses.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">Linked expenses</p>
+              <ul className="border border-border rounded-md divide-y divide-border max-h-32 overflow-y-auto">
+                {linkedExpenses.map((e) => {
+                  const acc = e.account_id ? accountById.get(e.account_id) : null
+                  return (
+                    <li key={e.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                      <span className="text-muted-foreground shrink-0 w-16">
+                        {new Date(e.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      </span>
+                      <span className="min-w-0 truncate flex-1">{(e.notes || e.vendor || '—').slice(0, 40)}</span>
+                      {acc && <span className="text-muted-foreground text-xs shrink-0">{acc.code}</span>}
+                      <span className="tabular-nums shrink-0">{format(e.amount, currency).formatted}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-muted-foreground shrink-0"
+                        onClick={() => onUnlink(e.id)}
+                        disabled={isUnlinking}
+                        aria-label="Unlink"
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+          {candidates.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">Add expenses</p>
+              <ul className="border border-border rounded-md divide-y divide-border max-h-48 overflow-y-auto">
+                {candidates.map((e) => {
+                  const acc = e.account_id ? accountById.get(e.account_id) : null
+                  return (
+                    <li key={e.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                      <Checkbox
+                        checked={selectedIds.has(e.id)}
+                        onCheckedChange={() => toggleCandidate(e.id)}
+                        aria-label={`Select ${e.date} ${format(e.amount, currency).formatted}`}
+                      />
+                      <span className="text-muted-foreground shrink-0 w-16">
+                        {new Date(e.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      </span>
+                      <span className="min-w-0 truncate flex-1">{(e.notes || e.vendor || '—').slice(0, 40)}</span>
+                      {acc && <span className="text-muted-foreground text-xs shrink-0">{acc.code}</span>}
+                      <span className="tabular-nums shrink-0">{format(e.amount, currency).formatted}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="mt-2"
+                onClick={handleLinkSelected}
+                disabled={selectedIds.size === 0 || isLinking}
+              >
+                Link selected ({selectedIds.size})
+              </Button>
+            </div>
+          )}
+          {linkedExpenses.length === 0 && candidates.length === 0 && (
+            <p className="text-sm text-muted-foreground">No expenses for this vendor to link.</p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function LinkExpensesToPODialog({
+  open,
+  onOpenChange,
+  po,
+  expenses,
+  accountById,
+  format,
+  currency,
+  onLink,
+  onUnlink,
+  isLinking,
+  isUnlinking,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  po: VendorPurchaseOrder
+  expenses: Expense[]
+  accountById: Map<string, { id: string; code: string; name: string }>
+  format: (amount: number, currency: string) => { formatted: string }
+  currency: string
+  onLink: (expenseId: string) => void
+  onUnlink: (expenseId: string) => void
+  isLinking: boolean
+  isUnlinking: boolean
+}) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const { data: links = [] } = useQuery({
+    queryKey: vendorPurchaseOrderExpenseLinksQueryKey(po.id),
+    queryFn: () => listExpenseLinksByPurchaseOrder(po.id),
+    enabled: open,
+  })
+  const linkedExpenseIds = useMemo(() => new Set(links.map((l) => l.expense_id)), [links])
+  const linkedExpenses = useMemo(
+    () => expenses.filter((e) => linkedExpenseIds.has(e.id)),
+    [expenses, linkedExpenseIds]
+  )
+  const candidates = useMemo(
+    () => expenses.filter((e) => !linkedExpenseIds.has(e.id)),
+    [expenses, linkedExpenseIds]
+  )
+
+  const toggleCandidate = (expenseId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(expenseId)) next.delete(expenseId)
+      else next.add(expenseId)
+      return next
+    })
+  }
+  const handleLinkSelected = () => {
+    selectedIds.forEach((id) => onLink(id))
+    setSelectedIds(new Set())
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Link expenses to PO {po.po_number}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4 overflow-hidden min-h-0">
+          {linkedExpenses.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">Linked expenses</p>
+              <ul className="border border-border rounded-md divide-y divide-border max-h-32 overflow-y-auto">
+                {linkedExpenses.map((e) => {
+                  const acc = e.account_id ? accountById.get(e.account_id) : null
+                  return (
+                    <li key={e.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                      <span className="text-muted-foreground shrink-0 w-16">
+                        {new Date(e.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      </span>
+                      <span className="min-w-0 truncate flex-1">{(e.notes || e.vendor || '—').slice(0, 40)}</span>
+                      {acc && <span className="text-muted-foreground text-xs shrink-0">{acc.code}</span>}
+                      <span className="tabular-nums shrink-0">{format(e.amount, currency).formatted}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-muted-foreground shrink-0"
+                        onClick={() => onUnlink(e.id)}
+                        disabled={isUnlinking}
+                        aria-label="Unlink"
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+          {candidates.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">Add expenses</p>
+              <ul className="border border-border rounded-md divide-y divide-border max-h-48 overflow-y-auto">
+                {candidates.map((e) => {
+                  const acc = e.account_id ? accountById.get(e.account_id) : null
+                  return (
+                    <li key={e.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                      <Checkbox
+                        checked={selectedIds.has(e.id)}
+                        onCheckedChange={() => toggleCandidate(e.id)}
+                        aria-label={`Select ${e.date} ${format(e.amount, currency).formatted}`}
+                      />
+                      <span className="text-muted-foreground shrink-0 w-16">
+                        {new Date(e.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      </span>
+                      <span className="min-w-0 truncate flex-1">{(e.notes || e.vendor || '—').slice(0, 40)}</span>
+                      {acc && <span className="text-muted-foreground text-xs shrink-0">{acc.code}</span>}
+                      <span className="tabular-nums shrink-0">{format(e.amount, currency).formatted}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="mt-2"
+                onClick={handleLinkSelected}
+                disabled={selectedIds.size === 0 || isLinking}
+              >
+                Link selected ({selectedIds.size})
+              </Button>
+            </div>
+          )}
+          {linkedExpenses.length === 0 && candidates.length === 0 && (
+            <p className="text-sm text-muted-foreground">No expenses for this vendor to link.</p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1163,6 +1690,7 @@ function CreateInvoiceDialog({
   productionId,
   vendorId,
   currency,
+  activePurchaseOrders,
   onSubmit,
   isLoading,
 }: {
@@ -1171,6 +1699,7 @@ function CreateInvoiceDialog({
   productionId: string
   vendorId: string
   currency: string
+  activePurchaseOrders: VendorPurchaseOrder[]
   onSubmit: (data: {
     production_id: string
     vendor_id: string
@@ -1182,11 +1711,12 @@ function CreateInvoiceDialog({
     currency_code?: string | null
     status?: InvoiceFormValues['status']
     notes?: string | null
+    po_id?: string | null
   }) => void
   isLoading: boolean
 }) {
   const form = useForm<InvoiceFormValues>({
-    resolver: zodResolver(invoiceFormSchema),
+    resolver: zodResolver(invoiceFormSchema) as Resolver<InvoiceFormValues>,
     defaultValues: {
       invoice_number: '',
       issue_date: '',
@@ -1196,6 +1726,7 @@ function CreateInvoiceDialog({
       currency_code: currency,
       status: 'draft',
       notes: '',
+      po_id: null,
     },
   })
   useEffect(() => {
@@ -1209,6 +1740,7 @@ function CreateInvoiceDialog({
         currency_code: currency,
         status: 'draft',
         notes: '',
+        po_id: null,
       })
     }
   }, [open, currency, form])
@@ -1225,6 +1757,7 @@ function CreateInvoiceDialog({
       currency_code: data.currency_code?.trim() || null,
       status: data.status,
       notes: data.notes?.trim() || null,
+      po_id: data.po_id ?? null,
     })
   }
 
@@ -1301,6 +1834,26 @@ function CreateInvoiceDialog({
             </div>
           </div>
           <div>
+            <Label htmlFor="inv-po">Purchase order</Label>
+            <Select
+              value={form.watch('po_id') ?? 'none'}
+              onValueChange={(v) => form.setValue('po_id', v === 'none' ? null : v)}
+            >
+              <SelectTrigger id="inv-po" className="mt-1">
+                <SelectValue placeholder="No PO" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No PO</SelectItem>
+                {activePurchaseOrders.map((po) => (
+                  <SelectItem key={po.id} value={po.id}>
+                    {po.po_number}
+                    {po.description ? ` — ${po.description.slice(0, 30)}${po.description.length > 30 ? '…' : ''}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
             <Label htmlFor="inv-notes">Notes</Label>
             <Input id="inv-notes" {...form.register('notes')} className="mt-1" placeholder="Optional" />
           </div>
@@ -1323,6 +1876,7 @@ function EditInvoiceDialog({
   onOpenChange,
   invoice,
   currency,
+  activePurchaseOrders,
   onSubmit,
   isLoading,
 }: {
@@ -1330,11 +1884,12 @@ function EditInvoiceDialog({
   onOpenChange: (open: boolean) => void
   invoice: VendorInvoice
   currency: string
-  onSubmit: (patch: Partial<Pick<VendorInvoice, 'invoice_number' | 'issue_date' | 'due_date' | 'amount' | 'tax' | 'currency_code' | 'status' | 'notes'>>) => void
+  activePurchaseOrders: VendorPurchaseOrder[]
+  onSubmit: (patch: Partial<Pick<VendorInvoice, 'invoice_number' | 'issue_date' | 'due_date' | 'amount' | 'tax' | 'currency_code' | 'status' | 'notes' | 'po_id'>>) => void
   isLoading: boolean
 }) {
   const form = useForm<InvoiceFormValues>({
-    resolver: zodResolver(invoiceFormSchema),
+    resolver: zodResolver(invoiceFormSchema) as Resolver<InvoiceFormValues>,
     defaultValues: {
       invoice_number: invoice.invoice_number,
       issue_date: invoice.issue_date ?? '',
@@ -1344,6 +1899,7 @@ function EditInvoiceDialog({
       currency_code: invoice.currency_code ?? currency,
       status: invoice.status,
       notes: invoice.notes ?? '',
+      po_id: invoice.po_id ?? null,
     },
   })
   useEffect(() => {
@@ -1357,6 +1913,7 @@ function EditInvoiceDialog({
         currency_code: invoice.currency_code ?? currency,
         status: invoice.status,
         notes: invoice.notes ?? '',
+        po_id: invoice.po_id ?? null,
       })
     }
   }, [open, invoice, currency, form])
@@ -1371,6 +1928,7 @@ function EditInvoiceDialog({
       currency_code: data.currency_code?.trim() || null,
       status: data.status,
       notes: data.notes?.trim() || null,
+      po_id: data.po_id ?? null,
     })
   }
 
@@ -1445,6 +2003,26 @@ function EditInvoiceDialog({
             </div>
           </div>
           <div>
+            <Label htmlFor="edit-inv-po">Purchase order</Label>
+            <Select
+              value={form.watch('po_id') ?? 'none'}
+              onValueChange={(v) => form.setValue('po_id', v === 'none' ? null : v)}
+            >
+              <SelectTrigger id="edit-inv-po" className="mt-1">
+                <SelectValue placeholder="No PO" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No PO</SelectItem>
+                {activePurchaseOrders.map((po) => (
+                  <SelectItem key={po.id} value={po.id}>
+                    {po.po_number}
+                    {po.description ? ` — ${po.description.slice(0, 30)}${po.description.length > 30 ? '…' : ''}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
             <Label htmlFor="edit-inv-notes">Notes</Label>
             <Input id="edit-inv-notes" {...form.register('notes')} className="mt-1" />
           </div>
@@ -1480,7 +2058,7 @@ function CreatePODialog({
   isLoading: boolean
 }) {
   const form = useForm<POFormValues>({
-    resolver: zodResolver(poFormSchema),
+    resolver: zodResolver(poFormSchema) as Resolver<POFormValues>,
     defaultValues: {
       po_number: '',
       description: '',
@@ -1623,7 +2201,7 @@ function EditPODialog({
   isLoading: boolean
 }) {
   const form = useForm<POFormValues>({
-    resolver: zodResolver(poFormSchema),
+    resolver: zodResolver(poFormSchema) as Resolver<POFormValues>,
     defaultValues: {
       po_number: po.po_number,
       description: po.description ?? '',

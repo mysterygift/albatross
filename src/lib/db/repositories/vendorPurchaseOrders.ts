@@ -39,6 +39,18 @@ export async function listVendorPurchaseOrdersByVendorId(
   return rows.map(rowToVendorPurchaseOrder)
 }
 
+/** List active (non-deleted) purchase orders for a production. Order by issue_date desc, then created_at desc. */
+export async function listVendorPurchaseOrdersByProduction(
+  productionId: string
+): Promise<VendorPurchaseOrder[]> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY issue_date DESC, created_at DESC`,
+    [productionId]
+  )
+  return rows.map(rowToVendorPurchaseOrder)
+}
+
 /** Get a single purchase order by id (active only). Returns null if not found or soft-deleted. */
 export async function getVendorPurchaseOrderById(poId: string): Promise<VendorPurchaseOrder | null> {
   const db = await getDb()

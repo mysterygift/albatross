@@ -15,6 +15,7 @@ import {
   backfillAccountIdsFromLegacyCategories,
 } from '@/lib/db/repositories/budget'
 import { listBudgetItemExpenseLinksForExpense } from '@/lib/db/repositories/budgetReconciliation'
+import { riskWatchQueryKey } from '@/lib/budget/vendors/riskWatch'
 import { listAccounts, listPostableAccounts } from '@/lib/db/repositories/budgetAccounts'
 import {
   listProductionTotals,
@@ -247,6 +248,7 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
     })
   }, [currentProductionId, queryClient])
 
@@ -349,6 +351,7 @@ export function BudgetPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setAddItemOpen(false)
     },
   })
@@ -367,6 +370,7 @@ export function BudgetPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setAddItemForAccountId(null)
     },
   })
@@ -377,6 +381,7 @@ export function BudgetPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setRecodeToast('Expense recoded.')
       setTimeout(() => setRecodeToast(null), 3000)
     },
@@ -399,6 +404,7 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setAddExpenseOpen(false)
     },
   })
@@ -422,6 +428,7 @@ export function BudgetPage() {
     if (currentProductionId) {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
       queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
     }
   }, [examinedExpenseId, currentProductionId, queryClient])
@@ -454,6 +461,7 @@ export function BudgetPage() {
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId] })
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item'] })
+        queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
       }
     },
   })
@@ -1097,6 +1105,7 @@ export function BudgetPage() {
                     if (currentProductionId) {
                       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
                       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+                      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
                     }
                     if (examinedLineItemId)
                       queryClient.invalidateQueries({

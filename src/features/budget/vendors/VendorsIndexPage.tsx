@@ -111,7 +111,7 @@ export function VendorsIndexPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-xl font-semibold text-foreground">Vendor Management</h1>
         <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
@@ -127,10 +127,10 @@ export function VendorsIndexPage() {
         isLoading={createMutation.isPending}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,380px)_1fr]">
-        {/* Left: search + rolodex list */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        {/* Left: search + rolodex list — wider for comfortable browsing */}
         <Card className="flex flex-col border-border bg-card/80">
-          <CardHeader className="border-b border-border py-3">
+          <CardHeader className="border-b border-border px-4 py-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input

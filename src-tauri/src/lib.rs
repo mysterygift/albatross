@@ -219,6 +219,24 @@ pub fn run() {
             sql: include_str!("../migrations/0036_vendor_purchase_orders.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 37,
+            description: "vendor_invoices_po_id",
+            sql: include_str!("../migrations/0037_vendor_invoices_po_id.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 38,
+            description: "vendor_invoice_expenses",
+            sql: include_str!("../migrations/0038_vendor_invoice_expenses.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 39,
+            description: "vendor_purchase_order_expenses",
+            sql: include_str!("../migrations/0039_vendor_purchase_order_expenses.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

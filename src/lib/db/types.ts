@@ -137,6 +137,8 @@ export type VendorInvoice = {
   id: string
   production_id: string
   vendor_id: string
+  /** Optional link to a vendor purchase order. */
+  po_id: string | null
   invoice_number: string
   issue_date: string | null
   due_date: string | null
@@ -146,6 +148,24 @@ export type VendorInvoice = {
   status: VendorInvoiceStatus
   notes: string | null
 } & SoftDeletable
+
+/** Link between a vendor invoice and an expense (one invoice, many expenses). */
+export type VendorInvoiceExpenseLink = {
+  id: string
+  vendor_invoice_id: string
+  expense_id: string
+  created_at: string
+  updated_at: string
+}
+
+/** Link between a vendor purchase order and an expense (one PO, many expenses). */
+export type VendorPurchaseOrderExpenseLink = {
+  id: string
+  vendor_purchase_order_id: string
+  expense_id: string
+  created_at: string
+  updated_at: string
+}
 
 /** Purchase order lifecycle status. Enforced in DB via CHECK; use this union in TS. */
 export type PurchaseOrderStatus =
