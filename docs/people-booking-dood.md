@@ -122,7 +122,7 @@ Opening a person (e.g. from the People list or Cast Manager) takes you to **Pers
 ### 4. Person detail (People hub)
 
 - **Route:** `/people/:personId`.
-- **File:** [src/features/people/pages/PersonDetailPage.tsx](src/features/people/pages/PersonDetailPage.tsx).
+- **File:** [src/features/people/pages/CastDetailPage.tsx](src/features/people/pages/CastDetailPage.tsx).
 - **Purpose:** Single-person hub: summary cards (bookings count, next booked, clashes, DooD work days), **Bookings** section (list of bookings + link to Bookings page), **booking need summary** (days needed, days booked, missing, booked but not needed from [bookingIntelligence](#12-shared-libs-bookingssummary-and-bookingintelligence)), **Availability**, **Scene participation** (scene_cast: add/remove scenes), **Shot participation** (shot_cast: add/remove shots; cast only), **Day out of Days** summary (first/last work day, work days, clashes), **Recent activity**. Edit person via dialog.
 - **Data:** Person, bookings (listBookingsByPerson), availability, scene_cast (listSceneCastByPerson), shot_cast (listShotCastByPersonInProduction), shoot days, scheduled scenes per day, getPersonBookingsSummary, getPersonBookingNeedSummary.
 
@@ -169,7 +169,7 @@ Opening a person (e.g. from the People list or Cast Manager) takes you to **Pers
 
 ### 9. Router and navigation
 
-- **Router:** [src/app/router.tsx](src/app/router.tsx) — `/people` → Navigate to `/people/bookings`; `/people/bookings` → BookingsPage; `/people/day-out-of-days` → DayOutOfDaysPage; `/people/cast-manager` → CastManagerPage (from people/pages); `/people/cast` → PeoplePage; `/people/:personId` → PersonDetailPage.
+- **Router:** [src/app/router.tsx](src/app/router.tsx) — `/people` → Navigate to `/people/bookings`; `/people/bookings` → BookingsPage; `/people/day-out-of-days` → DayOutOfDaysPage; `/people/cast-manager` → CastManagerPage (from people/pages); `/people/cast` → PeoplePage; `/people/:personId` → CastDetailPage.
 - **Navigation:** [src/app/navigation.ts](src/app/navigation.ts) — People group with `defaultChild: '/people/bookings'`, sub-items "Bookings", "Day Out of Days", and "Cast Manager". The full People list is at `/people/cast`; Person detail is reached via `/people/:personId`.
 
 ### 10. Data flow: DooD work days and clashes
@@ -269,7 +269,7 @@ When changing People, Booking, or DooD:
 | Cast Manager page | [src/features/people/pages/CastManagerPage.tsx](src/features/people/pages/CastManagerPage.tsx) — `/people/cast-manager` |
 | Cast form (cast-specific) | [src/features/people/components/CastForm.tsx](src/features/people/components/CastForm.tsx) — used by Cast Manager only |
 | People (Cast) list page | [src/features/people/page.tsx](src/features/people/page.tsx) — `/people/cast` |
-| Person detail (People hub) | [src/features/people/pages/PersonDetailPage.tsx](src/features/people/pages/PersonDetailPage.tsx) — `/people/:personId` |
+| Person detail (People hub) | [src/features/people/pages/CastDetailPage.tsx](src/features/people/pages/CastDetailPage.tsx) — `/people/:personId` |
 | Bookings page | [src/features/people/pages/BookingsPage.tsx](src/features/people/pages/BookingsPage.tsx) — `/people/bookings` |
 | DooD page | [src/features/people/pages/DayOutOfDaysPage.tsx](src/features/people/pages/DayOutOfDaysPage.tsx) — `/people/day-out-of-days` |
 | Person repo | [src/lib/db/repositories/person.ts](src/lib/db/repositories/person.ts) |

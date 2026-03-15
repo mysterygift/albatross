@@ -10,7 +10,7 @@ import { ScriptImportPage } from '@/features/schedule/script-import-page'
 import { PeoplePage } from '@/features/people/page'
 import { BookingsPage } from '@/features/people/pages/BookingsPage'
 import { DayOutOfDaysPage } from '@/features/people/pages/DayOutOfDaysPage'
-import { PersonDetailPage } from '@/features/people/pages/PersonDetailPage'
+import { CastDetailPage } from '@/features/people/pages/CastDetailPage'
 import { CrewDetailPage } from '@/features/people/pages/CrewDetailPage'
 import { CastManagerPage } from '@/features/people/pages/CastManagerPage'
 import { CrewManagerPage } from '@/features/people/crew-manager/page'
@@ -49,7 +49,7 @@ export const router = createBrowserRouter([
       { path: 'people/crew-manager', element: <CrewManagerPage /> },
       { path: 'people/crew/:personId', element: <CrewDetailPage /> },
       { path: 'people/cast', element: <PeoplePage /> },
-      { path: 'people/:personId', element: <PersonDetailPage /> },
+      { path: 'people/:personId', element: <CastDetailPage /> },
       { path: 'locations', element: <LocationsPage /> },
       { path: 'equipment', element: <EquipmentPage /> },
       { path: 'documents', element: <DocumentsPage /> },

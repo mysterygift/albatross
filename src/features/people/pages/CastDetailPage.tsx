@@ -57,7 +57,7 @@ const CONTRIBUTOR_FORM_LABELS: Record<Person['contributor_form_status'], string>
   expired: 'Expired',
 }
 
-export function PersonDetailPage() {
+export function CastDetailPage() {
   const { personId } = useParams<{ personId: string }>()
   const { currentProductionId } = useCurrentProduction()
   const queryClient = useQueryClient()
