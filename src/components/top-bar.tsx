@@ -1,3 +1,4 @@
+import { HelpCircle } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -5,11 +6,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
 import { useCurrentProduction } from '@/features/productions/context'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { useLocation } from 'react-router-dom'
 
-export function TopBar() {
+type TopBarProps = {
+  onOpenTutorial?: () => void
+}
+
+export function TopBar({ onOpenTutorial }: TopBarProps) {
   const {
     productions,
     currentProductionId,
@@ -44,6 +50,19 @@ export function TopBar() {
           </Select>
         </div>
       )}
+      <div className="ml-auto flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            onOpenTutorial?.()
+          }}
+          aria-label="Open tutorial"
+        >
+          <HelpCircle className="size-4" />
+        </Button>
+      </div>
     </header>
   )
 }
