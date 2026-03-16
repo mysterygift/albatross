@@ -9,22 +9,32 @@ import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { TutorialHome } from '@/features/tutorial/TutorialHome'
 import { TUTORIAL_SECTION_IDS } from '@/features/tutorial/tutorialSections'
+import { TutorialEntryModal } from '@/features/tutorial/TutorialEntryModal'
+import { ensureAndOpenDemoProductionForTutorial } from '@/features/tutorial/ensureAndOpenDemoProductionForTutorial'
+import { useCurrentProduction } from '@/features/productions/context'
+import { DEMO_SLUG } from '@/lib/db/seed/constants'
 
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 
 export function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
+  const [tutorialEntryOpen, setTutorialEntryOpen] = useState(false)
   const [tutorialOpen, setTutorialOpen] = useState(false)
+  const [isPreparingTutorial, setIsPreparingTutorial] = useState(false)
+  const [tutorialStartupError, setTutorialStartupError] = useState<string | null>(null)
   const [completionToast, setCompletionToast] = useState<string | null>(null)
   const {
     isLoading: tutorialLoading,
     showFirstLaunchTutorial,
     completeFirstLaunchTutorial,
     resetFirstLaunchTutorial,
+    skipEntryModal,
     progress,
     updateProgress,
   } = useFirstLaunchTutorial()
+  const { setCurrentProductionId, currentProduction } = useCurrentProduction()
+  const isDemoProductionCurrent = currentProduction?.slug === DEMO_SLUG
 
   const allComplete = useMemo(() => {
     if (!progress) return false
@@ -53,14 +63,42 @@ export function AppLayout() {
       .catch(() => {})
   }, [])
 
+  // First launch: show entry modal only when eligible and user has not yet skipped/started from it.
+  // Require progress to be loaded so we don't flash entry modal before state is ready.
   useEffect(() => {
-    if (!tutorialLoading && showFirstLaunchTutorial) {
-      setTutorialOpen(true)
-    }
-  }, [tutorialLoading, showFirstLaunchTutorial])
+    if (tutorialLoading || progress == null) return
+    if (!showFirstLaunchTutorial) return
+    if (progress.seenEntryModal) return
+    setTutorialStartupError(null)
+    setIsPreparingTutorial(false)
+    setTutorialOpen(false)
+    setTutorialEntryOpen(true)
+  }, [tutorialLoading, showFirstLaunchTutorial, progress])
 
   const handleOpenTutorialFromHelp = () => {
+    setTutorialStartupError(null)
+    setIsPreparingTutorial(false)
+    setTutorialEntryOpen(false)
     setTutorialOpen(true)
+  }
+
+  const handleStartTutorial = async () => {
+    if (isPreparingTutorial) return
+    setTutorialStartupError(null)
+    setIsPreparingTutorial(true)
+    try {
+      await ensureAndOpenDemoProductionForTutorial({
+        setCurrentProductionId,
+      })
+      updateProgress((prev) => ({ ...prev, seenEntryModal: true }))
+      setTutorialEntryOpen(false)
+      setTutorialOpen(true)
+    } catch (err) {
+      setTutorialStartupError('Unable to prepare the demo production. Please try again.')
+      // Keep the entry modal open so the user can retry.
+    } finally {
+      setIsPreparingTutorial(false)
+    }
   }
 
   useEffect(() => {
@@ -69,6 +107,9 @@ export function AppLayout() {
     if (state.resetTutorial) {
       resetFirstLaunchTutorial()
     }
+    setTutorialStartupError(null)
+    setIsPreparingTutorial(false)
+    setTutorialEntryOpen(false)
     setTutorialOpen(true)
     navigate(location.pathname, { replace: true, state: {} })
   }, [location.pathname, location.state, navigate, resetFirstLaunchTutorial])
@@ -83,6 +124,21 @@ export function AppLayout() {
         </main>
       </SidebarInset>
       <DevPerfHud />
+      <TutorialEntryModal
+        open={tutorialEntryOpen}
+        isPreparing={isPreparingTutorial}
+        error={tutorialStartupError}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTutorialEntryOpen(false)
+          }
+        }}
+        onSkipForNow={() => {
+          skipEntryModal()
+          setTutorialEntryOpen(false)
+        }}
+        onStartTutorial={handleStartTutorial}
+      />
       <TutorialHome
         open={tutorialOpen}
         onOpenChange={setTutorialOpen}
@@ -91,7 +147,12 @@ export function AppLayout() {
         onSkip={completeFirstLaunchTutorial}
         onReset={() => {
           resetFirstLaunchTutorial()
+          setTutorialEntryOpen(false)
           setTutorialOpen(true)
+        }}
+        isDemoProductionCurrent={isDemoProductionCurrent}
+        onOpenDemoProduction={async () => {
+          await ensureAndOpenDemoProductionForTutorial({ setCurrentProductionId })
         }}
       />
       {completionToast && (

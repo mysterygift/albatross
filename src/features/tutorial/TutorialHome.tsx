@@ -14,6 +14,9 @@ type TutorialHomeProps = {
   onProgressChange: (updater: (prev: FirstLaunchTutorialProgress) => FirstLaunchTutorialProgress) => void
   onSkip: () => void
   onReset: () => void
+  /** When false, show a notice that the tutorial is designed for the demo production and offer to open it. */
+  isDemoProductionCurrent?: boolean
+  onOpenDemoProduction?: () => void | Promise<void>
 }
 
 function getSectionLabel(state: TutorialSectionState): string {
@@ -34,7 +37,16 @@ function getSectionStatusIcon(state: TutorialSectionState) {
   return Circle
 }
 
-export function TutorialHome({ open, onOpenChange, progress, onProgressChange, onSkip, onReset }: TutorialHomeProps) {
+export function TutorialHome({
+  open,
+  onOpenChange,
+  progress,
+  onProgressChange,
+  onSkip,
+  onReset,
+  isDemoProductionCurrent = true,
+  onOpenDemoProduction,
+}: TutorialHomeProps) {
   const navigate = useNavigate()
   const allComplete = useMemo(() => {
     if (!progress) return false
@@ -93,6 +105,24 @@ export function TutorialHome({ open, onOpenChange, progress, onProgressChange, o
               : `We’ve loaded a demo production so you can explore schedules, budgets, crew, cast, and equipment safely without touching real projects. Use this hub to dip into key areas at your own pace.`}
           </DialogDescription>
         </DialogHeader>
+
+        {!isDemoProductionCurrent && (
+          <div className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+            <p className="text-sm text-amber-200">
+              This tutorial is designed for the demo production.
+            </p>
+            {onOpenDemoProduction && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2 border-amber-500/50 text-amber-200 hover:bg-amber-500/20"
+                onClick={() => void onOpenDemoProduction()}
+              >
+                Open demo production
+              </Button>
+            )}
+          </div>
+        )}
 
         {allComplete && (
           <div className="rounded-md border border-zinc-700 bg-zinc-800/50 p-3">

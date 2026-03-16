@@ -14,6 +14,7 @@ type FirstLaunchTutorialState = {
   showFirstLaunchTutorial: boolean
   completeFirstLaunchTutorial: () => void
   resetFirstLaunchTutorial: () => void
+  skipEntryModal: () => void
   progress: FirstLaunchTutorialProgress | null
   updateProgress: (updater: (prev: FirstLaunchTutorialProgress) => FirstLaunchTutorialProgress) => void
 }
@@ -93,6 +94,20 @@ export function useFirstLaunchTutorial(): FirstLaunchTutorialState {
     window.dispatchEvent(new CustomEvent(TUTORIAL_PROGRESS_EVENT, { detail: reset }))
   }, [])
 
+  /** Call when user clicks Skip for now on the entry modal. Does not mark tutorial complete or create demo. */
+  const skipEntryModal = useCallback(() => {
+    setProgress((prev) => {
+      const base = prev ?? getDefaultTutorialProgress()
+      const updated: FirstLaunchTutorialProgress = {
+        ...base,
+        seenEntryModal: true,
+      }
+      void setFirstLaunchTutorialProgress(updated)
+      window.dispatchEvent(new CustomEvent(TUTORIAL_PROGRESS_EVENT, { detail: updated }))
+      return updated
+    })
+  }, [])
+
   const updateProgress = useCallback(
     (updater: (prev: FirstLaunchTutorialProgress) => FirstLaunchTutorialProgress) => {
       setProgress((prev) => {
@@ -111,6 +126,7 @@ export function useFirstLaunchTutorial(): FirstLaunchTutorialState {
     showFirstLaunchTutorial,
     completeFirstLaunchTutorial,
     resetFirstLaunchTutorial,
+    skipEntryModal,
     progress,
     updateProgress,
   }
