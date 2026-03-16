@@ -4,6 +4,8 @@ import { useCurrentProduction } from '@/features/productions/context'
 import {
   listScenesByProduction,
   listShotsByScene,
+  createScene,
+  updateScene,
   updateShot,
 } from '@/lib/db/repositories/schedule'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
@@ -105,6 +107,22 @@ export function ShotListPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [addCastOpen, setAddCastOpen] = useState(false)
   const [addShotCastShotId, setAddShotCastShotId] = useState<string | null>(null)
+  const [createSceneOpen, setCreateSceneOpen] = useState(false)
+  const [createSceneError, setCreateSceneError] = useState<string | null>(null)
+  const [newSceneNumber, setNewSceneNumber] = useState('')
+  const [newSceneHeading, setNewSceneHeading] = useState('')
+  const [newSceneTitle, setNewSceneTitle] = useState('')
+  const [newSceneIntExt, setNewSceneIntExt] = useState<Scene['int_ext'] | null>(null)
+  const [newSceneDayNight, setNewSceneDayNight] = useState<Scene['day_night'] | null>(null)
+  const [newSceneLocationId, setNewSceneLocationId] = useState<string | null>(null)
+  const [editSceneOpen, setEditSceneOpen] = useState(false)
+  const [editSceneError, setEditSceneError] = useState<string | null>(null)
+  const [editSceneNumber, setEditSceneNumber] = useState('')
+  const [editSceneHeading, setEditSceneHeading] = useState('')
+  const [editSceneTitle, setEditSceneTitle] = useState('')
+  const [editSceneIntExt, setEditSceneIntExt] = useState<Scene['int_ext'] | null>(null)
+  const [editSceneDayNight, setEditSceneDayNight] = useState<Scene['day_night'] | null>(null)
+  const [editSceneLocationId, setEditSceneLocationId] = useState<string | null>(null)
 
   const { data: scenes = [] } = useQuery({
     queryKey: ['scenes', currentProductionId],
@@ -205,6 +223,97 @@ export function ShotListPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shot-cast-by-shot-ids'] })
       queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
+    },
+  })
+
+  const createSceneMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentProductionId) {
+        throw new Error('No production selected')
+      }
+      const sceneNumber = newSceneNumber.trim()
+      if (!sceneNumber) {
+        throw new Error('Scene number is required')
+      }
+      setCreateSceneError(null)
+      const scene = await createScene({
+        production_id: currentProductionId,
+        scene_number: sceneNumber,
+        heading: newSceneHeading.trim() || null,
+        title: newSceneTitle.trim() || null,
+        int_ext: newSceneIntExt ?? null,
+        day_night: newSceneDayNight ?? null,
+        location_id: newSceneLocationId ?? null,
+      })
+      return scene
+    },
+    onSuccess: (scene) => {
+      setCreateSceneOpen(false)
+      setCreateSceneError(null)
+      setNewSceneNumber('')
+      setNewSceneHeading('')
+      setNewSceneTitle('')
+      setNewSceneIntExt(null)
+      setNewSceneDayNight(null)
+      setNewSceneLocationId(null)
+      queryClient.invalidateQueries({ queryKey: ['scenes', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['scenes'] })
+      setSelectedSceneId(scene.id)
+      setEditingCell(null)
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : 'Could not create scene. Please try again.'
+      if (/UNIQUE|constraint|SQLITE_CONSTRAINT/i.test(message)) {
+        setCreateSceneError('A scene with this number already exists in this production.')
+      } else if (message === 'Scene number is required') {
+        setCreateSceneError('Scene number is required.')
+      } else if (message === 'No production selected') {
+        setCreateSceneError('Select a production before creating scenes.')
+      } else {
+        setCreateSceneError('Could not create scene. Please try again.')
+      }
+    },
+  })
+
+  const updateSceneMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedSceneId) {
+        throw new Error('No scene selected')
+      }
+      const sceneNumber = editSceneNumber.trim()
+      if (!sceneNumber) {
+        throw new Error('Scene number is required')
+      }
+      setEditSceneError(null)
+      const scene = await updateScene(selectedSceneId, {
+        scene_number: sceneNumber,
+        heading: editSceneHeading.trim() || null,
+        title: editSceneTitle.trim() || null,
+        int_ext: editSceneIntExt ?? null,
+        day_night: editSceneDayNight ?? null,
+        location_id: editSceneLocationId ?? null,
+      })
+      return scene
+    },
+    onSuccess: () => {
+      setEditSceneOpen(false)
+      setEditSceneError(null)
+      queryClient.invalidateQueries({ queryKey: ['scenes', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['scenes'] })
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : 'Could not update scene. Please try again.'
+      if (/UNIQUE|constraint|SQLITE_CONSTRAINT/i.test(message)) {
+        setEditSceneError('A scene with this number already exists in this production.')
+      } else if (message === 'Scene number is required') {
+        setEditSceneError('Scene number is required.')
+      } else if (message === 'No scene selected') {
+        setEditSceneError('No scene selected.')
+      } else {
+        setEditSceneError('Could not update scene. Please try again.')
+      }
     },
   })
 
@@ -369,6 +478,42 @@ export function ShotListPage() {
             </SelectContent>
           </Select>
         </div>
+        <div className="flex items-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 border-zinc-600 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
+            onClick={() => {
+              setCreateSceneError(null)
+              setCreateSceneOpen(true)
+            }}
+            disabled={!currentProductionId}
+          >
+            <Plus className="mr-1.5 size-4" />
+            New scene
+          </Button>
+          {selectedSceneId && selectedScene && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 border-zinc-600 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
+              onClick={() => {
+                setEditSceneNumber(selectedScene.scene_number)
+                setEditSceneHeading(selectedScene.heading ?? '')
+                setEditSceneTitle(selectedScene.title ?? '')
+                setEditSceneIntExt(selectedScene.int_ext ?? null)
+                setEditSceneDayNight(selectedScene.day_night ?? null)
+                setEditSceneLocationId(selectedScene.location_id ?? null)
+                setEditSceneError(null)
+                setEditSceneOpen(true)
+              }}
+              disabled={!currentProductionId}
+            >
+              <Pencil className="mr-1.5 size-4" />
+              Edit scene
+            </Button>
+          )}
+        </div>
       </div>
 
       {selectedSceneId && (
@@ -504,6 +649,294 @@ export function ShotListPage() {
       {!selectedSceneId && scenes.length > 0 && (
         <p className="text-muted-foreground">Select a scene to view its shots.</p>
       )}
+
+      <Dialog open={createSceneOpen} onOpenChange={(open) => {
+        setCreateSceneOpen(open)
+        if (!open) {
+          setCreateSceneError(null)
+        }
+      }}>
+        <DialogContent className="max-w-md bg-zinc-800 border-zinc-600">
+          <h3 className="text-base font-semibold text-zinc-100">New scene</h3>
+          <p className="text-sm text-zinc-400">
+            Create a scene in this production to start adding shots.
+          </p>
+          {createSceneError && (
+            <p className="mt-2 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">
+              {createSceneError}
+            </p>
+          )}
+          <div className="mt-3 space-y-3">
+            <div>
+              <Label htmlFor="scene-number" className="text-sm text-zinc-200">
+                Scene number<span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="scene-number"
+                value={newSceneNumber}
+                onChange={(e) => setNewSceneNumber(e.target.value)}
+                placeholder="e.g. 12A"
+                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                autoFocus
+                disabled={createSceneMutation.isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="scene-heading" className="text-sm text-zinc-200">
+                Heading
+              </Label>
+              <Input
+                id="scene-heading"
+                value={newSceneHeading}
+                onChange={(e) => setNewSceneHeading(e.target.value)}
+                placeholder="e.g. INT. KITCHEN - DAY"
+                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                disabled={createSceneMutation.isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="scene-title" className="text-sm text-zinc-200">
+                Title
+              </Label>
+              <Input
+                id="scene-title"
+                value={newSceneTitle}
+                onChange={(e) => setNewSceneTitle(e.target.value)}
+                placeholder="Optional short description"
+                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                disabled={createSceneMutation.isPending}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-sm text-zinc-200">INT / EXT</Label>
+                <Select
+                  value={newSceneIntExt ?? SELECT_NONE}
+                  onValueChange={(v) =>
+                    setNewSceneIntExt(v === SELECT_NONE ? null : (v as Scene['int_ext']))
+                  }
+                >
+                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                    <SelectItem value={SELECT_NONE}>—</SelectItem>
+                    <SelectItem value="INT">INT</SelectItem>
+                    <SelectItem value="EXT">EXT</SelectItem>
+                    <SelectItem value="MIXED">MIXED</SelectItem>
+                    <SelectItem value="UNK">UNK</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm text-zinc-200">DAY / NIGHT</Label>
+                <Select
+                  value={newSceneDayNight ?? SELECT_NONE}
+                  onValueChange={(v) =>
+                    setNewSceneDayNight(v === SELECT_NONE ? null : (v as Scene['day_night']))
+                  }
+                >
+                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                    <SelectItem value={SELECT_NONE}>—</SelectItem>
+                    <SelectItem value="DAY">DAY</SelectItem>
+                    <SelectItem value="NIGHT">NIGHT</SelectItem>
+                    <SelectItem value="MIXED">MIXED</SelectItem>
+                    <SelectItem value="UNK">UNK</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label className="text-sm text-zinc-200">Location</Label>
+              <Select
+                value={newSceneLocationId ?? SELECT_NONE}
+                onValueChange={(v) =>
+                  setNewSceneLocationId(v === SELECT_NONE ? null : v)
+                }
+              >
+                <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent className="bg-zinc-800 border-zinc-600">
+                  <SelectItem value={SELECT_NONE}>—</SelectItem>
+                  {locations.map((loc) => (
+                    <SelectItem key={loc.id} value={loc.id}>
+                      {loc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setCreateSceneOpen(false)
+                setCreateSceneError(null)
+              }}
+              disabled={createSceneMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => createSceneMutation.mutate()}
+              disabled={createSceneMutation.isPending}
+            >
+              {createSceneMutation.isPending ? 'Creating…' : 'Create scene'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editSceneOpen} onOpenChange={(open) => {
+        setEditSceneOpen(open)
+        if (!open) setEditSceneError(null)
+      }}>
+        <DialogContent className="max-w-md bg-zinc-800 border-zinc-600">
+          <h3 className="text-base font-semibold text-zinc-100">Edit scene</h3>
+          <p className="text-sm text-zinc-400">
+            Update the selected scene’s metadata.
+          </p>
+          {editSceneError && (
+            <p className="mt-2 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">
+              {editSceneError}
+            </p>
+          )}
+          <div className="mt-3 space-y-3">
+            <div>
+              <Label htmlFor="edit-scene-number" className="text-sm text-zinc-200">
+                Scene number<span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="edit-scene-number"
+                value={editSceneNumber}
+                onChange={(e) => setEditSceneNumber(e.target.value)}
+                placeholder="e.g. 12A"
+                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                autoFocus
+                disabled={updateSceneMutation.isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-scene-heading" className="text-sm text-zinc-200">
+                Heading
+              </Label>
+              <Input
+                id="edit-scene-heading"
+                value={editSceneHeading}
+                onChange={(e) => setEditSceneHeading(e.target.value)}
+                placeholder="e.g. INT. KITCHEN - DAY"
+                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                disabled={updateSceneMutation.isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-scene-title" className="text-sm text-zinc-200">
+                Title
+              </Label>
+              <Input
+                id="edit-scene-title"
+                value={editSceneTitle}
+                onChange={(e) => setEditSceneTitle(e.target.value)}
+                placeholder="Optional short description"
+                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                disabled={updateSceneMutation.isPending}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-sm text-zinc-200">INT / EXT</Label>
+                <Select
+                  value={editSceneIntExt ?? SELECT_NONE}
+                  onValueChange={(v) =>
+                    setEditSceneIntExt(v === SELECT_NONE ? null : (v as Scene['int_ext']))
+                  }
+                >
+                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                    <SelectItem value={SELECT_NONE}>—</SelectItem>
+                    <SelectItem value="INT">INT</SelectItem>
+                    <SelectItem value="EXT">EXT</SelectItem>
+                    <SelectItem value="MIXED">MIXED</SelectItem>
+                    <SelectItem value="UNK">UNK</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm text-zinc-200">DAY / NIGHT</Label>
+                <Select
+                  value={editSceneDayNight ?? SELECT_NONE}
+                  onValueChange={(v) =>
+                    setEditSceneDayNight(v === SELECT_NONE ? null : (v as Scene['day_night']))
+                  }
+                >
+                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                    <SelectItem value={SELECT_NONE}>—</SelectItem>
+                    <SelectItem value="DAY">DAY</SelectItem>
+                    <SelectItem value="NIGHT">NIGHT</SelectItem>
+                    <SelectItem value="MIXED">MIXED</SelectItem>
+                    <SelectItem value="UNK">UNK</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label className="text-sm text-zinc-200">Location</Label>
+              <Select
+                value={editSceneLocationId ?? SELECT_NONE}
+                onValueChange={(v) =>
+                  setEditSceneLocationId(v === SELECT_NONE ? null : v)
+                }
+              >
+                <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent className="bg-zinc-800 border-zinc-600">
+                  <SelectItem value={SELECT_NONE}>—</SelectItem>
+                  {locations.map((loc) => (
+                    <SelectItem key={loc.id} value={loc.id}>
+                      {loc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setEditSceneOpen(false)
+                setEditSceneError(null)
+              }}
+              disabled={updateSceneMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => updateSceneMutation.mutate()}
+              disabled={updateSceneMutation.isPending}
+            >
+              {updateSceneMutation.isPending ? 'Updating…' : 'Save'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={addCastOpen} onOpenChange={setAddCastOpen}>
         <DialogContent className="max-h-[85vh] flex flex-col bg-zinc-800 border-zinc-600">

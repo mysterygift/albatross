@@ -50,6 +50,9 @@ export function ScriptImportPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scenes'] })
+      if (currentProductionId) {
+        queryClient.invalidateQueries({ queryKey: ['scenes', currentProductionId] })
+      }
       setImportedScenes(null)
       form.setValue('rawText', '')
       setParseError(null)

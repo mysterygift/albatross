@@ -25,14 +25,14 @@ BUDGET
 
 CALL SHEET
 1. Need to add text field to Call Sheet Form for safety information.
-2. Need to APPEND LOCATIONS type + form to include a parking address/w3w – this then needs to feed into the call sheet.
-3. Add ability to watermark paperwork exports with the target's name. (+ call sheet distribution with mailto: links? Who do we even send this from? If we had this in the cloud we could use a centralised email server for it paid for by customers, but because this is free maybe it just makes you have to send them out person by person...this is tedious but quicker than sending a call sheet email one by one WITHOUT the app and automatically generates watermarks for each person too). –– THIS WOULD WORK GREAT FOR SHARING SCRIPTS TOO!
+2. Need to APPEND LOCATIONS type + form to include a parking address/w3w – this then needs to feed into the call sheet (AS WELL AS THE FIRST LOCATION ITSELF)
+~~3. Add ability to watermark paperwork exports with the target's name. (+ call sheet distribution with mailto: links? Who do we even send this from? If we had this in the cloud we could use a centralised email server for it paid for by customers, but because this is free maybe it just makes you have to send them out person by person...this is tedious but quicker than sending a call sheet email one by one WITHOUT the app and automatically generates watermarks for each person too). –– THIS WOULD WORK GREAT FOR SHARING SCRIPTS TOO!~~
 
 
 SCHEDULE
-1. Add ability to create scenes in the shot list page.
+~~1. Add ability to create scenes in the shot list page.~~
 2. Add ability to edit scenes, with a modal window triggered by a button. Should only be visible if a scene is selected.
-3. Add ability to ADD shots to a scene.
+~~3. Add ability to ADD shots to a scene.~~
 4. Add ability to create a shoot day in the STRIPBOARD. A shoot day is initially empty with just the main unit as default. A second unit can be added if needed.
 5. The script parser should look for taglines "INT./EXT. – LOCATIONAME – TIMEOFDAY" and there must be copy informing the user that this is expected formatting. Currently the parser does detect some of this but the logic is not correctly extracting the location name (AD to check regex).
 6. DooD UI Cleanup
