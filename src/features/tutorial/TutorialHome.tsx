@@ -1,8 +1,9 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { CheckCircle2, Circle, PauseCircle, ArrowRight } from 'lucide-react'
 import { TUTORIAL_SECTIONS, type TutorialSectionId } from './tutorialSections'
 import type { FirstLaunchTutorialProgress, TutorialSectionState } from './progress'
 
@@ -12,6 +13,7 @@ type TutorialHomeProps = {
   progress: FirstLaunchTutorialProgress | null
   onProgressChange: (updater: (prev: FirstLaunchTutorialProgress) => FirstLaunchTutorialProgress) => void
   onSkip: () => void
+  onReset: () => void
 }
 
 function getSectionLabel(state: TutorialSectionState): string {
@@ -26,8 +28,18 @@ function getSectionActionLabel(state: TutorialSectionState): string {
   return 'Start'
 }
 
-export function TutorialHome({ open, onOpenChange, progress, onProgressChange, onSkip }: TutorialHomeProps) {
+function getSectionStatusIcon(state: TutorialSectionState) {
+  if (state === 'complete') return CheckCircle2
+  if (state === 'in_progress') return PauseCircle
+  return Circle
+}
+
+export function TutorialHome({ open, onOpenChange, progress, onProgressChange, onSkip, onReset }: TutorialHomeProps) {
   const navigate = useNavigate()
+  const allComplete = useMemo(() => {
+    if (!progress) return false
+    return Object.values(progress.sections).every((s) => s === 'complete')
+  }, [progress])
 
   const handleSectionClick = useCallback(
     (id: TutorialSectionId) => {
@@ -72,12 +84,44 @@ export function TutorialHome({ open, onOpenChange, progress, onProgressChange, o
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl border-zinc-700 bg-zinc-900 text-foreground shadow-2xl">
         <DialogHeader className="space-y-2">
-          <DialogTitle className="text-xl font-semibold">Welcome to Albatross</DialogTitle>
+          <DialogTitle className="text-xl font-semibold">
+            {allComplete ? 'Core workflows explored' : 'Welcome to Albatross'}
+          </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
-            We&apos;ve loaded a demo production so you can explore schedules, budgets, crew, cast, and equipment
-            safely without touching real projects. Use this hub to dip into key areas at your own pace.
+            {allComplete
+              ? `You’ve now seen the main operational areas. Keep using the demo production to experiment safely, or continue into normal day-to-day work.`
+              : `We’ve loaded a demo production so you can explore schedules, budgets, crew, cast, and equipment safely without touching real projects. Use this hub to dip into key areas at your own pace.`}
           </DialogDescription>
         </DialogHeader>
+
+        {allComplete && (
+          <div className="rounded-md border border-zinc-700 bg-zinc-800/50 p-3">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex size-8 items-center justify-center rounded-full bg-zinc-900 text-mint-300">
+                <CheckCircle2 className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">All core areas completed</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  You can revisit any section below in <span className="text-foreground">Review</span> mode.
+                </p>
+                <div className="mt-3">
+                  <Button
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => {
+                      onOpenChange(false)
+                      navigate('/')
+                    }}
+                  >
+                    Go to Dashboard
+                    <ArrowRight className="ml-2 size-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {TUTORIAL_SECTIONS.map((section) => {
@@ -86,6 +130,7 @@ export function TutorialHome({ open, onOpenChange, progress, onProgressChange, o
             const label = getSectionLabel(state)
             const actionLabel = getSectionActionLabel(state)
             const Icon = section.icon
+            const StatusIcon = getSectionStatusIcon(state)
 
             return (
               <button
@@ -101,8 +146,9 @@ export function TutorialHome({ open, onOpenChange, progress, onProgressChange, o
                   <span className="font-medium text-foreground">{section.title}</span>
                   <Badge
                     variant={state === 'complete' ? 'default' : state === 'in_progress' ? 'secondary' : 'outline'}
-                    className="ml-auto text-xs"
+                    className="ml-auto text-xs flex items-center gap-1"
                   >
+                    <StatusIcon className="size-3.5" />
                     {label}
                   </Badge>
                 </div>
@@ -118,14 +164,28 @@ export function TutorialHome({ open, onOpenChange, progress, onProgressChange, o
         </div>
 
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleSkip}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Skip for now
-          </Button>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSkip}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Skip for now
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (window.confirm('Reset tutorial progress?')) {
+                  onReset()
+                }
+              }}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Reset tutorial
+            </Button>
+          </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleContinueLater} className="text-xs border-zinc-600">
               Continue later

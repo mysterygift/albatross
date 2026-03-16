@@ -1025,7 +1025,19 @@ export function DashboardPage() {
 
       <SectionTutorialPanel
         open={tutorialOpen}
-        onOpenChange={setTutorialOpen}
+        onOpenChange={(open) => {
+          setTutorialOpen(open)
+          if (!open) {
+            updateProgress((prev) => ({
+              ...prev,
+              currentSection: prev.currentSection === 'dashboard' ? null : prev.currentSection,
+              sections: {
+                ...prev.sections,
+                dashboard: prev.sections.dashboard === 'not_started' ? 'in_progress' : prev.sections.dashboard,
+              },
+            }))
+          }
+        }}
         sectionId="dashboard"
         sectionTitle="Dashboard"
         steps={dashboardTutorialSteps}

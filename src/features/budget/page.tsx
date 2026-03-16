@@ -3,6 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
+import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
+import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
+import { budgetTutorialSteps } from '@/features/tutorial/sections/budgetTutorial'
 import {
   listBudgetCategoriesByProduction,
   listBudgetItemsByProduction,
@@ -159,7 +162,9 @@ export function BudgetPage() {
   const navigate = useNavigate()
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const { format, ensureRate, conversionBanner } = useCurrency()
+  const { progress, updateProgress } = useFirstLaunchTutorial()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
+  const [tutorialOpen, setTutorialOpen] = useState(false)
   const [addItemOpen, setAddItemOpen] = useState(false)
   const [addExpenseOpen, setAddExpenseOpen] = useState(false)
   const [logSpendOpen, setLogSpendOpen] = useState(false)
@@ -195,6 +200,12 @@ export function BudgetPage() {
   useEffect(() => {
     localStorage.setItem(COST_REPORT_LAYOUT_MODE_KEY, costReportLayoutMode)
   }, [costReportLayoutMode])
+
+  useEffect(() => {
+    if (progress?.currentSection === 'budget') {
+      setTutorialOpen(true)
+    }
+  }, [progress?.currentSection])
 
   // Open expense panel when navigating from vendor ledger (Examine Spend)
   const state = location.state as { examineExpenseId?: string } | null
@@ -1303,6 +1314,38 @@ export function BudgetPage() {
           ) : null}
         </SheetContent>
       </Sheet>
+
+      <SectionTutorialPanel
+        open={tutorialOpen}
+        onOpenChange={(open) => {
+          setTutorialOpen(open)
+          if (!open) {
+            updateProgress((prev) => ({
+              ...prev,
+              currentSection: prev.currentSection === 'budget' ? null : prev.currentSection,
+              sections: {
+                ...prev.sections,
+                budget: prev.sections.budget === 'not_started' ? 'in_progress' : prev.sections.budget,
+              },
+            }))
+          }
+        }}
+        sectionId="budget"
+        sectionTitle="Budget"
+        steps={budgetTutorialSteps}
+        progress={progress}
+        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
+        onCompleteSection={() => {
+          updateProgress((prev) => ({
+            ...prev,
+            currentSection: prev.currentSection === 'budget' ? null : prev.currentSection,
+            sections: {
+              ...prev.sections,
+              budget: 'complete',
+            },
+          }))
+        }}
+      />
     </div>
   )
 }

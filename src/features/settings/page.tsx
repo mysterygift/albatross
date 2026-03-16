@@ -65,6 +65,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown, Users } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   ensureDemoData,
   resetDemoData,
@@ -83,6 +84,7 @@ import type { BudgetAccount } from '@/lib/db/types'
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 
 export function SettingsPage() {
+  const navigate = useNavigate()
   const { currentProductionId, setCurrentProductionId, refetchProductions } = useCurrentProduction()
   const {
     displayCurrency,
@@ -103,6 +105,7 @@ export function SettingsPage() {
   const [colorToast, setColorToast] = useState<string | null>(null)
   const [settingsTab, setSettingsTab] = useState<'budget' | 'people' | 'developer_tools'>('budget')
   const queryClient = useQueryClient()
+  const [tutorialToast, setTutorialToast] = useState<string | null>(null)
 
   const toggleAccountExpanded = useCallback((accountId: string) => {
     setExpandedAccountIds((prev) => {
@@ -264,6 +267,12 @@ export function SettingsPage() {
     const t = setTimeout(() => setColorToast(null), 3000)
     return () => clearTimeout(t)
   }, [colorToast])
+
+  useEffect(() => {
+    if (!tutorialToast) return
+    const t = setTimeout(() => setTutorialToast(null), 3200)
+    return () => clearTimeout(t)
+  }, [tutorialToast])
 
   const accountTree = buildAccountTree(accounts)
 
@@ -457,6 +466,42 @@ export function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="developer_tools" className="space-y-5 mt-5 outline-none">
+      <Card>
+        <CardHeader>
+          <CardTitle>Onboarding tutorial</CardTitle>
+          <CardDescription>
+            Reopen the tutorial hub at any time, or reset tutorial progress. This does not affect demo production data.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              navigate('/settings', { state: { openTutorialHome: true } })
+            }}
+          >
+            Open Tutorial Home
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              if (!window.confirm('Reset tutorial progress?')) return
+              navigate('/settings', { state: { openTutorialHome: true, resetTutorial: true } })
+              setTutorialToast('Tutorial progress reset.')
+            }}
+          >
+            Reset tutorial progress
+          </Button>
+          {tutorialToast && (
+            <p className="w-full text-sm text-muted-foreground rounded-md border border-border bg-card px-3 py-2">
+              {tutorialToast}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Data location</CardTitle>

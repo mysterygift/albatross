@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
 import { TopBar } from '@/components/top-bar'
@@ -8,11 +8,15 @@ import { getSetting } from '@/lib/db/repositories/settings'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { TutorialHome } from '@/features/tutorial/TutorialHome'
+import { TUTORIAL_SECTION_IDS } from '@/features/tutorial/tutorialSections'
 
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 
 export function AppLayout() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [tutorialOpen, setTutorialOpen] = useState(false)
+  const [completionToast, setCompletionToast] = useState<string | null>(null)
   const {
     isLoading: tutorialLoading,
     showFirstLaunchTutorial,
@@ -21,6 +25,26 @@ export function AppLayout() {
     progress,
     updateProgress,
   } = useFirstLaunchTutorial()
+
+  const allComplete = useMemo(() => {
+    if (!progress) return false
+    return TUTORIAL_SECTION_IDS.every((id) => progress.sections[id] === 'complete')
+  }, [progress])
+
+  const prevAllCompleteRef = useRef<boolean>(false)
+  useEffect(() => {
+    const prev = prevAllCompleteRef.current
+    prevAllCompleteRef.current = allComplete
+    if (!prev && allComplete) {
+      setCompletionToast('All core tutorial sections completed.')
+    }
+  }, [allComplete])
+
+  useEffect(() => {
+    if (!completionToast) return
+    const t = setTimeout(() => setCompletionToast(null), 3200)
+    return () => clearTimeout(t)
+  }, [completionToast])
 
   useEffect(() => {
     if (!import.meta.env.DEV) return
@@ -36,10 +60,18 @@ export function AppLayout() {
   }, [tutorialLoading, showFirstLaunchTutorial])
 
   const handleOpenTutorialFromHelp = () => {
-    // Reset progress so the tutorial hub makes sense when opened from the help button.
-    resetFirstLaunchTutorial()
     setTutorialOpen(true)
   }
+
+  useEffect(() => {
+    const state = location.state as { openTutorialHome?: boolean; resetTutorial?: boolean } | null
+    if (!state?.openTutorialHome) return
+    if (state.resetTutorial) {
+      resetFirstLaunchTutorial()
+    }
+    setTutorialOpen(true)
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [location.pathname, location.state, navigate, resetFirstLaunchTutorial])
 
   return (
     <SidebarProvider>
@@ -57,7 +89,19 @@ export function AppLayout() {
         progress={progress}
         onProgressChange={updateProgress}
         onSkip={completeFirstLaunchTutorial}
+        onReset={() => {
+          resetFirstLaunchTutorial()
+          setTutorialOpen(true)
+        }}
       />
+      {completionToast && (
+        <div
+          role="status"
+          className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground shadow-lg"
+        >
+          {completionToast}
+        </div>
+      )}
     </SidebarProvider>
   )
 }

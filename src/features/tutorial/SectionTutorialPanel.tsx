@@ -75,8 +75,11 @@ export function SectionTutorialPanel({
   const stepLabel = `${clampedIndex + 1} of ${totalSteps}`
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md border-zinc-700 bg-zinc-900 text-foreground shadow-2xl sm:top-6 sm:translate-y-0">
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
+      <DialogContent
+        showOverlay={false}
+        className="max-w-md border-zinc-700 bg-zinc-900 text-foreground shadow-2xl sm:top-6 sm:translate-y-0"
+      >
         <DialogHeader className="space-y-1">
           <DialogTitle className="text-sm font-semibold flex items-center gap-2">
             <span className="inline-flex items-center gap-1 rounded-full bg-zinc-800 px-2 py-0.5 text-[11px] text-mint-300">

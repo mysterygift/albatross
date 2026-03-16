@@ -4,6 +4,9 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
+import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
+import { crewTutorialSteps } from '@/features/tutorial/sections/crewTutorial'
 import { listCrew, createPerson, updatePerson } from '@/lib/db/repositories/person'
 import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import {
@@ -99,6 +102,7 @@ const defaultHierarchy = getDefaultCrewHierarchyConfig()
 export function CrewManagerPage() {
   const { currentProductionId } = useCurrentProduction()
   const queryClient = useQueryClient()
+  const { progress, updateProgress } = useFirstLaunchTutorial()
   const [search, setSearch] = useState('')
   const [departmentFilter, setDepartmentFilter] = useState<DepartmentFilter>('all')
   const [hodFilter, setHodFilter] = useState<HodFilter>('all')
@@ -107,6 +111,13 @@ export function CrewManagerPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const hasAutoOpenedWizardRef = useRef(false)
+  const [tutorialOpen, setTutorialOpen] = useState(false)
+
+  useEffect(() => {
+    if (progress?.currentSection === 'crew') {
+      setTutorialOpen(true)
+    }
+  }, [progress?.currentSection])
 
   const { data: hierarchyData } = useQuery({
     queryKey: ['crew-hierarchy', currentProductionId],
@@ -297,7 +308,7 @@ export function CrewManagerPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Crew Manager</h1>
@@ -627,6 +638,38 @@ export function CrewManagerPage() {
         onOpenChange={setWizardOpen}
         onCreateCrew={async (values) => {
           await createMutation.mutateAsync(values)
+        }}
+      />
+
+      <SectionTutorialPanel
+        open={tutorialOpen}
+        onOpenChange={(open) => {
+          setTutorialOpen(open)
+          if (!open) {
+            updateProgress((prev) => ({
+              ...prev,
+              currentSection: prev.currentSection === 'crew' ? null : prev.currentSection,
+              sections: {
+                ...prev.sections,
+                crew: prev.sections.crew === 'not_started' ? 'in_progress' : prev.sections.crew,
+              },
+            }))
+          }
+        }}
+        sectionId="crew"
+        sectionTitle="Crew Management"
+        steps={crewTutorialSteps}
+        progress={progress}
+        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
+        onCompleteSection={() => {
+          updateProgress((prev) => ({
+            ...prev,
+            currentSection: prev.currentSection === 'crew' ? null : prev.currentSection,
+            sections: {
+              ...prev.sections,
+              crew: 'complete',
+            },
+          }))
         }}
       />
     </div>

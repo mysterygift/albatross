@@ -7,6 +7,8 @@ import {
   type FirstLaunchTutorialProgress,
 } from '@/features/tutorial/progress'
 
+const TUTORIAL_PROGRESS_EVENT = 'first_launch_tutorial_progress_changed'
+
 type FirstLaunchTutorialState = {
   isLoading: boolean
   showFirstLaunchTutorial: boolean
@@ -53,19 +55,31 @@ export function useFirstLaunchTutorial(): FirstLaunchTutorialState {
     }
   }, [])
 
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      const custom = ev as CustomEvent<FirstLaunchTutorialProgress>
+      const next = custom.detail
+      if (!next) return
+      setProgress(next)
+    }
+    window.addEventListener(TUTORIAL_PROGRESS_EVENT, handler as EventListener)
+    return () => window.removeEventListener(TUTORIAL_PROGRESS_EVENT, handler as EventListener)
+  }, [])
+
   const completeFirstLaunchTutorial = useCallback(() => {
     setShowFirstLaunchTutorial(false)
     setProgress((prev) => {
       const base = prev ?? getDefaultTutorialProgress()
       const updated: FirstLaunchTutorialProgress = {
         ...base,
+        // User dismissed the tutorial hub; do not mutate section completion.
         dismissed: true,
-        sections: Object.fromEntries(
-          Object.entries(base.sections).map(([key]) => [key, 'complete']),
-        ) as FirstLaunchTutorialProgress['sections'],
+        seenIntro: true,
+        currentSection: null,
       }
       void setFirstLaunchTutorialProgress(updated)
       void setFirstLaunchTutorialSeen(true)
+      window.dispatchEvent(new CustomEvent(TUTORIAL_PROGRESS_EVENT, { detail: updated }))
       return updated
     })
   }, [])
@@ -76,6 +90,7 @@ export function useFirstLaunchTutorial(): FirstLaunchTutorialState {
     setShowFirstLaunchTutorial(true)
     void setFirstLaunchTutorialProgress(reset)
     void setFirstLaunchTutorialSeen(false)
+    window.dispatchEvent(new CustomEvent(TUTORIAL_PROGRESS_EVENT, { detail: reset }))
   }, [])
 
   const updateProgress = useCallback(
@@ -84,6 +99,7 @@ export function useFirstLaunchTutorial(): FirstLaunchTutorialState {
         const base = prev ?? getDefaultTutorialProgress()
         const updated = updater(base)
         void setFirstLaunchTutorialProgress(updated)
+        window.dispatchEvent(new CustomEvent(TUTORIAL_PROGRESS_EVENT, { detail: updated }))
         return updated
       })
     },
