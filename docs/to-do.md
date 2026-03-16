@@ -31,9 +31,9 @@ CALL SHEET
 
 SCHEDULE
 ~~1. Add ability to create scenes in the shot list page.~~
-2. Add ability to edit scenes, with a modal window triggered by a button. Should only be visible if a scene is selected.
+~~2. Add ability to edit scenes, with a modal window triggered by a button. Should only be visible if a scene is selected.~~
 ~~3. Add ability to ADD shots to a scene.~~
-4. Add ability to create a shoot day in the STRIPBOARD. A shoot day is initially empty with just the main unit as default. A second unit can be added if needed.
+~~4. Add ability to create a shoot day in the STRIPBOARD. A shoot day is initially empty with just the main unit as default. A second unit can be added if needed.~~
 5. The script parser should look for taglines "INT./EXT. – LOCATIONAME – TIMEOFDAY" and there must be copy informing the user that this is expected formatting. Currently the parser does detect some of this but the logic is not correctly extracting the location name (AD to check regex).
 6. DooD UI Cleanup
 7. Beat Sheet: For simpler projects, create a simple script outlining -what we see- and -what we hear-. Works great for live productions, or simplified projects where you just want to jot your ideas down.

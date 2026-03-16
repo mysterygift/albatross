@@ -7,6 +7,7 @@ import {
 } from '../outbox'
 import type { ShootDay, Scene, Shot, StripboardItem } from '../types'
 import { getShootDayUnitById, listShootDayUnitsByShootDay } from './shoot-day-units'
+import { ensureMainUnit } from './units'
 
 const DAY_TABLE = 'shoot_days'
 const SDU_TABLE = 'shoot_day_units'
@@ -306,6 +307,71 @@ export async function moveShootDayToDate(
   })
   if (result.success) await resequenceShootDays(day.production_id)
   return result
+}
+
+/**
+ * Create a new shoot day for the given production and attach a default Main Unit.
+ * No strips are created. Returns the created shoot day plus identifiers needed by callers.
+ */
+export async function createShootDayWithDefaultMainUnit(args: {
+  productionId: string
+  shootDate: string
+}): Promise<{ shootDay: ShootDay; mainUnitId: string; shootDayUnitId: string }> {
+  const { productionId, shootDate } = args
+  if (!productionId) throw new Error('productionId is required')
+  if (!shootDate) throw new Error('shootDate is required')
+
+  // Ensure Main Unit exists for this production (may create it if missing).
+  const mainUnit = await ensureMainUnit(productionId)
+
+  const shootDayId = uuid()
+  const shootDayUnitId = uuid()
+  const ts = now()
+
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+      { sql: 'BEGIN', bindValues: [] },
+      {
+        sql: `INSERT INTO ${DAY_TABLE} (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        bindValues: [shootDayId, productionId, shootDate, null, null, null, null, ts, ts],
+      },
+      outboxStatementForRow({
+        entity: DAY_TABLE,
+        entityId: shootDayId,
+        operation: 'create',
+        payloadJson: JSON.stringify({
+          production_id: productionId,
+          shoot_date: shootDate,
+          day_number: null,
+          call_time: null,
+          notes: null,
+          weather_manual: null,
+          id: shootDayId,
+        }),
+      }),
+      {
+        sql: `INSERT INTO ${SDU_TABLE} (id, shoot_day_id, unit_id, is_locked, created_at, updated_at)
+             VALUES ($1, $2, $3, 0, $4, $5)`,
+        bindValues: [shootDayUnitId, shootDayId, mainUnit.id, ts, ts],
+      },
+      outboxStatementForRow({
+        entity: SDU_TABLE,
+        entityId: shootDayUnitId,
+        operation: 'create',
+        payloadJson: JSON.stringify({ shoot_day_id: shootDayId, unit_id: mainUnit.id }),
+      }),
+      { sql: 'COMMIT', bindValues: [] },
+    ]
+    await executeBatch(db, statements)
+  })
+
+  await resequenceShootDays(productionId)
+  const shootDay = await getShootDayById(shootDayId)
+  if (!shootDay) throw new Error('Shoot day not found after create')
+
+  return { shootDay, mainUnitId: mainUnit.id, shootDayUnitId }
 }
 
 export type MoveShootDayUnitResult =
