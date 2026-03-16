@@ -50,6 +50,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { CallSheetDistributionDialog, type CallSheetRecipient } from '@/features/call-sheets/CallSheetDistributionDialog'
+import { exportDistributedCallSheets } from '@/features/call-sheets/exportDistributedCallSheets'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
@@ -68,6 +70,12 @@ export function CallSheetsPage() {
   const [weatherFallbackMessage, setWeatherFallbackMessage] = useState<string | null>(null)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [numPages, setNumPages] = useState<number | null>(null)
+  const [distributionOpen, setDistributionOpen] = useState(false)
+  const [distributionStatus, setDistributionStatus] = useState<{
+    loading: boolean
+    message: string | null
+    error: string | null
+  }>({ loading: false, message: null, error: null })
 
   const { data: production } = useQuery({
     queryKey: ['production', currentProductionId],
@@ -318,6 +326,38 @@ export function CallSheetsPage() {
     crew,
     locationsForDay,
   ])
+
+  const distributionContext = useMemo(() => {
+    if (!buildCallSheetData) return null
+    return {
+      productionName: buildCallSheetData.productionName,
+      shootDate: buildCallSheetData.shootDate,
+      unitName: buildCallSheetData.unitName,
+      dayNumber: buildCallSheetData.dayNumber,
+    }
+  }, [buildCallSheetData])
+
+  const distributionRecipients: CallSheetRecipient[] = useMemo(() => {
+    if (!buildCallSheetData) return []
+    const castRecipients: CallSheetRecipient[] = (castResult.castRows ?? []).map((row) => ({
+      id: `cast-${row.person_id}`,
+      fullName: row.name,
+      type: 'cast',
+    }))
+    const crewRecipients: CallSheetRecipient[] = crewGroupsForPreview.flatMap((group) =>
+      group.rows.map((row) => ({
+        id: `crew-${row.person_id}`,
+        fullName: row.name,
+        type: 'crew' as const,
+      })),
+    )
+    // Deduplicate by id in case the same person appears multiple times defensively.
+    const map = new Map<string, CallSheetRecipient>()
+    for (const r of [...castRecipients, ...crewRecipients]) {
+      if (!map.has(r.id)) map.set(r.id, r)
+    }
+    return Array.from(map.values())
+  }, [buildCallSheetData, castResult.castRows, crewGroupsForPreview])
 
   const generateMutation = useMutation({
     mutationFn: async (options: {
@@ -597,6 +637,16 @@ export function CallSheetsPage() {
               >
                 Save & Open
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDistributionStatus({ loading: false, message: null, error: null })
+                  setDistributionOpen(true)
+                }}
+                disabled={!buildCallSheetData}
+              >
+                Distribute Call Sheets
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -625,6 +675,55 @@ export function CallSheetsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <CallSheetDistributionDialog
+        open={distributionOpen}
+        onOpenChange={setDistributionOpen}
+        context={distributionContext}
+        recipients={distributionRecipients}
+        loading={distributionStatus.loading}
+        statusMessage={distributionStatus.message}
+        error={distributionStatus.error}
+        onGenerateSelected={async (selected) => {
+          if (!buildCallSheetData) return
+          setDistributionStatus({ loading: true, message: null, error: null })
+          try {
+            const result = await exportDistributedCallSheets({
+              baseData: buildCallSheetData,
+              recipients: selected,
+              onProgress: (current, total) => {
+                setDistributionStatus((prev) => ({
+                  ...prev,
+                  message: `Generating ${current} of ${total} personalised call sheets…`,
+                }))
+              },
+            })
+            if (result && result.written > 0) {
+              const pathLine = result.directoryPath
+                ? `\nSaved to: ${result.directoryPath}`
+                : ''
+              setDistributionStatus({
+                loading: false,
+                message: `Generated ${result.written} personalised call sheet${result.written === 1 ? '' : 's'}.${pathLine}`,
+                error: null,
+              })
+              setDistributionOpen(false)
+            } else {
+              setDistributionStatus({
+                loading: false,
+                message: 'Export cancelled.',
+                error: null,
+              })
+            }
+          } catch (e) {
+            setDistributionStatus({
+              loading: false,
+              message: null,
+              error: (e as Error)?.message ?? 'Failed to generate personalised call sheets.',
+            })
+          }
+        }}
+      />
     </div>
   )
 }
