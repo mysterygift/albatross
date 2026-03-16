@@ -389,6 +389,7 @@ export function CastManagerPage() {
         progress={progress}
         updateProgress={(updater) => updateProgress((prev) => updater(prev))}
         onCompleteSection={() => {
+          setTutorialOpen(false)
           updateProgress((prev) => ({
             ...prev,
             currentSection: prev.currentSection === 'cast' ? null : prev.currentSection,

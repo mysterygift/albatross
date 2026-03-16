@@ -63,7 +63,6 @@ export function SectionTutorialPanel({
 
   const handleComplete = () => {
     onCompleteSection()
-    onOpenChange(false)
   }
 
   const handleContinueLater = () => {

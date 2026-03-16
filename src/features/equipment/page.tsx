@@ -633,6 +633,7 @@ export function EquipmentPage() {
         progress={progress}
         updateProgress={(updater) => updateProgress((prev) => updater(prev))}
         onCompleteSection={() => {
+          setTutorialOpen(false)
           updateProgress((prev) => ({
             ...prev,
             currentSection: prev.currentSection === 'equipment' ? null : prev.currentSection,

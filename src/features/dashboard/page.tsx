@@ -1044,6 +1044,7 @@ export function DashboardPage() {
         progress={progress}
         updateProgress={(updater) => updateProgress((prev) => updater(prev))}
         onCompleteSection={() => {
+          setTutorialOpen(false)
           updateProgress((prev) => ({
             ...prev,
             currentSection: prev.currentSection === 'dashboard' ? null : prev.currentSection,
