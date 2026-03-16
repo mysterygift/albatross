@@ -73,7 +73,7 @@ import {
   verifyCascades,
 } from '@/lib/db/seed/demoProductionSeed'
 import { getProductionBySlug } from '@/lib/db/repositories/production'
-import { getSetting, setSetting } from '@/lib/db/repositories/settings'
+import { getSetting, setSetting, FIRST_LAUNCH_TUTORIAL_SEEN_KEY, setFirstLaunchTutorialSeen } from '@/lib/db/repositories/settings'
 import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { getRate } from '@/lib/money/exchangeRates'
@@ -597,6 +597,17 @@ export function SettingsPage() {
                 }}
               >
                 Test Currency Conversion (Demo)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await setFirstLaunchTutorialSeen(false)
+                  queryClient.invalidateQueries({ queryKey: ['settings', FIRST_LAUNCH_TUTORIAL_SEEN_KEY] })
+                  // The tutorial will appear on next app load when AppLayout reads the setting.
+                }}
+              >
+                Trigger First-Launch Tutorial on Next Load
               </Button>
             </div>
             {cascadeResult && (

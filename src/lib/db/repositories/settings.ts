@@ -7,6 +7,25 @@ const DEFAULTS: Record<string, string> = {
   enable_currency_conversion_api: 'false',
 }
 
+export const FIRST_LAUNCH_TUTORIAL_SEEN_KEY = 'first_launch_tutorial_seen'
+
+export async function getFirstLaunchTutorialSeen(): Promise<boolean> {
+  try {
+    const value = await getSetting(FIRST_LAUNCH_TUTORIAL_SEEN_KEY)
+    if (value === null) return false
+    return value === 'true'
+  } catch {
+    return false
+  }
+}
+
+export async function setFirstLaunchTutorialSeen(seen: boolean): Promise<void> {
+  try {
+    await setSetting(FIRST_LAUNCH_TUTORIAL_SEEN_KEY, seen ? 'true' : 'false')
+  } catch {
+  }
+}
+
 export async function getSetting(key: string): Promise<string | null> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
