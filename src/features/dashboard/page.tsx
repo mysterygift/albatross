@@ -927,7 +927,7 @@ export function DashboardPage() {
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>No production selected</AlertTitle>
           <AlertDescription>
-            Choose a production from the top bar or create one in Productions.
+            No production open – please select one from the Productions page.
           </AlertDescription>
         </Alert>
       )}
