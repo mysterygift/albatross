@@ -8,7 +8,7 @@ TO–DO
 9. Source alpha testers & collate feedback.
 10. PDF EXPORTS LAYOUT CLEANUP
 
-EQUIPMENT
+~~EQUIPMENT~~
 ~~1. Order Forms in from relevant crew (e.g. Best Boy Electric)~~
 ~~2. Inventory of booked equipment, when is it coming in and when is it going.~~
 ~~3. Inventories should generally match how they're written on their invoice.~~
