@@ -49,6 +49,7 @@ import type { StripboardStrip, StripType } from '@/lib/db/types'
 import { createShootDayWithDefaultMainUnit } from '@/lib/db/repositories/schedule'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import type { ShotWithScene } from '@/lib/db/repositories/stripboard-strips'
+import { SmartSchedulingInsightsPanel } from './smart-scheduling-insights-panel'
 
 const STRIP_TYPES: { type: StripType; label: string }[] = [
   { type: 'MOVE', label: 'Move / Setup' },
@@ -227,6 +228,8 @@ export function StripboardPage() {
     reorderStripMutation,
     createStripMutation,
     createShotStripMutation,
+    isInsightsDataLoading,
+    castPersonIdsByShotId,
   } = stripboard
 
   const mainUnit = units.find((u) => u.name === 'Main Unit') ?? units[0]
@@ -585,6 +588,16 @@ export function StripboardPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <SmartSchedulingInsightsPanel
+        strips={strips}
+        shots={shots}
+        scenes={scenes}
+        shootDays={shootDays}
+        locations={locations}
+        castPersonIdsByShotId={castPersonIdsByShotId}
+        isLoading={isInsightsDataLoading}
+      />
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex flex-1 gap-4 min-h-0 overflow-hidden">

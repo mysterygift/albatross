@@ -37,11 +37,10 @@ SCHEDULE
 ~~4. Add ability to create a shoot day in the STRIPBOARD. A shoot day is initially empty with just the main unit as default. A second unit can be added if needed.~~
 5. The script parser should look for taglines "INT./EXT. – LOCATIONAME – TIMEOFDAY" and there must be copy informing the user that this is expected formatting. Currently the parser does detect some of this but the logic is not correctly extracting the location name (AD to check regex).
 6. DooD UI Cleanup
-7. Beat Sheet: For simpler projects, create a simple script outlining -what we see- and -what we hear-. Works great for live productions, or simplified projects where you just want to jot your ideas down.
-8. Generate script sides, to be shared alongside call sheet.
-9. Movement orders?
-10. Currently no way to add shots to the shot list.
-11. Cleanup: a – remove generate call sheet from calendar view, b – ask if user is sure they want to delete a locaiton
+7. Generate script sides, to be shared alongside call sheet.
+8. Movement orders?
+9. Currently no way to add shots to the shot list.
+10. Cleanup: a – remove generate call sheet from calendar view, b – ask if user is sure they want to delete a locaiton
 
 
 NICE TO HAVES:

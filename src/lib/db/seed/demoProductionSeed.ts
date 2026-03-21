@@ -177,16 +177,16 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
       { sql: `DELETE FROM productions WHERE id = $1`, bindValues: [VERIFY_PID] },
     ]
     await executeBatch(db, statements)
-    const remaining: string[] = []
-    const prodRows = await db.select<Record<string, unknown>[]>(`SELECT id FROM productions WHERE id = $1`, [VERIFY_PID])
-    if (prodRows.length > 0) remaining.push('productions')
-    for (const table of tablesWithProductionId) {
-      const rows = await db.select<Record<string, unknown>[]>(
-        `SELECT 1 FROM ${table} WHERE production_id = $1 LIMIT 1`,
-        [VERIFY_PID]
-      )
-      if (rows.length > 0) remaining.push(table)
-    }
+    // Single round-trip; SQLite forbids LIMIT on each arm of UNION ALL — use EXISTS instead.
+    const unionSql = [
+      `SELECT 'productions' AS t WHERE EXISTS (SELECT 1 FROM productions WHERE id = $1)`,
+      ...tablesWithProductionId.map(
+        (table) =>
+          `SELECT '${table}' AS t WHERE EXISTS (SELECT 1 FROM ${table} WHERE production_id = $1)`
+      ),
+    ].join(' UNION ALL ')
+    const orphanRows = await db.select<{ t: string }[]>(unionSql, [VERIFY_PID])
+    const remaining = orphanRows.map((r) => r.t)
     if (remaining.length > 0) {
       return {
         ok: false,

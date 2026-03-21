@@ -74,9 +74,6 @@ export async function fetchForecastForDate(
   const times = data.daily?.time
   if (!times?.length) return null
   const idx = times.indexOf(dateStr)
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'openMeteo.ts:fetchForecastForDate',message:'date index',data:{dateStr,firstTime:times?.[0],lastTime:times?.[times.length-1],idx,timesLength:times?.length},hypothesisId:'H3-H4',timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   if (idx === -1) return null
   return {
     weatherCode: data.daily?.weathercode?.[idx] ?? 0,
@@ -179,16 +176,10 @@ export async function getWeatherSummaryForCallSheet(
   locationQuery: string,
   shootDate: string
 ): Promise<string | null> {
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'openMeteo.ts:getWeatherSummaryForCallSheet',message:'entry',data:{locationQuery:locationQuery?.slice(0,80),shootDate,hasQuery:!!locationQuery?.trim(),hasDate:!!shootDate},hypothesisId:'H1',timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   if (!locationQuery?.trim() || !shootDate) return null
   const geocodeQuery = geocodeRelevantPart(locationQuery)
   if (!geocodeQuery) return null
   const geo = await geocodeWithFallbacks(geocodeQuery)
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'openMeteo.ts:after geocode',message:'geocode result',data:{hasGeo:!!geo,lat:geo?.latitude,lon:geo?.longitude},hypothesisId:'H2',timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   if (!geo) return null
   const day = await fetchForecastForDate(
     geo.latitude,
@@ -196,9 +187,6 @@ export async function getWeatherSummaryForCallSheet(
     geo.timezone,
     shootDate
   )
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'openMeteo.ts:after fetchForecast',message:'forecast result',data:{hasDay:!!day},hypothesisId:'H3-H4',timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   if (!day) return null
   return buildWeatherSummary(day)
 }

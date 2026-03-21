@@ -1,12 +1,15 @@
-import { useState, useRef, useCallback, useMemo } from 'react'
- import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import {
   listScenesByProduction,
   listShotsByScene,
   createScene,
+  createShot,
+  deleteShot,
   updateScene,
   updateShot,
+  type CreateShotInput,
 } from '@/lib/db/repositories/schedule'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { listSceneCastByScene, addSceneCast, removeSceneCast } from '@/lib/db/repositories/scene-cast'
@@ -62,9 +65,13 @@ import {
 } from '@/components/ui/dialog'
 import { Pencil, Check, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Checkbox } from '@/components/ui/checkbox'
 
 /** Sentinel for "no selection" in Select; Radix forbids SelectItem value="". */
 const SELECT_NONE = '__none__'
+
+/** Aligns with `duration-200` on shared `DialogContent` so payload/form reset runs after exit animation. */
+const SCHEDULE_DIALOG_EXIT_MS = 200
 import {
   parseEstMinutes,
   parseDurationMmSs,
@@ -86,7 +93,17 @@ function formatDuration(sec: number | null): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+function shotLabelForDeleteConfirm(shot: Shot): string | null {
+  const s =
+    shot.shot_description?.trim() ||
+    shot.subject?.trim() ||
+    shot.description?.trim() ||
+    null
+  return s
+}
+
 type EditableField =
+  | 'shot_number'
   | 'subject'
   | 'shot_description'
   | 'shot_size'
@@ -96,6 +113,116 @@ type EditableField =
   | 'lens'
   | 'support'
   | 'notes'
+
+/** Add shot modal form; maps to `createShot` / `Shot` — no `location_id` on shots. */
+type AddShotModalForm = {
+  shot_number: string
+  description: string
+  shot_description: string
+  subject: string
+  action_description: string
+  shot_size: Shot['shot_size'] | null
+  support: string
+  lens: string
+  duration_mm_ss: string
+  estimated_shoot_minutes: string
+  camera_movement: Shot['camera_movement'] | null
+  notes: string
+  /** Person ids for `createShot` `person_ids` (normalized `shot_cast`). */
+  cast_person_ids: string[]
+}
+
+function createEmptyAddShotForm(): AddShotModalForm {
+  return {
+    shot_number: '',
+    description: '',
+    shot_description: '',
+    subject: '',
+    action_description: '',
+    shot_size: null,
+    support: '',
+    lens: '',
+    duration_mm_ss: '',
+    estimated_shoot_minutes: '',
+    camera_movement: null,
+    notes: '',
+    cast_person_ids: [],
+  }
+}
+
+function trimOrNull(s: string): string | null {
+  const t = s.trim()
+  return t === '' ? null : t
+}
+
+/** Precondition: `shot_number` trimmed non-empty; duration/est. fields valid when non-empty. */
+function buildCreateShotInput(sceneId: string, form: AddShotModalForm): CreateShotInput {
+  const durationTrim = form.duration_mm_ss.trim()
+  const estTrim = form.estimated_shoot_minutes.trim()
+  const duration_seconds =
+    durationTrim === '' ? null : parseDurationMmSs(durationTrim)!
+  const estimated_shoot_minutes =
+    estTrim === '' ? null : parseEstMinutes(form.estimated_shoot_minutes)!
+  const personIds = form.cast_person_ids
+  return {
+    scene_id: sceneId,
+    shot_number: form.shot_number.trim(),
+    description: trimOrNull(form.description),
+    shot_description: trimOrNull(form.shot_description),
+    subject: trimOrNull(form.subject),
+    action_description: trimOrNull(form.action_description),
+    shot_size: form.shot_size ?? undefined,
+    support: trimOrNull(form.support),
+    lens: trimOrNull(form.lens),
+    duration_seconds,
+    estimated_shoot_minutes,
+    camera_movement: form.camera_movement ?? undefined,
+    notes: trimOrNull(form.notes),
+    ...(personIds.length > 0 ? { person_ids: personIds } : {}),
+  }
+}
+
+function messageForCreateShotError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error)
+  if (raw === 'NO_SCENE') return 'Select a scene before adding a shot.'
+  if (raw === 'SHOT_NUMBER_REQUIRED') return 'Shot number is required.'
+  if (raw === 'DURATION_INVALID') return 'Duration must be 0 or greater (use m:ss).'
+  if (raw === 'EST_INVALID') return 'Est. minutes must be 0 or greater.'
+  if (raw === 'scene_id is required') return 'Select a scene before adding a shot.'
+  if (raw === 'shot_number is required') return 'Shot number is required.'
+  if (raw.includes('already exists in this scene')) {
+    return `A shot with this number already exists in this scene.`
+  }
+  if (raw === 'Scene not found or deleted') {
+    return 'Scene not found or was removed. Select another scene.'
+  }
+  if (
+    /^Person .+ not found or deleted:/.test(raw) ||
+    /does not belong to this production/.test(raw) ||
+    /is not cast \(is_cast\)/.test(raw)
+  ) {
+    return raw
+  }
+  if (/UNIQUE|constraint|SQLITE_CONSTRAINT/i.test(raw)) {
+    return 'Could not create shot. Please try again.'
+  }
+  return 'Could not create shot. Please try again.'
+}
+
+function messageForUpdateShotError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error)
+  if (raw === 'shot_number is required') return 'Shot number is required.'
+  if (raw.includes('already exists in this scene')) {
+    return 'A shot with this number already exists in this scene.'
+  }
+  if (raw === 'Shot not found or deleted') {
+    return 'Could not update shot. Please try again.'
+  }
+  if (/UNIQUE|constraint|SQLITE_CONSTRAINT/i.test(raw)) {
+    return 'Could not update shot. Please try again.'
+  }
+  return 'Could not update shot. Please try again.'
+}
 
 export function ShotListPage() {
   const queryClient = useQueryClient()
@@ -123,6 +250,77 @@ export function ShotListPage() {
   const [editSceneIntExt, setEditSceneIntExt] = useState<Scene['int_ext'] | null>(null)
   const [editSceneDayNight, setEditSceneDayNight] = useState<Scene['day_night'] | null>(null)
   const [editSceneLocationId, setEditSceneLocationId] = useState<string | null>(null)
+  const [addShotOpen, setAddShotOpen] = useState(false)
+  const [addShotForm, setAddShotForm] = useState<AddShotModalForm>(() => createEmptyAddShotForm())
+  const [addShotError, setAddShotError] = useState<string | null>(null)
+  const addShotDialogResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteShotTarget, setDeleteShotTarget] = useState<{
+    shot: Shot
+    sceneId: string
+  } | null>(null)
+  const [deleteShotError, setDeleteShotError] = useState<string | null>(null)
+  const deleteDialogResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearAddShotDialogResetTimer = useCallback(() => {
+    if (addShotDialogResetTimerRef.current != null) {
+      clearTimeout(addShotDialogResetTimerRef.current)
+      addShotDialogResetTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleAddShotDialogReset = useCallback(() => {
+    clearAddShotDialogResetTimer()
+    addShotDialogResetTimerRef.current = setTimeout(() => {
+      addShotDialogResetTimerRef.current = null
+      setAddShotError(null)
+      setAddShotForm(createEmptyAddShotForm())
+    }, SCHEDULE_DIALOG_EXIT_MS)
+  }, [clearAddShotDialogResetTimer])
+
+  const handleAddShotDialogOpenChange = useCallback(
+    (open: boolean) => {
+      setAddShotOpen(open)
+      if (!open) {
+        scheduleAddShotDialogReset()
+      }
+    },
+    [scheduleAddShotDialogReset]
+  )
+
+  const clearDeleteDialogResetTimer = useCallback(() => {
+    if (deleteDialogResetTimerRef.current != null) {
+      clearTimeout(deleteDialogResetTimerRef.current)
+      deleteDialogResetTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleDeleteDialogReset = useCallback(() => {
+    clearDeleteDialogResetTimer()
+    deleteDialogResetTimerRef.current = setTimeout(() => {
+      deleteDialogResetTimerRef.current = null
+      setDeleteShotTarget(null)
+      setDeleteShotError(null)
+    }, SCHEDULE_DIALOG_EXIT_MS)
+  }, [clearDeleteDialogResetTimer])
+
+  const handleDeleteDialogOpenChange = useCallback(
+    (open: boolean) => {
+      setDeleteDialogOpen(open)
+      if (!open) {
+        scheduleDeleteDialogReset()
+      }
+    },
+    [scheduleDeleteDialogReset]
+  )
+
+  useEffect(() => {
+    return () => {
+      clearAddShotDialogResetTimer()
+      clearDeleteDialogResetTimer()
+    }
+  }, [clearAddShotDialogResetTimer, clearDeleteDialogResetTimer])
 
   const { data: scenes = [] } = useQuery({
     queryKey: ['scenes', currentProductionId],
@@ -340,8 +538,76 @@ export function ShotListPage() {
       queryClient.invalidateQueries({ queryKey: ['stripboard'] })
       queryClient.invalidateQueries({ queryKey: ['equipment-terms'] })
     },
+    onError: (error) => {
+      setSaveError(messageForUpdateShotError(error))
+    },
+  })
+
+  const createShotMutation = useMutation({
+    mutationFn: async (args: {
+      sceneId: string
+      form: AddShotModalForm
+      productionId: string | null
+    }) => {
+      const { sceneId, form, productionId } = args
+      if (!sceneId) throw new Error('NO_SCENE')
+
+      const trimmed = form.shot_number.trim()
+      if (!trimmed) throw new Error('SHOT_NUMBER_REQUIRED')
+
+      if (form.duration_mm_ss.trim()) {
+        const sec = parseDurationMmSs(form.duration_mm_ss.trim())
+        if (sec === null) throw new Error('DURATION_INVALID')
+      }
+      if (form.estimated_shoot_minutes.trim()) {
+        const parsed = parseEstMinutes(form.estimated_shoot_minutes)
+        if (parsed === null) throw new Error('EST_INVALID')
+      }
+
+      const lensStr = form.lens.trim()
+      const supportStr = form.support.trim()
+      if (productionId) {
+        if (lensStr) await upsertEquipmentTerm(productionId, 'LENS', lensStr)
+        if (supportStr) await upsertEquipmentTerm(productionId, 'SUPPORT', supportStr)
+      }
+
+      return createShot(buildCreateShotInput(sceneId, form))
+    },
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['shots', variables.sceneId] })
+      if (variables.form.cast_person_ids.length > 0) {
+        queryClient.invalidateQueries({ queryKey: ['scene-cast-by-scene', variables.sceneId] })
+      }
+      if (variables.productionId) {
+        if (variables.form.lens.trim()) {
+          queryClient.invalidateQueries({
+            queryKey: ['equipment-terms', variables.productionId, 'LENS'],
+          })
+        }
+        if (variables.form.support.trim()) {
+          queryClient.invalidateQueries({
+            queryKey: ['equipment-terms', variables.productionId, 'SUPPORT'],
+          })
+        }
+      }
+      handleAddShotDialogOpenChange(false)
+    },
+    onError: (error) => {
+      setAddShotError(messageForCreateShotError(error))
+    },
+  })
+
+  const deleteShotMutation = useMutation({
+    mutationFn: async (args: { shotId: string; sceneId: string }) => {
+      await deleteShot(args.shotId)
+    },
+    onSuccess: (_void, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['shots', variables.sceneId] })
+      setEditingCell((c) => (c?.shotId === variables.shotId ? null : c))
+      handleDeleteDialogOpenChange(false)
+    },
     onError: () => {
-      setSaveError("Couldn't save")
+      setDeleteShotError('Could not delete shot. Please try again.')
     },
   })
 
@@ -353,6 +619,21 @@ export function ShotListPage() {
     setSaveError(null)
     const shot = shots.find((s) => s.id === shotId)
     if (!shot) return
+
+    if (field === 'shot_number') {
+      const trimmed =
+        typeof value === 'string' ? value.trim() : String(value ?? '').trim()
+      if (!trimmed) {
+        setSaveError('Shot number is required.')
+        return
+      }
+      if (trimmed === shot.shot_number) {
+        setEditingCell(null)
+        return
+      }
+      updateShotMutation.mutate({ shotId, data: { shot_number: trimmed } })
+      return
+    }
 
     if (field === 'estimated_shoot_minutes') {
       const parsed = parseEstMinutes(typeof value === 'string' ? value : String(value ?? ''))
@@ -571,6 +852,21 @@ export function ShotListPage() {
                 </span>
               )}
               <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 border-zinc-600 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
+                onClick={() => {
+                  clearAddShotDialogResetTimer()
+                  setAddShotError(null)
+                  setAddShotForm(createEmptyAddShotForm())
+                  setAddShotOpen(true)
+                }}
+              >
+                <Plus className="size-3.5" />
+                Add shot
+              </Button>
+              <Button
                 variant={editMode ? 'default' : 'outline'}
                 size="sm"
                 className={cn(
@@ -607,12 +903,20 @@ export function ShotListPage() {
                   <TableHead className="text-zinc-100 font-medium h-11 px-3">Support</TableHead>
                   <TableHead className="text-zinc-100 font-medium h-11 px-3">Notes</TableHead>
                   <TableHead className="text-zinc-100 font-medium h-11 px-3 w-[180px]">Cast</TableHead>
+                  {editMode && (
+                    <TableHead className="text-zinc-100 font-medium h-11 px-2 w-12 text-right">
+                      <span className="sr-only">Delete shot</span>
+                    </TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {shots.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-muted-foreground text-center py-8">
+                    <TableCell
+                      colSpan={editMode ? 12 : 11}
+                      className="text-muted-foreground text-center py-8"
+                    >
                       No shots. Add shots to this scene to see them here and on the stripboard.
                     </TableCell>
                   </TableRow>
@@ -637,6 +941,20 @@ export function ShotListPage() {
                       onRemoveShotCast={removeShotCastMutation.mutate}
                       onAddCastClick={() => setAddShotCastShotId(shot.id)}
                       isRemovingShotCast={removeShotCastMutation.isPending}
+                      onRequestDelete={
+                        editMode && selectedSceneId
+                          ? (s) => {
+                              clearDeleteDialogResetTimer()
+                              setDeleteShotError(null)
+                              setDeleteShotTarget({ shot: s, sceneId: selectedSceneId })
+                              setDeleteDialogOpen(true)
+                            }
+                          : undefined
+                      }
+                      isDeletePending={
+                        deleteShotMutation.isPending &&
+                        deleteShotMutation.variables?.shotId === shot.id
+                      }
                     />
                   ))
                 )}
@@ -645,6 +963,61 @@ export function ShotListPage() {
           </div>
         </>
       )}
+
+      <Dialog open={deleteDialogOpen} onOpenChange={handleDeleteDialogOpenChange}>
+        <DialogContent className="max-w-md bg-zinc-800 border-zinc-600">
+          <h3 className="text-base font-semibold text-zinc-100">Delete shot</h3>
+          {deleteShotTarget && (
+            <>
+              <p className="text-sm text-zinc-300 mt-1">
+                Are you sure you want to delete shot{' '}
+                <span className="font-medium text-zinc-100">{deleteShotTarget.shot.shot_number}</span>
+                {' '}
+                in scene{' '}
+                {scenes.find((sc) => sc.id === deleteShotTarget.sceneId)?.scene_number ??
+                  deleteShotTarget.sceneId}
+                ?
+              </p>
+              {(() => {
+                const line = shotLabelForDeleteConfirm(deleteShotTarget.shot)
+                return line ? (
+                  <p className="text-sm text-zinc-400 mt-2 line-clamp-3">&ldquo;{line}&rdquo;</p>
+                ) : null
+              })()}
+            </>
+          )}
+          {deleteShotError && (
+            <p className="mt-2 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive" role="alert">
+              {deleteShotError}
+            </p>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => handleDeleteDialogOpenChange(false)}
+              disabled={deleteShotMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteShotMutation.isPending || !deleteShotTarget}
+              onClick={() => {
+                if (!deleteShotTarget) return
+                setDeleteShotError(null)
+                deleteShotMutation.mutate({
+                  shotId: deleteShotTarget.shot.id,
+                  sceneId: deleteShotTarget.sceneId,
+                })
+              }}
+            >
+              {deleteShotMutation.isPending ? 'Deleting…' : 'Delete shot'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {!selectedSceneId && scenes.length > 0 && (
         <p className="text-muted-foreground">Select a scene to view its shots.</p>
@@ -938,6 +1311,327 @@ export function ShotListPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={addShotOpen} onOpenChange={handleAddShotDialogOpenChange}>
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col bg-zinc-800 border-zinc-600">
+          <h3 className="text-base font-semibold text-zinc-100">Add shot</h3>
+          <p className="text-sm text-zinc-400">
+            Add a shot to scene {selectedScene?.scene_number ?? ''}. Fields match the shot list and database schema.
+          </p>
+          {addShotError && (
+            <p className="mt-2 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive" role="alert">
+              {addShotError}
+            </p>
+          )}
+          <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+            <div>
+              <Label htmlFor="add-shot-number" className="text-sm text-zinc-200">
+                Shot number<span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="add-shot-number"
+                value={addShotForm.shot_number}
+                onChange={(e) =>
+                  setAddShotForm((f) => ({ ...f, shot_number: e.target.value }))
+                }
+                placeholder="e.g. 1A"
+                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                autoFocus
+                disabled={createShotMutation.isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="add-shot-subject" className="text-sm text-zinc-200">
+                Subject
+              </Label>
+              <Input
+                id="add-shot-subject"
+                value={addShotForm.subject}
+                onChange={(e) => setAddShotForm((f) => ({ ...f, subject: e.target.value }))}
+                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                disabled={createShotMutation.isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="add-shot-description" className="text-sm text-zinc-200">
+                Description
+              </Label>
+              <Textarea
+                id="add-shot-description"
+                value={addShotForm.description}
+                onChange={(e) => setAddShotForm((f) => ({ ...f, description: e.target.value }))}
+                className="mt-1 min-h-[56px] bg-zinc-900 border-zinc-600 text-zinc-100"
+                placeholder="Optional"
+                disabled={createShotMutation.isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="add-shot-shot-description" className="text-sm text-zinc-200">
+                Shot description
+              </Label>
+              <Textarea
+                id="add-shot-shot-description"
+                value={addShotForm.shot_description}
+                onChange={(e) =>
+                  setAddShotForm((f) => ({ ...f, shot_description: e.target.value }))
+                }
+                className="mt-1 min-h-[56px] bg-zinc-900 border-zinc-600 text-zinc-100"
+                placeholder="Optional"
+                disabled={createShotMutation.isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="add-shot-action-description" className="text-sm text-zinc-200">
+                Action description
+              </Label>
+              <Textarea
+                id="add-shot-action-description"
+                value={addShotForm.action_description}
+                onChange={(e) =>
+                  setAddShotForm((f) => ({ ...f, action_description: e.target.value }))
+                }
+                className="mt-1 min-h-[56px] bg-zinc-900 border-zinc-600 text-zinc-100"
+                placeholder="Optional"
+                disabled={createShotMutation.isPending}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-sm text-zinc-200">Shot size</Label>
+                <Select
+                  value={addShotForm.shot_size ?? SELECT_NONE}
+                  onValueChange={(v) =>
+                    setAddShotForm((f) => ({
+                      ...f,
+                      shot_size: v === SELECT_NONE ? null : (v as Shot['shot_size']),
+                    }))
+                  }
+                  disabled={createShotMutation.isPending}
+                >
+                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                    <SelectItem value={SELECT_NONE}>—</SelectItem>
+                    {SHOT_SIZE_VALUES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm text-zinc-200">Movement</Label>
+                <Select
+                  value={addShotForm.camera_movement ?? SELECT_NONE}
+                  onValueChange={(v) =>
+                    setAddShotForm((f) => ({
+                      ...f,
+                      camera_movement:
+                        v === SELECT_NONE ? null : (v as Shot['camera_movement']),
+                    }))
+                  }
+                  disabled={createShotMutation.isPending}
+                >
+                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-600 max-h-[280px]">
+                    <SelectItem value={SELECT_NONE}>—</SelectItem>
+                    {CAMERA_MOVEMENT_VALUES.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="add-shot-duration" className="text-sm text-zinc-200">
+                  Duration (m:ss)
+                </Label>
+                <Input
+                  id="add-shot-duration"
+                  value={addShotForm.duration_mm_ss}
+                  onChange={(e) =>
+                    setAddShotForm((f) => ({
+                      ...f,
+                      duration_mm_ss: e.target.value.replace(/[^\d:]/g, ''),
+                    }))
+                  }
+                  placeholder="e.g. 0:30"
+                  className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                  disabled={createShotMutation.isPending}
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-shot-est-min" className="text-sm text-zinc-200">
+                  Est. minutes
+                </Label>
+                <Input
+                  id="add-shot-est-min"
+                  inputMode="numeric"
+                  value={addShotForm.estimated_shoot_minutes}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, '')
+                    if (v === '' || parseInt(v, 10) <= 9999) {
+                      setAddShotForm((f) => ({ ...f, estimated_shoot_minutes: v }))
+                    }
+                  }}
+                  placeholder="Optional"
+                  className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                  disabled={createShotMutation.isPending}
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="add-shot-lens" className="text-sm text-zinc-200">
+                Lens
+              </Label>
+              <datalist id="add-shot-lens-dl">
+                {lensTerms.map((t) => (
+                  <option key={t.id} value={t.value} />
+                ))}
+              </datalist>
+              <Input
+                id="add-shot-lens"
+                list="add-shot-lens-dl"
+                value={addShotForm.lens}
+                onChange={(e) => setAddShotForm((f) => ({ ...f, lens: e.target.value }))}
+                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                placeholder="Optional"
+                disabled={createShotMutation.isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="add-shot-support" className="text-sm text-zinc-200">
+                Support
+              </Label>
+              <datalist id="add-shot-support-dl">
+                {supportTerms.map((t) => (
+                  <option key={t.id} value={t.value} />
+                ))}
+              </datalist>
+              <Input
+                id="add-shot-support"
+                list="add-shot-support-dl"
+                value={addShotForm.support}
+                onChange={(e) => setAddShotForm((f) => ({ ...f, support: e.target.value }))}
+                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                placeholder="Optional"
+                disabled={createShotMutation.isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="add-shot-notes" className="text-sm text-zinc-200">
+                Notes
+              </Label>
+              <Textarea
+                id="add-shot-notes"
+                value={addShotForm.notes}
+                onChange={(e) => setAddShotForm((f) => ({ ...f, notes: e.target.value }))}
+                className="mt-1 min-h-[72px] bg-zinc-900 border-zinc-600 text-zinc-100"
+                placeholder="Optional"
+                disabled={createShotMutation.isPending}
+              />
+            </div>
+            <div>
+              <Label className="text-sm text-zinc-200">Cast on this shot</Label>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Choose production cast (saved as linked people, not free text).
+              </p>
+              {cast.length === 0 ? (
+                <p className="mt-2 text-sm text-zinc-500">
+                  No cast in this production. Add cast under People first.
+                </p>
+              ) : (
+                <div className="mt-2 max-h-40 space-y-2 overflow-y-auto rounded-md border border-zinc-600 bg-zinc-900/50 p-2">
+                  {cast.map((person) => (
+                    <label
+                      key={person.id}
+                      className={cn(
+                        'flex items-center gap-2 rounded px-1 py-1 text-sm text-zinc-200 hover:bg-zinc-800/80',
+                        createShotMutation.isPending ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
+                      )}
+                    >
+                      <Checkbox
+                        checked={addShotForm.cast_person_ids.includes(person.id)}
+                        disabled={createShotMutation.isPending}
+                        onCheckedChange={(checked) => {
+                          setAddShotForm((f) => {
+                            const on = checked === true
+                            const set = new Set(f.cast_person_ids)
+                            if (on) set.add(person.id)
+                            else set.delete(person.id)
+                            return { ...f, cast_person_ids: [...set] }
+                          })
+                        }}
+                      />
+                      <span>
+                        {person.name}
+                        {person.cast_number ? (
+                          <span className="ml-1.5 text-zinc-500">#{person.cast_number}</span>
+                        ) : null}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end gap-2 border-t border-zinc-700 pt-3">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => handleAddShotDialogOpenChange(false)}
+              disabled={createShotMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-emerald-600 hover:bg-emerald-700"
+              disabled={createShotMutation.isPending}
+              onClick={() => {
+                if (!selectedSceneId) {
+                  setAddShotError('Select a scene before adding a shot.')
+                  return
+                }
+                const trimmed = addShotForm.shot_number.trim()
+                if (!trimmed) {
+                  setAddShotError('Shot number is required.')
+                  return
+                }
+                if (addShotForm.duration_mm_ss.trim()) {
+                  const sec = parseDurationMmSs(addShotForm.duration_mm_ss.trim())
+                  if (sec === null) {
+                    setAddShotError('Duration must be 0 or greater (use m:ss).')
+                    return
+                  }
+                }
+                if (addShotForm.estimated_shoot_minutes.trim()) {
+                  const parsed = parseEstMinutes(addShotForm.estimated_shoot_minutes)
+                  if (parsed === null) {
+                    setAddShotError('Est. minutes must be 0 or greater.')
+                    return
+                  }
+                }
+                setAddShotError(null)
+                createShotMutation.mutate({
+                  sceneId: selectedSceneId,
+                  form: addShotForm,
+                  productionId: currentProductionId ?? null,
+                })
+              }}
+            >
+              {createShotMutation.isPending ? 'Creating…' : 'Add shot'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={addCastOpen} onOpenChange={setAddCastOpen}>
         <DialogContent className="max-h-[85vh] flex flex-col bg-zinc-800 border-zinc-600">
           <h3 className="text-base font-semibold text-zinc-100">Add cast to scene</h3>
@@ -1029,6 +1723,8 @@ function ShotRow({
   onRemoveShotCast,
   onAddCastClick,
   isRemovingShotCast,
+  onRequestDelete,
+  isDeletePending,
 }: {
   shot: Shot
   sceneNumber: string
@@ -1047,13 +1743,16 @@ function ShotRow({
   onRemoveShotCast: (shotCastId: string) => void
   onAddCastClick: () => void
   isRemovingShotCast: boolean
+  onRequestDelete?: (shot: Shot) => void
+  isDeletePending?: boolean
 }) {
   const isEditing = editingCell?.shotId === shot.id
   const editingField = isEditing ? editingCell!.field : null
 
   const startEdit = (field: EditableField) => {
     let val: string
-    if (field === 'subject') val = shot.subject ?? ''
+    if (field === 'shot_number') val = shot.shot_number
+    else if (field === 'subject') val = shot.subject ?? ''
     else if (field === 'shot_description') val = shot.shot_description ?? ''
     else if (field === 'shot_size') val = shot.shot_size ?? ''
     else if (field === 'duration_seconds')
@@ -1092,8 +1791,32 @@ function ShotRow({
 
   return (
     <TableRow>
-      <TableCell className="font-medium px-3 py-2">
-        {sceneNumber} / {shot.shot_number}
+      <TableCell
+        className={cn(
+          'font-medium px-3 py-2 align-middle',
+          editMode && 'cursor-pointer hover:bg-zinc-800/50 rounded',
+          editingField === 'shot_number' &&
+            'ring-2 ring-emerald-500/50 ring-inset rounded bg-zinc-800/30'
+        )}
+        onClick={() => editMode && !editingField && startEdit('shot_number')}
+      >
+        <span className="inline-flex items-center gap-1 flex-wrap">
+          <span className="text-muted-foreground shrink-0">{sceneNumber} /</span>
+          {editingField === 'shot_number' ? (
+            <Input
+              className="h-8 min-w-[4rem] max-w-[120px] bg-background border-zinc-600 focus-visible:ring-emerald-500/50"
+              value={localValue}
+              onChange={(e) => setLocalValue(e.target.value)}
+              onBlur={() => commitEdit(shot.id, 'shot_number', localValue)}
+              onKeyDown={(e) => handleKeyDown(e, 'shot_number', localValue)}
+              autoFocus
+              disabled={isSaving}
+              aria-label="Shot number"
+            />
+          ) : (
+            <span>{shot.shot_number}</span>
+          )}
+        </span>
       </TableCell>
 
       {/* Subject */}
@@ -1410,6 +2133,25 @@ function ShotRow({
           </Button>
         </div>
       </TableCell>
+
+      {onRequestDelete != null && (
+        <TableCell className="align-middle px-2 py-2 w-12 text-right">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-destructive hover:bg-destructive/15 hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRequestDelete(shot)
+            }}
+            disabled={isDeletePending}
+            aria-label={`Delete shot ${shot.shot_number}`}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </TableCell>
+      )}
     </TableRow>
   )
 }

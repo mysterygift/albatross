@@ -370,21 +370,12 @@ export function CallSheetsPage() {
     }) => {
       const { baseData, locationQuery, shootDate, fallbackWeather } = options
       if (!baseData || !currentProductionId || !shootDay) throw new Error('Missing data')
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'page.tsx:generateMutation',message:'weather lookup inputs',data:{locationQuery,shootDate,locationQueryLength:locationQuery?.length,fallbackWeather:!!fallbackWeather},hypothesisId:'H1-H4',timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       let weather: string | null = null
       let usedFallback = true
       try {
         weather = await getWeatherSummaryForCallSheet(locationQuery, shootDate)
         if (weather != null) usedFallback = false
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'page.tsx:after getWeatherSummary',message:'weather result',data:{weather:weather??'null',usedFallback},hypothesisId:'H2-H4',timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-      } catch (e) {
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b93f2f'},body:JSON.stringify({sessionId:'b93f2f',location:'page.tsx:catch',message:'weather lookup threw',data:{message:String((e as Error)?.message)},hypothesisId:'H5',timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
+      } catch {
         // use fallback below
       }
       const finalWeather = weather ?? fallbackWeather ?? null

@@ -84,8 +84,10 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 - **Scene selector:** Choose a scene to view its shots.
 - **New scene:** "New scene" button in the header opens a dialog to create a scene in the current production. Required: scene number. Optional: heading, title, INT/EXT, DAY/NIGHT, location. On success the scene list refreshes and the new scene is selected so you can add shots immediately.
 - **Edit scene:** When a scene is selected, "Edit scene" appears in the header. Opens a dialog pre-filled with that scene’s metadata (scene number, heading, title, INT/EXT, DAY/NIGHT, location). Save updates the scene; the list refreshes and the edited scene stays selected.
-- **Shot table:** Shot number, subject, shot description, size, duration, estimated shoot minutes, camera movement, lens, support, notes. Inline edit with save.
-- **Validation:** Estimated minutes and duration use schemas from `shot-list-validation.ts`. Scene creation/edit requires scene number; duplicate scene numbers per production show a clear error.
+- **Shot table:** Columns include scene/shot number, subject, shot description, size, duration, estimated shoot minutes, camera movement, lens, support, notes, and cast. Rows are ordered by **shot number** within the selected scene (`listShotsByScene`).
+- **Edit mode:** Use **Edit** in the toolbar to turn **Edit mode** on or off. When Edit mode is **off**, shot fields (including the shot number) are read-only. When **on**, you can inline-edit shot fields: click a cell, edit, then commit with blur, Enter, or the control’s Done action (same pattern as before). **Add shot** and **Delete shot** (per row) are available alongside Edit mode; deleting uses a confirmation dialog.
+- **Shot number (Edit mode):** In Edit mode, the **shot number** part of the first column (after the scene number) is editable like other text cells. Changing it updates only the **shot** record’s `shot_number`. It does **not** change stripboard strip order or sequencing; strips remain keyed by shot id. Empty or whitespace-only values are rejected. **Two shots in the same scene cannot share the same shot number** — the app shows a clear error and does not save if you try.
+- **Validation:** Estimated minutes and duration use schemas from `shot-list-validation.ts`. Scene creation/edit requires scene number; duplicate scene numbers per production show a clear error. New shots require a non-empty shot number and the same per-scene uniqueness rule as edits. Shot updates surface friendly errors for missing shot number, duplicate number in scene, and generic failures.
 
 ### 6. Script Import
 
@@ -168,7 +170,7 @@ src/
 - **ShootDay:** id, production_id, shoot_date (YYYY-MM-DD), day_number, call_time, wrap_time, notes, meal_times_json, etc.
 - **ShootDayUnit:** id, shoot_day_id, unit_id, is_locked. Links a unit (Main, Second) to a shoot day.
 - **Scene:** id, production_id, scene_number, heading, title, int_ext, day_night, location_id, duration_minutes, etc.
-- **Shot:** id, scene_id, shot_number, description, estimated_shoot_minutes, shot_size, camera_movement, etc.
+- **Shot:** id, scene_id, **shot_number** (unique among non-deleted shots in the same scene; enforced in `createShot` / `updateShot`), description, estimated_shoot_minutes, shot_size, camera_movement, etc.
 - **StripboardStrip:** id, production_id, shoot_day_id, shoot_day_unit_id, strip_type (SHOT|SCENE|MOVE|CALL|LUNCH|WRAP|NOTE), shot_id, scene_id, strip_status (SCHEDULED|UNSCHEDULED|BONEYARD), sort_index, estimated_minutes.
 - **Unit:** id, production_id, name (e.g. "Main Unit", "Second Unit").
 
@@ -176,14 +178,14 @@ src/
 
 - **Calendar:** [calendar.ts](src/lib/db/repositories/calendar.ts) `listCalendarShootDayEvents(productionId, dateRange)` — aggregates from shoot_days, shoot_day_units, stripboard_strips, shots. `moveShootDayToDate`, `swapShootDays` for drag.
 - **Stripboard:** `listShootDaysByProduction`, `listShootDayUnitsByProduction`, `listStripsByProduction`, `listScenesByProduction`, `listShotsByProduction`, `listUnscheduledShots`, `listBoneyardStrips`. Mutations: `createStrip`, `createShotStrip`, `moveStrip`, `moveStripToUnscheduled`, `moveStripToBoneyard`, `reorderStrip`, `bulkAssignShotsToDay`, `deleteStrip`. **`createStrip`** accepts optional **`sort_index`**; if omitted, new strips append after the current max `sort_index` for that day/unit. **`createShotStrip`** accepts an optional **`sortIndex`** argument (passed through as `sort_index`) so drag-from-unscheduled can persist insertion order to match the drop. Shoot day creation: `createShootDayWithDefaultMainUnit(productionId, shootDate)` in [schedule.ts](src/lib/db/repositories/schedule.ts) — creates one shoot day and one Main Unit shoot_day_unit in a single transaction; no strips. Stripboard invalidates `stripboardQueryKeys.all` after creation and scrolls the new day into view.
-- **Shot Lists:** `listScenesByProduction`, `listShotsByScene`, `createScene`, `updateScene`, `updateShot`. Scene create/edit use the same optional fields (heading, title, int_ext, day_night, location_id). Invalidates `['scenes', currentProductionId]` and `['scenes']`; new scene is selected after create, edited scene stays selected after update.
+- **Shot Lists:** `listScenesByProduction`, `listShotsByScene`, `createScene`, `updateScene`, `createShot`, `updateShot`, `deleteShot`. Scene create/edit use the same optional fields (heading, title, int_ext, day_night, location_id). **`createShot`** enforces a non-empty trimmed `shot_number` and rejects a duplicate `shot_number` within the same scene (application check before insert). **`updateShot`** loads the shot first; if `shot_number` is in the patch, it trims, rejects empty/whitespace, and rejects duplicates in the same scene for any **other** shot id. Invalidates `['scenes', currentProductionId]` and `['scenes']` for scene mutations; shot mutations invalidate `['shots', selectedSceneId]` (and the same related keys as other shot updates, e.g. production shots and equipment terms where applicable). New scene is selected after create, edited scene stays selected after update.
 - **Script Import:** `defaultParser.parse()`, `createScene`. Invalidates `['scenes']` and `['scenes', currentProductionId]` on create.
 
 ### 5. Query keys and invalidation
 
 - **Calendar:** `['calendar-events']`, `['shoot-days']`, `stripboardQueryKeys.all`.
 - **Stripboard:** `stripboardQueryKeys.shootDays(productionId)`, `strips(productionId)`, `scenes(productionId)`, `dayUnits(productionId)`, `units(productionId)`, `estimatedMinutes(productionId)`; `unscheduledShotsQueryKeys.list()`; `boneyardStripsQueryKeys.list(productionId)`.
-- **Shot Lists:** `['scenes', productionId]`, `['shots', selectedSceneId]` (via listShotsByScene). Scene create/edit invalidate `['scenes', productionId]` and `['scenes']`.
+- **Shot Lists:** `['scenes', productionId]`, `['shots', selectedSceneId]` (via listShotsByScene). Scene create/edit invalidate `['scenes', productionId]` and `['scenes']`. Shot create/update/delete also invalidate `['shots', selectedSceneId]`, production-level `['shots', productionId]` where used, and `['stripboard']` (same pattern as other shot field updates; changing **shot_number** does not reorder strips).
 - **Script Import:** invalidates `['scenes']` and `['scenes', productionId]` on create.
 
 ### 6. Drag and drop and transactions
