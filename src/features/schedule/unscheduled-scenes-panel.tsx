@@ -26,6 +26,10 @@ import type { Location } from '@/lib/db/types'
 import type { ShootDay } from '@/lib/db/types'
 import type { ShootDayUnit } from '@/lib/db/types'
 import type { ShotWithScene } from '@/lib/db/repositories/stripboard-strips'
+import { cn } from '@/lib/utils'
+
+/** When visible unscheduled shots exceed this count, the list area scrolls internally. */
+const UNSCHEDULED_LIST_SCROLL_THRESHOLD = 10
 
 export type UnscheduledShotsPanelProps = {
   unscheduledShots: ShotWithScene[]
@@ -136,7 +140,12 @@ export function UnscheduledShotsPanel({
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 overflow-auto min-h-0">
+      <div
+        className={cn(
+          'flex flex-1 flex-col gap-2 min-h-0',
+          unscheduledShots.length > UNSCHEDULED_LIST_SCROLL_THRESHOLD && 'max-h-[40rem] overflow-y-auto'
+        )}
+      >
         {unscheduledShots.length === 0 ? (
           <p className="text-muted-foreground text-sm py-4 text-center">No unscheduled shots.</p>
         ) : (

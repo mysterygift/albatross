@@ -72,8 +72,8 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 
 - **Layout:** Left panel (Unscheduled Shots), center (day/unit columns), right (Boneyard).
 - **New shoot day:** Header action "New shoot day" opens a lightweight dialog to enter a shoot date. Creates an empty shoot day for the current production with Main Unit by default (no Second Unit, no strips). After creation the stripboard refreshes, the new day scrolls into view, and a brief "Shoot day created." message is shown.
-- **Unscheduled Shots:** Shots not yet on the stripboard. Search, filter by location, multi-select, "Assign to Day" (shoot day + unit). Can drag shots onto a column.
-- **Day columns:** One column per (shoot_day, shoot_day_unit). Strips show scene/shot info, estimated minutes. Drag strips between columns to move or reorder. Lock toggle per unit.
+- **Unscheduled Shots:** Shots not yet on the stripboard. Search, filter by location, multi-select, "Assign to Day" (shoot day + unit). Can drag shots onto a column or **onto a specific strip**; the new shot strip is inserted **above or below** that strip depending on where you release (not only at the bottom of the column).
+- **Day columns:** One column per (shoot_day, shoot_day_unit). Strips show scene/shot info, estimated minutes. Drag strips between columns to move or reorder **up and down** within a column; drop target resolution uses the hovered strip and release position (before/after). Lock toggle per unit.
 - **Strip types:** SHOT (from Shot List), SCENE (legacy), MOVE, CALL, LUNCH, WRAP, NOTE. "Add strip" popover for non-SHOT types.
 - **Boneyard:** Discarded strips. Drag from board or from Boneyard back to Unscheduled/column. Strips in Boneyard can be permanently deleted.
 - **Day totals:** Estimated runtime per column; warning if > 10h 30min.
@@ -109,7 +109,7 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 **Reschedule**
 
 4. Calendar: drag events to move or swap shoot days.
-5. Stripboard: drag strips between columns, or from Unscheduled to column.
+5. Stripboard: drag strips between columns, or from Unscheduled to a column or **between strips** (insertion order matches drop position).
 
 **Output**
 
@@ -175,7 +175,7 @@ src/
 ### 4. Data flow and dependencies
 
 - **Calendar:** [calendar.ts](src/lib/db/repositories/calendar.ts) `listCalendarShootDayEvents(productionId, dateRange)` — aggregates from shoot_days, shoot_day_units, stripboard_strips, shots. `moveShootDayToDate`, `swapShootDays` for drag.
-- **Stripboard:** `listShootDaysByProduction`, `listShootDayUnitsByProduction`, `listStripsByProduction`, `listScenesByProduction`, `listShotsByProduction`, `listUnscheduledShots`, `listBoneyardStrips`. Mutations: `createStrip`, `createShotStrip`, `moveStrip`, `moveStripToUnscheduled`, `moveStripToBoneyard`, `reorderStrip`, `bulkAssignShotsToDay`, `deleteStrip`. Shoot day creation: `createShootDayWithDefaultMainUnit(productionId, shootDate)` in [schedule.ts](src/lib/db/repositories/schedule.ts) — creates one shoot day and one Main Unit shoot_day_unit in a single transaction; no strips. Stripboard invalidates `stripboardQueryKeys.all` after creation and scrolls the new day into view.
+- **Stripboard:** `listShootDaysByProduction`, `listShootDayUnitsByProduction`, `listStripsByProduction`, `listScenesByProduction`, `listShotsByProduction`, `listUnscheduledShots`, `listBoneyardStrips`. Mutations: `createStrip`, `createShotStrip`, `moveStrip`, `moveStripToUnscheduled`, `moveStripToBoneyard`, `reorderStrip`, `bulkAssignShotsToDay`, `deleteStrip`. **`createStrip`** accepts optional **`sort_index`**; if omitted, new strips append after the current max `sort_index` for that day/unit. **`createShotStrip`** accepts an optional **`sortIndex`** argument (passed through as `sort_index`) so drag-from-unscheduled can persist insertion order to match the drop. Shoot day creation: `createShootDayWithDefaultMainUnit(productionId, shootDate)` in [schedule.ts](src/lib/db/repositories/schedule.ts) — creates one shoot day and one Main Unit shoot_day_unit in a single transaction; no strips. Stripboard invalidates `stripboardQueryKeys.all` after creation and scrolls the new day into view.
 - **Shot Lists:** `listScenesByProduction`, `listShotsByScene`, `createScene`, `updateScene`, `updateShot`. Scene create/edit use the same optional fields (heading, title, int_ext, day_night, location_id). Invalidates `['scenes', currentProductionId]` and `['scenes']`; new scene is selected after create, edited scene stays selected after update.
 - **Script Import:** `defaultParser.parse()`, `createScene`. Invalidates `['scenes']` and `['scenes', currentProductionId]` on create.
 
@@ -188,9 +188,10 @@ src/
 
 ### 6. Drag and drop and transactions
 
-- **@dnd-kit/core:** PointerSensor, KeyboardSensor, DndContext, DragOverlay, useDraggable, useDroppable.
+- **@dnd-kit/core:** PointerSensor, KeyboardSensor, DndContext, DragOverlay, useDraggable, useDroppable. Stripboard also uses `@dnd-kit/sortable` for scheduled strips (`SortableContext` + `useSortable` on strip rows).
 - **Schedule moves:** `moveShootDayToDate`, `swapShootDays`, `moveShootDayUnitToDate`, `mergeShootDayUnitIntoDay` — use `runInSerializedTransaction` + `executeBatch` per [docs/DATABASE_LAYER.md](docs/DATABASE_LAYER.md).
 - **Stripboard mutations:** Single-statement writes where possible; strip status transitions (SCHEDULED ↔ UNSCHEDULED ↔ BONEYARD) via UPDATE.
+- **Stripboard drop handling** ([stripboard-page.tsx](src/features/schedule/stripboard-page.tsx)): `onDragEnd` resolves the drop target as either a **strip id** (hovered row) or a **column id** (`col:{shootDayId}:{shootDayUnitId}` from the unit droppable). A shared helper computes **`sort_index`** for the insert position: strips in the target column are ordered by `sort_index`, the **active strip is excluded** when reordering within the same column (avoids no-op math), and when dropping **on** another strip, **before vs after** is determined by comparing the vertical midpoint of the dragged item to the hovered strip’s rectangle. Same column → `reorderStrip`; different column or from boneyard → `moveStrip`; unscheduled shot → `createShotStrip` with computed `sortIndex`. Unscheduled panel and Boneyard panel use fixed droppable ids (`unscheduled-panel`, `boneyard-panel`) for status-only moves.
 
 ---
 
@@ -232,6 +233,7 @@ When changing Schedule (shoot_days, scenes, shots, stripboard_strips, shoot_day_
 - **Changing shoot_days or stripboard_strips:** Check DooD (`getScheduledSceneIdsByShootDay`), booking intelligence (`getScheduledSceneIdsByShootDay`, `getScheduledShotIdsByShootDay`), Call Sheets, Bookings page, Person detail, Dashboard, Wrap Production.
 - **Changing tables/columns copied in duplicate production:** Update [duplicateProduction.ts](src/lib/db/duplicateProduction.ts) and ID mapping (shootDayIdMap, shootDayUnitIdMap, sceneIdMap, shotIdMap).
 - **Changing stripboard-strips API used by DooD or booking intelligence:** Update those callers; DooD uses only scene-by-day (not shot_cast for work days).
+- **Changing stripboard drop rules or `createStrip` / `createShotStrip` signatures:** Update [stripboard-page.tsx](src/features/schedule/stripboard-page.tsx), [stripboard-hooks.ts](src/features/schedule/stripboard-hooks.ts), and this doc’s §I.4 / §I.6; keep UI insertion semantics aligned with persisted `sort_index`.
 
 ---
 
