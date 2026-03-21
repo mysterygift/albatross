@@ -22,7 +22,7 @@ function rowToStrip(r: Record<string, unknown>): StripboardStrip {
     title: (r.title as string | null) ?? null,
     description: (r.description as string | null) ?? null,
     estimated_minutes: (r.estimated_minutes as number | null) ?? null,
-    sort_index: Number(r.sort_index) ?? 0,
+    sort_index: Number(r.sort_index ?? 0),
     color_tag: (r.color_tag as string | null) ?? null,
     strip_status: (r.strip_status as StripStatus) ?? 'SCHEDULED',
     created_at: r.created_at as string,
@@ -120,6 +120,7 @@ export type CreateStripData = {
   production_id: string
   shoot_day_id: string
   shoot_day_unit_id: string | null
+  sort_index?: number
   strip_type: StripType
   scene_id?: string | null
   shot_id?: string | null
@@ -135,9 +136,12 @@ export async function createStrip(data: CreateStripData): Promise<StripboardStri
   const id = uuid()
   const ts = now()
   const shootDayUnitId = data.shoot_day_unit_id ?? null
-  const sortIndex = shootDayUnitId
-    ? await getMaxSortIndex(db, data.shoot_day_id, shootDayUnitId) + SORT_GAP
-    : 0
+  const sortIndex =
+    data.sort_index != null
+      ? data.sort_index
+      : shootDayUnitId
+        ? await getMaxSortIndex(db, data.shoot_day_id, shootDayUnitId) + SORT_GAP
+        : 0
   await db.execute(
     `INSERT INTO ${TABLE} (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'SCHEDULED', $13, $14)`,
@@ -157,12 +161,14 @@ export async function createShotStrip(
   productionId: string,
   shotId: string,
   shootDayId: string,
-  shootDayUnitId: string
+  shootDayUnitId: string,
+  sortIndex?: number
 ): Promise<StripboardStrip> {
   return createStrip({
     production_id: productionId,
     shoot_day_id: shootDayId,
     shoot_day_unit_id: shootDayUnitId,
+    sort_index: sortIndex,
     strip_type: 'SHOT',
     shot_id: shotId,
   })

@@ -27,6 +27,7 @@ CALL SHEET
 1. Need to add text field to Call Sheet Form for safety information.
 2. Need to APPEND LOCATIONS type + form to include a parking address/w3w – this then needs to feed into the call sheet (AS WELL AS THE FIRST LOCATION ITSELF)
 ~~3. Add ability to watermark paperwork exports with the target's name. (+ call sheet distribution with mailto: links? Who do we even send this from? If we had this in the cloud we could use a centralised email server for it paid for by customers, but because this is free maybe it just makes you have to send them out person by person...this is tedious but quicker than sending a call sheet email one by one WITHOUT the app and automatically generates watermarks for each person too). –– THIS WOULD WORK GREAT FOR SHARING SCRIPTS TOO!~~
+4. Improve parsing of location data for weather lookup – maybe we change address to have fixed fields that make it easier to use rather than relying on consistent user input.
 
 
 SCHEDULE
@@ -39,6 +40,8 @@ SCHEDULE
 7. Beat Sheet: For simpler projects, create a simple script outlining -what we see- and -what we hear-. Works great for live productions, or simplified projects where you just want to jot your ideas down.
 8. Generate script sides, to be shared alongside call sheet.
 9. Movement orders?
+10. Currently no way to add shots to the shot list.
+11. Cleanup: a – remove generate call sheet from calendar view, b – ask if user is sure they want to delete a locaiton
 
 
 NICE TO HAVES:

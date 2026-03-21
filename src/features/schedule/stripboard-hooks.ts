@@ -213,12 +213,14 @@ export function useStripboard(productionId: string | null) {
       shotId,
       shootDayId,
       shootDayUnitId,
+      toSortIndex,
     }: {
       productionId: string
       shotId: string
       shootDayId: string
       shootDayUnitId: string
-    }) => createShotStrip(productionId, shotId, shootDayId, shootDayUnitId),
+      toSortIndex?: number
+    }) => createShotStrip(productionId, shotId, shootDayId, shootDayUnitId, toSortIndex),
     onSuccess: () => invalidate(),
   })
 

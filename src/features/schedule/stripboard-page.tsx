@@ -287,6 +287,66 @@ export function StripboardPage() {
   )
 
   const columnId = (shootDayId: string, shootDayUnitId: string) => `col:${shootDayId}:${shootDayUnitId}`
+  const parseColumnId = (id: string): { shootDayId: string; shootDayUnitId: string } | null => {
+    if (!id.startsWith('col:')) return null
+    const [, shootDayId, shootDayUnitId] = id.split(':')
+    if (!shootDayId || !shootDayUnitId) return null
+    return { shootDayId, shootDayUnitId }
+  }
+  const getColumnStripsSorted = (shootDayId: string, shootDayUnitId: string, excludeStripId?: string) =>
+    [...(stripsByDayUnit.get(`${shootDayId}:${shootDayUnitId}`) ?? [])]
+      .filter((s) => (excludeStripId ? s.id !== excludeStripId : true))
+      .sort((a, b) => a.sort_index - b.sort_index)
+  const getDropSortIndex = ({
+    shootDayId,
+    shootDayUnitId,
+    overStripId,
+    activeStripId,
+    placeAfter,
+  }: {
+    shootDayId: string
+    shootDayUnitId: string
+    overStripId?: string
+    activeStripId?: string
+    placeAfter?: boolean
+  }): number => {
+    const stripsInColumn = getColumnStripsSorted(shootDayId, shootDayUnitId, activeStripId)
+    if (!overStripId) {
+      const lastStrip = stripsInColumn[stripsInColumn.length - 1]
+      return lastStrip ? lastStrip.sort_index + SORT_GAP : SORT_GAP
+    }
+
+    const overIdx = stripsInColumn.findIndex((s) => s.id === overStripId)
+    if (overIdx < 0) {
+      const lastStrip = stripsInColumn[stripsInColumn.length - 1]
+      return lastStrip ? lastStrip.sort_index + SORT_GAP : SORT_GAP
+    }
+
+    const prevStrip = placeAfter ? stripsInColumn[overIdx] : stripsInColumn[overIdx - 1]
+    const nextStrip = placeAfter ? stripsInColumn[overIdx + 1] : stripsInColumn[overIdx]
+    if (prevStrip && nextStrip) return (prevStrip.sort_index + nextStrip.sort_index) / 2
+    if (!prevStrip && nextStrip) return nextStrip.sort_index - SORT_GAP
+    if (prevStrip && !nextStrip) return prevStrip.sort_index + SORT_GAP
+    return SORT_GAP
+  }
+  const resolveDropTarget = (overId: string): { shootDayId: string; shootDayUnitId: string; overStripId?: string } | null => {
+    const overStrip = strips.find((s) => s.id === overId)
+    if (overStrip?.shoot_day_id && overStrip.shoot_day_unit_id) {
+      return {
+        shootDayId: overStrip.shoot_day_id,
+        shootDayUnitId: overStrip.shoot_day_unit_id,
+        overStripId: overStrip.id,
+      }
+    }
+    const parsedCol = parseColumnId(overId)
+    if (parsedCol) {
+      return {
+        shootDayId: parsedCol.shootDayId,
+        shootDayUnitId: parsedCol.shootDayUnitId,
+      }
+    }
+    return null
+  }
 
   const handleDragStart = (event: DragStartEvent) => {
     const d = event.active.data.current
@@ -350,62 +410,29 @@ export function StripboardPage() {
       return
     }
 
-    const overStrip = strips.find((s) => s.id === overStr)
-    if (overStrip) {
-      const shootDayId = overStrip.shoot_day_id
-      const shootDayUnitId = overStrip.shoot_day_unit_id
-      if (!shootDayId || !shootDayUnitId) return
-      const dayUnit = dayUnits.find((du) => du.id === shootDayUnitId)
-      if (!dayUnit || dayUnit.is_locked) return
-      const stripsInColumn = [...(stripsByDayUnit.get(`${shootDayId}:${shootDayUnitId}`) ?? [])].sort(
-        (a, b) => a.sort_index - b.sort_index
-      )
-      const overIdx = stripsInColumn.findIndex((s) => s.id === overStrip.id)
-      const nextStrip = overIdx >= 0 ? stripsInColumn[overIdx + 1] : undefined
-      const toSortIndex = nextStrip
-        ? (overStrip.sort_index + nextStrip.sort_index) / 2
-        : overStrip.sort_index + SORT_GAP
-
-      if (data?.type === 'unscheduled-shot' && currentProductionId) {
-        await createShotStripMutation.mutateAsync({
-          productionId: currentProductionId,
-          shotId: data.item.shot.id,
-          shootDayId,
-          shootDayUnitId,
-        })
-        return
-      }
-      if ((data?.type === 'strip' || data?.type === 'boneyard-strip') && data.strip) {
-        const strip = data.strip
-        if (strip.shoot_day_id != null && strip.shoot_day_unit_id != null && strip.shoot_day_id === shootDayId && strip.shoot_day_unit_id === shootDayUnitId) {
-          await reorderStripMutation.mutateAsync({ stripId: strip.id, toSortIndex })
-        } else {
-          await moveStripMutation.mutateAsync({
-            stripId: strip.id,
-            toShootDayId: shootDayId,
-            toShootDayUnitId: shootDayUnitId,
-            toSortIndex,
-          })
-        }
-        return
-      }
-      return
-    }
-
-    const isColumn = overStr.startsWith('col:')
-    if (!isColumn) return
-
-    const [, shootDayId, shootDayUnitId] = overStr.split(':')
-    if (!shootDayId || !shootDayUnitId) return
+    const target = resolveDropTarget(overStr)
+    if (!target) return
+    const { shootDayId, shootDayUnitId, overStripId } = target
 
     const dayUnit = dayUnits.find((du) => du.id === shootDayUnitId)
     if (!dayUnit || dayUnit.is_locked) return
 
-    const stripsInColumn = stripsByDayUnit.get(`${shootDayId}:${shootDayUnitId}`) ?? []
-    const maxSort = stripsInColumn.length > 0
-      ? Math.max(...stripsInColumn.map((s) => s.sort_index))
-      : 0
-    const toSortIndex = maxSort + SORT_GAP
+    const activeStripId = data?.type === 'strip' || data?.type === 'boneyard-strip'
+      ? data.strip.id
+      : undefined
+    const activeRect = active.rect.current.translated ?? active.rect.current.initial
+    const overRect = over.rect
+    const placeAfter =
+      overStripId && activeRect && overRect
+        ? activeRect.top + activeRect.height / 2 >= overRect.top + overRect.height / 2
+        : true
+    const toSortIndex = getDropSortIndex({
+      shootDayId,
+      shootDayUnitId,
+      overStripId,
+      activeStripId,
+      placeAfter,
+    })
 
     if (data?.type === 'unscheduled-shot' && currentProductionId) {
       await createShotStripMutation.mutateAsync({
@@ -413,17 +440,29 @@ export function StripboardPage() {
         shotId: data.item.shot.id,
         shootDayId,
         shootDayUnitId,
+        toSortIndex,
       })
       return
     }
 
     if ((data?.type === 'strip' || data?.type === 'boneyard-strip') && data.strip) {
-      await moveStripMutation.mutateAsync({
-        stripId: data.strip.id,
-        toShootDayId: shootDayId,
-        toShootDayUnitId: shootDayUnitId,
-        toSortIndex,
-      })
+      const strip = data.strip
+      const isSameColumn =
+        strip.shoot_day_id != null &&
+        strip.shoot_day_unit_id != null &&
+        strip.shoot_day_id === shootDayId &&
+        strip.shoot_day_unit_id === shootDayUnitId
+
+      if (isSameColumn) {
+        await reorderStripMutation.mutateAsync({ stripId: strip.id, toSortIndex })
+      } else {
+        await moveStripMutation.mutateAsync({
+          stripId: strip.id,
+          toShootDayId: shootDayId,
+          toShootDayUnitId: shootDayUnitId,
+          toSortIndex,
+        })
+      }
     }
   }
 
