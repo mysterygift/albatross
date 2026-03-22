@@ -68,7 +68,8 @@ export function isLockError(msg: string): boolean {
     s.includes('sqlite_busy') ||
     s.includes('sqlite_locked') ||
     s.includes('code: 5') ||
-    s.includes('code: 6')
+    s.includes('code: 6') ||
+    /\berror\s*:?\s*5\b/.test(s)
   )
 }
 

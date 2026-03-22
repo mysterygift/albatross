@@ -563,6 +563,8 @@ export function SettingsPage() {
                   try {
                     await ensureDemoData()
                     queryClient.invalidateQueries({ queryKey: ['productions'] })
+                    queryClient.invalidateQueries({ queryKey: ['crew'] })
+                    queryClient.invalidateQueries({ queryKey: ['people'] })
                     queryClient.invalidateQueries({ queryKey: ['deliverables'] })
                     await refetchProductions()
                     const prod = await getProductionBySlug(DEMO_SLUG)
@@ -586,6 +588,8 @@ export function SettingsPage() {
                 onClick={async () => {
                   await resetDemoData()
                   queryClient.invalidateQueries({ queryKey: ['productions'] })
+                  queryClient.invalidateQueries({ queryKey: ['crew'] })
+                  queryClient.invalidateQueries({ queryKey: ['people'] })
                   queryClient.invalidateQueries({ queryKey: ['deliverables'] })
                 }}
               >

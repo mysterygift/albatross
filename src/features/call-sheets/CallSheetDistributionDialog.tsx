@@ -3,8 +3,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ScrollArea } from '@/components/ui/scroll-area'
-
 type RecipientType = 'cast' | 'crew'
 
 export interface CallSheetRecipient {
@@ -91,30 +89,30 @@ export function CallSheetDistributionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl border-border bg-card">
-        <DialogHeader>
+      <DialogContent className="max-w-xl border-border bg-card flex max-h-[min(90vh,720px)] flex-col gap-4 overflow-hidden">
+        <DialogHeader className="shrink-0">
           <DialogTitle>Distribute Call Sheets</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             Choose which cast and crew should receive a personalised copy of this call sheet.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
           {context && (
-            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
+            <div className="shrink-0 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
               <p className="font-medium text-foreground truncate">{context.productionName}</p>
               <p className="text-muted-foreground mt-0.5 truncate">{renderContextLine()}</p>
             </div>
           )}
 
-          <div className="flex items-center justify-between">
+          <div className="flex shrink-0 items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
               {hasRecipients
                 ? `${recipients.length} recipient${recipients.length === 1 ? '' : 's'} available`
                 : 'No recipients available for this shoot day yet.'}
             </p>
             {hasRecipients && (
-              <div className="flex items-center gap-2 text-xs">
+              <div className="flex shrink-0 items-center gap-2 text-xs">
                 <Button type="button" variant="ghost" size="xs" onClick={handleSelectAll}>
                   Select all
                 </Button>
@@ -125,27 +123,25 @@ export function CallSheetDistributionDialog({
             )}
           </div>
 
-          <div className="rounded-md border border-border bg-muted/20">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-muted/20">
             {hasRecipients ? (
-              <ScrollArea className="max-h-72">
-                <ul className="divide-y divide-border">
-                  {recipients.map((r) => (
-                    <li key={r.id} className="flex items-center gap-3 px-3 py-2">
-                      <Checkbox
-                        checked={selectedIds.has(r.id)}
-                        onCheckedChange={(v) => handleToggle(r.id, v === true)}
-                        className="mt-0.5"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{r.fullName}</p>
-                      </div>
-                      <Badge variant="outline" className="text-[11px] border-border/60">
-                        {r.type === 'cast' ? 'Cast' : 'Crew'}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              </ScrollArea>
+              <ul className="min-h-0 flex-1 list-none divide-y divide-border overflow-y-auto overscroll-contain">
+                {recipients.map((r) => (
+                  <li key={r.id} className="flex items-center gap-3 px-3 py-2">
+                    <Checkbox
+                      checked={selectedIds.has(r.id)}
+                      onCheckedChange={(v) => handleToggle(r.id, v === true)}
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{r.fullName}</p>
+                    </div>
+                    <Badge variant="outline" className="text-[11px] border-border/60">
+                      {r.type === 'cast' ? 'Cast' : 'Crew'}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
             ) : (
               <div className="px-3 py-6 text-center text-sm text-muted-foreground">
                 No cast or crew recipients are associated with this shoot day yet.
@@ -154,7 +150,7 @@ export function CallSheetDistributionDialog({
           </div>
 
           {(statusMessage || error) && (
-            <div className="text-xs">
+            <div className="shrink-0 text-xs">
               {statusMessage && (
                 <p className="text-muted-foreground whitespace-pre-line">
                   {loading ? (
@@ -169,7 +165,7 @@ export function CallSheetDistributionDialog({
           )}
         </div>
 
-        <DialogFooter className="mt-4 flex flex-row items-center justify-end gap-2">
+        <DialogFooter className="mt-0 shrink-0 flex flex-row items-center justify-end gap-2 border-t border-border pt-4">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
             Cancel
           </Button>

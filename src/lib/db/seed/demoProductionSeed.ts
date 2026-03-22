@@ -10,10 +10,10 @@
  * - equipment_terms: LENS (18mm, 24mm, 35mm, 50mm, 85mm, 100mm Macro, 24–70mm, 70–200mm) and SUPPORT terms.
  * - Verify: Schedule → Shot lists, pick a scene; check columns, lens/support dropdowns, null handling, long notes.
  */
-import { executeBatch, getDb, now } from '../client'
+import { executeBatch, getDb, now, runInSerializedTransaction } from '../client'
 import { getProductionBySlug, hardDeleteProduction } from '../repositories/production'
 import { seedDemoBudget } from './demoBudgetSeed'
-import { seedDemoBookings } from './demoBookingSeed'
+import { seedDemoBookings, seedDemoCrewBookings } from './demoBookingSeed'
 import { seedDemoPeople } from './demoPeopleSeed'
 import { seedDemoDeliverables } from './demoDeliverableSeed'
 import { seedDemoReconciliation } from './demoReconciliationSeed'
@@ -21,10 +21,14 @@ import { seedDemoTasks } from './demoTaskSeed'
 import { seedDemoVendorFinance } from './demoVendorFinanceSeed'
 import { seedDemoVendors } from './demoVendorSeed'
 import { seedDemoEquipment } from './demoEquipmentSeed'
-import { seedDemoCrew } from './demoCrewSeed'
+import { DEMO_CREW_MEMBER_COUNT, seedDemoCrew } from './demoCrewSeed'
 import { listDocumentsByProduction } from '../repositories/document'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { generateCueSheet, generateLocationReleaseCover, generateContributorFormCover } from '@/lib/pdf'
+import { generateCallSheetPdf, parseCallSheetWeatherJson } from '@/lib/pdf/callSheet'
+import { isLockError } from '../perf'
+import { selectPrimaryCallSheetContacts } from '@/lib/call-sheets/primaryContacts'
+import { buildCallSheetStripFromStripboard } from '@/lib/call-sheets/scheduleStripRow'
 import type { CameraMovement, ShotSize } from '../types'
 import { CAMERA_MOVEMENT_VALUES, SHOT_SIZE_VALUES } from '../types'
 import { DEMO_EXCHANGE_RATE_ID, DEMO_SLUG, IDS, SEED_VERSION } from './constants'
@@ -83,13 +87,57 @@ async function hardDeleteDemoAndRelated(productionId: string): Promise<void> {
   await deleteAttachmentFilesOnDisk(paths)
 }
 
+/** Avoid parallel backfills (e.g. React StrictMode) racing on the same empty crew state. */
+let singletonDemoCrewBackfillPromise: Promise<void> | null = null
+
 /**
- * If demo production (by slug) exists, do nothing. Otherwise insert full demo dataset.
+ * If the singleton demo production exists but has no crew rows (e.g. created before crew seed),
+ * run `seedDemoCrew` + `seedDemoCrewBookings` idempotently. No-op when crew count is already full
+ * or when `productionId` is not `IDS.production`.
+ */
+async function maybeBackfillSingletonDemoCrewIfEmpty(productionId: string): Promise<void> {
+  if (productionId !== IDS.production) return
+  if (singletonDemoCrewBackfillPromise) return singletonDemoCrewBackfillPromise
+
+  singletonDemoCrewBackfillPromise = (async () => {
+    try {
+      const db = await getDb()
+      const countRows = await db.select<{ n: number }[]>(
+        `SELECT COUNT(*) as n FROM people WHERE production_id = $1 AND is_cast = 0 AND deleted_at IS NULL`,
+        [productionId]
+      )
+      const n = Number(countRows[0]?.n ?? 0)
+      if (n >= DEMO_CREW_MEMBER_COUNT) return
+      if (n > 0) return
+
+      const sd = await db.select<{ shoot_date: string }[]>(
+        `SELECT shoot_date FROM shoot_days WHERE production_id = $1 AND deleted_at IS NULL ORDER BY day_number ASC LIMIT 1`,
+        [productionId]
+      )
+      const startDate = sd[0]?.shoot_date ?? todayLocalYYYYMMDD()
+      const ts = now()
+      const idSource = makeDemoSeedIdSourceFromIDS()
+      await seedDemoCrew(productionId, startDate, ts, idSource, addDaysLocal)
+      await seedDemoCrewBookings(productionId, ts, idSource)
+    } finally {
+      singletonDemoCrewBackfillPromise = null
+    }
+  })()
+
+  return singletonDemoCrewBackfillPromise
+}
+
+/**
+ * If demo production (by slug) does not exist, insert full demo dataset.
+ * If it already exists (singleton), ensure crew people + crew bookings are present when missing.
  */
 export async function ensureDemoData(): Promise<void> {
   const existing = await getProductionBySlug(DEMO_SLUG)
-  if (existing) return
-  await runFullSeed()
+  if (!existing) {
+    await runFullSeed()
+    return
+  }
+  await maybeBackfillSingletonDemoCrewIfEmpty(existing.id)
 }
 
 /**
@@ -119,9 +167,10 @@ const VERIFY_SLUG = 'verify-cascade-test'
  * no child rows remain. Confirms FK ON DELETE CASCADE is working.
  * Uses executeBatch (no explicit BEGIN/COMMIT) to avoid "cannot start a transaction within a
  * transaction" with the Tauri plugin/sqlx; the batch runs as one write-queue task.
+ * The batch plus the follow-up orphan check SELECT run inside runInSerializedTransaction so no
+ * other queued write can run between them (avoids SQLITE_BUSY / error 5 from interleaved writers).
  */
 export async function verifyCascades(): Promise<{ ok: boolean; message: string; details?: string }> {
-  const db = await getDb()
   const ts = now()
   const tablesWithProductionId = [
     'units',
@@ -150,55 +199,58 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'equipment_terms',
   ]
   try {
-    // Use executeBatch without explicit BEGIN/COMMIT: the Tauri plugin/sqlx can run multi-statement
-    // strings in a way that causes "cannot start a transaction within a transaction" when we send
-    // BEGIN/COMMIT (driver may wrap each statement or the batch in its own transaction).
-    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
-      {
-        sql: `INSERT INTO productions (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        bindValues: [VERIFY_PID, 'Verify cascades', VERIFY_SLUG, 'GBP', null, ts, ts],
-      },
-      {
-        sql: `INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-        bindValues: ['b0000000-0000-4000-8000-000000000002', VERIFY_PID, 'Unit', ts, ts],
-      },
-      {
-        sql: `INSERT INTO people (id, production_id, name, is_cast, created_at, updated_at) VALUES ($1, $2, $3, 0, $4, $5)`,
-        bindValues: ['b0000000-0000-4000-8000-000000000003', VERIFY_PID, 'Person', 0, ts, ts],
-      },
-      {
-        sql: `INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-        bindValues: ['b0000000-0000-4000-8000-000000000004', VERIFY_PID, '1', ts, ts],
-      },
-      {
-        sql: `INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-        bindValues: ['b0000000-0000-4000-8000-000000000005', VERIFY_PID, '2025-01-01', ts, ts],
-      },
-      { sql: `DELETE FROM productions WHERE id = $1`, bindValues: [VERIFY_PID] },
-    ]
-    await executeBatch(db, statements)
-    // Single round-trip; SQLite forbids LIMIT on each arm of UNION ALL — use EXISTS instead.
-    const unionSql = [
-      `SELECT 'productions' AS t WHERE EXISTS (SELECT 1 FROM productions WHERE id = $1)`,
-      ...tablesWithProductionId.map(
-        (table) =>
-          `SELECT '${table}' AS t WHERE EXISTS (SELECT 1 FROM ${table} WHERE production_id = $1)`
-      ),
-    ].join(' UNION ALL ')
-    const orphanRows = await db.select<{ t: string }[]>(unionSql, [VERIFY_PID])
-    const remaining = orphanRows.map((r) => r.t)
-    if (remaining.length > 0) {
-      return {
-        ok: false,
-        message: 'Cascade check failed: rows still exist after hard delete.',
-        details: remaining.join(', '),
+    const result = await runInSerializedTransaction(async () => {
+      const db = await getDb()
+      // Use executeBatch without explicit BEGIN/COMMIT: the Tauri plugin/sqlx can run multi-statement
+      // strings in a way that causes "cannot start a transaction within a transaction" when we send
+      // BEGIN/COMMIT (driver may wrap each statement or the batch in its own transaction).
+      const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+        {
+          sql: `INSERT INTO productions (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          bindValues: [VERIFY_PID, 'Verify cascades', VERIFY_SLUG, 'GBP', null, ts, ts],
+        },
+        {
+          sql: `INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000002', VERIFY_PID, 'Unit', ts, ts],
+        },
+        {
+          sql: `INSERT INTO people (id, production_id, name, is_cast, created_at, updated_at) VALUES ($1, $2, $3, 0, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000003', VERIFY_PID, 'Person', 0, ts, ts],
+        },
+        {
+          sql: `INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000004', VERIFY_PID, '1', ts, ts],
+        },
+        {
+          sql: `INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000005', VERIFY_PID, '2025-01-01', ts, ts],
+        },
+        { sql: `DELETE FROM productions WHERE id = $1`, bindValues: [VERIFY_PID] },
+      ]
+      await executeBatch(db, statements)
+      // Single round-trip; SQLite forbids LIMIT on each arm of UNION ALL — use EXISTS instead.
+      const unionSql = [
+        `SELECT 'productions' AS t WHERE EXISTS (SELECT 1 FROM productions WHERE id = $1)`,
+        ...tablesWithProductionId.map(
+          (table) =>
+            `SELECT '${table}' AS t WHERE EXISTS (SELECT 1 FROM ${table} WHERE production_id = $1)`
+        ),
+      ].join(' UNION ALL ')
+      const orphanRows = await db.select<{ t: string }[]>(unionSql, [VERIFY_PID])
+      const remaining = orphanRows.map((r) => r.t)
+      if (remaining.length > 0) {
+        return {
+          ok: false as const,
+          message: 'Cascade check failed: rows still exist after hard delete.',
+          details: remaining.join(', '),
+        }
       }
-    }
-    return { ok: true, message: 'Cascades verified: hard delete removed production and all child rows.' }
+      return { ok: true as const, message: 'Cascades verified: hard delete removed production and all child rows.' }
+    })
+    return result
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    const isBusy =
-      /database is locked|sqlite_busy|sqlite_locked|code: 5|code: 6/i.test(msg)
+    const isBusy = isLockError(msg)
     return {
       ok: false,
       message: isBusy
@@ -745,8 +797,9 @@ async function runDemoContentSeed(
     await seedDemoEquipment(productionId, startDate, ts, addDaysLocal, vendorIdByCompanyName)
   }
 
-  // Crew: people (is_cast=0), bookings, and for singleton demo only: crew labour vendors and invoices
+  // Crew: people (is_cast=0), and for singleton demo only: crew labour vendors and invoices
   await seedDemoCrew(productionId, startDate, ts, idSource, addDaysLocal)
+  await seedDemoCrewBookings(productionId, ts, idSource)
 
   const hods = [
     ['Director', 'Jane Doe', '555-0100', 'director@demo.com'],
@@ -852,7 +905,6 @@ async function runDemoContentSeed(
     )
 
     const callSheetPath = `${ATTACHMENTS}/demo-call-sheet.pdf`
-    const { generateCallSheetPdf } = await import('@/lib/pdf/callSheet')
     const shootDay = await db.select<Record<string, unknown>[]>(`SELECT * FROM shoot_days WHERE id = $1`, [idSource.shootDay(1)])
     if (shootDay.length) {
       const data = await buildCallSheetDataForSeed(productionId, idSource.shootDay(1), startDate)
@@ -910,6 +962,16 @@ async function runDemoContentSeed(
   }
 }
 
+function parseCallSheetMealTimesFromJson(raw: string | null | undefined): Array<{ name: string; time: string }> {
+  if (!raw?.trim()) return []
+  try {
+    const arr = JSON.parse(raw) as Array<{ name?: string; time?: string }>
+    return Array.isArray(arr) ? arr.map((m) => ({ name: m.name ?? 'Meal', time: m.time ?? '—' })) : []
+  } catch {
+    return []
+  }
+}
+
 async function buildCallSheetDataForSeed(
   productionId: string,
   shootDayId: string,
@@ -926,42 +988,82 @@ async function buildCallSheetDataForSeed(
     `SELECT department, name, phone, email FROM key_contacts WHERE production_id = $1 AND deleted_at IS NULL ORDER BY department`,
     [productionId]
   )
+  const keyContactsMapped = keyContactRows.map((r) => ({
+    department: r.department as string,
+    name: r.name as string | null,
+    phone: r.phone as string | null,
+    email: r.email as string | null,
+    notes: null as string | null,
+  }))
   const peopleRows = await db.select<Record<string, unknown>[]>(
     `SELECT name FROM people WHERE production_id = $1 AND is_cast = 1 AND deleted_at IS NULL ORDER BY name`,
     [productionId]
   )
   const locRows = await db.select<Record<string, unknown>[]>(
-    `SELECT name, address FROM locations WHERE production_id = $1 AND deleted_at IS NULL ORDER BY name`,
+    `SELECT id, name, address FROM locations WHERE production_id = $1 AND deleted_at IS NULL ORDER BY name`,
     [productionId]
   )
+  const locById = new Map((locRows || []).map((r) => [r.id as string, r]))
   const sceneRows = await db.select<Record<string, unknown>[]>(
-    `SELECT id, scene_number, title, int_ext, day_night, page_eighths FROM scenes WHERE production_id = $1 AND deleted_at IS NULL`,
+    `SELECT id, scene_number, title, heading, description, int_ext, day_night, page_eighths, location_id FROM scenes WHERE production_id = $1 AND deleted_at IS NULL`,
+    [productionId]
+  )
+  const shotRows = await db.select<Record<string, unknown>[]>(
+    `SELECT id, scene_id, shot_number, description, shot_description, notes FROM shots WHERE production_id = $1 AND deleted_at IS NULL`,
     [productionId]
   )
   const sceneMap = new Map((sceneRows || []).map((r) => [r.id as string, r]))
+  const shotMap = new Map((shotRows || []).map((r) => [r.id as string, r]))
 
   const productionName = (prodRows[0]?.name as string) ?? 'Demo'
   const day = dayRows[0] as Record<string, unknown>
   const shootDate = (day?.shoot_date as string) ?? fallbackShootDate
+  const locState = { lastLocationId: null as string | null }
   const schedule: import('@/lib/pdf/callSheet').CallSheetStrip[] = strips.map((s) => {
-    if ((s.strip_type === 'SHOT' || s.strip_type === 'SCENE') && s.scene_id) {
-      const sc = sceneMap.get(s.scene_id as string) as Record<string, unknown> | undefined
-      return {
-        strip_type: 'SCENE',
-        scene_number: (sc?.scene_number as string) ?? null,
-        scene_title: (sc?.title as string) ?? null,
-        int_ext: (sc?.int_ext as string) ?? null,
-        day_night: (sc?.day_night as string) ?? null,
-        page_eighths: (sc?.page_eighths as number) ?? null,
-        title: null,
-        description: null,
-      }
-    }
-    return {
-      strip_type: s.strip_type as import('@/lib/pdf/callSheet').CallSheetStrip['strip_type'],
-      title: (s.title as string) ?? null,
-      description: (s.description as string) ?? null,
-    }
+    const sceneId = s.scene_id as string | null
+    const shotId = s.shot_id as string | null
+    const scRaw = sceneId ? sceneMap.get(sceneId) : undefined
+    const shRaw = shotId ? shotMap.get(shotId) : undefined
+    const scene =
+      scRaw != null
+        ? {
+            id: scRaw.id as string,
+            scene_number: scRaw.scene_number as string,
+            heading: (scRaw.heading as string) ?? null,
+            title: (scRaw.title as string) ?? null,
+            description: (scRaw.description as string) ?? null,
+            int_ext: (scRaw.int_ext as string) ?? null,
+            day_night: (scRaw.day_night as string) ?? null,
+            page_eighths: (scRaw.page_eighths as number) ?? null,
+            location_id: (scRaw.location_id as string) ?? null,
+          }
+        : null
+    const shot =
+      shRaw != null
+        ? {
+            shot_number: shRaw.shot_number as string,
+            description: (shRaw.description as string) ?? null,
+            shot_description: (shRaw.shot_description as string) ?? null,
+            notes: (shRaw.notes as string) ?? null,
+          }
+        : null
+    const locRec = scene?.location_id ? locById.get(scene.location_id) : undefined
+    const locName = locRec ? ((locRec.name as string) ?? null) : null
+    return buildCallSheetStripFromStripboard(
+      {
+        strip_type: s.strip_type as string,
+        scene_id: sceneId,
+        shot_id: shotId,
+        title: (s.title as string) ?? null,
+        description: (s.description as string) ?? null,
+      },
+      scene,
+      shot,
+      locName,
+      locState,
+      [],
+      [],
+    )
   })
 
   return {
@@ -973,23 +1075,21 @@ async function buildCallSheetDataForSeed(
     wrapTime: (day?.wrap_time as string) ?? '18:00',
     dayNotes: (day?.notes as string) ?? null,
     unitNotes: null,
-    keyContacts: keyContactRows.map((r) => ({
-      department: r.department as string,
-      name: r.name as string | null,
-      phone: r.phone as string | null,
-      email: r.email as string | null,
-      notes: null,
-    })),
+    keyContacts: keyContactsMapped,
+    primaryContactsTop: selectPrimaryCallSheetContacts(keyContactsMapped),
     hospitalName: (day?.hospital_name as string) ?? null,
     hospitalAddress: (day?.hospital_address as string) ?? null,
     policeStationName: (day?.police_station_name as string) ?? null,
     policeStationAddress: (day?.police_station_address as string) ?? null,
-    weatherSummary: (day?.weather_manual as string) ?? 'Sunny',
+    weatherSummary: null,
+    weatherManual: (day?.weather_manual as string) ?? null,
+    weatherStored: parseCallSheetWeatherJson((day?.weather_json as string) ?? null),
     parkingBaseAddress: (day?.parking_base_address as string) ?? null,
-    mealTimes: [{ name: 'Lunch', time: '13:00' }],
+    mealTimes: parseCallSheetMealTimesFromJson(day?.meal_times_json as string | null),
     specialNotes: (day?.special_notes as string) ?? null,
     schedule,
     crewGroups: [],
+    advancedScheduleDays: [],
     castCalled: peopleRows.map((r) => r.name as string),
     locations: locRows.map((r) => ({
       name: r.name as string,

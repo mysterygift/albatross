@@ -20,7 +20,8 @@ type EnsureDemoOptions = {
  * Ensure the canonical demo production exists and is selected for tutorial use.
  *
  * Behaviour:
- * - If the singleton demo production (DEMO_SLUG) already exists, leave it as-is.
+ * - If the singleton demo production (DEMO_SLUG) already exists, ensureDemoData still runs crew
+ *   backfill when crew rows are missing (older installs).
  * - Otherwise, run the canonical demo seed (ensureDemoData) to create it.
  * - Resolve the demo production row and optionally mark it as the current production via callback.
  *

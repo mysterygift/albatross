@@ -54,7 +54,7 @@ export const IDS = {
   shotCast: (n: number) => `${P}${String(4100 + n).padStart(4, '0')}`,
   // cast_availability
   availability: (n: number) => `${P}${String(5000 + n).padStart(4, '0')}`,
-  // bookings (cast only for demo)
+  // bookings: cast uses booking(); crew uses crewBooking() (see demoBookingSeed)
   booking: (n: number) => `${P}${String(6200 + n).padStart(4, '0')}`,
   // location_scene
   locationScene: (n: number) => `${P}${String(6000 + n).padStart(4, '0')}`,
@@ -78,6 +78,8 @@ export const IDS = {
   vendorPO: (n: number) => `${P}${String(1900 + n).padStart(4, '0')}`,
   // invoice reminder tasks (demo only; distinct from task sections/tasks)
   invoiceReminderTask: (n: number) => `${P}${String(8200 + n).padStart(4, '0')}`,
+  // crew labour invoice reminders (7); must not use invoiceReminderTask(21+): 8200+n = 8220+(n-20) collides with equipmentReminderTask
+  crewLabourInvoiceReminderTask: (n: number) => `${P}${String(8350 + n).padStart(4, '0')}`,
   // vendor_invoice_expenses link table (demo only)
   vendorInvoiceExpenseLink: (n: number) => `${P}${String(8600 + n).padStart(4, '0')}`,
   // vendor_purchase_order_expenses link table (demo only)

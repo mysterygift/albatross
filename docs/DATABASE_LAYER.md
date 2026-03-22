@@ -71,6 +71,9 @@ One-off INSERT/UPDATE/DELETE: call `db.execute(...)` as usual. It is automatical
 - **budget.ts** (`src/lib/db/repositories/budget.ts`): `backfillAccountIdsFromLegacyCategories` uses one `executeBatch(BEGIN, UPDATEs, COMMIT)` inside `runInSerializedTransaction`.
 - **duplicateProduction.ts** (`src/lib/db/duplicateProduction.ts`): Single `executeBatch(BEGIN, all INSERTs, COMMIT)`; no separate BEGIN/COMMIT calls.
 - **settings.ts** (`src/lib/db/repositories/settings.ts`): `ensureSettingsDefaults` uses `runInSerializedTransaction` + single INSERT OR IGNORE for all default keys.
+- **Demo crew seed** (`src/lib/db/seed/demoCrewSeed.ts`): `seedDemoCrew` uses `runInSerializedTransaction` + `executeBatch` with **BEGIN**, then **multi-row `INSERT`s** (people, vendors, invoices, tasks) instead of dozens of single-row statements — same transaction (§4), much less work for the driver/sqlx and shorter time holding the JS write queue (so dev tools like Verify Cascades wait less when backfill runs).
+- **Demo bookings seed** (`src/lib/db/seed/demoBookingSeed.ts`): `seedDemoBookings` and `seedDemoCrewBookings` build many INSERTs and pass them to **one** `executeBatch` → one combined `db.execute` (§3). That avoids the “loop of separate executes” anti-pattern (§7). They do not add an explicit BEGIN/COMMIT wrapper; atomicity is the same class as other bulk seeds. `ensureDemoData` backfill (`maybeBackfillSingletonDemoCrewIfEmpty` in `demoProductionSeed.ts`) runs that crew transaction and then the bookings batch **sequentially** — two write-queue slots, not interleaved BEGIN/COMMIT across connections.
+- **verifyCascades** (`demoProductionSeed.ts`): Runs the setup `executeBatch` and the orphan-check `select` inside **one** `runInSerializedTransaction` so another queued write cannot run between them (reduces SQLITE_BUSY / “database is locked” / error 5 when the UI is writing elsewhere).
 
 ## 9. Checklist for new or modified DB code
 
