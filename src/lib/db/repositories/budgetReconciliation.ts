@@ -4,6 +4,9 @@
  *
  * Sync/outbox: Reconciliation links are not synced to external systems; no outbox rows
  * are written for this table. Sync is driven by budget_items and expenses if needed.
+ *
+ * Writes follow docs/DATABASE_LAYER.md: runInSerializedTransaction + one executeBatch per
+ * logical persist (multi-row INSERT = single round-trip, atomic without nested BEGIN/COMMIT).
  */
 
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
@@ -195,21 +198,21 @@ export async function createBudgetItemExpenseLinks(
     }
 
     const ts = now()
-    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
-      { sql: 'BEGIN TRANSACTION', bindValues: [] },
-    ]
-
+    // One multi-row INSERT = one combined db.execute (DATABASE_LAYER.md §3); avoids explicit
+    // BEGIN/COMMIT inside the batch, which can interact badly with the pooled driver (see
+    // demoProductionSeed verifyCascades note and §8 demo booking seed pattern).
+    const valueGroups: string[] = []
+    const insertBind: unknown[] = []
+    let param = 1
     for (const a of allocations) {
-      const id = uuid()
-      statements.push({
-        sql: `INSERT INTO ${TABLE} (id, production_id, budget_item_id, expense_id, matched_amount, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        bindValues: [id, productionId, a.budgetItemId, expenseId, a.matchedAmount, ts, ts],
-      })
+      valueGroups.push(
+        `($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6})`
+      )
+      param += 7
+      insertBind.push(uuid(), productionId, a.budgetItemId, expenseId, a.matchedAmount, ts, ts)
     }
-
-    statements.push({ sql: 'COMMIT', bindValues: [] })
-    await executeBatch(db, statements)
+    const insertSql = `INSERT INTO ${TABLE} (id, production_id, budget_item_id, expense_id, matched_amount, created_at, updated_at) VALUES ${valueGroups.join(', ')}`
+    await executeBatch(db, [{ sql: insertSql, bindValues: insertBind }])
 
     const links = await db.select<Record<string, unknown>[]>(
       `SELECT * FROM ${TABLE} WHERE expense_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
