@@ -1,5 +1,5 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
-import { outboxPush, outboxStatementForRow } from '../outbox'
+import { outboxPush } from '../outbox'
 import type { EquipmentList, EquipmentListItem } from '../types'
 
 const LISTS_TABLE = 'equipment_lists'
@@ -206,7 +206,6 @@ export async function getMaxSortOrderForList(listId: string): Promise<number> {
  */
 export async function reorderEquipmentListItems(listId: string, itemIdsInOrder: string[]): Promise<void> {
   if (itemIdsInOrder.length === 0) return
-  const db = await getDb()
   const ts = now()
   const statements: Array<{ sql: string; bindValues: unknown[] }> = []
   itemIdsInOrder.forEach((id, index) => {

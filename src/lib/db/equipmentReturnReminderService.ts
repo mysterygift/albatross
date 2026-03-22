@@ -112,7 +112,9 @@ export async function createEquipmentWithReminderTask(data: CreateEquipmentData)
     production_id: data.production_id,
     description: reminderDescription(data.name),
     due_date: data.return_due_date ?? null,
-    assigned_department: taskDepartmentFromCrewHierarchy(hierarchy, data),
+    assigned_department: taskDepartmentFromCrewHierarchy(hierarchy, {
+      department: data.department ?? null,
+    }),
     equipment_id: id,
     is_complete: 0,
     notes: null,
@@ -165,7 +167,6 @@ export async function updateEquipmentWithReminderTask(
   const equipmentStatements = buildUpdateEquipmentStatements(equipmentId, patch, ts)
   const merged = { ...current, ...patch } as Equipment
   const stillEligible = isReminderEligible(merged)
-  const nowReturned = isReturned(merged)
 
   if (equipmentStatements.length === 0 && !task) {
     const { updateEquipment } = await import('./repositories/equipment')

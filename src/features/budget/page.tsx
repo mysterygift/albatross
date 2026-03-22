@@ -11,7 +11,6 @@ import {
   listBudgetItemsByProduction,
   listExpensesByProduction,
   createBudgetItem,
-  createExpense,
   deleteExpense,
   updateExpense,
   updateExpenseAccount,
@@ -93,7 +92,6 @@ import { getAccountBandColor } from '@/lib/budget/accountBandColor'
 import type { BudgetItem, BudgetAccount } from '@/lib/db/types'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { getExpenseWithDetails, listAllowExpenseDetailsByProduction } from '@/lib/db/repositories/expenseTransactions'
-import { VendorPicker } from '@/components/vendors/VendorPicker'
 import { getTypedExpenseConfig } from '@/lib/budget/transactions/registry'
 import type { ExpenseTransactionType } from '@/lib/db/types'
 import { listPeopleByProduction } from '@/lib/db/repositories/person'
@@ -138,16 +136,6 @@ const inlineItemSchema = z.object({
   estimated_cost: z.coerce.number().min(0),
 })
 
-const expenseSchema = z.object({
-  account_id: z.string().min(1, 'Select an account'),
-  amount: z.coerce.number().min(0),
-  date: z.string().min(1),
-  vendor_id: z.string().optional(),
-  vendor: z.string().optional(),
-  notes: z.string().optional(),
-  expense_type: z.enum(['petty_cash', 'per_diem', 'other']),
-})
-
 /** Rate as percentage 0–100; stored as decimal 0–1 in DB. */
 const derivedRuleSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -166,7 +154,6 @@ export function BudgetPage() {
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [addItemOpen, setAddItemOpen] = useState(false)
-  const [addExpenseOpen, setAddExpenseOpen] = useState(false)
   const [logSpendOpen, setLogSpendOpen] = useState(false)
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
   const [uncodedExpanded, setUncodedExpanded] = useState(false)
@@ -395,28 +382,6 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
       setRecodeToast('Expense recoded.')
       setTimeout(() => setRecodeToast(null), 3000)
-    },
-  })
-
-  const createExpenseMutation = useMutation({
-    mutationFn: (data: z.infer<typeof expenseSchema>) =>
-      createExpense({
-        production_id: currentProductionId!,
-        account_id: data.account_id,
-        category_id: null,
-        amount: data.amount,
-        date: data.date,
-        vendor_id: data.vendor_id ? data.vendor_id : null,
-        vendor: data.vendor ?? null,
-        notes: data.notes ?? null,
-        expense_type: data.expense_type,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
-      setAddExpenseOpen(false)
     },
   })
 
@@ -2566,140 +2531,6 @@ function BudgetItemForm({
     </>
   )
 }
-
-function QuickExpenseForm({
-  productionId,
-  accounts,
-  onSubmit,
-  onCancel,
-  isLoading,
-}: {
-  productionId: string
-  accounts: BudgetAccount[]
-  onSubmit: (d: z.infer<typeof expenseSchema>) => void
-  onCancel: () => void
-  isLoading: boolean
-}) {
-  const form = useForm<z.infer<typeof expenseSchema>>({
-    resolver: zodResolver(expenseSchema) as never,
-    defaultValues: {
-      account_id: '',
-      amount: 0,
-      date: new Date().toISOString().slice(0, 10),
-      expense_type: 'other',
-      vendor_id: '',
-      vendor: '',
-      notes: '',
-    },
-  })
-  return (
-    <>
-      <DialogHeader>
-        <DialogTitle>Quick-add spend</DialogTitle>
-      </DialogHeader>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label>Amount</Label>
-            <Input type="number" step={0.01} {...form.register('amount')} />
-          </div>
-          <div>
-            <Label>Date</Label>
-            <Input type="date" {...form.register('date')} />
-          </div>
-        </div>
-        <div>
-          <Label>Account</Label>
-          <Controller
-            name="account_id"
-            control={form.control}
-            render={({ field }) => (
-              <Select
-                value={field.value}
-                onValueChange={field.onChange}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} — {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          />
-          {form.formState.errors.account_id && (
-            <p className="text-destructive text-sm">
-              {form.formState.errors.account_id.message}
-            </p>
-          )}
-        </div>
-        <div>
-          <Label>Type</Label>
-          <Controller
-            name="expense_type"
-            control={form.control}
-            render={({ field }) => (
-              <Select
-                defaultValue={field.value}
-                onValueChange={(v) =>
-                  field.onChange(v as 'petty_cash' | 'per_diem' | 'other')
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="other">Other</SelectItem>
-                  <SelectItem value="petty_cash">Petty cash</SelectItem>
-                  <SelectItem value="per_diem">Per diem</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          />
-        </div>
-        <div>
-          <Label>Vendor (linked)</Label>
-          <Controller
-            name="vendor_id"
-            control={form.control}
-            render={({ field }) => (
-              <VendorPicker
-                productionId={productionId}
-                value={field.value ? String(field.value) : null}
-                onChange={(id) => field.onChange(id ?? '')}
-                placeholder="Select vendor"
-              />
-            )}
-          />
-          <p className="text-muted-foreground text-xs mt-1">
-            Optional. Linking a vendor keeps the legacy vendor text field available for migration later.
-          </p>
-        </div>
-        <div>
-          <Label>Vendor (legacy)</Label>
-          <Input {...form.register('vendor')} />
-        </div>
-        <div>
-          <Label>Notes</Label>
-          <Input {...form.register('notes')} />
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={isLoading}>
-            Add
-          </Button>
-        </DialogFooter>
-      </form>
-    </>
-  )
-}
-
 
 function ManageDerivedCostsDialog({
   productionId,

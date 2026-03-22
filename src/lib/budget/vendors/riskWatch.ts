@@ -115,7 +115,6 @@ function getLargeUnpaidVendorInvoices(
   threshold: number,
   excludeInvoiceIds: Set<string>
 ): VendorInvoice[] {
-  const today = new Date().toISOString().slice(0, 10)
   return invoices.filter(
     (inv) =>
       inv.status !== 'paid' &&

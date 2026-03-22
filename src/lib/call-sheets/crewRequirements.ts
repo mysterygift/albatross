@@ -70,7 +70,7 @@ function roleOrderIndex(
 
 function personToCrewRow(
   p: Person,
-  department: string | 'Other',
+  _department: string | 'Other',
   isHodRow: boolean
 ): CallSheetCrewRow {
   return {

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { parseLabourDetails } from '@/lib/budget/transactions/labour'
 import { getPersonBookingsSummary } from '@/lib/people/bookingsSummary'
 import { ExpenseEditorFooter } from '../expense-shared'
-import type { LogSpendEditorHandle, TypedExpenseEditProps } from './types'
+import type { TypedExpenseEditProps } from './types'
 
 const labourEditSchema = z.object({
   person_id: z.string().optional(),

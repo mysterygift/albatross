@@ -191,7 +191,8 @@ export function CastDetailPage() {
 
   const shootDayById = useMemo(() => {
     const m = new Map<string, { shoot_date: string; day_number?: number }>()
-    for (const d of shootDays) m.set(d.id, { shoot_date: d.shoot_date, day_number: d.day_number })
+    for (const d of shootDays)
+      m.set(d.id, { shoot_date: d.shoot_date, day_number: d.day_number ?? undefined })
     return m
   }, [shootDays])
 
@@ -310,7 +311,7 @@ export function CastDetailPage() {
         })
       }
     },
-    onSuccess: (_, sceneIds) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person', personId] })
       queryClient.invalidateQueries({ queryKey: personRecentActivityQueryKey(currentProductionId!, personId!) })
       queryClient.invalidateQueries({ queryKey: ['cast-by-scene'] })
@@ -341,7 +342,7 @@ export function CastDetailPage() {
         })
       }
     },
-    onSuccess: (_, shotIds) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shot-cast-by-person', currentProductionId, personId] })
       queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person', personId] })
       queryClient.invalidateQueries({ queryKey: personRecentActivityQueryKey(currentProductionId!, personId!) })

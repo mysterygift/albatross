@@ -6,11 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import {
-  labourLineItemDetailsSchema,
-  LABOUR_LINE_ITEM_RATE_TYPES,
-  type LabourLineItemDetails,
-} from '@/lib/budget/line-items/labour'
+import { LABOUR_LINE_ITEM_RATE_TYPES, type LabourLineItemDetails } from '@/lib/budget/line-items/labour'
 import type { LineItemEditProps, LineItemEditorRef } from './types'
 
 const labourLineItemEditSchema = z.object({

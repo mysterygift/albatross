@@ -1,5 +1,5 @@
 import type { LineItemType } from '@/lib/db/types'
-import type { ComponentType } from 'react'
+import type { ComponentType, ForwardRefExoticComponent, RefAttributes } from 'react'
 import {
   parseLabourLineItemDetails,
   labourLineItemDetailsToJson,
@@ -26,7 +26,11 @@ import {
   type DepositLineItemDetails,
 } from '@/lib/budget/line-items/deposit'
 import { saveBudgetItemDetails } from '@/lib/db/repositories/budgetItemDetails'
-import type { LineItemEditProps, LineItemReadProps } from '@/features/budget/line-item-views/types'
+import type {
+  LineItemEditProps,
+  LineItemEditorRef,
+  LineItemReadProps,
+} from '@/features/budget/line-item-views/types'
 import { LabourLineItemRead } from '@/features/budget/line-item-views/LabourLineItemRead'
 import { PurchaseLineItemRead } from '@/features/budget/line-item-views/PurchaseLineItemRead'
 import { RentalLineItemRead } from '@/features/budget/line-item-views/RentalLineItemRead'
@@ -38,6 +42,10 @@ import { RentalLineItemEditor } from '@/features/budget/line-item-views/RentalLi
 import { AllowLineItemEditor } from '@/features/budget/line-item-views/AllowLineItemEditor'
 import { DepositLineItemEditor } from '@/features/budget/line-item-views/DepositLineItemEditor'
 
+type LineItemEditorForward = ForwardRefExoticComponent<
+  LineItemEditProps<unknown> & RefAttributes<LineItemEditorRef>
+>
+
 export type LineItemTypeConfig = {
   type: LineItemType
   label: string
@@ -46,7 +54,7 @@ export type LineItemTypeConfig = {
   serialize?: (details: unknown) => string
   ReadComponent: ComponentType<LineItemReadProps>
   editable: boolean
-  EditComponent?: ComponentType<LineItemEditProps<unknown>>
+  EditComponent?: LineItemEditorForward
   save?: (args: { budgetItemId: string; lineItemType: LineItemType; details: unknown }) => Promise<void>
 }
 
@@ -57,7 +65,7 @@ const labourConfig: LineItemTypeConfig = {
   serialize: (d) => labourLineItemDetailsToJson(d as LabourLineItemDetails),
   ReadComponent: LabourLineItemRead,
   editable: true,
-  EditComponent: LabourLineItemEditor as ComponentType<LineItemEditProps<unknown>>,
+  EditComponent: LabourLineItemEditor as LineItemEditorForward,
   save: async ({ budgetItemId, lineItemType, details }) => {
     await saveBudgetItemDetails({ budgetItemId, lineItemType, details })
   },
@@ -70,7 +78,7 @@ const purchaseConfig: LineItemTypeConfig = {
   serialize: (d) => purchaseLineItemDetailsToJson(d as PurchaseLineItemDetails),
   ReadComponent: PurchaseLineItemRead,
   editable: true,
-  EditComponent: PurchaseLineItemEditor as ComponentType<LineItemEditProps<unknown>>,
+  EditComponent: PurchaseLineItemEditor as LineItemEditorForward,
   save: async ({ budgetItemId, lineItemType, details }) => {
     await saveBudgetItemDetails({ budgetItemId, lineItemType, details })
   },
@@ -83,7 +91,7 @@ const rentalConfig: LineItemTypeConfig = {
   serialize: (d) => rentalLineItemDetailsToJson(d as RentalLineItemDetails),
   ReadComponent: RentalLineItemRead,
   editable: true,
-  EditComponent: RentalLineItemEditor as ComponentType<LineItemEditProps<unknown>>,
+  EditComponent: RentalLineItemEditor as LineItemEditorForward,
   save: async ({ budgetItemId, lineItemType, details }) => {
     await saveBudgetItemDetails({ budgetItemId, lineItemType, details })
   },
@@ -96,7 +104,7 @@ const allowConfig: LineItemTypeConfig = {
   serialize: (d) => allowLineItemDetailsToJson(d as AllowLineItemDetails),
   ReadComponent: AllowLineItemRead,
   editable: true,
-  EditComponent: AllowLineItemEditor as ComponentType<LineItemEditProps<unknown>>,
+  EditComponent: AllowLineItemEditor as LineItemEditorForward,
   save: async ({ budgetItemId, lineItemType, details }) => {
     await saveBudgetItemDetails({ budgetItemId, lineItemType, details })
   },
@@ -109,7 +117,7 @@ const depositConfig: LineItemTypeConfig = {
   serialize: (d) => depositLineItemDetailsToJson(d as DepositLineItemDetails),
   ReadComponent: DepositLineItemRead,
   editable: true,
-  EditComponent: DepositLineItemEditor as ComponentType<LineItemEditProps<unknown>>,
+  EditComponent: DepositLineItemEditor as LineItemEditorForward,
   save: async ({ budgetItemId, lineItemType, details }) => {
     await saveBudgetItemDetails({ budgetItemId, lineItemType, details })
   },

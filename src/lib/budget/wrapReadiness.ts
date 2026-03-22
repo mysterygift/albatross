@@ -10,7 +10,6 @@ import {
   getReconciliationSummary,
   getBudgetItemMatchStatus,
   getBudgetItemRemainingEstimate,
-  getExpenseUnallocatedAmount,
   sumMatchedAmountForBudgetItem,
   getUnallocatedExpenses,
   getUnmatchedBudgetItems,

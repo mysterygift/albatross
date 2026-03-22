@@ -27,7 +27,7 @@ import {
   filterExpensesByClassification,
   type ClassificationFilter,
 } from '@/lib/budget/matching'
-import type { BudgetItem, BudgetItemReconciliationStatus, Expense, ExpenseReconciliationStatus } from '@/lib/db/types'
+import type { BudgetItemReconciliationStatus, Expense, ExpenseReconciliationStatus } from '@/lib/db/types'
 import type { LineItemType } from '@/lib/db/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -43,7 +43,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import {
@@ -313,8 +312,15 @@ export function ActualisationPage() {
   })
 
   const updateLinkMutation = useMutation({
-    mutationFn: ({ id, matchedAmount }: { id: string; matchedAmount: number }) =>
-      updateBudgetItemExpenseLink({ id, matchedAmount }),
+    mutationFn: ({
+      id,
+      matchedAmount,
+    }: {
+      id: string
+      matchedAmount: number
+      expenseId?: string
+      budgetItemId?: string
+    }) => updateBudgetItemExpenseLink({ id, matchedAmount }),
     onSuccess: (_data, variables) => {
       setEditingLinkId(null)
       setEditingLinkAmount('')

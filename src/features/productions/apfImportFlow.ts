@@ -9,7 +9,7 @@ import {
 
 export type ApfImportFlowContext = {
   queryClient: QueryClient
-  refetchProductions: () => Promise<unknown>
+  refetchProductions: () => void | Promise<unknown>
   setCurrentProductionId: (id: string | null) => void
   persistShowArchived: (value: boolean) => void
 }
@@ -31,7 +31,7 @@ export async function runApfImportWithUiFollowUp(
   }
 
   ctx.queryClient.invalidateQueries({ queryKey: ['productions'] })
-  await ctx.refetchProductions()
+  await Promise.resolve(ctx.refetchProductions())
   const prod = await getProductionById(result.productionId)
 
   if (prod?.archived_at) {

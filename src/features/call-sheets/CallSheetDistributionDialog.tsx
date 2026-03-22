@@ -50,7 +50,6 @@ export function CallSheetDistributionDialog({
   }, [recipientIdKey])
 
   const hasRecipients = recipients.length > 0
-  const allSelected = hasRecipients && selectedIds.size === recipients.length
   const anySelected = selectedIds.size > 0
 
   const handleToggle = (id: string, checked: boolean) => {

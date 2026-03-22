@@ -42,5 +42,5 @@ export type TypedExpenseEditProps<T = unknown> = {
   /** When true, do not render Save/Cancel footer (used by Log Spend shell). */
   hideFooter?: boolean
   /** When set, parent can call submit() to trigger form submit (e.g. from shared footer). */
-  editorRef?: RefObject<LogSpendEditorHandle>
+  editorRef?: RefObject<LogSpendEditorHandle | null>
 }

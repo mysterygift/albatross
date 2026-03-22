@@ -145,11 +145,9 @@ const FONT_PRODUCTION = 12
 const FONT_SECTION = 10
 const FONT_BODY = 8.5
 const FONT_TABLE = 8
-const FONT_FOOTER = 8
 const ROW_HEIGHT = 10
 const FONT_SCHED = 7.25
 const SCHED_LINE_STEP = 7.5
-const SCHED_RULE_GAP = 2 // Adjusting the spacing for elements in the shooting schedule table.
 const FONT_RUN_TITLE = 9
 const FONT_RUN_SUB = 7.5
 const FONT_CONF = 6.5
@@ -182,45 +180,6 @@ function drawRule(
 }
 
 /**
- * Draw a table: header row (bold) + data rows, with horizontal rules. Updates y.
- */
-function drawTable(
-  page: Page,
-  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
-  bold: Awaited<ReturnType<PDFDocument['embedFont']>>,
-  y: { current: number },
-  columns: { label: string; width: number }[],
-  rows: string[][]
-): void {
-  const tableWidth = columns.reduce((s, c) => s + c.width, 0)
-  const xStart = MARGIN
-  drawRule(page, y.current, xStart, xStart + tableWidth)
-  y.current -= ROW_HEIGHT
-  let x = xStart
-  for (let i = 0; i < columns.length; i++) {
-    const col = columns[i]!
-    page.drawText(col.label.slice(0, 20), { x, y: y.current, size: FONT_TABLE, font: bold })
-    x += col.width
-  }
-  y.current -= ROW_HEIGHT
-  drawRule(page, y.current, xStart, xStart + tableWidth)
-  y.current -= 2
-  const maxChars = (w: number) => Math.max(4, Math.floor(w / 5.5))
-  for (const row of rows) {
-    if (y.current < Y_MIN) break
-    x = xStart
-    for (let i = 0; i < columns.length; i++) {
-      const col = columns[i]!
-      const cell = (row[i] ?? '').slice(0, maxChars(col.width))
-      page.drawText(cell, { x, y: y.current, size: FONT_TABLE, font })
-      x += col.width
-    }
-    y.current -= ROW_HEIGHT
-  }
-  y.current -= SEP_SECTION
-}
-
-/**
  * Ensure we have room for at least minLines; if not, add a new page and return { page, isNew }.
  */
 function addPageIfNeeded(
@@ -234,26 +193,6 @@ function addPageIfNeeded(
   const newPage = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
   y.current = PAGE_HEIGHT - MARGIN
   return { page: newPage, isNew: true }
-}
-
-function drawSection(
-  page: Page,
-  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
-  bold: Awaited<ReturnType<PDFDocument['embedFont']>>,
-  title: string,
-  content: string[],
-  y: { current: number }
-): void {
-  if (y.current < Y_MIN + LINE_SECTION * 2) return
-  y.current -= LINE_SECTION
-  page.drawText(title, { x: MARGIN, y: y.current, size: FONT_SECTION, font: bold })
-  y.current -= LINE_BODY
-  for (const line of content) {
-    if (y.current < Y_MIN) break
-    page.drawText(line.slice(0, 95), { x: MARGIN, y: y.current, size: FONT_BODY, font })
-    y.current -= LINE_BODY
-  }
-  y.current -= SEP_SECTION
 }
 
 /** Extract optional string fields from stored weather JSON (only keys that exist). */
@@ -612,7 +551,7 @@ function drawShootingScheduleTable(
     drawColumnText(5, castLines, font, yTop)
     drawColumnText(6, notesLines, font, yTop)
 
-    refs.y.current -= rowH // + SCHED_RULE_GAP // Adjusts padding between elements and rule lines.
+    refs.y.current -= rowH
     drawRule(refs.page, refs.y.current, x0, x0 + tableW, rgb(0.78, 0.78, 0.78))
     refs.y.current -= 2
   }
@@ -1291,13 +1230,13 @@ function breakSupportSubsectionPage(
 
 function drawCompactCrewTableHeader(
   page: Page,
-  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  _font: Awaited<ReturnType<PDFDocument['embedFont']>>,
   bold: Awaited<ReturnType<PDFDocument['embedFont']>>,
   y: { current: number },
   hasPhone: boolean,
   nameW: number,
   roleW: number,
-  phoneW: number,
+  _phoneW: number,
   tableW: number,
   x0: number
 ): void {

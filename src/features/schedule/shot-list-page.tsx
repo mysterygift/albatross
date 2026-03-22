@@ -353,7 +353,7 @@ export function ShotListPage() {
   })
 
   const shotIds = useMemo(() => shots.map((s) => s.id), [shots])
-  const { data: shotCastByShotId = new Map<string, { id: string; person_id: string }[]>() } = useQuery({
+  const { data: shotCastByShotId = new Map<string, ShotCast[]>() } = useQuery({
     queryKey: ['shot-cast-by-shot-ids', shotIds.join(',')],
     queryFn: () => listShotCastByShotIds(shotIds),
     enabled: shotIds.length > 0,
@@ -408,7 +408,7 @@ export function ShotListPage() {
         person_id: personId,
       })
     },
-    onSuccess: (_, { shotId }) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shot-cast-by-shot-ids'] })
       queryClient.invalidateQueries({ queryKey: ['scene-cast-by-scene', selectedSceneId] })
       queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
@@ -2176,7 +2176,7 @@ function DurationEditor({
   valueRef.current = value
   const repeatRef = useRef<{
     timeoutId: ReturnType<typeof setTimeout>
-    intervalId: ReturnType<typeof setInterval>
+    intervalId: ReturnType<typeof setInterval> | 0
   } | null>(null)
 
   const clearRepeat = useCallback(() => {
