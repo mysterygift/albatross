@@ -33,6 +33,19 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["apf"],
+        "name": "Albatross Project File",
+        "description": "Albatross Project File",
+        "mimeType": "application/octet-stream",
+        "role": "Editor",
+        "exportedType": {
+          "identifier": "com.albatross.app.apf",
+          "conformsTo": ["public.data", "public.archive"]
+        }
+      }
     ]
   }
 }

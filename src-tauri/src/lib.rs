@@ -1,3 +1,6 @@
+mod apf_desktop;
+
+use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -299,7 +302,16 @@ pub fn run() {
         },
     ];
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            apf_desktop::on_second_instance(&app, &argv);
+        }));
+    }
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -309,7 +321,14 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![
+            apf_desktop::pop_pending_apf_open_paths,
+            apf_desktop::grant_read_access_for_apf,
+        ])
         .setup(|app| {
+            let cold = apf_desktop::collect_apf_paths_from_os_args(std::env::args_os().skip(1));
+            app.manage(apf_desktop::ApfOpenQueue(std::sync::Mutex::new(cold)));
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

@@ -97,3 +97,10 @@ export async function getFileUrl(relativePath: string): Promise<string> {
   const full = await resolveAppDataPath(relativePath)
   return full.startsWith('file://') ? full : `file://${full}`
 }
+
+export {
+  normalizeApfSavePath,
+  pickApfFileForImport,
+  pickApfSavePath,
+  sanitizeProductionExportBasename,
+} from '@/lib/files/apfProjectDialogs'

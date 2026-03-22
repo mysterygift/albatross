@@ -1,0 +1,65 @@
+/**
+ * v1 table keys for `data/production.json` → `tables`.
+ * Names match SQLite table names per docs/project-import-export-audit.md §2 (INCLUDE set).
+ * Order matches audit §3 import layers for documentation; export/import need not sort JSON by this array.
+ */
+export const APF_V1_TABLE_KEYS = [
+  'productions',
+  'units',
+  'people',
+  'locations',
+  'shoot_days',
+  'budget_categories',
+  'budget_accounts',
+  'vendors',
+  'key_contacts',
+  'checklist_items',
+  'equipment_terms',
+  'music_tracks',
+  'production_task_sections',
+  'deliverables',
+  'fringe_rules',
+  'contingency_rules',
+  'cost_report_groups',
+  'production_totals',
+  'production_crew_hierarchy_configs',
+  'scenes',
+  'shoot_day_units',
+  'vendor_purchase_orders',
+  'bookings',
+  'cast_availability',
+  'shots',
+  'location_scene',
+  'stripboard_items',
+  'stripboard_strips',
+  'scene_cast',
+  'shot_cast',
+  'budget_items',
+  'vendor_invoices',
+  'expenses',
+  'technical_specs',
+  'clearances',
+  'budget_item_details',
+  'expense_transaction_details',
+  'budget_item_expense_links',
+  'vendor_invoice_expenses',
+  'vendor_purchase_order_expenses',
+  'equipment',
+  'equipment_lists',
+  'equipment_list_items',
+  'production_tasks',
+  'fringe_rule_scopes',
+  'contingency_rule_scopes',
+  'cost_report_group_accounts',
+  'production_total_accounts',
+  'documents',
+  'cue_sheets',
+  'call_sheets',
+  'script_documents',
+] as const
+
+export type ApfV1TableKey = (typeof APF_V1_TABLE_KEYS)[number]
+
+export function isApfV1TableKey(key: string): key is ApfV1TableKey {
+  return (APF_V1_TABLE_KEYS as readonly string[]).includes(key)
+}

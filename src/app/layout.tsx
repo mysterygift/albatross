@@ -11,6 +11,7 @@ import { TutorialHome } from '@/features/tutorial/TutorialHome'
 import { TUTORIAL_SECTION_IDS } from '@/features/tutorial/tutorialSections'
 import { TutorialEntryModal } from '@/features/tutorial/TutorialEntryModal'
 import { ensureAndOpenDemoProductionForTutorial } from '@/features/tutorial/ensureAndOpenDemoProductionForTutorial'
+import { ApfDesktopOpenBridge } from '@/features/productions/ApfDesktopOpenBridge'
 import { useCurrentProduction } from '@/features/productions/context'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
 
@@ -93,7 +94,7 @@ export function AppLayout() {
       updateProgress((prev) => ({ ...prev, seenEntryModal: true }))
       setTutorialEntryOpen(false)
       setTutorialOpen(true)
-    } catch (err) {
+    } catch {
       setTutorialStartupError('Unable to prepare the demo production. Please try again.')
       // Keep the entry modal open so the user can retry.
     } finally {
@@ -116,6 +117,7 @@ export function AppLayout() {
 
   return (
     <SidebarProvider>
+      <ApfDesktopOpenBridge />
       <AppSidebar />
       <SidebarInset>
         <TopBar onOpenTutorial={handleOpenTutorialFromHelp} />
