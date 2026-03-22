@@ -1,200 +1,130 @@
 # Call sheets — developer reference
 
-This document describes how call sheet PDFs are built today: entry points, where each field comes from, and the exact layout produced by `pdf-lib`. Use it when refactoring PDF layout or data assembly.
+How call sheet PDFs are assembled and laid out: entry points, data sources, page structure, and pagination. Production PDFs use **`generateCallSheetPdf`** in [`src/lib/pdf/callSheet.ts`](../src/lib/pdf/callSheet.ts) (`pdf-lib`).
+
+[`src/lib/pdf/index.ts`](../src/lib/pdf/index.ts) exports an older `generateCallSheet` with a different shape — **do not use that** for the in-app Call Sheets flow.
+
+---
 
 ## Entry points
 
 | Flow | Location |
 |------|----------|
-| Primary UI | [`src/features/call-sheets/page.tsx`](../src/features/call-sheets/page.tsx) — **Call Sheets** route |
-| PDF rendering | [`src/lib/pdf/callSheet.ts`](../src/lib/pdf/callSheet.ts) — `generateCallSheetPdf` |
+| Primary UI | [`src/features/call-sheets/page.tsx`](../src/features/call-sheets/page.tsx) |
+| PDF engine | [`src/lib/pdf/callSheet.ts`](../src/lib/pdf/callSheet.ts) — `generateCallSheetPdf` |
 | Bulk export + watermark | [`src/features/call-sheets/exportDistributedCallSheets.ts`](../src/features/call-sheets/exportDistributedCallSheets.ts) |
-| Weather API | [`src/lib/weather/openMeteo.ts`](../src/lib/weather/openMeteo.ts) — `getWeatherSummaryForCallSheet` |
+| Weather (preview / save) | [`src/lib/weather/openMeteo.ts`](../src/lib/weather/openMeteo.ts) — `getWeatherSummaryForCallSheet` |
 
 The calendar **Day Summary** drawer still has a placeholder “Generate Call Sheet” action ([`src/features/schedule/calendar-page.tsx`](../src/features/schedule/calendar-page.tsx)); it does not call this pipeline.
-
-[`src/lib/pdf/index.ts`](../src/lib/pdf/index.ts) exports a separate, older `generateCallSheet` with a different `CallSheetData` shape. **Production call sheets use `generateCallSheetPdf` from `callSheet.ts`, not that helper.**
 
 ---
 
 ## Data assembly (`CallSheetsPage`)
 
-`buildCallSheetData` (a `useMemo` in the page) returns `CallSheetData | null` when production, shoot day, and a **shoot day unit** are selected. It does **not** set `weatherSummary`; that field is filled only in the generate mutation (see [Weather](#weather)).
+`buildCallSheetData` is a `useMemo` in the Call Sheets page. It returns `CallSheetData | null` when production, shoot day, and a **shoot day unit** are selected. It leaves **`weatherSummary` null**; the generate mutation fills that after Open-Meteo (see [Weather](#weather)).
 
-### Repositories and queries
+### Queries (TanStack Query)
 
-Data is loaded with TanStack Query from production-scoped or day-scoped repositories:
+- **Production** → `productionName`
+- **Shoot day** → dates, call/wrap, safety, notes, **`meal_times_json`** (meals only when this JSON has entries), weather fields
+- **Shoot day units + units** → `unitName`, `unitNotes`
+- **Stripboard** → strips for the selected unit, `sort_index` order
+- **Scenes / shots** → schedule row metadata and cast resolution
+- **Locations** → only those used by scenes scheduled on this unit
+- **Key contacts** → departmental / H&S blocks and primary contacts
+- **Bookings** → cast/crew eligibility for the shoot day (whole day, not per unit)
+- **Cast / crew rosters** + **scene_cast / shot_cast** → principal cast and departmental crew
 
-- **Production:** `getProductionById` → `productionName`
-- **Shoot day:** `getShootDayById`, `listShootDaysByProduction` → dates, times, safety, notes, meals, weather JSON (for UI default only)
-- **Units:** `listShootDayUnitsByShootDay`, `listUnitsByProduction` → `unitName`, `unitNotes`
-- **Stripboard:** `listStripsByShootDay` → filtered to `shoot_day_unit_id === selectedUnit`, sorted by `sort_index`
-- **Scenes / shots:** `listScenesByProduction`, `listShotsByProduction` → resolve strip rows to scene metadata and shot numbers
-- **Locations:** `listLocationsByProduction` → only locations referenced by scheduled scenes on this unit (via `scene.location_id`)
-- **Key contacts:** `listKeyContactsByProduction`
-- **Bookings:** `listBookingsByShootDay` → cast/crew eligibility for the **whole shoot day** (not per unit)
-- **Cast roster:** `listCast`
-- **Crew roster:** `listCrew`
-- **Cast requirements:** `getCastIdsBySceneIds`, `getCastIdsByShotIds` keyed by scene/shot IDs appearing on the unit’s strips
+### Derived behaviour
 
-### Derived rules (business logic)
-
-**Cast list** — [`src/lib/call-sheets/castRequirements.ts`](../src/lib/call-sheets/castRequirements.ts) (`getCallSheetCastRequirements`):
-
-- **Required:** If the unit has any scheduled **shots**, required cast come from `shot_cast` for those shots; otherwise from `scene_cast` for scheduled scenes.
-- **Booked:** Person appears in `listBookingsByShootDay` for that shoot day.
-- **On PDF:** Intersection only — required **and** booked. Unbooked required cast are warnings in the UI only.
-
-Rows are sorted by `cast_number` (string/numeric-aware) then name. Each row carries phone and agent fields for the PDF table.
-
-**Crew list** — [`src/lib/call-sheets/crewRequirements.ts`](../src/lib/call-sheets/crewRequirements.ts) (`getCallSheetCrewRequirements`):
-
-- Includes crew (non-cast people) who have a booking on that shoot day.
-- Grouped by **canonical department** from the effective crew hierarchy ([`getEffectiveCrewHierarchyOrDefault`](../src/lib/people/crewHierarchyResolver.ts)); unknown departments bucket to `"Other"`.
-- Within each department: **HOD first** (role matches resolved HOD for that department), then hierarchy role order, then name.
-
-**Schedule rows** — built from `unitStrips`:
-
-- Strips with `strip_type` `SHOT` or `SCENE` and a `scene_id` are normalized to PDF strip type **`SCENE`**, pulling `scene_number`, title/heading, `int_ext`, `day_night`, `page_eighths` from the scene, and optional `shot_number` from the linked shot.
-- Other strips keep their `strip_type` (`MOVE`, `CALL`, `LUNCH`, `WRAP`, `NOTE`, etc.) with `title` / `description` from the strip. A lone `SHOT` without scene follows the “non-scene” branch with `strip_type` coerced to `SCENE` in the object literal (see page source) for PDF typing.
-
-**Locations on PDF:** Unique `location_id`s from scheduled scenes on this unit → rows from `listLocationsByProduction`. **`notes` on locations are mapped into `CallSheetLocation` but are not drawn in the PDF** (only name, address, what3words).
-
-**Meals:** Parsed from `shoot_days.meal_times_json` (array of `{ name?, time? }`). If empty, the builder supplies a single default `{ name: 'Lunch', time: '13:00' }`.
-
-### Field mapping (shoot day / unit → `CallSheetData`)
-
-| `CallSheetData` field | Source |
-|----------------------|--------|
-| `productionName` | `productions.name` |
-| `shootDate` | `shoot_days.shoot_date` (ISO string as stored) |
-| `unitName` | Unit name from `units` via selected `shoot_day_unit`, else `"Main Unit"` |
-| `dayNumber` | `shoot_days.day_number` |
-| `callTime` / `wrapTime` | `shoot_days.call_time` / `wrap_time` |
-| `dayNotes` | `shoot_days.notes` |
-| `unitNotes` | `shoot_day_units.notes` |
-| `keyContacts` | `key_contacts` rows (department, name, phone, email, notes — **notes not printed on PDF**) |
-| `hospitalName` / `hospitalAddress` | `shoot_days` |
-| `policeStationName` / `policeStationAddress` | `shoot_days` |
-| `parkingBaseAddress` | `shoot_days.parking_base_address` |
-| `mealTimes` | Parsed `meal_times_json` or default lunch |
-| `specialNotes` | `shoot_days.special_notes` |
-| `weatherSummary` | Always `null` in `buildCallSheetData`; see below |
-| `schedule` | Derived strips (see above) |
-| `castCalled` | `getCastCalledNames(castRows)` (names only; redundant when `castCalledRows` present) |
-| `castCalledRows` | Full rows from `getCallSheetCastRequirements` |
-| `crewGroups` | `getCallSheetCrewRequirements` |
-| `locations` | Locations for scenes scheduled on this unit |
+- **Principal cast** — [`getCallSheetCastRequirements`](../src/lib/call-sheets/castRequirements.ts): required from shot-level or scene-level casting vs scheduled material; PDF shows **required ∩ booked**; UI warns on gaps.
+- **Crew (departmental)** — [`getCallSheetCrewRequirements`](../src/lib/call-sheets/crewRequirements.ts): booked non-cast crew grouped by canonical department; HOD first, then hierarchy order, then name.
+- **Schedule rows** — [`buildCallSheetStripFromStripboard`](../src/lib/call-sheets/scheduleStripRow.ts): stripboard-driven **LOC**, **EP/SC**, synopsis, **D/N**, **PGS**, compact **CAST**, notes; **IF TIME PERMITS** strips grouped after the main block in both the main schedule and the advanced schedule.
+- **Primary contacts (page 1)** — [`selectPrimaryCallSheetContacts`](../src/lib/call-sheets/primaryContacts.ts): AD / coordinator / office-style rows for the right column under **Essential times & primary contacts**; email only where [`primaryContactShowsEmail`](../src/lib/call-sheets/primaryContacts.ts) applies.
+- **Meals** — parsed from `shoot_days.meal_times_json` only. **No default lunch** is injected when the array is empty.
+- **Advanced schedule** — [`buildAdvancedScheduleForCallSheet`](../src/lib/call-sheets/advancedSchedule.ts): up to two shoot days after the current day (same unit on the stripboard when possible), compact strip table, **IF TIME PERMITS** mirroring the main schedule.
+- **`radioChannels` / `transportRows`** — supported on `CallSheetData` for the PDF. The Call Sheets page **does not populate** them from the DB/UI yet; they are omitted so **RADIO CHANNELS** and **TRANSPORT REQUIREMENTS** do not appear unless another caller sets real rows.
 
 ---
 
 ## Weather
 
-On **Preview PDF**, **Save PDF**, and **Save & Open**, the mutation:
+On **Preview PDF**, **Save PDF**, and **Save & Open**:
 
-1. Builds `locationQuery` from the **first** location in `locationsForDay`: `name + ", " + address` (whichever exist).
-2. Calls `getWeatherSummaryForCallSheet(locationQuery, shoot_date)` (Open-Meteo geocode + forecast for that calendar day).
-3. On failure or empty query, uses `fallbackWeather`: the **Weather (manual fallback)** input, which is initialised from parsed `shoot_days.weather_json` (`summary` / `high` / `low`) when present.
-4. Merges `{ ...baseData, weatherSummary: finalWeather }` then calls `generateCallSheetPdf`.
+1. Build `locationQuery` from the first scheduled location (name + address).
+2. Call `getWeatherSummaryForCallSheet(locationQuery, shoot_date)`.
+3. On failure or empty query, use **Weather (manual fallback)** (and/or parsed stored summary from `weather_json`).
+4. Merge `{ ...baseData, weatherSummary: finalWeather }` then `generateCallSheetPdf`.
 
-**Distributed export** ([`exportDistributedCallSheets`](../src/features/call-sheets/exportDistributedCallSheets.ts)) calls `generateCallSheetPdf(baseData)` **without** this step, so **`weatherSummary` stays null** and the PDF summary line shows an em dash for weather unless you change that flow.
+**Distributed export** calls `generateCallSheetPdf(baseData)` **without** that step unless extended; **`weatherSummary` stays null** there; **Environment & safety** still uses manual/stored weather and other fields when present.
 
 ---
 
-## PDF generation (`generateCallSheetPdf`)
+## PDF layout (`generateCallSheetPdf`)
 
-**Library:** `pdf-lib`. **Fonts:** standard Helvetica / HelveticaBold only.
+**Fonts:** Helvetica / HelveticaBold only. **Page:** US Letter **612 × 792** pt. **Margins:** 54 pt. **`Y_MIN`:** margin + footer reserve (~52 pt) so body text stays above the confidentiality band.
 
-**Page geometry:**
+### Header policy (intentional)
 
-- Size: **612 × 792** (US Letter points).
-- **Margin:** 54 pt on left; content starts at `y = PAGE_HEIGHT - MARGIN` and works **downward** (PDF coordinates).
-- **Footer safe band:** Drawing stops above `Y_MIN = MARGIN + 40`; the generator does not run full pagination for overflowing **tables** — `drawTable` **stops adding rows** when `y.current < Y_MIN`, so excess schedule/cast/crew rows are **silently truncated** on that page.
+- **Page 1** opens with the **full masthead** (production identity): **CALL SHEET** + formatted shoot date, production name, **Day n · Unit: …**. **Unit call and wrap are not repeated in the masthead** — they appear once under **Essential times & primary contacts** (together with meal-derived breakfast/lunch lines when data exists).
+- **Every continuation page** (page breaks inside page 1 sections, schedule/cast continuations, operational support, advanced schedule) uses the **running header**: **CALL SHEET** or **CALL SHEET (cont'd)**, production name, formatted date, horizontal rule. **The masthead is not duplicated on page 1** to avoid a cluttered double header.
 
-**Continuation pages:** `addPageIfNeeded` adds a new page when vertical space before a major block is insufficient. New pages get a grey header: `CALL SHEET – {shootDate} (cont'd)`.
+### Footer (every page)
 
-### Section order and layout
+Wrapped **confidentiality** text in small grey: production name (if any) + fixed legal core (`CONFIDENTIAL_FOOTER_CORE` in code). **Last page only:** a **Generated:** timestamp above that block.
 
-1. **Header / masthead**  
-   - Title: `CALL SHEET` (bold, 20 pt).  
-   - Production name (bold, 14 pt).  
-   - One line: `{shootDate} • {unitName}[ • Day {dayNumber}]` (body 9 pt, truncated to 95 chars).  
-   - Optional lines: `Crew call: {callTime}`, `Wrap (est.): {wrapTime}`.
+---
 
-2. **Key day summary band**  
-   - Horizontal rule.  
-   - Single line (8 pt): pipe-separated `Call {time}` (if present), `shootDate`, `unitName`, `weatherSummary` or `—`, hospital label or `—`. **Truncated to 120 characters** total.
+## Page and section order
 
-3. **Locations & safety** (skipped only if no locations, parking, hospital, or police fields)  
-   - Section title: `Locations & safety`.  
-   - **Set:** For each location: `name — address` (indented 8 pt); optional grey line `what3words: …`.  
-   - **Parking / base:** `parkingBaseAddress`.  
-   - **Hospital** / **Police / emergency:** name and address lines.  
-   - Location **`notes` are not rendered.**
+### Page 1 (single flow until a break forces a new page)
 
-4. **Today’s scenes**  
-   - Table helper `drawTable`: top and header rules; columns **Scene** (70), **Title / description** (220), **I/E** (36), **D/N** (36), **Pgs** (40) — widths are in pt; cell text truncated by a `maxChars(width)` heuristic (~5.5 pt per char at 8 pt font).  
-   - **SCENE** strips: `Scene {n}[ – {shot}]`, title from scene, int/ext, day/night, `{page_eighths}/8` or `—`.  
-   - **Non-SCENE** strips: first column = strip type string; second column = joined type/title/description; other columns `—`.
+1. **Masthead / production identity** — as above; no unit call / wrap line here.
+2. **Essential times & primary contacts** — left: **Date**, **Unit call**, **Wrap (est.)**, **Breakfast** / **Lunch** only when matched from real `mealTimes` (from `meal_times_json`). Right: **Primary contacts** (subset of key contacts).
+3. **Environment & safety** — omitted if nothing to show. Forecast, stored weather keys, manual weather, day/unit/special notes, hospital, police/emergency.
+4. **Base & locations** — unit base / crew parking; shooting locations with optional what3words and notes.
+5. **Shooting schedule** — stripboard-driven grid: **LOC**, **EP/SC**, **SET / SYNOPSIS**, **D/N**, **PGS**, **CAST**, **NOTES**; special strips (e.g. **MOVE**, **CALL**, **LUNCH**, **WRAP**, **NOTE**) as grey band rows; **IF TIME PERMITS** subsection when needed. Continuation pages repeat the running header + **SHOOTING SCHEDULE (cont'd)** + column headers.
+6. **Principal cast calls** — dynamic columns (**ID**, **CAST**, and optional **CHARACTER**, **ON SET**, **PHONE**, **NOTES**, **AGENT** when any row has data). Continuations repeat heading and header row.
 
-5. **Cast called**  
-   - Table columns: **#** (28), **Name** (120), **Phone** (100), **Agent / contact** (200).  
-   - If `castCalledRows` is present: one row per cast member with cast number, name, phone, agent name/phone.  
-   - **Fallback:** if only `castCalled` names exist, the code maps each name to `[name, '—', '—', '—']` — **four strings for four columns, but the first column is the name, not the cast number** (legacy path; normal flow always supplies `castCalledRows` from the page).
+### Operational support (starts on a **new page** when `hasOperationalSupportLayer`)
 
-6. **Crew**  
-   - For each `crewGroups` entry with rows: optional rule between departments (not before first).  
-   - Department name as a plain bold line (not a table header).  
-   - Then `drawTable` with **Name** (140), **Role** (160), **Phone** (120); role appends ` (HOD)` when `is_hod`.
+Shown only if there is departmental content, H&S/stunts content, **non-empty meal rows** (name + time), **radio** rows, or **transport** rows.
 
-7. **Key crew / contacts**  
-   - Single table: **Department** (100), **Name** (110), **Phone** (95), **Email** (150).  
-   - Key contact **`notes` are not rendered.**
+1. **DEPARTMENTAL REQUIREMENTS** — per general department: department title, key contact lines, compact **Name / Role / Phone** crew table. Long blocks **paginate**: new page → running header + **Operational support** subtitle + **DEPARTMENTAL REQUIREMENTS (cont'd)** + repeated department banner + continued rows (no silent truncation).
+2. **HEALTH, SAFETY & STUNTS** — same pattern for stunt / medical / safety / fire / risk-style departments; same pagination rules.
+3. **CATERING / MEALS** — **Meal** / **Time** table for rows with non-empty name and time from `mealTimes` only (no facilities subsection — there is no separate facilities field in the model).
+4. **RADIO CHANNELS** — one line per `{ channel, purpose }` when `radioChannels` is set and non-empty (currently not populated by the main UI pipeline).
+5. **TRANSPORT REQUIREMENTS** — sparse table over **Driver**, **Pickup**, **Passenger**, **From**, **To**, **Arrival** when `transportRows` is set (currently not populated by the main UI pipeline).
 
-8. **Meal times**  
-   - `drawSection`: title + one line per meal `"{name}: {time}"` (95-char line truncation per line).
+### Later pages — **ADVANCED SCHEDULE**
 
-9. **Notes**  
-   - Consolidated block: optional lines `Day: …`, `Unit: …`, `Special: …` from `dayNotes`, `unitNotes`, `specialNotes`.
+When `advancedScheduleDays` is non-empty: for each forward day, day meta (date, day number, unit call, base, locations summary), compact schedule table (**CAST** column only if any row has cast text), **IF TIME PERMITS** as needed. Continuations use the running header + **ADVANCED SCHEDULE (cont'd)** and repeated day/table headers as implemented in code.
 
-10. **Advance schedule**  
-    - Section title + placeholder `—` in grey (fixed placeholder, no data).
+---
 
-11. **Footer** (last page only in practice — drawn at **y = 36**)  
-    - `Generated: {new Date().toLocaleString()}` in grey, 8 pt.
+## Field mapping snapshot
 
-### Table rendering details
-
-- Header row uses bold 8 pt; body 8 pt.  
-- Row height ~10 pt; section spacing constants (`LINE_BODY`, `SEP_SECTION`, etc.) are defined at the top of [`callSheet.ts`](../src/lib/pdf/callSheet.ts).  
-- No vertical borders; only horizontal rules above header and below header row.
+| `CallSheetData` | Source (typical) |
+|-----------------|------------------|
+| `mealTimes` | `meal_times_json` only; may be `[]` |
+| `callTime` / `wrapTime` | `shoot_days`; shown under Essential times, not masthead |
+| `radioChannels` / `transportRows` | Optional; unset in default UI assembly |
+| `weatherSummary` | Set only in generate mutation / external callers |
 
 ---
 
 ## Distribution export
 
-[`exportDistributedCallSheets`](../src/features/call-sheets/exportDistributedCallSheets.ts):
-
-1. User picks a directory.  
-2. Generates **one** base PDF via `generateCallSheetPdf(baseData)`.  
-3. For each selected recipient, loads the PDF, applies [`applyRecipientNameWatermarkToPDF`](../src/lib/pdf/applyRecipientNameWatermarkToPDF.ts) (diagonal grey name on every page), writes `call-sheet-{shootDate}-{unit}-{recipient}.pdf` with uniqueness suffixes if needed.
-
-Recipients are cast rows plus crew rows from the same preview logic as the page (deduped by id).
+[`exportDistributedCallSheets`](../src/features/call-sheets/exportDistributedCallSheets.ts): one base PDF from `generateCallSheetPdf`, then per recipient watermark and file naming. Recipients mirror the page’s cast + crew preview (deduped by id).
 
 ---
 
-## Persistence and demo seed
+## Demo seed
 
-- DB table **`call_sheets`** (see migrations) stores optional overrides / generated document linkage; **the current Call Sheets page flow does not document tying generated PDFs back through that table** in the path described above — saving uses a file dialog and filename pattern `call-sheet-{shoot_date}-{unitId or 'main'}.pdf`.  
-- Demo production seed generates a sample PDF via the same `generateCallSheetPdf` ([`demoProductionSeed.ts`](../src/lib/db/seed/demoProductionSeed.ts), `buildCallSheetDataForSeed`).
+[`demoProductionSeed.ts`](../src/lib/db/seed/demoProductionSeed.ts) builds sample `CallSheetData` via `buildCallSheetDataForSeed` and uses **`meal_times_json`** from the seeded shoot day (empty → no catering table from fabricated lunch).
 
 ---
 
-## Refactor checklist (suggested)
+## Related cleanups elsewhere
 
-- **Pagination:** Replace “truncate table when `y < Y_MIN`” with true multi-page tables or row splitting.  
-- **Weather on distributed PDFs:** Decide whether to merge the same Open-Meteo + fallback step before bulk export.  
-- **Unused / unprinted fields:** `CallSheetLocation.notes`, `CallSheetKeyContact.notes`, and legacy `castCalled`-only PDF path.  
-- **Typography:** All Helvetica; no embedded production fonts or branding.  
-- **Letter vs A4:** Hard-coded 612×792.  
-- **Remove or isolate** legacy `generateCallSheet` in `src/lib/pdf/index.ts` to avoid confusion.
+- **Legacy `generateCallSheet`** in `src/lib/pdf/index.ts` remains a separate code path; production call sheets use `callSheet.ts` only.
