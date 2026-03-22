@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
+import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
+import { castTutorialSteps } from '@/features/tutorial/sections/castTutorial'
 import { listCast, createPerson, updatePerson } from '@/lib/db/repositories/person'
 import {
   Table,
@@ -66,11 +69,19 @@ function trimOrNull(s: string | undefined): string | null {
 export function CastManagerPage() {
   const { currentProductionId } = useCurrentProduction()
   const queryClient = useQueryClient()
+  const { progress, updateProgress } = useFirstLaunchTutorial()
   const [search, setSearch] = useState('')
   const [contributorFilter, setContributorFilter] = useState<ContributorFilter>('all')
   const [missingFilter, setMissingFilter] = useState<MissingFilter>('all')
   const [addOpen, setAddOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [tutorialOpen, setTutorialOpen] = useState(false)
+
+  useEffect(() => {
+    if (progress?.currentSection === 'cast') {
+      setTutorialOpen(true)
+    }
+  }, [progress?.currentSection])
 
   const { data: cast = [] } = useQuery({
     queryKey: ['cast', currentProductionId],
@@ -170,7 +181,7 @@ export function CastManagerPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Cast Manager</h1>
@@ -356,6 +367,39 @@ export function CastManagerPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <SectionTutorialPanel
+        open={tutorialOpen}
+        onOpenChange={(open) => {
+          setTutorialOpen(open)
+          if (!open) {
+            updateProgress((prev) => ({
+              ...prev,
+              currentSection: prev.currentSection === 'cast' ? null : prev.currentSection,
+              sections: {
+                ...prev.sections,
+                cast: prev.sections.cast === 'not_started' ? 'in_progress' : prev.sections.cast,
+              },
+            }))
+          }
+        }}
+        sectionId="cast"
+        sectionTitle="Cast Management"
+        steps={castTutorialSteps}
+        progress={progress}
+        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
+        onCompleteSection={() => {
+          setTutorialOpen(false)
+          updateProgress((prev) => ({
+            ...prev,
+            currentSection: prev.currentSection === 'cast' ? null : prev.currentSection,
+            sections: {
+              ...prev.sections,
+              cast: 'complete',
+            },
+          }))
+        }}
+      />
     </div>
   )
 }

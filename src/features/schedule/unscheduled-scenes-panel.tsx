@@ -2,7 +2,7 @@
  * Left panel: Unscheduled Shots — shots not on the stripboard.
  * Search, location filter (by scene), multi-select, Assign to Day (Shoot Day + Unit).
  */
-import { useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -26,6 +26,10 @@ import type { Location } from '@/lib/db/types'
 import type { ShootDay } from '@/lib/db/types'
 import type { ShootDayUnit } from '@/lib/db/types'
 import type { ShotWithScene } from '@/lib/db/repositories/stripboard-strips'
+import { cn } from '@/lib/utils'
+
+/** When visible unscheduled shots exceed this count, the list area scrolls internally. */
+const UNSCHEDULED_LIST_SCROLL_THRESHOLD = 10
 
 export type UnscheduledShotsPanelProps = {
   unscheduledShots: ShotWithScene[]
@@ -68,7 +72,35 @@ export function UnscheduledShotsPanel({
 }: UnscheduledShotsPanelProps) {
   const [assignDayId, setAssignDayId] = useState<string | null>(null)
   const [assignUnitId, setAssignUnitId] = useState<string | null>(null)
+  const listScrollRef = useRef<HTMLDivElement>(null)
+  const [showListBottomFeather, setShowListBottomFeather] = useState(false)
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({ id: droppableId })
+
+  const updateListBottomFeather = useCallback(() => {
+    const el = listScrollRef.current
+    if (!el) {
+      setShowListBottomFeather(false)
+      return
+    }
+    const scrollable = el.scrollHeight > el.clientHeight + 1
+    const notAtBottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1
+    setShowListBottomFeather(scrollable && notAtBottom)
+  }, [])
+
+  useLayoutEffect(() => {
+    const el = listScrollRef.current
+    const tick = () => updateListBottomFeather()
+    const rafId = requestAnimationFrame(tick)
+    if (!el) {
+      return () => cancelAnimationFrame(rafId)
+    }
+    const ro = new ResizeObserver(tick)
+    ro.observe(el)
+    return () => {
+      cancelAnimationFrame(rafId)
+      ro.disconnect()
+    }
+  }, [unscheduledShots, updateListBottomFeather])
 
   const dayUnitsForDay = assignDayId
     ? dayUnits.filter((du) => du.shoot_day_id === assignDayId)
@@ -136,69 +168,101 @@ export function UnscheduledShotsPanel({
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 overflow-auto min-h-0">
-        {unscheduledShots.length === 0 ? (
-          <p className="text-muted-foreground text-sm py-4 text-center">No unscheduled shots.</p>
-        ) : (
-          unscheduledShots.map((item) => (
-            <DraggableUnscheduledShot key={item.shot.id} item={item}>
-              <UnscheduledShotRow
-                item={item}
-                selected={selectedShotIds.has(item.shot.id)}
-                onToggle={() => onToggleShot(item.shot.id)}
-                onAdd={(shootDayId, shootDayUnitId) => onAddSingle(item.shot.id, shootDayId, shootDayUnitId)}
-                shootDays={shootDays}
-                dayUnits={dayUnits}
-                getUnitName={getUnitName}
-              />
-            </DraggableUnscheduledShot>
-          ))
+      <div className="relative flex flex-1 flex-col min-h-0">
+        <div
+          ref={listScrollRef}
+          onScroll={updateListBottomFeather}
+          className={cn(
+            'flex flex-1 flex-col gap-2 min-h-0',
+            unscheduledShots.length > UNSCHEDULED_LIST_SCROLL_THRESHOLD && 'max-h-[18rem] overflow-y-auto'
+          )}
+        >
+          {unscheduledShots.length === 0 ? (
+            <p className="text-muted-foreground text-sm py-4 text-center">No unscheduled shots.</p>
+          ) : (
+            unscheduledShots.map((item) => (
+              <DraggableUnscheduledShot key={item.shot.id} item={item}>
+                <UnscheduledShotRow
+                  item={item}
+                  selected={selectedShotIds.has(item.shot.id)}
+                  onToggle={() => onToggleShot(item.shot.id)}
+                  onAdd={(shootDayId, shootDayUnitId) => onAddSingle(item.shot.id, shootDayId, shootDayUnitId)}
+                  shootDays={shootDays}
+                  dayUnits={dayUnits}
+                  getUnitName={getUnitName}
+                />
+              </DraggableUnscheduledShot>
+            ))
+          )}
+        </div>
+        {showListBottomFeather && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-10 bg-linear-to-t from-card to-transparent"
+          />
         )}
       </div>
 
-      {selectedList.length > 0 && (
-        <div className="border-t border-border pt-3 space-y-2">
-          <Label className="text-xs text-muted-foreground">Assign selected to</Label>
-          <div className="flex flex-col gap-2">
-            <Select value={assignDayId ?? ''} onValueChange={(v) => { setAssignDayId(v || null); setAssignUnitId(null) }}>
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Shoot day" />
-              </SelectTrigger>
-              <SelectContent>
-                {shootDays.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.shoot_date} {d.day_number != null ? `(Day ${d.day_number})` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={assignUnitId ?? ''}
-              onValueChange={(v) => setAssignUnitId(v || null)}
-              disabled={!assignDayId || dayUnitsForDay.length === 0}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Unit" />
-              </SelectTrigger>
-              <SelectContent>
-                {dayUnitsForDay.map((du) => (
-                  <SelectItem key={du.id} value={du.unit_id}>
-                    {getUnitName(du.unit_id)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              className="w-full"
-              disabled={!assignDayId || !assignUnitId || dayUnitsForDay.length === 0 || isAssigning}
-              onClick={handleBulkAssign}
-            >
-              {isAssigning ? 'Assigning…' : `Assign ${selectedList.length} to Day`}
-            </Button>
-          </div>
+      <div className="border-t border-border pt-3 space-y-2">
+        <p className="text-xs text-muted-foreground leading-snug">
+          Select the shot(s) you want to assign to a shoot day.
+        </p>
+        <div className="flex flex-col gap-2">
+          <Select
+            value={assignDayId ?? ''}
+            onValueChange={(v) => {
+              setAssignDayId(v || null)
+              setAssignUnitId(null)
+            }}
+            disabled={selectedList.length === 0}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="Select shoot day..." />
+            </SelectTrigger>
+            <SelectContent>
+              {shootDays.map((d) => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.shoot_date} {d.day_number != null ? `(Day ${d.day_number})` : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={assignUnitId ?? ''}
+            onValueChange={(v) => setAssignUnitId(v || null)}
+            disabled={selectedList.length === 0 || !assignDayId || dayUnitsForDay.length === 0}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="Select a unit..." />
+            </SelectTrigger>
+            <SelectContent>
+              {dayUnitsForDay.map((du) => (
+                <SelectItem key={du.id} value={du.unit_id}>
+                  {getUnitName(du.unit_id)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            className="w-full"
+            disabled={
+              selectedList.length === 0 ||
+              !assignDayId ||
+              !assignUnitId ||
+              dayUnitsForDay.length === 0 ||
+              isAssigning
+            }
+            onClick={handleBulkAssign}
+          >
+            {isAssigning
+              ? 'Assigning…'
+              : selectedList.length > 0
+                ? `Assign ${selectedList.length} to Day`
+                : 'Assign to Day'}
+          </Button>
         </div>
-      )}
+      </div>
     </div>
   )
 }

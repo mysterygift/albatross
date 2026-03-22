@@ -1,8 +1,11 @@
 /**
- * Demo cast bookings seed.
+ * Demo bookings seed.
  * Used when initialising a new demo project (ensureDemoData / resetDemoData → runFullSeed).
- * Seeds bookings for cast only (is_cast = 1), derived from scene_cast and stripboard schedule.
- * Respects cast_availability clashes. Call after people, scene_cast, cast_availability, shoot_days.
+ *
+ * - Cast (`seedDemoBookings`): is_cast = 1 only; derived from scene_cast and stripboard schedule.
+ *   Respects cast_availability clashes. Call after people, scene_cast, cast_availability, shoot_days.
+ * - Crew (`seedDemoCrewBookings`): is_cast = 0; one booking per crew member per shoot day with
+ *   role from `people.role_name`. Call after `seedDemoCrew` so crew rows exist.
  */
 import { executeBatch, getDb } from '../client'
 import { IDS } from './constants'
@@ -10,6 +13,7 @@ import { getSceneNumbersForDay } from './demoPeopleSeed'
 
 export type DemoBookingSeedIdSource = {
   booking: (n: number) => string
+  crewBooking: (n: number) => string
   person: (n: number) => string
   shootDay: (n: number) => string
   scene: (n: number) => string
@@ -108,4 +112,52 @@ export async function seedDemoBookings(
   if (statements.length > 0) {
     await executeBatch(db, statements)
   }
+}
+
+/**
+ * Seed crew bookings: every non-cast person on the production gets a row for every shoot day.
+ * Uses `crewBooking` IDs (separate range from cast `booking`). Deterministic order: crew `ORDER BY id`, days by `day_number`.
+ */
+export async function seedDemoCrewBookings(
+  pid: string,
+  ts: string,
+  idSource: DemoBookingSeedIdSource = IDS
+): Promise<void> {
+  const db = await getDb()
+
+  const shootDays = await db.select<{ id: string; day_number: number; shoot_date: string }[]>(
+    `SELECT id, day_number, shoot_date FROM shoot_days WHERE production_id = $1 AND deleted_at IS NULL ORDER BY day_number`,
+    [pid]
+  )
+  const crewRows = await db.select<{ id: string; role_name: string | null }[]>(
+    `SELECT id, role_name FROM people WHERE production_id = $1 AND is_cast = 0 AND deleted_at IS NULL ORDER BY id`,
+    [pid]
+  )
+  if (shootDays.length === 0 || crewRows.length === 0) return
+
+  let crewBookingIdx = 0
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = []
+  for (const person of crewRows) {
+    for (const day of shootDays) {
+      crewBookingIdx++
+      statements.push({
+        sql: `INSERT INTO bookings (id, production_id, person_id, shoot_day_id, start_date, end_date, role, notes, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        bindValues: [
+          idSource.crewBooking(crewBookingIdx),
+          pid,
+          person.id,
+          day.id,
+          day.shoot_date,
+          day.shoot_date,
+          person.role_name,
+          null,
+          ts,
+          ts,
+        ],
+      })
+    }
+  }
+
+  await executeBatch(db, statements)
 }

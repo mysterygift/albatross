@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listProductions,
@@ -10,6 +10,12 @@ import {
   unarchiveProduction,
   findExistingDemoTemplateProduction,
 } from '@/lib/db/repositories/production'
+import { pickApfFileForImport, pickApfSavePath } from '@/lib/files'
+import {
+  exportProductionAsApf,
+  userMessageForExportFailure,
+  userMessageForImportFailure,
+} from '@/lib/importExport'
 import { createProductionFromTemplate } from '@/lib/db/createProductionFromTemplate'
 import {
   useReactTable,
@@ -47,8 +53,22 @@ import { Textarea } from '@/components/ui/textarea'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Pencil, Trash2, Copy, Archive, PackageOpen, File, FileStack, FileText } from 'lucide-react'
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Copy,
+  Archive,
+  PackageOpen,
+  File,
+  FileStack,
+  FileText,
+  Download,
+  Upload,
+  Loader2,
+} from 'lucide-react'
 import type { Production } from '@/lib/db/types'
+import { runApfImportWithUiFollowUp } from '@/features/productions/apfImportFlow'
 import { useCurrentProduction } from './context'
 import { Controller } from 'react-hook-form'
 
@@ -122,8 +142,10 @@ export function ProductionsPage() {
       return false
     }
   })
+  const [apfBusy, setApfBusy] = useState<'export' | 'import' | null>(null)
   const queryClient = useQueryClient()
-  const { currentProductionId, setCurrentProductionId, refetchProductions } = useCurrentProduction()
+  const { currentProductionId, currentProduction, setCurrentProductionId, refetchProductions } =
+    useCurrentProduction()
   const { data: productions = [] } = useQuery({
     queryKey: ['productions', { includeArchived: showArchived }],
     queryFn: () => listProductions({ includeArchived: showArchived }),
@@ -138,6 +160,66 @@ export function ProductionsPage() {
       /* ignore */
     }
   }
+
+  async function handleExportApf() {
+    if (!currentProduction || apfBusy) return
+    setApfBusy('export')
+    try {
+      const path = await pickApfSavePath(currentProduction.name)
+      if (path == null) return
+      await exportProductionAsApf(currentProduction.id, path)
+      const baseName = path.split(/[/\\]/).pop() ?? 'file.apf'
+      setActionToast({ type: 'success', message: `Project exported as “${baseName}”.` })
+      setTimeout(() => setActionToast(null), 5000)
+    } catch (e) {
+      setActionToast({ type: 'error', message: userMessageForExportFailure(e) })
+      setTimeout(() => setActionToast(null), 6000)
+    } finally {
+      setApfBusy(null)
+    }
+  }
+
+  async function handleImportApf() {
+    if (apfBusy) return
+    setApfBusy('import')
+    try {
+      const path = await pickApfFileForImport()
+      if (path == null) return
+      const outcome = await runApfImportWithUiFollowUp(path, {
+        queryClient,
+        refetchProductions,
+        setCurrentProductionId,
+        persistShowArchived: (value) => {
+          try {
+            localStorage.setItem('showArchivedProductions', String(value))
+          } catch {
+            /* ignore */
+          }
+        },
+      })
+      if (outcome.kind === 'error') {
+        setActionToast({ type: 'error', message: outcome.message })
+        setTimeout(() => setActionToast(null), 6000)
+        return
+      }
+      if (outcome.revealArchivedInList) {
+        setShowArchived(true)
+      }
+      setActionToast({ type: 'success', message: outcome.message })
+      setTimeout(() => setActionToast(null), 8000)
+    } catch (e) {
+      setActionToast({ type: 'error', message: userMessageForImportFailure(e) })
+      setTimeout(() => setActionToast(null), 6000)
+    } finally {
+      setApfBusy(null)
+    }
+  }
+
+  useEffect(() => {
+    const onRevealArchived = () => setShowArchived(true)
+    window.addEventListener('albatross-reveal-archived-productions', onRevealArchived)
+    return () => window.removeEventListener('albatross-reveal-archived-productions', onRevealArchived)
+  }, [])
 
   const createMutation = useMutation({
     mutationFn: (data: ProductionForm) =>
@@ -364,6 +446,40 @@ export function ProductionsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Productions</h1>
         <div className="flex min-w-0 flex-none items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={apfBusy !== null}
+            onClick={() => void handleImportApf()}
+            title="Import a project from an .apf file"
+            aria-label="Import project"
+          >
+            {apfBusy === 'import' ? (
+              <Loader2 className="mr-2 size-4 shrink-0 animate-spin" aria-hidden />
+            ) : (
+              <Upload className="mr-2 size-4 shrink-0" aria-hidden />
+            )}
+            <span className="max-[640px]:sr-only">Import project</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!currentProduction || apfBusy !== null}
+            onClick={() => void handleExportApf()}
+            title={
+              currentProduction
+                ? 'Export current production as .apf'
+                : 'Choose a current production from the app header to export'
+            }
+            aria-label="Export project"
+          >
+            {apfBusy === 'export' ? (
+              <Loader2 className="mr-2 size-4 shrink-0 animate-spin" aria-hidden />
+            ) : (
+              <Download className="mr-2 size-4 shrink-0" aria-hidden />
+            )}
+            <span className="max-[640px]:sr-only">Export project</span>
+          </Button>
           <Button
             variant="outline"
             size="sm"

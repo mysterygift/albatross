@@ -142,8 +142,9 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
       break
     }
     default: {
-      const _: never = transactionType
-      throw new Error(`Unsupported transaction type: ${transactionType}`)
+      return ((t: never) => {
+        throw new Error(`Unsupported transaction type: ${String(t)}`)
+      })(transactionType)
     }
   }
 

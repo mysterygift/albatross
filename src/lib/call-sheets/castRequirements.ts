@@ -26,6 +26,12 @@ export type CallSheetCastRow = {
   agent_email: string | null
   agent_phone: string | null
   source: 'shot' | 'scene'
+  /** Merged character for PDF: booking.role ?? person.role_name; set when assembling call sheet data. */
+  character_name?: string | null
+  /** Compact time window from booking start/end when ISO datetimes present. */
+  booking_schedule_line?: string | null
+  /** Booking.notes for this shoot day. */
+  booking_notes?: string | null
 }
 
 export type CallSheetCastWarning = {

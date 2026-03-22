@@ -1,4 +1,4 @@
-import { useForm } from 'react-hook-form'
+import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Input } from '@/components/ui/input'
@@ -25,7 +25,7 @@ export type UntypedExpenseEditorProps = {
 
 export function UntypedExpenseEditor({ expense, onSave, onCancel, isSaving }: UntypedExpenseEditorProps) {
   const form = useForm<UntypedExpenseFormValues>({
-    resolver: zodResolver(untypedExpenseSchema),
+    resolver: zodResolver(untypedExpenseSchema) as Resolver<UntypedExpenseFormValues>,
     defaultValues: {
       amount: expense.amount ?? 0,
       date: expense.date ?? '',

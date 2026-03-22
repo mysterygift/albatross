@@ -65,6 +65,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown, Users } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   ensureDemoData,
   resetDemoData,
@@ -73,7 +74,7 @@ import {
   verifyCascades,
 } from '@/lib/db/seed/demoProductionSeed'
 import { getProductionBySlug } from '@/lib/db/repositories/production'
-import { getSetting, setSetting } from '@/lib/db/repositories/settings'
+import { getSetting, setSetting, FIRST_LAUNCH_TUTORIAL_SEEN_KEY, setFirstLaunchTutorialSeen } from '@/lib/db/repositories/settings'
 import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { getRate } from '@/lib/money/exchangeRates'
@@ -83,6 +84,7 @@ import type { BudgetAccount } from '@/lib/db/types'
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 
 export function SettingsPage() {
+  const navigate = useNavigate()
   const { currentProductionId, setCurrentProductionId, refetchProductions } = useCurrentProduction()
   const {
     displayCurrency,
@@ -103,6 +105,7 @@ export function SettingsPage() {
   const [colorToast, setColorToast] = useState<string | null>(null)
   const [settingsTab, setSettingsTab] = useState<'budget' | 'people' | 'developer_tools'>('budget')
   const queryClient = useQueryClient()
+  const [tutorialToast, setTutorialToast] = useState<string | null>(null)
 
   const toggleAccountExpanded = useCallback((accountId: string) => {
     setExpandedAccountIds((prev) => {
@@ -264,6 +267,12 @@ export function SettingsPage() {
     const t = setTimeout(() => setColorToast(null), 3000)
     return () => clearTimeout(t)
   }, [colorToast])
+
+  useEffect(() => {
+    if (!tutorialToast) return
+    const t = setTimeout(() => setTutorialToast(null), 3200)
+    return () => clearTimeout(t)
+  }, [tutorialToast])
 
   const accountTree = buildAccountTree(accounts)
 
@@ -459,6 +468,42 @@ export function SettingsPage() {
         <TabsContent value="developer_tools" className="space-y-5 mt-5 outline-none">
       <Card>
         <CardHeader>
+          <CardTitle>Onboarding tutorial</CardTitle>
+          <CardDescription>
+            Reopen the tutorial hub at any time, or reset tutorial progress. This does not affect demo production data.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              navigate('/settings', { state: { openTutorialHome: true } })
+            }}
+          >
+            Open Tutorial Home
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              if (!window.confirm('Reset tutorial progress?')) return
+              navigate('/settings', { state: { openTutorialHome: true, resetTutorial: true } })
+              setTutorialToast('Tutorial progress reset.')
+            }}
+          >
+            Reset tutorial progress
+          </Button>
+          {tutorialToast && (
+            <p className="w-full text-sm text-muted-foreground rounded-md border border-border bg-card px-3 py-2">
+              {tutorialToast}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Data location</CardTitle>
           <CardDescription>
             SQLite database and attachments are stored in the app data directory. See README for paths per platform.
@@ -518,6 +563,8 @@ export function SettingsPage() {
                   try {
                     await ensureDemoData()
                     queryClient.invalidateQueries({ queryKey: ['productions'] })
+                    queryClient.invalidateQueries({ queryKey: ['crew'] })
+                    queryClient.invalidateQueries({ queryKey: ['people'] })
                     queryClient.invalidateQueries({ queryKey: ['deliverables'] })
                     await refetchProductions()
                     const prod = await getProductionBySlug(DEMO_SLUG)
@@ -541,6 +588,8 @@ export function SettingsPage() {
                 onClick={async () => {
                   await resetDemoData()
                   queryClient.invalidateQueries({ queryKey: ['productions'] })
+                  queryClient.invalidateQueries({ queryKey: ['crew'] })
+                  queryClient.invalidateQueries({ queryKey: ['people'] })
                   queryClient.invalidateQueries({ queryKey: ['deliverables'] })
                 }}
               >
@@ -597,6 +646,17 @@ export function SettingsPage() {
                 }}
               >
                 Test Currency Conversion (Demo)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await setFirstLaunchTutorialSeen(false)
+                  queryClient.invalidateQueries({ queryKey: ['settings', FIRST_LAUNCH_TUTORIAL_SEEN_KEY] })
+                  // The tutorial will appear on next app load when AppLayout reads the setting.
+                }}
+              >
+                Trigger First-Launch Tutorial on Next Load
               </Button>
             </div>
             {cascadeResult && (

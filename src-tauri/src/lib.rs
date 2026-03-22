@@ -1,3 +1,6 @@
+mod apf_desktop;
+
+use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -261,9 +264,54 @@ pub fn run() {
             sql: include_str!("../migrations/0043_production_crew_hierarchy_configs.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 44,
+            description: "equipment_registry",
+            sql: include_str!("../migrations/0044_equipment_registry.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 45,
+            description: "production_tasks_equipment_id",
+            sql: include_str!("../migrations/0045_production_tasks_equipment_id.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 46,
+            description: "equipment_lists",
+            sql: include_str!("../migrations/0046_equipment_lists.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 47,
+            description: "equipment_quantity",
+            sql: include_str!("../migrations/0047_equipment_quantity.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 48,
+            description: "equipment_category_normalisation",
+            sql: include_str!("../migrations/0048_equipment_category_normalisation.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 49,
+            description: "equipment_department_crew_alignment",
+            sql: include_str!("../migrations/0049_equipment_department_crew_alignment.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            apf_desktop::on_second_instance(&app, &argv);
+        }));
+    }
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -273,7 +321,14 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![
+            apf_desktop::pop_pending_apf_open_paths,
+            apf_desktop::grant_read_access_for_apf,
+        ])
         .setup(|app| {
+            let cold = apf_desktop::collect_apf_paths_from_os_args(std::env::args_os().skip(1));
+            app.manage(apf_desktop::ApfOpenQueue(std::sync::Mutex::new(cold)));
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

@@ -1,35 +1,31 @@
 /**
  * Rich demo Crew seed for the singleton demo production.
- * Seeds: crew people (is_cast=0), crew bookings, freelance crew labour vendors,
- * and freelance crew labour invoices. Deterministic and demo-only.
+ * Seeds: crew people (is_cast=0), freelance crew labour vendors, and freelance crew labour invoices.
+ * Crew shoot-day bookings are seeded in seedDemoCrewBookings (demoBookingSeed). Deterministic and demo-only.
+ * Singleton crew/vendors/invoices/tasks use multi-row INSERTs in one transaction to keep sqlx parse time and write-queue duration low (Verify Cascades and other writers wait on the same queue).
  *
  * - Source: DEMO_CREW and DEMO_CREW_LABOUR_INVOICES below (production-realistic).
  * - HODs: Line Producer (Production), Production Accountant (Finance), Locations Manager,
  *   Production Designer (Art), Director of Photography (Camera), Gaffer (Lighting),
  *   Key Grip (Grip), Sound Mixer (Sound). Editor/Colourist represent post; Post-Production
  *   Supervisor not in this dataset.
- * - Bookings: heavy full-shoot for HODs and core floor crew (days 1–12); moderate for
- *   PA, Cashier, ALM, Set Decorator, Prop Master, Best Boy, Grip, Sound Assistant, DIT;
- *   selective for Production Buyer, Dolly Grip, Spark, Unit Manager; Editor/Assistant Editor
- *   late shoot overlap (10–12); Colourist zero shoot-day bookings (phases/notes only).
  * - Freelance invoice demos: crew with freelance_vendor_name get a vendor record and
  *   entries in DEMO_CREW_LABOUR_INVOICES show paid/received/approved/overdue variety.
  *
  * Call after: shoot_days, seedDemoPeople (cast), seedDemoBookings (cast), seedDemoVendors,
- * seedDemoBudget, seedDemoVendorFinance.
+ * seedDemoBudget, seedDemoVendorFinance. Then run seedDemoCrewBookings after this function.
  */
 
 import { executeBatch, getDb, runInSerializedTransaction } from '../client'
-import { buildCreateTaskStatements } from '../repositories/tasks'
 import { CREW_DEPARTMENTS } from '@/lib/people/crewDepartments'
 import type { CrewDepartmentName } from '@/lib/people/crewDepartments'
 import { IDS } from './constants'
 import type { DemoSeedIdSource } from './demoSeedContext'
 
 const TABLE_PEOPLE = 'people'
-const TABLE_BOOKINGS = 'bookings'
 const TABLE_VENDORS = 'vendors'
 const TABLE_INVOICES = 'vendor_invoices'
+const TABLE_TASKS = 'production_tasks'
 const INVOICE_REMINDER_DEPARTMENT = 'Accounts'
 
 // ---------------------------------------------------------------------------
@@ -45,363 +41,329 @@ type DemoCrewDef = {
   phone: string
   phases: string | null
   notes: string | null
-  /** Shoot day numbers (1–12) this person is booked. Empty = no shoot-day bookings (e.g. Colourist). */
-  days: number[]
   /** If set, this crew has a labour vendor (freelance-style); vendor record created in seed. */
   freelance_vendor_name?: string | null
 }
 
-/** All shoot days 1–12. */
-const ALL_DAYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
-/** Late shoot overlap for post crew (Editor, Assistant Editor). */
-const LATE_SHOOT_DAYS = [10, 11, 12] as const
-
 const DEMO_CREW: DemoCrewDef[] = [
   {
-    name: 'Sarah Kim',
+    name: 'Alex Carter',
     department: 'Production',
     role_name: 'Line Producer',
-    email: 'sarah.kim@mintheist-demo.com',
-    phone: '07700 910101',
+    email: 'alex.carter@noholdsbarred.pictures',
+    phone: '07700 900101',
     phases: 'prep,shoot,wrap,post',
     notes: 'HOD for Production. Oversees overall spend approvals and crew turnover. Wants daily cost reports by 20:00.',
-    days: [...ALL_DAYS],
     freelance_vendor_name: null,
   },
   {
-    name: 'Nick Palmer',
+    name: 'Jamie Reynolds',
     department: 'Production',
     role_name: 'Production Coordinator',
-    email: 'nick.palmer@mintheist-demo.com',
-    phone: '07700 910102',
+    email: 'jamie.reynolds@noholdsbarred.pictures',
+    phone: '07700 900102',
     phases: 'prep,shoot,wrap',
     notes: 'Tracks crew paperwork, unit moves, and day-before call sheet circulation. Needs cast travel confirmed 48h ahead.',
-    days: [...ALL_DAYS],
     freelance_vendor_name: null,
   },
   {
-    name: 'Amelia Ross',
+    name: 'Samir Khan',
     department: 'Production',
     role_name: 'Assistant Director',
-    email: 'amelia.ross@mintheist-demo.com',
-    phone: '07700 910103',
+    email: 'samir.khan@noholdsbarred.pictures',
+    phone: '07700 900103',
     phases: 'prep,shoot',
     notes: '1st AD equivalent for this demo structure. Needs final cast and background counts locked by 16:00 each day.',
-    days: [...ALL_DAYS],
     freelance_vendor_name: null,
   },
   {
-    name: 'Jordan Pike',
+    name: 'Chloe Bennett',
     department: 'Production',
     role_name: 'Production Assistant',
-    email: 'jordan.pike@mintheist-demo.com',
-    phone: '07700 910104',
+    email: 'chloe.bennett@noholdsbarred.pictures',
+    phone: '07700 900104',
     phases: 'shoot,wrap',
     notes: 'Supports lockups, pickups, and paperwork runs between unit base and set.',
-    days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     freelance_vendor_name: null,
   },
   {
-    name: 'Maya Desai',
+    name: 'Daniel Hughes',
     department: 'Finance',
     role_name: 'Production Accountant',
-    email: 'maya.desai@mintheist-demo.com',
-    phone: '07700 910201',
+    email: 'daniel.hughes@noholdsbarred.pictures',
+    phone: '07700 900105',
     phases: 'prep,shoot,wrap,post',
     notes: 'HOD for Finance. Chases backup for all freelance invoices and wants PO references included wherever possible.',
-    days: [...ALL_DAYS],
     freelance_vendor_name: null,
   },
   {
-    name: 'Connor Wells',
+    name: 'Olivia Turner',
     department: 'Finance',
     role_name: 'Cashier',
-    email: 'connor.wells@mintheist-demo.com',
-    phone: '07700 910202',
+    email: 'olivia.turner@noholdsbarred.pictures',
+    phone: '07700 900106',
     phases: 'shoot,wrap',
     notes: 'Handles floats and petty cash envelopes. Needs receipts reconciled within 24 hours.',
-    days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     freelance_vendor_name: null,
   },
   {
-    name: 'Oliver Grant',
+    name: 'Ethan Walsh',
     department: 'Locations',
     role_name: 'Locations Manager',
-    email: 'oliver.grant@mintheist-demo.com',
-    phone: '07700 910301',
+    email: 'ethan.walsh@noholdsbarred.pictures',
+    phone: '07700 900107',
     phases: 'prep,shoot,wrap',
     notes: 'HOD for Locations. Holds permit packs and resident letters. Needs company move timings signed off by Production each evening.',
-    days: [...ALL_DAYS],
     freelance_vendor_name: null,
   },
   {
-    name: 'Beth Carter',
+    name: 'Grace Mitchell',
     department: 'Locations',
     role_name: 'Assistant Locations Manager',
-    email: 'beth.carter@mintheist-demo.com',
-    phone: '07700 910302',
+    email: 'grace.mitchell@noholdsbarred.pictures',
+    phone: '07700 900108',
     phases: 'prep,shoot',
     notes: 'Coordinates parking, local notices, and site contacts. Driving own vehicle; requires parking at all key locations.',
-    days: [1, 2, 3, 4, 5, 6, 8, 10, 12],
     freelance_vendor_name: null,
   },
   {
-    name: 'Ryan Moss',
+    name: 'Ben Davies',
     department: 'Locations',
     role_name: 'Unit Manager',
-    email: 'ryan.moss@mintheist-demo.com',
-    phone: '07700 910303',
+    email: 'ben.davies@noholdsbarred.pictures',
+    phone: '07700 900109',
     phases: 'shoot',
     notes: 'Handles unit base operations and crew meal logistics on move days.',
-    days: [2, 4, 6, 8, 10],
     freelance_vendor_name: null,
   },
   {
-    name: 'Elena Vasquez',
+    name: 'Lucy Harper',
     department: 'Art',
     role_name: 'Production Designer',
-    email: 'elena.vasquez@mintheist-demo.com',
-    phone: '07700 910401',
+    email: 'lucy.harper@noholdsbarred.pictures',
+    phone: '07700 900110',
     phases: 'development,prep,shoot,wrap',
     notes: 'HOD for Art. Oversees hero bank set dressing and vault continuity. Freelance head; invoices weekly.',
-    days: [...ALL_DAYS],
-    freelance_vendor_name: 'Elena Vasquez Design Ltd',
+    freelance_vendor_name: 'Lucy Harper Design Ltd',
   },
   {
-    name: 'Marcus Leigh',
+    name: 'Noah Patel',
     department: 'Art',
     role_name: 'Set Decorator',
-    email: 'marcus.leigh@mintheist-demo.com',
-    phone: '07700 910402',
+    email: 'noah.patel@noholdsbarred.pictures',
+    phone: '07700 900111',
     phases: 'prep,shoot,wrap',
     notes: 'Coordinates construction and set dressing priorities. Wants revised dressing list after scouts.',
-    days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     freelance_vendor_name: null,
   },
   {
-    name: 'Nina Ford',
+    name: 'Sophie Green',
     department: 'Art',
     role_name: 'Prop Master',
-    email: 'nina.ford@mintheist-demo.com',
-    phone: '07700 910403',
+    email: 'sophie.green@noholdsbarred.pictures',
+    phone: '07700 900112',
     phases: 'prep,shoot,wrap',
     notes: 'Tracks hero props, lockpick kit, and continuity photos. Needs overnight secure props storage.',
-    days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     freelance_vendor_name: null,
   },
   {
-    name: 'Jamie Cole',
+    name: 'Jack Cooper',
     department: 'Art',
     role_name: 'Production Buyer',
-    email: 'jamie.cole@mintheist-demo.com',
-    phone: '07700 910404',
+    email: 'jack.cooper@noholdsbarred.pictures',
+    phone: '07700 900113',
     phases: 'prep,shoot',
     notes: 'Handles emergency buys and art petty cash. Requires card pre-approval above GBP 500.',
-    days: [1, 3, 5, 7, 9],
     freelance_vendor_name: null,
   },
   {
-    name: 'David Chen',
+    name: 'Emily Scott',
     department: 'Camera',
     role_name: 'Director of Photography',
-    email: 'david.chen@mintheist-demo.com',
-    phone: '07700 910501',
+    email: 'emily.scott@noholdsbarred.pictures',
+    phone: '07700 900114',
     phases: 'prep,shoot,post',
     notes: 'HOD for Camera. Freelance DoP. Sends weekly labour invoices Fridays; camera package billed separately. Wants lens charts circulated before tech scout.',
-    days: [...ALL_DAYS],
-    freelance_vendor_name: 'David Chen Camera Ltd',
+    freelance_vendor_name: 'Emily Scott Camera Ltd',
   },
   {
-    name: 'Leah Byrne',
+    name: 'Ryan Clarke',
     department: 'Camera',
     role_name: 'Camera Operator',
-    email: 'leah.byrne@mintheist-demo.com',
-    phone: '07700 910502',
+    email: 'ryan.clarke@noholdsbarred.pictures',
+    phone: '07700 900115',
     phases: 'shoot',
     notes: 'Main unit operator. Needs early parking access on city exterior days.',
-    days: [...ALL_DAYS],
     freelance_vendor_name: null,
   },
   {
-    name: 'Tom Sato',
+    name: 'Hannah Wood',
     department: 'Camera',
     role_name: '1st Assistant Camera',
-    email: 'tom.sato@mintheist-demo.com',
-    phone: '07700 910503',
+    email: 'hannah.wood@noholdsbarred.pictures',
+    phone: '07700 900116',
     phases: 'prep,shoot',
     notes: 'Focus puller. Tracks prep of primes and zooms; requests battery charging station near camera truck.',
-    days: [...ALL_DAYS],
     freelance_vendor_name: null,
   },
   {
-    name: 'Priya Long',
+    name: 'Tom Harrison',
     department: 'Camera',
     role_name: '2nd Assistant Camera',
-    email: 'priya.long@mintheist-demo.com',
-    phone: '07700 910504',
+    email: 'tom.harrison@noholdsbarred.pictures',
+    phone: '07700 900117',
     phases: 'shoot',
     notes: 'Handles slates and camera logs. Needs cast side labels finalised before first call.',
-    days: [...ALL_DAYS],
     freelance_vendor_name: null,
   },
   {
-    name: 'Aaron West',
+    name: 'Mia Foster',
     department: 'Camera',
     role_name: 'Digital Imaging Technician',
-    email: 'aaron.west@mintheist-demo.com',
-    phone: '07700 910505',
+    email: 'mia.foster@noholdsbarred.pictures',
+    phone: '07700 900118',
     phases: 'prep,shoot,post',
     notes: 'DIT handles LUT application and backups. Remote on non-shoot prep days for workflow checks.',
-    days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-    freelance_vendor_name: 'Aaron West DIT Services',
+    freelance_vendor_name: 'Mia Foster DIT Services',
   },
   {
-    name: 'Mike Torres',
+    name: 'Leo Morgan',
     department: 'Lighting',
     role_name: 'Gaffer',
-    email: 'mike.torres@mintheist-demo.com',
-    phone: '07700 910601',
+    email: 'leo.morgan@noholdsbarred.pictures',
+    phone: '07700 900119',
     phases: 'prep,shoot,wrap',
     notes: 'HOD for Lighting. Freelance. Labour invoiced weekly. Wants generator and distro confirmed on warehouse and rooftop days.',
-    days: [...ALL_DAYS],
-    freelance_vendor_name: 'Mike Torres Lighting Services',
+    freelance_vendor_name: 'Leo Morgan Lighting Services',
   },
   {
-    name: 'Callum Price',
+    name: 'Ruby Shaw',
     department: 'Lighting',
     role_name: 'Best Boy',
-    email: 'callum.price@mintheist-demo.com',
-    phone: '07700 910602',
+    email: 'ruby.shaw@noholdsbarred.pictures',
+    phone: '07700 900120',
     phases: 'prep,shoot,wrap',
     notes: 'Tracks lamp orders and crew calls. Keeps daily power notes for de-rig days.',
-    days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     freelance_vendor_name: null,
   },
   {
-    name: 'Jasmeen Gill',
+    name: 'Oscar Price',
     department: 'Lighting',
     role_name: 'Spark',
-    email: 'jasmeen.gill@mintheist-demo.com',
-    phone: '07700 910603',
+    email: 'oscar.price@noholdsbarred.pictures',
+    phone: '07700 900121',
     phases: 'shoot',
     notes: 'Booked more heavily on interior days and stage work. Can also cover distro support.',
-    days: [1, 3, 5, 6, 8, 9, 11],
     freelance_vendor_name: null,
   },
   {
-    name: 'Chris Walsh',
+    name: 'Ella Ward',
     department: 'Grip',
     role_name: 'Key Grip',
-    email: 'chris.walsh@mintheist-demo.com',
-    phone: '07700 910701',
+    email: 'ella.ward@noholdsbarred.pictures',
+    phone: '07700 900122',
     phases: 'prep,shoot,wrap',
     notes: 'HOD for Grip. Freelance. Submits weekly labour invoice. Requires advance warning for crane or rooftop rigging days.',
-    days: [...ALL_DAYS],
-    freelance_vendor_name: 'Chris Walsh Grip Ltd',
+    freelance_vendor_name: 'Ella Ward Grip Ltd',
   },
   {
-    name: 'Peter Logan',
+    name: 'Harry Cox',
     department: 'Grip',
     role_name: 'Dolly Grip',
-    email: 'peter.logan@mintheist-demo.com',
-    phone: '07700 910702',
+    email: 'harry.cox@noholdsbarred.pictures',
+    phone: '07700 900123',
     phases: 'shoot',
     notes: 'Needed on larger tracking and bank interior movement days only.',
-    days: [2, 4, 6, 8, 10, 12],
     freelance_vendor_name: null,
   },
   {
-    name: 'Holly Dean',
+    name: 'Lily Richardson',
     department: 'Grip',
     role_name: 'Grip',
-    email: 'holly.dean@mintheist-demo.com',
-    phone: '07700 910703',
+    email: 'lily.richardson@noholdsbarred.pictures',
+    phone: '07700 900124',
     phases: 'shoot,wrap',
     notes: 'Supports rigging and track lay. Available for load-out at wrap.',
-    days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     freelance_vendor_name: null,
   },
   {
-    name: 'Anna Petrov',
+    name: 'Alfie Bailey',
     department: 'Sound',
     role_name: 'Sound Mixer',
-    email: 'anna.petrov@mintheist-demo.com',
-    phone: '07700 910801',
+    email: 'alfie.bailey@noholdsbarred.pictures',
+    phone: '07700 900125',
     phases: 'prep,shoot,post',
     notes: 'HOD for Sound. Freelance. Weekly invoice with labour only; kit is cross-rented separately. Wants dialogue-heavy scenes flagged 24h ahead.',
-    days: [...ALL_DAYS],
-    freelance_vendor_name: 'Anna Petrov Sound',
+    freelance_vendor_name: 'Alfie Bailey Sound',
   },
   {
-    name: 'Luke Warren',
+    name: 'Freya Brooks',
     department: 'Sound',
     role_name: 'Boom Operator',
-    email: 'luke.warren@mintheist-demo.com',
-    phone: '07700 910802',
+    email: 'freya.brooks@noholdsbarred.pictures',
+    phone: '07700 900126',
     phases: 'shoot',
     notes: 'Boom op booked heavily on dialogue days; lighter coverage on montage/action days.',
-    days: [...ALL_DAYS],
     freelance_vendor_name: null,
   },
   {
-    name: 'Megan Holt',
+    name: 'Theo Bell',
     department: 'Sound',
     role_name: 'Sound Assistant',
-    email: 'megan.holt@mintheist-demo.com',
-    phone: '07700 910803',
+    email: 'theo.bell@noholdsbarred.pictures',
+    phone: '07700 900127',
     phases: 'shoot,wrap',
     notes: 'Handles radio mic turnover and sound reports. Needs early access to cast holding on crowd days.',
-    days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     freelance_vendor_name: null,
   },
   {
-    name: 'Luke Hayes',
+    name: 'Evie Murphy',
     department: 'Post-Production',
     role_name: 'Editor',
-    email: 'luke.hayes@mintheist-demo.com',
-    phone: '07700 910901',
+    email: 'evie.murphy@noholdsbarred.pictures',
+    phone: '07700 900128',
     phases: 'prep,shoot,post',
     notes: 'HOD for Post-Production. Freelance editor. Invoices in weekly post blocks. Starts during shoot for assemblies.',
-    days: [...LATE_SHOOT_DAYS],
-    freelance_vendor_name: 'Luke Hayes Editorial',
+    freelance_vendor_name: 'Evie Murphy Editorial',
   },
   {
-    name: 'Rachel Muir',
+    name: 'Max Griffin',
     department: 'Post-Production',
     role_name: 'Assistant Editor',
-    email: 'rachel.muir@mintheist-demo.com',
-    phone: '07700 910902',
+    email: 'max.griffin@noholdsbarred.pictures',
+    phone: '07700 900129',
     phases: 'shoot,post',
     notes: 'Handles sync, turnovers, and media logs. Remote on some post-only days.',
-    days: [...LATE_SHOOT_DAYS],
     freelance_vendor_name: null,
   },
   {
-    name: 'Noah Keane',
+    name: 'Isla Chapman',
     department: 'Post-Production',
     role_name: 'Colourist',
-    email: 'noah.keane@mintheist-demo.com',
-    phone: '07700 910903',
+    email: 'isla.chapman@noholdsbarred.pictures',
+    phone: '07700 900130',
     phases: 'post',
     notes: 'Booked only in post/grading block. Freelance and billed by grading block.',
-    days: [],
-    freelance_vendor_name: 'Noah Keane Colour',
+    freelance_vendor_name: 'Isla Chapman Colour',
   },
 ]
+
+/** Expected crew row count for singleton demo (used by backfill guard). */
+export const DEMO_CREW_MEMBER_COUNT = DEMO_CREW.length
 
 // ---------------------------------------------------------------------------
 // Freelance crew labour vendors (singleton demo only). One per unique freelance_vendor_name.
 // ---------------------------------------------------------------------------
 
 const CREW_LABOUR_VENDORS: Array<{ company_name: string; primary_contact_full_name: string; primary_contact_email: string }> = [
-  { company_name: 'Elena Vasquez Design Ltd', primary_contact_full_name: 'Elena Vasquez', primary_contact_email: 'elena.vasquez@mintheist-demo.com' },
-  { company_name: 'David Chen Camera Ltd', primary_contact_full_name: 'David Chen', primary_contact_email: 'david.chen@mintheist-demo.com' },
-  { company_name: 'Aaron West DIT Services', primary_contact_full_name: 'Aaron West', primary_contact_email: 'aaron.west@mintheist-demo.com' },
-  { company_name: 'Mike Torres Lighting Services', primary_contact_full_name: 'Mike Torres', primary_contact_email: 'mike.torres@mintheist-demo.com' },
-  { company_name: 'Chris Walsh Grip Ltd', primary_contact_full_name: 'Chris Walsh', primary_contact_email: 'chris.walsh@mintheist-demo.com' },
-  { company_name: 'Anna Petrov Sound', primary_contact_full_name: 'Anna Petrov', primary_contact_email: 'anna.petrov@mintheist-demo.com' },
-  { company_name: 'Luke Hayes Editorial', primary_contact_full_name: 'Luke Hayes', primary_contact_email: 'luke.hayes@mintheist-demo.com' },
-  { company_name: 'Noah Keane Colour', primary_contact_full_name: 'Noah Keane', primary_contact_email: 'noah.keane@mintheist-demo.com' },
+  { company_name: 'Lucy Harper Design Ltd', primary_contact_full_name: 'Lucy Harper', primary_contact_email: 'lucy.harper@noholdsbarred.pictures' },
+  { company_name: 'Emily Scott Camera Ltd', primary_contact_full_name: 'Emily Scott', primary_contact_email: 'emily.scott@noholdsbarred.pictures' },
+  { company_name: 'Mia Foster DIT Services', primary_contact_full_name: 'Mia Foster', primary_contact_email: 'mia.foster@noholdsbarred.pictures' },
+  { company_name: 'Leo Morgan Lighting Services', primary_contact_full_name: 'Leo Morgan', primary_contact_email: 'leo.morgan@noholdsbarred.pictures' },
+  { company_name: 'Ella Ward Grip Ltd', primary_contact_full_name: 'Ella Ward', primary_contact_email: 'ella.ward@noholdsbarred.pictures' },
+  { company_name: 'Alfie Bailey Sound', primary_contact_full_name: 'Alfie Bailey', primary_contact_email: 'alfie.bailey@noholdsbarred.pictures' },
+  { company_name: 'Evie Murphy Editorial', primary_contact_full_name: 'Evie Murphy', primary_contact_email: 'evie.murphy@noholdsbarred.pictures' },
+  { company_name: 'Isla Chapman Colour', primary_contact_full_name: 'Isla Chapman', primary_contact_email: 'isla.chapman@noholdsbarred.pictures' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -420,8 +382,8 @@ const DEMO_CREW_LABOUR_INVOICES: Array<{
   notes: string
 }> = [
   {
-    vendor_name: 'David Chen Camera Ltd',
-    invoice_number: 'DC-INV-001',
+    vendor_name: 'Emily Scott Camera Ltd',
+    invoice_number: 'ESC-INV-001',
     issue_day_offset: 6,
     due_day_offset: 20,
     amount: 4500,
@@ -431,8 +393,8 @@ const DEMO_CREW_LABOUR_INVOICES: Array<{
     notes: 'Week 1 DoP labour invoice. Camera package excluded.',
   },
   {
-    vendor_name: 'Anna Petrov Sound',
-    invoice_number: 'APS-2401',
+    vendor_name: 'Alfie Bailey Sound',
+    invoice_number: 'ABS-2401',
     issue_day_offset: 7,
     due_day_offset: 18,
     amount: 2600,
@@ -442,8 +404,8 @@ const DEMO_CREW_LABOUR_INVOICES: Array<{
     notes: 'Principal photography sound labour, week 1. Kit billed separately.',
   },
   {
-    vendor_name: 'Mike Torres Lighting Services',
-    invoice_number: 'MTL-011',
+    vendor_name: 'Leo Morgan Lighting Services',
+    invoice_number: 'LML-011',
     issue_day_offset: 10,
     due_day_offset: 17,
     amount: 2100,
@@ -453,8 +415,8 @@ const DEMO_CREW_LABOUR_INVOICES: Array<{
     notes: 'Gaffer labour for week 2 shoot block.',
   },
   {
-    vendor_name: 'Chris Walsh Grip Ltd',
-    invoice_number: 'CWG-078',
+    vendor_name: 'Ella Ward Grip Ltd',
+    invoice_number: 'EWG-078',
     issue_day_offset: 9,
     due_day_offset: 21,
     amount: 1850,
@@ -464,8 +426,8 @@ const DEMO_CREW_LABOUR_INVOICES: Array<{
     notes: 'Grip labour invoice covering interior tracking days.',
   },
   {
-    vendor_name: 'Elena Vasquez Design Ltd',
-    invoice_number: 'EVD-032',
+    vendor_name: 'Lucy Harper Design Ltd',
+    invoice_number: 'LHD-032',
     issue_day_offset: 3,
     due_day_offset: 24,
     amount: 3200,
@@ -475,8 +437,8 @@ const DEMO_CREW_LABOUR_INVOICES: Array<{
     notes: 'Production design prep and early shoot oversight block.',
   },
   {
-    vendor_name: 'Luke Hayes Editorial',
-    invoice_number: 'LHE-109',
+    vendor_name: 'Evie Murphy Editorial',
+    invoice_number: 'EME-109',
     issue_day_offset: 14,
     due_day_offset: 28,
     amount: 2800,
@@ -486,8 +448,8 @@ const DEMO_CREW_LABOUR_INVOICES: Array<{
     notes: 'Offline edit labour for assembly week 1.',
   },
   {
-    vendor_name: 'Noah Keane Colour',
-    invoice_number: 'NKC-014',
+    vendor_name: 'Isla Chapman Colour',
+    invoice_number: 'ICC-014',
     issue_day_offset: 48,
     due_day_offset: 62,
     amount: 1800,
@@ -516,8 +478,9 @@ function validateCrewRoles(): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Seed crew people, crew bookings, crew labour vendors (singleton only), and crew labour invoices (singleton only).
- * Run after shoot_days, seedDemoPeople, seedDemoBookings, seedDemoVendors, seedDemoVendorFinance.
+ * Seed crew people, crew labour vendors (singleton only), and crew labour invoices (singleton only).
+ * Run after shoot_days, seedDemoPeople, seedDemoBookings, seedDemoVendors, seedDemoVendorFinance;
+ * caller must run seedDemoCrewBookings afterward for shoot-day rows.
  */
 export async function seedDemoCrew(
   productionId: string,
@@ -533,14 +496,19 @@ export async function seedDemoCrew(
   await runInSerializedTransaction(async () => {
     const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN', bindValues: [] }]
 
-    // 1) Crew people: person(15) .. person(14 + DEMO_CREW.length); is_cast=0
-    for (let i = 0; i < DEMO_CREW.length; i++) {
-      const c = DEMO_CREW[i]!
-      const personId = idSource.person(14 + i + 1)
-      statements.push({
-        sql: `INSERT INTO ${TABLE_PEOPLE} (id, production_id, name, is_cast, email, phone, department, role_name, phases, notes, contributor_form_status, created_at, updated_at)
-         VALUES ($1, $2, $3, 0, $4, $5, $6, $7, $8, $9, 'not_requested', $10, $11)`,
-        bindValues: [
+    // 1) Crew people — one multi-row INSERT (far fewer statements for sqlx vs 30× single INSERT)
+    {
+      const valueParts: string[] = []
+      const bindValues: unknown[] = []
+      let p = 1
+      for (let i = 0; i < DEMO_CREW.length; i++) {
+        const c = DEMO_CREW[i]!
+        const personId = idSource.person(14 + i + 1)
+        valueParts.push(
+          `($${p}, $${p + 1}, $${p + 2}, 0, $${p + 3}, $${p + 4}, $${p + 5}, $${p + 6}, $${p + 7}, $${p + 8}, 'not_requested', $${p + 9}, $${p + 10})`
+        )
+        p += 11
+        bindValues.push(
           personId,
           productionId,
           c.name,
@@ -551,66 +519,53 @@ export async function seedDemoCrew(
           c.phases,
           c.notes,
           ts,
-          ts,
-        ],
+          ts
+        )
+      }
+      statements.push({
+        sql: `INSERT INTO ${TABLE_PEOPLE} (id, production_id, name, is_cast, email, phone, department, role_name, phases, notes, contributor_form_status, created_at, updated_at) VALUES ${valueParts.join(', ')}`,
+        bindValues,
       })
     }
 
-    // 2) Crew bookings: one row per (person, shoot_day); booking.role = role_name
-    let crewBookingIdx = 0
-    for (let i = 0; i < DEMO_CREW.length; i++) {
-      const c = DEMO_CREW[i]!
-      const personId = idSource.person(14 + i + 1)
-      for (const dayNum of c.days) {
-        const shootDayId = idSource.shootDay(dayNum)
-        const shootDate = addDaysLocal(startDate, dayNum - 1)
-        const bookingId = idSource.crewBooking(crewBookingIdx + 1)
-        crewBookingIdx++
-        statements.push({
-          sql: `INSERT INTO ${TABLE_BOOKINGS} (id, production_id, person_id, shoot_day_id, start_date, end_date, role, notes, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          bindValues: [
-            bookingId,
-            productionId,
-            personId,
-            shootDayId,
-            shootDate,
-            shootDate,
-            c.role_name,
-            null,
-            ts,
-            ts,
-          ],
-        })
-      }
-    }
-
-    // 3) Crew labour vendors (singleton demo only)
+    // 2) Crew labour vendors (singleton demo only)
     if (isSingletonDemo) {
-      for (let v = 0; v < CREW_LABOUR_VENDORS.length; v++) {
-        const vd = CREW_LABOUR_VENDORS[v]!
-        const vendorId = IDS.crewVendor(v + 1)
+      {
+        const valueParts: string[] = []
+        const bindValues: unknown[] = []
+        let p = 1
+        for (let v = 0; v < CREW_LABOUR_VENDORS.length; v++) {
+          const vd = CREW_LABOUR_VENDORS[v]!
+          const vendorId = IDS.crewVendor(v + 1)
+          valueParts.push(`($${p}, $${p + 1}, $${p + 2}, $${p + 3}, $${p + 4}, $${p + 5}, $${p + 6}, NULL)`)
+          p += 7
+          bindValues.push(vendorId, productionId, vd.company_name, vd.primary_contact_full_name, vd.primary_contact_email, ts, ts)
+        }
         statements.push({
-          sql: `INSERT INTO ${TABLE_VENDORS} (id, production_id, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at, deleted_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NULL)`,
-          bindValues: [vendorId, productionId, vd.company_name, vd.primary_contact_full_name, vd.primary_contact_email, ts, ts],
+          sql: `INSERT INTO ${TABLE_VENDORS} (id, production_id, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at, deleted_at) VALUES ${valueParts.join(', ')}`,
+          bindValues,
         })
       }
 
-      // 4) Crew labour invoices (singleton demo only)
+      // 3) Crew labour invoices (singleton demo only)
       const vendorIdByCompany = new Map<string, string>()
       for (let v = 0; v < CREW_LABOUR_VENDORS.length; v++) {
         vendorIdByCompany.set(CREW_LABOUR_VENDORS[v]!.company_name, IDS.crewVendor(v + 1))
       }
-      for (let inv = 0; inv < DEMO_CREW_LABOUR_INVOICES.length; inv++) {
-        const invd = DEMO_CREW_LABOUR_INVOICES[inv]!
-        const vendorId = vendorIdByCompany.get(invd.vendor_name)
-        if (!vendorId) throw new Error(`Demo crew: vendor not found for ${invd.vendor_name}`)
-        const invoiceId = IDS.crewVendorInvoice(inv + 1)
-        statements.push({
-          sql: `INSERT INTO ${TABLE_INVOICES} (id, production_id, vendor_id, invoice_number, issue_date, due_date, amount, tax, currency_code, status, notes, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-          bindValues: [
+      {
+        const valueParts: string[] = []
+        const bindValues: unknown[] = []
+        let p = 1
+        for (let inv = 0; inv < DEMO_CREW_LABOUR_INVOICES.length; inv++) {
+          const invd = DEMO_CREW_LABOUR_INVOICES[inv]!
+          const vendorId = vendorIdByCompany.get(invd.vendor_name)
+          if (!vendorId) throw new Error(`Demo crew: vendor not found for ${invd.vendor_name}`)
+          const invoiceId = IDS.crewVendorInvoice(inv + 1)
+          valueParts.push(
+            `($${p}, $${p + 1}, $${p + 2}, $${p + 3}, $${p + 4}, $${p + 5}, $${p + 6}, $${p + 7}, $${p + 8}, $${p + 9}, $${p + 10}, $${p + 11}, $${p + 12})`
+          )
+          p += 13
+          bindValues.push(
             invoiceId,
             productionId,
             vendorId,
@@ -623,30 +578,50 @@ export async function seedDemoCrew(
             invd.status,
             invd.notes,
             ts,
-            ts,
-          ],
+            ts
+          )
+        }
+        statements.push({
+          sql: `INSERT INTO ${TABLE_INVOICES} (id, production_id, vendor_id, invoice_number, issue_date, due_date, amount, tax, currency_code, status, notes, created_at, updated_at) VALUES ${valueParts.join(', ')}`,
+          bindValues,
         })
       }
 
-      // 5) Invoice reminder tasks for crew labour invoices (singleton demo only)
-      const existingInvoiceTaskCount = 15 // from demoVendorFinanceSeed
-      for (let inv = 0; inv < DEMO_CREW_LABOUR_INVOICES.length; inv++) {
-        const invd = DEMO_CREW_LABOUR_INVOICES[inv]!
-        const dueDate = addDaysLocal(startDate, invd.due_day_offset)
-        const taskId = IDS.invoiceReminderTask(existingInvoiceTaskCount + inv + 1)
-        const taskStatements = buildCreateTaskStatements(
-          taskId,
-          {
-            production_id: productionId,
-            description: `Pay invoice ${invd.invoice_number} — ${invd.vendor_name}`,
-            due_date: dueDate,
-            assigned_department: INVOICE_REMINDER_DEPARTMENT,
-            vendor_invoice_id: IDS.crewVendorInvoice(inv + 1),
-            is_complete: invd.status === 'paid' ? 1 : 0,
-          },
-          ts
-        )
-        statements.push(...taskStatements)
+      // 4) Invoice reminder tasks — one multi-row INSERT; no outbox (demo-only; smaller batch, less queue blocking)
+      // IDs use crewLabourInvoiceReminderTask (8350+) — not invoiceReminderTask(16+) which overlaps equipmentReminderTask (8200+n = 8220+m for n=m+20)
+      {
+        const valueParts: string[] = []
+        const bindValues: unknown[] = []
+        let p = 1
+        for (let inv = 0; inv < DEMO_CREW_LABOUR_INVOICES.length; inv++) {
+          const invd = DEMO_CREW_LABOUR_INVOICES[inv]!
+          const dueDate = addDaysLocal(startDate, invd.due_day_offset)
+          const taskId = IDS.crewLabourInvoiceReminderTask(inv + 1)
+          valueParts.push(
+            `($${p}, $${p + 1}, $${p + 2}, $${p + 3}, $${p + 4}, $${p + 5}, $${p + 6}, $${p + 7}, $${p + 8}, $${p + 9}, $${p + 10}, $${p + 11}, $${p + 12}, $${p + 13})`
+          )
+          p += 14
+          bindValues.push(
+            taskId,
+            productionId,
+            `Pay invoice ${invd.invoice_number} — ${invd.vendor_name}`,
+            invd.status === 'paid' ? 1 : 0,
+            null,
+            dueDate,
+            INVOICE_REMINDER_DEPARTMENT,
+            null,
+            null,
+            null,
+            IDS.crewVendorInvoice(inv + 1),
+            null,
+            ts,
+            ts
+          )
+        }
+        statements.push({
+          sql: `INSERT INTO ${TABLE_TASKS} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, vendor_invoice_id, equipment_id, created_at, updated_at) VALUES ${valueParts.join(', ')}`,
+          bindValues,
+        })
       }
     }
 

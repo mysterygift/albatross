@@ -1,7 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
+import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
+import { dashboardTutorialSteps } from '@/features/tutorial/sections/dashboardTutorial'
 import { useCurrency } from '@/hooks/useCurrency'
 import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import { listDeliverablesByProduction } from '@/lib/db/repositories/deliverable'
@@ -813,6 +816,14 @@ export function DashboardPage() {
   const { format, ensureRate } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const wrapSuccess = (location.state as { wrapSuccess?: boolean } | null)?.wrapSuccess === true
+  const { progress, updateProgress } = useFirstLaunchTutorial()
+  const [tutorialOpen, setTutorialOpen] = useState(false)
+
+  useEffect(() => {
+    if (progress?.currentSection === 'dashboard') {
+      setTutorialOpen(true)
+    }
+  }, [progress?.currentSection])
 
   useEffect(() => {
     if (currentProduction?.currency_code) ensureRate(currentProduction.currency_code)
@@ -884,7 +895,7 @@ export function DashboardPage() {
   const warnings = tasks.filter((t) => t.priority === 1 && t.is_complete === 0)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Dashboard</h1>
@@ -927,7 +938,7 @@ export function DashboardPage() {
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>No production selected</AlertTitle>
           <AlertDescription>
-            Choose a production from the top bar or create one in Productions.
+            No production open – please select one from the Productions page.
           </AlertDescription>
         </Alert>
       )}
@@ -1011,6 +1022,39 @@ export function DashboardPage() {
           )}
         </>
       )}
+
+      <SectionTutorialPanel
+        open={tutorialOpen}
+        onOpenChange={(open) => {
+          setTutorialOpen(open)
+          if (!open) {
+            updateProgress((prev) => ({
+              ...prev,
+              currentSection: prev.currentSection === 'dashboard' ? null : prev.currentSection,
+              sections: {
+                ...prev.sections,
+                dashboard: prev.sections.dashboard === 'not_started' ? 'in_progress' : prev.sections.dashboard,
+              },
+            }))
+          }
+        }}
+        sectionId="dashboard"
+        sectionTitle="Dashboard"
+        steps={dashboardTutorialSteps}
+        progress={progress}
+        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
+        onCompleteSection={() => {
+          setTutorialOpen(false)
+          updateProgress((prev) => ({
+            ...prev,
+            currentSection: prev.currentSection === 'dashboard' ? null : prev.currentSection,
+            sections: {
+              ...prev.sections,
+              dashboard: 'complete',
+            },
+          }))
+        }}
+      />
     </div>
   )
 }

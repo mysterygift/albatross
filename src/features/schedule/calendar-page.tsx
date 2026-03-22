@@ -20,6 +20,9 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
+import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
+import { scheduleTutorialSteps } from '@/features/tutorial/sections/scheduleTutorial'
 import { listCalendarShootDayEvents } from '@/lib/db/repositories/calendar'
 import { moveShootDayToDate, swapShootDays } from '@/lib/db/repositories/schedule'
 import { stripboardQueryKeys } from '@/features/schedule/stripboard-hooks'
@@ -320,6 +323,15 @@ export function ScheduleCalendarPage() {
     existingShootDayId: string
   } | null>(null)
 
+  const { progress, updateProgress } = useFirstLaunchTutorial()
+  const [tutorialOpen, setTutorialOpen] = useState(false)
+
+  useEffect(() => {
+    if (progress?.currentSection === 'schedule') {
+      setTutorialOpen(true)
+    }
+  }, [progress?.currentSection])
+
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 4000)
@@ -435,7 +447,7 @@ export function ScheduleCalendarPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Schedule — Calendar</h1>
         <div className="flex items-center gap-2">
@@ -548,6 +560,39 @@ export function ScheduleCalendarPage() {
         onOpenChange={(open) => !open && closeDrawer()}
         onOpenStripboard={() => navigate('/schedule/stripboard')}
         onGenerateCallSheet={generateCallSheetPlaceholder}
+      />
+
+      <SectionTutorialPanel
+        open={tutorialOpen}
+        onOpenChange={(open) => {
+          setTutorialOpen(open)
+          if (!open) {
+            updateProgress((prev) => ({
+              ...prev,
+              currentSection: prev.currentSection === 'schedule' ? null : prev.currentSection,
+              sections: {
+                ...prev.sections,
+                schedule: prev.sections.schedule === 'not_started' ? 'in_progress' : prev.sections.schedule,
+              },
+            }))
+          }
+        }}
+        sectionId="schedule"
+        sectionTitle="Schedule"
+        steps={scheduleTutorialSteps}
+        progress={progress}
+        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
+        onCompleteSection={() => {
+          setTutorialOpen(false)
+          updateProgress((prev) => ({
+            ...prev,
+            currentSection: prev.currentSection === 'schedule' ? null : prev.currentSection,
+            sections: {
+              ...prev.sections,
+              schedule: 'complete',
+            },
+          }))
+        }}
       />
     </div>
   )

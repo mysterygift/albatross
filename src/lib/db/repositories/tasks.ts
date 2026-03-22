@@ -18,6 +18,7 @@ function rowToTask(r: Record<string, unknown>): ProductionTask {
     parent_task_id: (r.parent_task_id as string | null) ?? null,
     section_id: (r.section_id as string | null) ?? null,
     vendor_invoice_id: (r.vendor_invoice_id as string | null) ?? null,
+    equipment_id: (r.equipment_id as string | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: (r.deleted_at as string | null) ?? null,
@@ -132,6 +133,7 @@ export type CreateTaskData = {
   parent_task_id?: string | null
   section_id?: string | null
   vendor_invoice_id?: string | null
+  equipment_id?: string | null
   /** Default 0. Set 1 for e.g. invoice reminder when invoice is already paid. */
   is_complete?: number
 }
@@ -142,8 +144,8 @@ export async function createTask(data: CreateTaskData): Promise<ProductionTask> 
   const ts = now()
   const isComplete = data.is_complete ?? 0
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, vendor_invoice_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, vendor_invoice_id, equipment_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [
       id,
       data.production_id,
@@ -156,6 +158,7 @@ export async function createTask(data: CreateTaskData): Promise<ProductionTask> 
       data.parent_task_id ?? null,
       data.section_id ?? null,
       data.vendor_invoice_id ?? null,
+      data.equipment_id ?? null,
       ts,
       ts,
     ]
@@ -175,6 +178,16 @@ export async function getTaskByVendorInvoiceId(invoiceId: string): Promise<Produ
   return rows.length > 0 ? rowToTask(rows[0]!) : null
 }
 
+/** Returns the active (non-deleted) task linked to this equipment item, if any. At most one per equipment. */
+export async function getTaskByEquipmentId(equipmentId: string): Promise<ProductionTask | null> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${TABLE} WHERE equipment_id = $1 AND deleted_at IS NULL LIMIT 1`,
+    [equipmentId]
+  )
+  return rows.length > 0 ? rowToTask(rows[0]!) : null
+}
+
 /**
  * Returns statements to create a task for use in executeBatch (e.g. with invoice create).
  * Does not include BEGIN/COMMIT. Caller must provide task id and include these in the batch.
@@ -186,8 +199,8 @@ export function buildCreateTaskStatements(
 ): Array<{ sql: string; bindValues: unknown[] }> {
   const isComplete = data.is_complete ?? 0
   const insert = {
-    sql: `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, vendor_invoice_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    sql: `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, vendor_invoice_id, equipment_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     bindValues: [
       taskId,
       data.production_id,
@@ -200,6 +213,7 @@ export function buildCreateTaskStatements(
       data.parent_task_id ?? null,
       data.section_id ?? null,
       data.vendor_invoice_id ?? null,
+      data.equipment_id ?? null,
       ts,
       ts,
     ],
@@ -223,6 +237,7 @@ export type UpdateTaskPatch = Partial<{
   parent_task_id: string | null
   section_id: string | null
   vendor_invoice_id: string | null
+  equipment_id: string | null
 }>
 
 const UPDATE_KEYS = [
@@ -235,6 +250,7 @@ const UPDATE_KEYS = [
   'parent_task_id',
   'section_id',
   'vendor_invoice_id',
+  'equipment_id',
 ] as const
 
 /**

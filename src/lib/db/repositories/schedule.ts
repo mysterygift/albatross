@@ -5,8 +5,11 @@ import {
   outboxStatementForRows,
   type OutboxRow,
 } from '../outbox'
-import type { ShootDay, Scene, Shot, StripboardItem } from '../types'
+import type { ShootDay, Scene, Shot, ShotCast, StripboardItem } from '../types'
+import { CAMERA_MOVEMENT_VALUES, SHOT_SIZE_VALUES } from '../types'
+import { getPersonById } from './person'
 import { getShootDayUnitById, listShootDayUnitsByShootDay } from './shoot-day-units'
+import { ensureMainUnit } from './units'
 
 const DAY_TABLE = 'shoot_days'
 const SDU_TABLE = 'shoot_day_units'
@@ -14,6 +17,8 @@ const STRIPBOARD_STRIPS_TABLE = 'stripboard_strips'
 const SCENE_TABLE = 'scenes'
 const SHOT_TABLE = 'shots'
 const STRIP_TABLE = 'stripboard_items'
+const SCENE_CAST_TABLE = 'scene_cast'
+const SHOT_CAST_TABLE = 'shot_cast'
 
 function rowToShootDay(r: Record<string, unknown>): ShootDay {
   return {
@@ -306,6 +311,71 @@ export async function moveShootDayToDate(
   })
   if (result.success) await resequenceShootDays(day.production_id)
   return result
+}
+
+/**
+ * Create a new shoot day for the given production and attach a default Main Unit.
+ * No strips are created. Returns the created shoot day plus identifiers needed by callers.
+ */
+export async function createShootDayWithDefaultMainUnit(args: {
+  productionId: string
+  shootDate: string
+}): Promise<{ shootDay: ShootDay; mainUnitId: string; shootDayUnitId: string }> {
+  const { productionId, shootDate } = args
+  if (!productionId) throw new Error('productionId is required')
+  if (!shootDate) throw new Error('shootDate is required')
+
+  // Ensure Main Unit exists for this production (may create it if missing).
+  const mainUnit = await ensureMainUnit(productionId)
+
+  const shootDayId = uuid()
+  const shootDayUnitId = uuid()
+  const ts = now()
+
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+      { sql: 'BEGIN', bindValues: [] },
+      {
+        sql: `INSERT INTO ${DAY_TABLE} (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        bindValues: [shootDayId, productionId, shootDate, null, null, null, null, ts, ts],
+      },
+      outboxStatementForRow({
+        entity: DAY_TABLE,
+        entityId: shootDayId,
+        operation: 'create',
+        payloadJson: JSON.stringify({
+          production_id: productionId,
+          shoot_date: shootDate,
+          day_number: null,
+          call_time: null,
+          notes: null,
+          weather_manual: null,
+          id: shootDayId,
+        }),
+      }),
+      {
+        sql: `INSERT INTO ${SDU_TABLE} (id, shoot_day_id, unit_id, is_locked, created_at, updated_at)
+             VALUES ($1, $2, $3, 0, $4, $5)`,
+        bindValues: [shootDayUnitId, shootDayId, mainUnit.id, ts, ts],
+      },
+      outboxStatementForRow({
+        entity: SDU_TABLE,
+        entityId: shootDayUnitId,
+        operation: 'create',
+        payloadJson: JSON.stringify({ shoot_day_id: shootDayId, unit_id: mainUnit.id }),
+      }),
+      { sql: 'COMMIT', bindValues: [] },
+    ]
+    await executeBatch(db, statements)
+  })
+
+  await resequenceShootDays(productionId)
+  const shootDay = await getShootDayById(shootDayId)
+  if (!shootDay) throw new Error('Shoot day not found after create')
+
+  return { shootDay, mainUnitId: mainUnit.id, shootDayUnitId }
 }
 
 export type MoveShootDayUnitResult =
@@ -766,7 +836,20 @@ export async function getEstimatedShootMinutesBySceneIds(sceneIds: string[]): Pr
   return map
 }
 
-export async function createShot(data: {
+function rowToShotCast(r: Record<string, unknown>): ShotCast {
+  return {
+    id: r.id as string,
+    production_id: r.production_id as string,
+    shot_id: r.shot_id as string,
+    person_id: r.person_id as string,
+    created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
+    deleted_at: (r.deleted_at as string | null) ?? null,
+  }
+}
+
+/** Input for {@link createShot}. Cast is optional; when provided, rows are written to `shot_cast` (and `scene_cast` when needed). */
+export type CreateShotInput = {
   scene_id: string
   shot_number: string
   description?: string | null
@@ -780,35 +863,213 @@ export async function createShot(data: {
   estimated_shoot_minutes?: number | null
   camera_movement?: Shot['camera_movement']
   notes?: string | null
-}): Promise<Shot> {
+  /** People (cast) to attach via `shot_cast`; must belong to the scene’s production. Scene cast is ensured automatically. */
+  person_ids?: string[]
+}
+
+export type CreateShotResult = {
+  shot: Shot
+  /** `shot_cast` rows created in the same operation as the shot (empty if `person_ids` omitted or empty). */
+  shotCast: ShotCast[]
+}
+
+function validateShotFieldEnums(data: Pick<CreateShotInput, 'shot_size' | 'camera_movement'>): void {
+  if (data.shot_size != null && !(SHOT_SIZE_VALUES as readonly string[]).includes(data.shot_size)) {
+    throw new Error(`Invalid shot_size: ${String(data.shot_size)}`)
+  }
+  if (
+    data.camera_movement != null &&
+    !(CAMERA_MOVEMENT_VALUES as readonly string[]).includes(data.camera_movement)
+  ) {
+    throw new Error(`Invalid camera_movement: ${String(data.camera_movement)}`)
+  }
+}
+
+/**
+ * Create a shot in a scene. Validates scene existence, shot number (required), optional enums and
+ * integers, duplicate shot_number within the scene (application rule), and optional cast people.
+ * When `person_ids` is non-empty, inserts `shot_cast` rows and any missing `scene_cast` rows in one
+ * serialized transaction (per DATABASE_LAYER.md).
+ */
+export async function createShot(data: CreateShotInput): Promise<CreateShotResult> {
+  const sceneId = typeof data.scene_id === 'string' ? data.scene_id.trim() : ''
+  if (!sceneId) {
+    throw new Error('scene_id is required')
+  }
+
+  const shotNumber = typeof data.shot_number === 'string' ? data.shot_number.trim() : ''
+  if (!shotNumber) {
+    throw new Error('shot_number is required')
+  }
+
+  const scene = await getSceneById(sceneId)
+  if (!scene) {
+    throw new Error('Scene not found or deleted')
+  }
+
+  validateShotFieldEnums(data)
+
+  if (data.duration_seconds != null) {
+    if (!Number.isInteger(data.duration_seconds) || data.duration_seconds < 0) {
+      throw new Error('duration_seconds must be a non-negative integer')
+    }
+  }
+  if (data.estimated_shoot_minutes != null) {
+    if (!Number.isInteger(data.estimated_shoot_minutes) || data.estimated_shoot_minutes < 0) {
+      throw new Error('estimated_shoot_minutes must be a non-negative integer')
+    }
+  }
+
+  const personIds = [...new Set((data.person_ids ?? []).filter((id) => typeof id === 'string' && id.trim()))]
+
+  for (const personId of personIds) {
+    const person = await getPersonById(personId)
+    if (!person) {
+      throw new Error(`Person not found or deleted: ${personId}`)
+    }
+    if (person.production_id !== scene.production_id) {
+      throw new Error(`Person ${personId} does not belong to this production`)
+    }
+    if (!person.is_cast) {
+      throw new Error(`Person ${personId} is not cast (is_cast)`)
+    }
+  }
+
   const db = await getDb()
+  const dup = await db.select<Record<string, unknown>[]>(
+    `SELECT 1 AS n FROM ${SHOT_TABLE} WHERE scene_id = $1 AND shot_number = $2 AND deleted_at IS NULL LIMIT 1`,
+    [sceneId, shotNumber]
+  )
+  if (dup.length > 0) {
+    throw new Error(`A shot with number "${shotNumber}" already exists in this scene`)
+  }
+
   const id = uuid()
   const ts = now()
-  await db.execute(
-    `INSERT INTO ${SHOT_TABLE} (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-    [
-      id,
-      data.scene_id,
-      data.shot_number,
-      data.description ?? null,
-      data.shot_description ?? null,
-      data.subject ?? null,
-      data.action_description ?? null,
-      data.shot_size ?? null,
-      data.support ?? null,
-      data.lens ?? null,
-      data.duration_seconds ?? null,
-      data.estimated_shoot_minutes ?? null,
-      data.camera_movement ?? null,
-      data.notes ?? null,
-      ts,
-      ts,
-    ]
+  const insertBinds: unknown[] = [
+    id,
+    sceneId,
+    shotNumber,
+    data.description ?? null,
+    data.shot_description ?? null,
+    data.subject ?? null,
+    data.action_description ?? null,
+    data.shot_size ?? null,
+    data.support ?? null,
+    data.lens ?? null,
+    data.duration_seconds ?? null,
+    data.estimated_shoot_minutes ?? null,
+    data.camera_movement ?? null,
+    data.notes ?? null,
+    ts,
+    ts,
+  ]
+
+  const shotOutboxPayload = {
+    id,
+    scene_id: sceneId,
+    shot_number: shotNumber,
+    description: data.description ?? null,
+    shot_description: data.shot_description ?? null,
+    subject: data.subject ?? null,
+    action_description: data.action_description ?? null,
+    shot_size: data.shot_size ?? null,
+    support: data.support ?? null,
+    lens: data.lens ?? null,
+    duration_seconds: data.duration_seconds ?? null,
+    estimated_shoot_minutes: data.estimated_shoot_minutes ?? null,
+    camera_movement: data.camera_movement ?? null,
+    notes: data.notes ?? null,
+  }
+
+  const insertSql = `INSERT INTO ${SHOT_TABLE} (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
+
+  if (personIds.length === 0) {
+    await db.execute(insertSql, insertBinds)
+    await outboxPush(SHOT_TABLE, id, 'create', JSON.stringify(shotOutboxPayload))
+    const shot = await getShotById(id)
+    if (!shot) {
+      throw new Error('Shot not found after create')
+    }
+    return { shot, shotCast: [] }
+  }
+
+  const sceneCastRows = await db.select<Record<string, unknown>[]>(
+    `SELECT person_id FROM ${SCENE_CAST_TABLE} WHERE scene_id = $1 AND deleted_at IS NULL`,
+    [sceneId]
   )
-  await outboxPush(SHOT_TABLE, id, 'create', JSON.stringify({ ...data, id }))
-  const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${SHOT_TABLE} WHERE id = $1`, [id])
-  return rowToShot(rows[0]!)
+  const sceneCastPersonIds = new Set(sceneCastRows.map((r) => r.person_id as string))
+
+  await runInSerializedTransaction(async () => {
+    const conn = await getDb()
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+      { sql: 'BEGIN', bindValues: [] },
+      { sql: insertSql, bindValues: insertBinds },
+      outboxStatementForRow({
+        entity: SHOT_TABLE,
+        entityId: id,
+        operation: 'create',
+        payloadJson: JSON.stringify(shotOutboxPayload),
+      }),
+    ]
+
+    for (const personId of personIds) {
+      if (!sceneCastPersonIds.has(personId)) {
+        const sceneCastId = uuid()
+        statements.push({
+          sql: `INSERT INTO ${SCENE_CAST_TABLE} (id, production_id, scene_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+          bindValues: [sceneCastId, scene.production_id, sceneId, personId, ts, ts],
+        })
+        statements.push(
+          outboxStatementForRow({
+            entity: SCENE_CAST_TABLE,
+            entityId: sceneCastId,
+            operation: 'create',
+            payloadJson: JSON.stringify({
+              id: sceneCastId,
+              production_id: scene.production_id,
+              scene_id: sceneId,
+              person_id: personId,
+            }),
+          })
+        )
+        sceneCastPersonIds.add(personId)
+      }
+
+      const shotCastId = uuid()
+      statements.push({
+        sql: `INSERT INTO ${SHOT_CAST_TABLE} (id, production_id, shot_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+        bindValues: [shotCastId, scene.production_id, id, personId, ts, ts],
+      })
+      statements.push(
+        outboxStatementForRow({
+          entity: SHOT_CAST_TABLE,
+          entityId: shotCastId,
+          operation: 'create',
+          payloadJson: JSON.stringify({
+            id: shotCastId,
+            production_id: scene.production_id,
+            shot_id: id,
+            person_id: personId,
+          }),
+        })
+      )
+    }
+
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+    await executeBatch(conn, statements)
+  })
+
+  const shot = await getShotById(id)
+  if (!shot) {
+    throw new Error('Shot not found after create')
+  }
+  const castRows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${SHOT_CAST_TABLE} WHERE shot_id = $1 AND deleted_at IS NULL ORDER BY person_id`,
+    [id]
+  )
+  return { shot, shotCast: castRows.map(rowToShotCast) }
 }
 
 const SHOT_UPDATE_KEYS = [
@@ -820,15 +1081,38 @@ export async function updateShot(
   id: string,
   data: Partial<Pick<Shot, (typeof SHOT_UPDATE_KEYS)[number]>>
 ): Promise<Shot> {
+  const existing = await getShotById(id)
+  if (!existing) {
+    throw new Error('Shot not found or deleted')
+  }
+
   const db = await getDb()
+  let payload: Partial<Pick<Shot, (typeof SHOT_UPDATE_KEYS)[number]>> = data
+  if (data.shot_number !== undefined) {
+    const shotNumber =
+      typeof data.shot_number === 'string'
+        ? data.shot_number.trim()
+        : String(data.shot_number ?? '').trim()
+    if (!shotNumber) {
+      throw new Error('shot_number is required')
+    }
+    const dup = await db.select<Record<string, unknown>[]>(
+      `SELECT 1 AS n FROM ${SHOT_TABLE} WHERE scene_id = $1 AND shot_number = $2 AND deleted_at IS NULL AND id != $3 LIMIT 1`,
+      [existing.scene_id, shotNumber, id]
+    )
+    if (dup.length > 0) {
+      throw new Error(`A shot with number "${shotNumber}" already exists in this scene`)
+    }
+    payload = { ...data, shot_number: shotNumber }
+  }
   const ts = now()
   const cols: string[] = []
   const vals: unknown[] = []
   let i = 1
   for (const k of SHOT_UPDATE_KEYS) {
-    if (data[k] !== undefined) {
+    if (payload[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(data[k])
+      vals.push(payload[k])
     }
   }
   if (cols.length === 0) {
@@ -838,7 +1122,7 @@ export async function updateShot(
   cols.push(`updated_at = $${i}`)
   vals.push(ts, id)
   await db.execute(`UPDATE ${SHOT_TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1}`, vals)
-  await outboxPush(SHOT_TABLE, id, 'update', JSON.stringify(data))
+  await outboxPush(SHOT_TABLE, id, 'update', JSON.stringify(payload))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${SHOT_TABLE} WHERE id = $1`, [id])
   return rowToShot(rows[0]!)
 }

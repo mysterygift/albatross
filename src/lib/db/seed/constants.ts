@@ -54,7 +54,7 @@ export const IDS = {
   shotCast: (n: number) => `${P}${String(4100 + n).padStart(4, '0')}`,
   // cast_availability
   availability: (n: number) => `${P}${String(5000 + n).padStart(4, '0')}`,
-  // bookings (cast only for demo)
+  // bookings: cast uses booking(); crew uses crewBooking() (see demoBookingSeed)
   booking: (n: number) => `${P}${String(6200 + n).padStart(4, '0')}`,
   // location_scene
   locationScene: (n: number) => `${P}${String(6000 + n).padStart(4, '0')}`,
@@ -78,10 +78,22 @@ export const IDS = {
   vendorPO: (n: number) => `${P}${String(1900 + n).padStart(4, '0')}`,
   // invoice reminder tasks (demo only; distinct from task sections/tasks)
   invoiceReminderTask: (n: number) => `${P}${String(8200 + n).padStart(4, '0')}`,
+  // crew labour invoice reminders (7); must not use invoiceReminderTask(21+): 8200+n = 8220+(n-20) collides with equipmentReminderTask
+  crewLabourInvoiceReminderTask: (n: number) => `${P}${String(8350 + n).padStart(4, '0')}`,
   // vendor_invoice_expenses link table (demo only)
   vendorInvoiceExpenseLink: (n: number) => `${P}${String(8600 + n).padStart(4, '0')}`,
   // vendor_purchase_order_expenses link table (demo only)
   vendorPOExpenseLink: (n: number) => `${P}${String(8700 + n).padStart(4, '0')}`,
+  // equipment registry (demo only; ~120 items)
+  equipment: (n: number) => `${P}${String(8300 + n).padStart(4, '0')}`,
+  // equipment item_uuid (unique per production; demo only)
+  equipmentItemUuid: (n: number) => `${P}${String(8400 + n).padStart(4, '0')}`,
+  // equipment lists (demo only)
+  equipmentList: (n: number) => `${P}${String(8500 + n).padStart(4, '0')}`,
+  // equipment list items (demo only; 8750+ to avoid collision with vendorInvoiceExpenseLink 8600+)
+  equipmentListItem: (n: number) => `${P}${String(8750 + n).padStart(4, '0')}`,
+  // equipment return reminder tasks (demo only; distinct from invoice reminder tasks)
+  equipmentReminderTask: (n: number) => `${P}${String(8220 + n).padStart(4, '0')}`,
 } as const
 
 export const SEED_VERSION = '2'

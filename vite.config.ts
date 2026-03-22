@@ -1,7 +1,7 @@
 import path from 'path'
-import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { defineConfig } from 'vitest/config'
 
 const host = process.env.TAURI_DEV_HOST
 
@@ -12,6 +12,12 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+    globals: false,
+    restoreMocks: true,
   },
   clearScreen: false,
   server: {

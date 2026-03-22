@@ -62,7 +62,7 @@ export type PersonBookingNeedSummary = {
  * globally—only use shot_cast as refinement when we have shot-level schedule data.
  */
 function getNeededPersonIdsForDay(
-  shootDayId: string,
+  _shootDayId: string,
   scheduledSceneIds: string[],
   scheduledShotIds: string[],
   castBySceneId: Map<string, string[]>,

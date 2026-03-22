@@ -29,6 +29,7 @@ import {
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import { listShootDayUnitsByProduction, setShootDayUnitLocked } from '@/lib/db/repositories/shoot-day-units'
 import { ensureMainUnit } from '@/lib/db/repositories/units'
+import { getCastIdsByShotIds } from '@/lib/db/repositories/shot-cast'
 
 export const stripboardQueryKeys = {
   all: ['stripboard'] as const,
@@ -104,10 +105,22 @@ export function useStripboard(productionId: string | null) {
     [stripsQuery.data]
   )
 
+  const shotIdsSortedForQueries = useMemo(() => {
+    const ids = [...shotIdsFromStrips]
+    ids.sort()
+    return ids
+  }, [shotIdsFromStrips])
+
   const estimatedMinutesQuery = useQuery({
-    queryKey: [...stripboardQueryKeys.estimatedMinutes(productionId ?? ''), shotIdsFromStrips],
-    queryFn: () => getEstimatedShootMinutesByShotIds(shotIdsFromStrips),
+    queryKey: [...stripboardQueryKeys.estimatedMinutes(productionId ?? ''), shotIdsSortedForQueries],
+    queryFn: () => getEstimatedShootMinutesByShotIds(shotIdsSortedForQueries),
     enabled: !!productionId,
+  })
+
+  const shotCastIdsQuery = useQuery({
+    queryKey: [...stripboardQueryKeys.all, productionId ?? '', 'shot-cast-by-shot', shotIdsSortedForQueries],
+    queryFn: () => getCastIdsByShotIds(shotIdsSortedForQueries),
+    enabled: !!productionId && shotIdsSortedForQueries.length > 0,
   })
 
   const units = unitsQuery.data ?? []
@@ -117,6 +130,11 @@ export function useStripboard(productionId: string | null) {
   const scenes = scenesQuery.data ?? []
   const shots = shotsQuery.data ?? []
   const estimatedShootMinutesByShotId = estimatedMinutesQuery.data ?? new Map<string, number>()
+  /** Avoid showing cast from a previous fetch when there are no shot ids on strips. */
+  const castPersonIdsByShotId =
+    shotIdsSortedForQueries.length === 0
+      ? new Map<string, string[]>()
+      : (shotCastIdsQuery.data ?? new Map<string, string[]>())
 
   const dayUnitsByDayId = useMemo(() => {
     const map = new Map<string, typeof dayUnits>()
@@ -213,12 +231,14 @@ export function useStripboard(productionId: string | null) {
       shotId,
       shootDayId,
       shootDayUnitId,
+      toSortIndex,
     }: {
       productionId: string
       shotId: string
       shootDayId: string
       shootDayUnitId: string
-    }) => createShotStrip(productionId, shotId, shootDayId, shootDayUnitId),
+      toSortIndex?: number
+    }) => createShotStrip(productionId, shotId, shootDayId, shootDayUnitId, toSortIndex),
     onSuccess: () => invalidate(),
   })
 
@@ -238,6 +258,9 @@ export function useStripboard(productionId: string | null) {
       dayUnitsQuery.isLoading ||
       stripsQuery.isLoading ||
       scenesQuery.isLoading,
+    /** True while shot list or shot-level cast (for insights) is still loading. */
+    isInsightsDataLoading: shotsQuery.isLoading || shotCastIdsQuery.isLoading,
+    castPersonIdsByShotId,
     invalidate,
     setLockedMutation,
     updateEstimatedMutation,

@@ -39,8 +39,6 @@ import {
   Save,
 } from 'lucide-react'
 
-const CONFIG_VERSION = 1
-
 /** Sentinel for "no HOD" in Select; Radix forbids SelectItem value="". */
 const HOD_NONE_VALUE = '__crew_hod_none__'
 

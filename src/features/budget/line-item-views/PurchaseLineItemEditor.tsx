@@ -61,7 +61,7 @@ export const PurchaseLineItemEditor = forwardRef<
   LineItemEditorRef,
   LineItemEditProps<PurchaseLineItemDetails>
 >(function PurchaseLineItemEditor(
-  { initialDetails, productionId, locations, format, productionCurrency },
+  { initialDetails, productionId, locations },
   ref
 ) {
   const defaultValues = useMemo(() => fromDetails(initialDetails), [initialDetails])

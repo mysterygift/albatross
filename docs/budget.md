@@ -337,7 +337,7 @@ When adding or changing budget-related features:
 
 ### 16. History / changes
 
-- **Quick-add replaced by Log Spend** — The old “Quick-add spend” dialog created plain expenses (no transaction_type or expense_transaction_details). It has been replaced in the UI by **Log Spend**, which creates typed spend via createTypedExpense (expense row + details row + outbox in one transaction). The legacy QuickExpenseForm still exists in code but is not shown in the header.
+- **Quick-add removed; Log Spend only** — The old “Quick-add spend” dialog (`QuickExpenseForm`) created plain expenses (no `transaction_type` or `expense_transaction_details`). It has been removed from the codebase. **Log Spend** is the header entry for new spend: typed creation via `createTypedExpense` (expense row + details row + outbox in one transaction).
 - **Typed creation** — createTypedExpense supports labour, purchase, rental, allow, deposit (deposit with amount 0 and empty details; no Deposit editor yet). Purchase requires amount > 0; rental amount is derived; labour amount = rate×days; allow uses provisional_amount.
 - **Untyped expense editing** — updateExpense(expenseId, { amount, date, vendor, notes }) and UntypedExpenseEditor allow editing amount, date, vendor, notes for expenses with no transaction_type. onUpdateExpenseRequest is passed from Budget page to ExpenseDetailPanel.
 - **Examine Account** — Sheet shows both line items (view-only) and expenses (with Examine spend). Expense Detail Panel uses registry + typed-expense-views (LabourTransactionEditor, etc.) for read/edit; Deposit and untyped have no or limited edit.

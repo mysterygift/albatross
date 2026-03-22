@@ -487,16 +487,104 @@ export type Booking = {
   notes: string | null
 } & SoftDeletable
 
+/**
+ * Canonical equipment categories (grouped package model).
+ * Stored values are machine-friendly snake_case.
+ * Display labels are provided by formatEquipmentCategoryLabel / formatEquipmentLabel.
+ */
+export const EQUIPMENT_CATEGORY_VALUES = [
+  'camera',
+  'lenses',
+  'camera_support',
+  'camera_accessories',
+  'wireless_systems',
+  'lighting',
+  'lighting_accessories',
+  'power_distribution',
+  'grip',
+  'sound',
+  'dit_video_village',
+  'production_logistics',
+  'storage_cases',
+  'consumables',
+  'other',
+] as const
+export type EquipmentCategory = (typeof EQUIPMENT_CATEGORY_VALUES)[number]
+
+/**
+ * Mapping from legacy equipment category values to canonical categories.
+ * Used by DB migration and CSV import to normalize old data.
+ * Any category not in this map is treated as 'other'.
+ */
+export const EQUIPMENT_CATEGORY_LEGACY_MAP: Record<string, EquipmentCategory> = {
+  camera_body: 'camera',
+  lens: 'lenses',
+  camera_support: 'camera_support',
+  camera_accessory: 'camera_accessories',
+  wireless_video: 'wireless_systems',
+  wireless_fiz: 'wireless_systems',
+  lighting_fixture: 'lighting',
+  lighting_accessory: 'lighting_accessories',
+  power_distribution: 'power_distribution',
+  grip: 'grip',
+  sound: 'sound',
+  dit: 'dit_video_village',
+  monitor: 'dit_video_village',
+  consumable: 'consumables',
+  other: 'other',
+}
+
+/** Equipment lifecycle status. Default is planned. */
+export const EQUIPMENT_STATUS_VALUES = ['planned', 'active', 'returned', 'lost', 'damaged'] as const
+export type EquipmentStatus = (typeof EQUIPMENT_STATUS_VALUES)[number]
+
 export type Equipment = {
   id: string
   production_id: string
   name: string
+  /** Count of identical units (e.g. 8× Sandbags). Default 1. */
+  quantity: number
   source_type: 'owned' | 'purchased' | 'rented'
   vendor: string | null
-  cost: number | null
   shoot_day_id: string | null
   notes: string | null
+  item_uuid: string
+  category: EquipmentCategory
+  status: EquipmentStatus
+  department: string | null
+  vendor_id: string | null
+  invoice_id: string | null
+  rental_start_date: string | null
+  return_due_date: string | null
+  returned_at: string | null
+  replacement_value: number | null
+  serial_number: string | null
 } & SoftDeletable
+
+/** Production-scoped equipment list (e.g. day kit, department package). References registry items via list items. */
+export type EquipmentList = {
+  id: string
+  production_id: string
+  shoot_day_id: string | null
+  name: string
+  department: string | null
+  notes: string | null
+} & SoftDeletable
+
+/** Row on an equipment list: references one registry equipment item and holds checklist state. */
+export type EquipmentListItem = {
+  id: string
+  equipment_list_id: string
+  equipment_id: string
+  sort_order: number
+  /** 1 = checked out, 0 = not. Operational checklist state only. */
+  checked_out: number
+  /** 1 = checked back in, 0 = not. Operational checklist state only. */
+  checked_back_in: number
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
 
 export type ProductionTaskSection = {
   id: string
@@ -520,6 +608,8 @@ export type ProductionTask = {
   section_id: string | null
   /** Null = normal task; non-null = reminder task for this vendor invoice (at most one task per invoice). */
   vendor_invoice_id: string | null
+  /** Null = normal task; non-null = return reminder task for this equipment item (at most one task per equipment). */
+  equipment_id: string | null
 } & SoftDeletable
 
 /** Global task template (not production-scoped). */
