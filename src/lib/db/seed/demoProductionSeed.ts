@@ -270,7 +270,7 @@ async function runFullSeed(): Promise<void> {
    * Demo currency architecture:
    * - Demo production base currency = GBP. All budget values are stored in GBP.
    * - Display currency is a user preference (settings); may differ from GBP.
-   * - Conversion API is disabled by default (enable_currency_conversion_api = "false").
+   * - Conversion API is on by default (enable_currency_conversion_api = "true").
    * - Duplication copies production.currency_code and all budget values unchanged.
    */
 

@@ -17,10 +17,10 @@ export function useCurrency() {
     placeholderData: 'GBP',
   })
 
-  const { data: conversionApiEnabled = false } = useQuery({
+  const { data: conversionApiEnabled = true } = useQuery({
     queryKey: ['settings', 'enable_currency_conversion_api'],
     queryFn: async () => (await getSetting('enable_currency_conversion_api')) === 'true',
-    placeholderData: false,
+    placeholderData: true,
   })
 
   const setDisplayCurrencyMutation = useMutation({
@@ -112,7 +112,7 @@ export function useCurrency() {
   return {
     displayCurrency: displayCurrency ?? 'GBP',
     setDisplayCurrency,
-    conversionApiEnabled: conversionApiEnabled ?? false,
+    conversionApiEnabled: conversionApiEnabled ?? true,
     setConversionApiEnabled,
     conversionStatus,
     format,

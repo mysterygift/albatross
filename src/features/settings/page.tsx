@@ -630,7 +630,7 @@ export function SettingsPage() {
                 size="sm"
                 onClick={async () => {
                   const prevDisplay = (await getSetting('display_currency')) ?? 'GBP'
-                  const prevApi = (await getSetting('enable_currency_conversion_api')) ?? 'false'
+                  const prevApi = (await getSetting('enable_currency_conversion_api')) ?? 'true'
                   await setSetting('display_currency', 'USD')
                   await setSetting('enable_currency_conversion_api', 'true')
                   const rate = await getRate('GBP', 'USD')

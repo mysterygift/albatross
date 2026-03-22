@@ -1,6 +1,6 @@
 /**
  * Fawaz Ahmed Exchange API (optional, toggleable in Dev Settings).
- * If enable_currency_conversion_api is false, no fetch and no cache read.
+ * If enable_currency_conversion_api is false, no fetch and no cache read (default is on).
  */
 import { getSetting } from '@/lib/db/repositories/settings'
 import {

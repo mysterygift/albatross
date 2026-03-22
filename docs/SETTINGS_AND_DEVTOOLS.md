@@ -49,7 +49,7 @@ All values are stored as strings; consumers parse as needed (e.g. `value === 'tr
 | Key | Default | Used by | Purpose |
 |-----|---------|---------|--------|
 | `display_currency` | `'GBP'` | `useCurrency`, Settings UI | Display currency for budget/money (see `CURRENCY_OPTIONS` in `formatMoney`). |
-| `enable_currency_conversion_api` | `'false'` | `useCurrency`, exchange rates, Settings/Dev tools | When `'true'`, allows fetching exchange rates and converting displayed amounts. |
+| `enable_currency_conversion_api` | `'true'` | `useCurrency`, exchange rates, Settings/Dev tools | When `'true'`, allows fetching exchange rates and converting displayed amounts. Existing DBs that had the old default `'false'` are migrated once on startup. |
 | `enable_db_perf_logging` | (none; treated as enabled if not `'false'`) | `src/lib/db/perf.ts`, Settings/Dev tools | When not `'false'`, enables DB perf recording and HUD in dev. |
 
 Defaults are applied by `ensureSettingsDefaults()` in `settings.ts` (called from productions context on app init). Add new default keys to the `DEFAULTS` object and ensure they are created on first run if needed.

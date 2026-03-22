@@ -2,9 +2,12 @@ import { getDb, runInSerializedTransaction } from '../client'
 
 const TABLE = 'settings'
 
+/** One-time: flip legacy default `false` to on; dev users who opt out once keep `false` after this runs. */
+const CURRENCY_API_DEFAULT_ON_MIGRATION_KEY = '_migration_currency_api_default_on_v1'
+
 const DEFAULTS: Record<string, string> = {
   display_currency: 'GBP',
-  enable_currency_conversion_api: 'false',
+  enable_currency_conversion_api: 'true',
 }
 
 export const FIRST_LAUNCH_TUTORIAL_SEEN_KEY = 'first_launch_tutorial_seen'
@@ -56,5 +59,20 @@ export async function ensureSettingsDefaults(): Promise<void> {
       `INSERT OR IGNORE INTO ${TABLE} (key, value) VALUES ${placeholders}`,
       values
     )
+
+    const migRows = await db.select<{ value: string }[]>(
+      `SELECT value FROM ${TABLE} WHERE key = $1`,
+      [CURRENCY_API_DEFAULT_ON_MIGRATION_KEY]
+    )
+    if (migRows.length === 0 || migRows[0]!.value !== 'true') {
+      await db.execute(
+        `UPDATE ${TABLE} SET value = 'true' WHERE key = 'enable_currency_conversion_api' AND value = 'false'`
+      )
+      await db.execute(
+        `INSERT INTO ${TABLE} (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = $2`,
+        [CURRENCY_API_DEFAULT_ON_MIGRATION_KEY, 'true']
+      )
+    }
   })
 }

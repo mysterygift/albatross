@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
@@ -20,10 +21,13 @@ const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 export function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [tutorialEntryOpen, setTutorialEntryOpen] = useState(false)
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [isPreparingTutorial, setIsPreparingTutorial] = useState(false)
+  const [isPreparingTutorialHub, setIsPreparingTutorialHub] = useState(false)
   const [tutorialStartupError, setTutorialStartupError] = useState<string | null>(null)
+  const [tutorialHubError, setTutorialHubError] = useState<string | null>(null)
   const [completionToast, setCompletionToast] = useState<string | null>(null)
   const {
     isLoading: tutorialLoading,
@@ -34,8 +38,17 @@ export function AppLayout() {
     progress,
     updateProgress,
   } = useFirstLaunchTutorial()
-  const { setCurrentProductionId, currentProduction } = useCurrentProduction()
+  const { setCurrentProductionId, currentProduction, refetchProductions } = useCurrentProduction()
   const isDemoProductionCurrent = currentProduction?.slug === DEMO_SLUG
+
+  const prepareDemoForTutorialHub = useCallback(async () => {
+    await ensureAndOpenDemoProductionForTutorial({ setCurrentProductionId })
+    await queryClient.invalidateQueries({ queryKey: ['productions'] })
+    await queryClient.invalidateQueries({ queryKey: ['crew'] })
+    await queryClient.invalidateQueries({ queryKey: ['people'] })
+    await queryClient.invalidateQueries({ queryKey: ['deliverables'] })
+    await refetchProductions()
+  }, [queryClient, refetchProductions, setCurrentProductionId])
 
   const allComplete = useMemo(() => {
     if (!progress) return false
@@ -78,6 +91,7 @@ export function AppLayout() {
 
   const handleOpenTutorialFromHelp = () => {
     setTutorialStartupError(null)
+    setTutorialHubError(null)
     setIsPreparingTutorial(false)
     setTutorialEntryOpen(false)
     setTutorialOpen(true)
@@ -88,9 +102,7 @@ export function AppLayout() {
     setTutorialStartupError(null)
     setIsPreparingTutorial(true)
     try {
-      await ensureAndOpenDemoProductionForTutorial({
-        setCurrentProductionId,
-      })
+      await prepareDemoForTutorialHub()
       updateProgress((prev) => ({ ...prev, seenEntryModal: true }))
       setTutorialEntryOpen(false)
       setTutorialOpen(true)
@@ -102,18 +114,55 @@ export function AppLayout() {
     }
   }
 
+  const handleBeforeTutorialSectionNavigate = useCallback(async () => {
+    setTutorialHubError(null)
+    try {
+      await prepareDemoForTutorialHub()
+      return true
+    } catch {
+      setTutorialHubError('Unable to prepare the demo production. Please try again.')
+      return false
+    }
+  }, [prepareDemoForTutorialHub])
+
   useEffect(() => {
     const state = location.state as { openTutorialHome?: boolean; resetTutorial?: boolean } | null
     if (!state?.openTutorialHome) return
-    if (state.resetTutorial) {
-      resetFirstLaunchTutorial()
-    }
+
+    const shouldReset = !!state.resetTutorial
+    navigate(location.pathname, { replace: true, state: {} })
+
+    let cancelled = false
     setTutorialStartupError(null)
     setIsPreparingTutorial(false)
     setTutorialEntryOpen(false)
-    setTutorialOpen(true)
-    navigate(location.pathname, { replace: true, state: {} })
-  }, [location.pathname, location.state, navigate, resetFirstLaunchTutorial])
+
+    ;(async () => {
+      if (shouldReset) {
+        resetFirstLaunchTutorial()
+        setTutorialHubError(null)
+        setIsPreparingTutorialHub(true)
+        try {
+          await prepareDemoForTutorialHub()
+        } catch {
+          if (!cancelled) {
+            setTutorialHubError('Unable to prepare the demo production. Please try again.')
+          }
+        } finally {
+          // Always clear loading: effect cleanup sets cancelled before await finishes (e.g. Strict Mode
+          // or dependency churn). Skipping this left isPreparingTutorialHub stuck true forever.
+          setIsPreparingTutorialHub(false)
+        }
+      }
+      if (!cancelled) {
+        setTutorialOpen(true)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [location.pathname, location.state, navigate, prepareDemoForTutorialHub, resetFirstLaunchTutorial])
 
   return (
     <SidebarProvider>
@@ -143,18 +192,40 @@ export function AppLayout() {
       />
       <TutorialHome
         open={tutorialOpen}
-        onOpenChange={setTutorialOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTutorialHubError(null)
+          }
+          setTutorialOpen(open)
+        }}
         progress={progress}
         onProgressChange={updateProgress}
         onSkip={completeFirstLaunchTutorial}
-        onReset={() => {
+        isPreparingDemo={isPreparingTutorialHub}
+        tutorialHubError={tutorialHubError}
+        onDismissTutorialHubError={() => setTutorialHubError(null)}
+        onBeforeSectionNavigate={handleBeforeTutorialSectionNavigate}
+        onReset={async () => {
           resetFirstLaunchTutorial()
           setTutorialEntryOpen(false)
-          setTutorialOpen(true)
+          setTutorialHubError(null)
+          setIsPreparingTutorialHub(true)
+          try {
+            await prepareDemoForTutorialHub()
+          } catch {
+            setTutorialHubError('Unable to prepare the demo production. Please try again.')
+          } finally {
+            setIsPreparingTutorialHub(false)
+          }
         }}
         isDemoProductionCurrent={isDemoProductionCurrent}
         onOpenDemoProduction={async () => {
-          await ensureAndOpenDemoProductionForTutorial({ setCurrentProductionId })
+          setTutorialHubError(null)
+          try {
+            await prepareDemoForTutorialHub()
+          } catch {
+            setTutorialHubError('Unable to prepare the demo production. Please try again.')
+          }
         }}
       />
       {completionToast && (
