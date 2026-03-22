@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -36,7 +36,7 @@ import {
 import { bookingStartSortKey, formatBookingTimeWindow } from '@/lib/call-sheets/bookingCallTimes'
 import { buildAdvancedScheduleForCallSheet } from '@/lib/call-sheets/advancedSchedule'
 import { saveFileWithDialog, openInSystem } from '@/lib/files'
-import { getWeatherSummaryForCallSheet } from '@/lib/weather/openMeteo'
+import { getWeatherForCallSheet } from '@/lib/weather/openMeteo'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -75,6 +75,8 @@ export function CallSheetsPage() {
   const [shootDayId, setShootDayId] = useState<string | null>(null)
   const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
   const [weatherSummary, setWeatherSummary] = useState('')
+  const [sunriseManual, setSunriseManual] = useState('')
+  const [sunsetManual, setSunsetManual] = useState('')
   const [weatherFallbackMessage, setWeatherFallbackMessage] = useState<string | null>(null)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [numPages, setNumPages] = useState<number | null>(null)
@@ -339,6 +341,16 @@ export function CallSheetsPage() {
       })()
     : ''
 
+  const weatherStoredForDay = useMemo(
+    () => parseCallSheetWeatherJson(shootDay?.weather_json ?? null),
+    [shootDay?.weather_json],
+  )
+
+  useEffect(() => {
+    setSunriseManual('')
+    setSunsetManual('')
+  }, [shootDayId])
+
   const buildCallSheetData = useMemo(() => {
     if (!production || !shootDay || !shootDayUnitId) return null
     const dayUnit = dayUnits.find((u) => u.id === shootDayUnitId)
@@ -369,6 +381,12 @@ export function CallSheetsPage() {
       email: c.email ?? null,
       notes: c.notes ?? null,
     }))
+    /** Input shows text from typed state or stored summary/high/low (`weather_json`). */
+    const manualFallbackFilled = !!(weatherSummary.trim() || weatherFromDay.trim())
+    /** DB long-form `weather_manual` only when fallback is “on” from stored data, not when the user typed (typed text is not duplicated into this block). */
+    const typedWeatherFallback = weatherSummary.trim()
+    const weatherManualForPdf =
+      manualFallbackFilled && !typedWeatherFallback ? (shootDay.weather_manual ?? null) : null
     return {
       productionName: production.name,
       shootDate: shootDay.shoot_date,
@@ -380,8 +398,10 @@ export function CallSheetsPage() {
       unitNotes: dayUnit?.notes ?? null,
       keyContacts: keyContactsPdf,
       primaryContactsTop: selectPrimaryCallSheetContacts(keyContactsPdf),
-      weatherManual: shootDay.weather_manual ?? null,
-      weatherStored: parseCallSheetWeatherJson(shootDay.weather_json),
+      weatherManual: weatherManualForPdf,
+      weatherStored: weatherStoredForDay,
+      weatherSunrise: sunriseManual.trim() || weatherStoredForDay?.sunrise?.trim() || null,
+      weatherSunset: sunsetManual.trim() || weatherStoredForDay?.sunset?.trim() || null,
       hospitalName: shootDay.hospital_name ?? null,
       hospitalAddress: shootDay.hospital_address ?? null,
       policeStationName: shootDay.police_station_name ?? null,
@@ -440,6 +460,11 @@ export function CallSheetsPage() {
     shootDays,
     allProductionStrips,
     allShootDayUnits,
+    weatherStoredForDay,
+    sunriseManual,
+    sunsetManual,
+    weatherSummary,
+    weatherFromDay,
   ])
 
   const distributionContext = useMemo(() => {
@@ -485,16 +510,29 @@ export function CallSheetsPage() {
     }) => {
       const { baseData, locationQuery, shootDate, fallbackWeather } = options
       if (!baseData || !currentProductionId || !shootDay) throw new Error('Missing data')
-      let weather: string | null = null
+      let apiWeather: Awaited<ReturnType<typeof getWeatherForCallSheet>> = null
       let usedFallback = true
       try {
-        weather = await getWeatherSummaryForCallSheet(locationQuery, shootDate)
-        if (weather != null) usedFallback = false
+        apiWeather = await getWeatherForCallSheet(locationQuery, shootDate)
+        if (apiWeather != null) usedFallback = false
       } catch {
         // use fallback below
       }
-      const finalWeather = weather ?? fallbackWeather ?? null
-      const data: CallSheetData = { ...baseData, weatherSummary: finalWeather }
+      const finalWeather = apiWeather?.summary ?? fallbackWeather ?? null
+      const finalSunrise =
+        apiWeather != null
+          ? apiWeather.sunrise?.trim() || baseData.weatherSunrise
+          : baseData.weatherSunrise
+      const finalSunset =
+        apiWeather != null
+          ? apiWeather.sunset?.trim() || baseData.weatherSunset
+          : baseData.weatherSunset
+      const data: CallSheetData = {
+        ...baseData,
+        weatherSummary: finalWeather,
+        weatherSunrise: finalSunrise,
+        weatherSunset: finalSunset,
+      }
       const pdfBytes = await generateCallSheetPdf(data)
       const bytes = new Uint8Array(pdfBytes)
       if (options.save) {
@@ -619,6 +657,26 @@ export function CallSheetsPage() {
                 <p className="text-muted-foreground text-xs">{weatherFallbackMessage}</p>
               )}
             </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Sunrise (optional)</Label>
+                <Input
+                  className="bg-input border-border"
+                  value={sunriseManual || (weatherStoredForDay?.sunrise ?? '')}
+                  onChange={(e) => setSunriseManual(e.target.value)}
+                  placeholder="e.g. 06:15"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Sunset (optional)</Label>
+                <Input
+                  className="bg-input border-border"
+                  value={sunsetManual || (weatherStoredForDay?.sunset ?? '')}
+                  onChange={(e) => setSunsetManual(e.target.value)}
+                  placeholder="e.g. 19:42"
+                />
+              </div>
+            </div>
             {shootDayId && shootDayUnitId && (
               <>
                 <div className="space-y-2">
@@ -741,16 +799,6 @@ export function CallSheetsPage() {
                 onClick={() => handleGenerate(true, true)}
                 disabled={!buildCallSheetData || generateMutation.isPending}
               >
-                Save & Open
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDistributionStatus({ loading: false, message: null, error: null })
-                  setDistributionOpen(true)
-                }}
-                disabled={!buildCallSheetData}
-              >
                 Distribute Call Sheets
               </Button>
             </div>
@@ -763,13 +811,13 @@ export function CallSheetsPage() {
           </CardHeader>
           <CardContent>
             {previewPdfUrl ? (
-              <ScrollArea className="h-[480px] w-full rounded border border-border">
+              <ScrollArea className="h-[960px] w-full rounded border border-border">
                 <Document
                   file={previewPdfUrl}
                   onLoadSuccess={({ numPages: n }) => setNumPages(n)}
                 >
                   {numPages != null && Array.from({ length: numPages }, (_, i) => (
-                    <Page key={i} pageNumber={i + 1} width={340} />
+                    <Page key={i} pageNumber={i + 1} width={680} />
                   ))}
                 </Document>
               </ScrollArea>

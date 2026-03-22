@@ -1084,6 +1084,8 @@ async function buildCallSheetDataForSeed(
     weatherSummary: null,
     weatherManual: (day?.weather_manual as string) ?? null,
     weatherStored: parseCallSheetWeatherJson((day?.weather_json as string) ?? null),
+    weatherSunrise: null,
+    weatherSunset: null,
     parkingBaseAddress: (day?.parking_base_address as string) ?? null,
     mealTimes: parseCallSheetMealTimesFromJson(day?.meal_times_json as string | null),
     specialNotes: (day?.special_notes as string) ?? null,

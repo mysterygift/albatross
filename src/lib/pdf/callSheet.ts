@@ -107,6 +107,10 @@ export interface CallSheetData {
   weatherSummary: string | null
   /** shoot_days.weather_manual */
   weatherManual?: string | null
+  /** Live/API or manual; PDF falls back to `weatherStored.sunrise` when unset. */
+  weatherSunrise: string | null
+  /** Live/API or manual; PDF falls back to `weatherStored.sunset` when unset. */
+  weatherSunset: string | null
   /** Parsed optional keys from shoot_days.weather_json. */
   weatherStored?: CallSheetWeatherStored | null
   parkingBaseAddress: string | null
@@ -145,6 +149,7 @@ const FONT_FOOTER = 8
 const ROW_HEIGHT = 10
 const FONT_SCHED = 7.25
 const SCHED_LINE_STEP = 7.5
+const SCHED_RULE_GAP = 2 // Adjusting the spacing for elements in the shooting schedule table.
 const FONT_RUN_TITLE = 9
 const FONT_RUN_SUB = 7.5
 const FONT_CONF = 6.5
@@ -167,9 +172,9 @@ function drawRule(
   xEnd: number,
   color: ReturnType<typeof rgb> = GRAY
 ): void {
-  page.drawRectangle({
+  page.drawRectangle({ // Draws the actual line.
     x: xStart,
-    y: y - 0.25,
+    y: y + 6, // originally 0.25, I've offset this to +4 to put it above each element in the row. Which means it no longer bisects any multi-line cells.
     width: xEnd - xStart,
     height: 0.5,
     color,
@@ -341,6 +346,7 @@ function wrapLinesLimited(
   return out
 }
 
+// We consider a strip to be special if it is a call, lunch, wrap, note, or move – these are manually added to the schedule and are not part of the shooting schedule table.
 function scheduleStripIsSpecial(stripType: CallSheetStrip['strip_type']): boolean {
   return stripType === 'CALL' || stripType === 'LUNCH' || stripType === 'WRAP' || stripType === 'NOTE' || stripType === 'MOVE'
 }
@@ -393,7 +399,7 @@ function drawRunningHeader(
 }
 
 const CONFIDENTIAL_FOOTER_CORE =
-  'Confidential — for cast and crew on this production only. Not for publication or third-party distribution. Personal data is processed in accordance with applicable data protection legislation; handle securely and in line with production policy.'
+  'CONFIDENTIAL – DO NOT SHARE.'
 
 function drawConfidentialFooterOnPage(
   page: Page,
@@ -439,7 +445,7 @@ function applyFootersToAllPages(
     drawConfidentialFooterOnPage(pages[i]!, font, data, i === last)
   }
 }
-
+// This function draws the shooting schedule table and contains the logic for the shooting schedule table.
 function drawShootingScheduleTable(
   doc: PDFDocument,
   refs: ScheduleDrawRefs,
@@ -449,8 +455,8 @@ function drawShootingScheduleTable(
 ): void {
   const cols = [
     { label: 'LOC', w: 46 },
-    { label: 'EP/SC', w: 38 },
-    { label: 'SET / SYNOPSIS', w: 208 },
+    { label: 'SC/SH', w: 38 },
+    { label: 'SHOT DESCRIPTION', w: 208 },
     { label: 'D/N', w: 38 },
     { label: 'PGS', w: 24 },
     { label: 'CAST', w: 66 },
@@ -544,22 +550,22 @@ function drawShootingScheduleTable(
   }
 
   const drawScheduleRow = (s: CallSheetStrip): void => {
-    const isSp = scheduleStripIsSpecial(s.strip_type)
+    const isSpecial = scheduleStripIsSpecial(s.strip_type)
     const setW = cols[2]!.w - pad * 2
     const notesW = cols[6]!.w - pad * 2
     const castW = cols[5]!.w - pad * 2
 
     let loc = ''
-    let epSc = ''
+    let ScSh = ''
     let setLines: string[]
     let dn = ''
     let pgs = ''
     let castStr = ''
     let notesLines: string[]
 
-    if (isSp) {
+    if (isSpecial) {
       loc = ''
-      epSc = ''
+      ScSh = ''
       setLines = wrapLinesLimited(specialScheduleSetLine(s), setW, font, FONT_SCHED, 2)
       dn = ''
       pgs = ''
@@ -569,8 +575,8 @@ function drawShootingScheduleTable(
       loc = s.locDitto ? DITTO_MARK : (s.locLabel ?? '')
       const sn = s.scene_number?.trim()
       const sh = s.shot_number?.trim()
-      if (sn && sh) epSc = `${sn} · ${sh}`
-      else epSc = sn ?? sh ?? ''
+      if (sn && sh) ScSh = `${sn} · ${sh}`
+      else ScSh = sn ?? sh ?? ''
       setLines = wrapLinesLimited(setSynopsisSource(s), setW, font, FONT_SCHED, 2)
       dn = formatScheduleDnColumn(s.int_ext, s.day_night)
       pgs = s.page_eighths != null ? `${s.page_eighths}/8` : ''
@@ -584,10 +590,10 @@ function drawShootingScheduleTable(
 
     ensureSpace(rowH + 6, true)
 
-    if (isSp) {
+    if (isSpecial) {
       refs.page.drawRectangle({
         x: x0,
-        y: refs.y.current - rowH + 3,
+        y: refs.y.current - rowH + 7, // to account for the extra space added to the row height.
         width: tableW,
         height: rowH,
         color: SCHEDULE_SPECIAL_FILL,
@@ -598,7 +604,7 @@ function drawShootingScheduleTable(
     const setFont = bold
 
     drawColumnText(0, [loc], font, yTop)
-    drawColumnText(1, [epSc], font, yTop)
+    drawColumnText(1, [ScSh], font, yTop)
     drawColumnText(2, setLines, setFont, yTop)
     drawColumnText(3, [dn], font, yTop)
     drawColumnText(4, [pgs], font, yTop)
@@ -606,7 +612,7 @@ function drawShootingScheduleTable(
     drawColumnText(5, castLines, font, yTop)
     drawColumnText(6, notesLines, font, yTop)
 
-    refs.y.current -= rowH
+    refs.y.current -= rowH // + SCHED_RULE_GAP // Adjusts padding between elements and rule lines.
     drawRule(refs.page, refs.y.current, x0, x0 + tableW, rgb(0.78, 0.78, 0.78))
     refs.y.current -= 2
   }
@@ -776,7 +782,7 @@ function drawPrincipalCastCallsGrid(
   refs.y.current -= 4
   drawCastHeaderRow()
 
-  const lineStep = CAST_ROW_H - 1
+  const lineStep = CAST_ROW_H - 1 // Spacing for the cast calls grid.
 
   for (const r of rows) {
     const cellLines: string[][] = cols.map((c) => {
@@ -818,7 +824,7 @@ function drawPrincipalCastCallsGrid(
         }
       }
     }
-
+// This draws the horizontal rule below the cast calls grid.
     refs.y.current = yRow0 - rowH
     drawRule(refs.page, refs.y.current, x0, x0 + tableW, rgb(0.82, 0.82, 0.82))
     refs.y.current -= 2
@@ -971,6 +977,8 @@ function hasEnvironmentContent(data: CallSheetData): boolean {
   return !!(
     data.weatherSummary?.trim() ||
     data.weatherManual?.trim() ||
+    data.weatherSunrise?.trim() ||
+    data.weatherSunset?.trim() ||
     (w && (w.summary || w.high || w.low || w.wind || w.sunrise || w.sunset || w.tide)) ||
     data.dayNotes?.trim() ||
     data.unitNotes?.trim() ||
@@ -1003,8 +1011,10 @@ function drawEnvironmentAndSafety(
   const lo = w?.low?.trim()
   if (hi || lo) wx.push({ label: 'Temp', value: [hi ? `High ${hi}` : '', lo ? `Low ${lo}` : ''].filter(Boolean).join(' · ') })
   if (w?.wind?.trim()) wx.push({ label: 'Wind', value: w.wind.trim() })
-  if (w?.sunrise?.trim()) wx.push({ label: 'Sunrise', value: w.sunrise.trim() })
-  if (w?.sunset?.trim()) wx.push({ label: 'Sunset', value: w.sunset.trim() })
+  const sunriseDisplay = (data.weatherSunrise?.trim() || w?.sunrise?.trim() || '').trim()
+  const sunsetDisplay = (data.weatherSunset?.trim() || w?.sunset?.trim() || '').trim()
+  if (sunriseDisplay) wx.push({ label: 'Sunrise', value: sunriseDisplay })
+  if (sunsetDisplay) wx.push({ label: 'Sunset', value: sunsetDisplay })
   if (w?.tide?.trim()) wx.push({ label: 'Tide', value: w.tide.trim() })
 
   if (wx.length) {
@@ -1726,6 +1736,7 @@ function drawTransportRequirementsSection(
 const FONT_ADV = 6.75
 const ADV_LINE_STEP = 7
 
+// Advanced Schedule Logic & layout
 function drawAdvancedScheduleSection(
   doc: PDFDocument,
   refs: ScheduleDrawRefs,
@@ -1800,8 +1811,8 @@ function drawAdvancedScheduleSection(
       const hasCast = list.some((s) => (s.castCompact?.trim() ?? '').length > 0)
       const cols: { label: string; w: number }[] = [
         { label: 'LOC', w: 40 },
-        { label: 'EP/SC', w: 34 },
-        { label: 'SET / SYNOPSIS', w: hasCast ? 198 : 262 },
+        { label: 'SC/SH', w: 34 },
+        { label: 'SHOT DESCRIPTION', w: hasCast ? 198 : 262 },
         { label: 'D/N', w: 30 },
         { label: 'PGS', w: 20 },
       ]
@@ -1852,20 +1863,20 @@ function drawAdvancedScheduleSection(
       const castIdx = hasCast ? cols.length - 1 : -1
 
       for (const s of list) {
-        const isSp = scheduleStripIsSpecial(s.strip_type)
+        const isSpecial = scheduleStripIsSpecial(s.strip_type)
         const setW = cols[2]!.w - pad * 2
         const castW = castIdx >= 0 ? cols[castIdx]!.w - pad * 2 : 0
 
         let loc = ''
-        let epSc = ''
+        let ScSh = ''
         let setLines: string[]
         let dn = ''
         let pgs = ''
         let castStr = ''
 
-        if (isSp) {
+        if (isSpecial) {
           loc = ''
-          epSc = ''
+          ScSh = ''
           setLines = wrapLinesLimited(specialScheduleSetLine(s), setW, font, FONT_ADV, 1)
           dn = ''
           pgs = ''
@@ -1874,8 +1885,8 @@ function drawAdvancedScheduleSection(
           loc = s.locDitto ? DITTO_MARK : (s.locLabel ?? '')
           const sn = s.scene_number?.trim()
           const sh = s.shot_number?.trim()
-          if (sn && sh) epSc = `${sn} · ${sh}`
-          else epSc = sn ?? sh ?? ''
+          if (sn && sh) ScSh = `${sn} · ${sh}`
+          else ScSh = sn ?? sh ?? ''
           setLines = wrapLinesLimited(setSynopsisSource(s), setW, font, FONT_ADV, 1)
           dn = formatScheduleDnColumn(s.int_ext, s.day_night)
           pgs = s.page_eighths != null ? `${s.page_eighths}/8` : ''
@@ -1886,10 +1897,10 @@ function drawAdvancedScheduleSection(
 
         ensure(rowH + 6, true)
 
-        if (isSp) {
+        if (isSpecial) {
           refs.page.drawRectangle({
             x: x0,
-            y: refs.y.current - rowH + 2,
+            y: refs.y.current - rowH + 7,
             width: tableW,
             height: rowH,
             color: SCHEDULE_SPECIAL_FILL,
@@ -1907,7 +1918,7 @@ function drawAdvancedScheduleSection(
         }
 
         drawCell(0, loc, false)
-        drawCell(1, epSc, false)
+        drawCell(1, ScSh, false)
         drawCell(2, setLines[0] ?? '', true)
         drawCell(3, dn, false)
         drawCell(4, pgs, false)
@@ -1946,6 +1957,7 @@ function drawAdvancedScheduleSection(
   }
 }
 
+// Main function to generate the call sheet PDF.
 export async function generateCallSheetPdf(data: CallSheetData): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)

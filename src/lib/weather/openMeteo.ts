@@ -20,6 +20,25 @@ export type ForecastDay = {
   temperatureMin: number | null
   precipitationProbabilityMax: number | null
   windSpeedMax: number | null
+  /** Open-Meteo daily local ISO8601, e.g. `2024-03-22T06:15`. */
+  sunrise: string | null
+  sunset: string | null
+}
+
+/** Summary plus sunrise/sunset strings for the call sheet PDF (local time of day). */
+export type CallSheetWeatherFromApi = {
+  summary: string
+  sunrise: string | null
+  sunset: string | null
+}
+
+/** `2024-03-22T06:15` → `06:15` (API already uses shoot-day local timezone). */
+function formatSunTimeForCallSheet(iso: string | null | undefined): string | null {
+  if (!iso?.trim()) return null
+  const t = iso.trim()
+  const i = t.indexOf('T')
+  if (i >= 0 && t.length >= i + 6) return t.slice(i + 1, i + 6)
+  return t
 }
 
 /**
@@ -51,7 +70,7 @@ export async function fetchForecastForDate(
   dateStr: string
 ): Promise<ForecastDay | null> {
   const daily =
-    'weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max'
+    'weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,sunrise,sunset'
   const params = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lon),
@@ -69,6 +88,8 @@ export async function fetchForecastForDate(
       temperature_2m_min?: (number | null)[]
       precipitation_probability_max?: (number | null)[]
       windspeed_10m_max?: (number | null)[]
+      sunrise?: string[]
+      sunset?: string[]
     }
   }
   const times = data.daily?.time
@@ -81,6 +102,8 @@ export async function fetchForecastForDate(
     temperatureMin: data.daily?.temperature_2m_min?.[idx] ?? null,
     precipitationProbabilityMax: data.daily?.precipitation_probability_max?.[idx] ?? null,
     windSpeedMax: data.daily?.windspeed_10m_max?.[idx] ?? null,
+    sunrise: data.daily?.sunrise?.[idx] ?? null,
+    sunset: data.daily?.sunset?.[idx] ?? null,
   }
 }
 
@@ -168,14 +191,13 @@ async function geocodeWithFallbacks(query: string): Promise<GeocodeResult | null
 }
 
 /**
- * Resolve weather for a call sheet: geocode location, fetch forecast for shoot date, return summary string.
+ * Resolve weather + sunrise/sunset for a call sheet: geocode, fetch forecast for shoot date.
  * Returns null on any failure (no location query, geocode fail, forecast fail).
- * Uses progressively simpler location strings when the full query returns no geocode result.
  */
-export async function getWeatherSummaryForCallSheet(
+export async function getWeatherForCallSheet(
   locationQuery: string,
   shootDate: string
-): Promise<string | null> {
+): Promise<CallSheetWeatherFromApi | null> {
   if (!locationQuery?.trim() || !shootDate) return null
   const geocodeQuery = geocodeRelevantPart(locationQuery)
   if (!geocodeQuery) return null
@@ -188,5 +210,20 @@ export async function getWeatherSummaryForCallSheet(
     shootDate
   )
   if (!day) return null
-  return buildWeatherSummary(day)
+  return {
+    summary: buildWeatherSummary(day),
+    sunrise: formatSunTimeForCallSheet(day.sunrise),
+    sunset: formatSunTimeForCallSheet(day.sunset),
+  }
+}
+
+/**
+ * Summary string only; same lookup as {@link getWeatherForCallSheet}.
+ */
+export async function getWeatherSummaryForCallSheet(
+  locationQuery: string,
+  shootDate: string
+): Promise<string | null> {
+  const r = await getWeatherForCallSheet(locationQuery, shootDate)
+  return r?.summary ?? null
 }
