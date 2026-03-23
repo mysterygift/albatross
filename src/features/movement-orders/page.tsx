@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -257,7 +257,13 @@ export function MovementOrdersPage() {
     })
   }, [production, shootDay, selectedUnit, orderedLocations, locationContacts, movementLegs])
 
-  const { data: enrichedMovementOrderData, isFetching: isEnrichingRouteData } = useQuery({
+  const refreshTravelDataRef = useRef(false)
+
+  const {
+    data: enrichedMovementOrderData,
+    isFetching: isEnrichingRouteData,
+    refetch: refetchEnrichedMovementOrder,
+  } = useQuery({
     queryKey: [
       'movement-order-data-enriched',
       shootDayId,
@@ -270,8 +276,11 @@ export function MovementOrdersPage() {
     enabled: !!movementOrderData,
     queryFn: async () => {
       if (!movementOrderData) return null
+      const forceRefresh = refreshTravelDataRef.current
+      refreshTravelDataRef.current = false
       const enrichedLegs = await enrichMovementLegsWithRouteData({
         locations: movementOrderData.locations,
+        forceRefresh,
       })
       return buildMovementOrderData({
         productionName: movementOrderData.productionName,
@@ -475,6 +484,16 @@ export function MovementOrdersPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  refreshTravelDataRef.current = true
+                  void refetchEnrichedMovementOrder()
+                }}
+                disabled={!movementOrderData || isEnrichingRouteData}
+              >
+                {isEnrichingRouteData ? 'Refreshing travel…' : 'Refresh travel data'}
+              </Button>
               <Button
                 onClick={() => handleGenerate(false)}
                 disabled={!movementOrderDataForView || generateMutation.isPending}

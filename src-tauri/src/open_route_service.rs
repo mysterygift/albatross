@@ -58,6 +58,12 @@ pub struct RouteSummaryOut {
     pub instructions: Vec<String>,
 }
 
+/// ORS rejects some requests (often HTTP 400) when waypoints coincide; treat as a zero-length leg.
+fn is_degenerate_route(start_lat: f64, start_lng: f64, end_lat: f64, end_lng: f64) -> bool {
+    const EPS_DEG: f64 = 1e-6; // ~0.1 m latitude; sufficient to collapse duplicate MO locations
+    (start_lat - end_lat).abs() < EPS_DEG && (start_lng - end_lng).abs() < EPS_DEG
+}
+
 fn resolve_ors_api_key(ors_api_key: Option<String>) -> Option<String> {
     ors_api_key
         .map(|v| v.trim().to_string())
@@ -113,6 +119,14 @@ async fn get_route_summary_internal(
         }
     };
 
+    if is_degenerate_route(start_lat, start_lng, end_lat, end_lng) {
+        return Some(RouteSummaryOut {
+            duration_minutes: Some(0),
+            distance_meters: Some(0),
+            instructions: Vec::new(),
+        });
+    }
+
     let request_body = serde_json::json!({
         "coordinates": [[start_lng, start_lat], [end_lng, end_lat]]
     });
@@ -133,15 +147,27 @@ async fn get_route_summary_internal(
         }
     };
 
-    if !response.status().is_success() {
+    let status = response.status();
+    let body_bytes = match response.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            log::error!("OpenRouteService response body read failed: {}", e);
+            return None;
+        }
+    };
+
+    if !status.is_success() {
+        let preview_len = body_bytes.len().min(480);
+        let preview = String::from_utf8_lossy(&body_bytes[..preview_len]);
         log::warn!(
-            "OpenRouteService returned non-success status: {}",
-            response.status()
+            "OpenRouteService returned non-success status: {} body: {}",
+            status,
+            preview
         );
         return None;
     }
 
-    let parsed = match response.json::<OrsDirectionsResponse>().await {
+    let parsed = match serde_json::from_slice::<OrsDirectionsResponse>(&body_bytes) {
         Ok(v) => v,
         Err(e) => {
             log::error!("Failed parsing OpenRouteService response: {}", e);

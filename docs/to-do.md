@@ -3,11 +3,11 @@ TO–DO
 ~~2. Filtering in cast list freezes app...searching is also needed here. AD look at that tomorrow~~
 3. When adding a cast member to a shot via the shot participation window, the single search bar filters the scene, shot and description using a single search bar. They should be filtered by scene number/description only.
 ~~4. Reduce padding in header elements in the Cast detail view.~~
-~7. Add way for users to configure the crew hierachy and roles in the settings page to allow them to tailor crew structure to their production.~
+~~7. Add way for users to configure the crew hierachy and roles in the settings page to allow them to tailor crew structure to their production.~~
 ~~8. The drop down menu for projects is buggy as hell (random crashes when clicking out of drop down menu). This should be removed and the favoured workflow should be for users to go into the productions tab and to change production there. New Project button in the top bar of each page isn't functional and is redundant. Legacy feature from first version of project.~~
 9. Source alpha testers & collate feedback.
 ~~10. PDF EXPORTS LAYOUT CLEANUP~~
-11. Increase default window size.
+~~11. Increase default window size.~~
 
 ~~EQUIPMENT~~
 ~~1. Order Forms in from relevant crew (e.g. Best Boy Electric)~~
@@ -39,17 +39,17 @@ SCHEDULE
 5. The script parser should look for taglines "INT./EXT. – LOCATIONAME – TIMEOFDAY" and there must be copy informing the user that this is expected formatting. Currently the parser does detect some of this but the logic is not correctly extracting the location name (AD to check regex).
 6. DooD UI Cleanup
 7. Generate script sides, to be shared alongside call sheet.
-8. Movement orders?
-9. Currently no way to add shots to the shot list.
-10. Cleanup: a – remove generate call sheet from calendar view, b – ask if user is sure they want to delete a locaiton
+~~8. Movement orders?~~
+~~9. Currently no way to add shots to the shot list.~~
+~~10. Cleanup: a – remove generate call sheet from calendar view, b – ask if user is sure they want to delete a locaiton~~
 
 
 NICE TO HAVES:
 Schedule & Budget Versioning
-Tutorial State
-Exporting and importing Schedules...custom packaged XML file? CSV? Explore this
+~~Tutorial State~~
+~~Exporting and importing Schedules...custom packaged XML file? CSV? Explore this
     NB: when importing schedules will need to have a similar approach to importing kit lists, if something is missing prompt user through everything that needs to be added.
-Exporting and importing PROJECTS is probably more useful actually...but then again you may not want to reimport everything just for a small scheduling tweak.
+Exporting and importing PROJECTS is probably more useful actually...but then again you may not want to reimport everything just for a small scheduling tweak.~~
 Moviemagic Import
 Final Draft Import
 When creating a new project, for a TV project you should have the TV show as a parent, with each episode as a child project. Additional scheduling for who is on which episode, and which episode is being shot when. Frankly, this would add a big layer of complexity to a project and in the interim I recommend just duplicating a project for a new episode (although this will make big file sizes for the time being).

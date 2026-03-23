@@ -77,6 +77,14 @@ import {
 import { getProductionBySlug } from '@/lib/db/repositories/production'
 import { getSetting, setSetting, FIRST_LAUNCH_TUTORIAL_SEEN_KEY, setFirstLaunchTutorialSeen } from '@/lib/db/repositories/settings'
 import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
+import {
+  API_CALL_TRACKER_IDS,
+  API_CALL_TRACKER_LABELS,
+  API_CALL_TRACKING_SETTING_KEY,
+  getApiCallCounts,
+  setApiCallTrackingEnabled,
+  subscribeApiCallTracker,
+} from '@/lib/dev/apiCallTracker'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { getRate } from '@/lib/money/exchangeRates'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
@@ -84,6 +92,39 @@ import type { BudgetAccount } from '@/lib/db/types'
 
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 const OPENROUTESERVICE_API_KEY_SETTING = 'openrouteservice_api_key'
+
+function ApiCallTrackerPanel({ trackingOn }: { trackingOn: boolean }) {
+  const [, bump] = useState(0)
+  useEffect(() => subscribeApiCallTracker(() => bump((n) => n + 1)), [])
+  const counts = getApiCallCounts()
+  return (
+    <div className="mt-3 space-y-2">
+      <p className="text-sm text-amber-800 dark:text-amber-200">
+        Counts are for this app session only and reset when you quit. With tracking off, numbers do not
+        increase.
+      </p>
+      {!trackingOn && (
+        <p className="text-xs text-amber-700/90 dark:text-amber-300/90">Tracking is off — enable above to record new calls.</p>
+      )}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>API</TableHead>
+            <TableHead className="text-right w-24">Calls</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {API_CALL_TRACKER_IDS.map((id) => (
+            <TableRow key={id}>
+              <TableCell className="text-sm">{API_CALL_TRACKER_LABELS[id]}</TableCell>
+              <TableCell className="text-right tabular-nums">{counts[id]}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
 
 export function SettingsPage() {
   const navigate = useNavigate()
@@ -131,16 +172,26 @@ export function SettingsPage() {
     queryKey: ['settings', DB_PERF_SETTING_KEY],
     queryFn: () => getSetting(DB_PERF_SETTING_KEY),
   })
+  const { data: apiCallTrackingSetting } = useQuery({
+    queryKey: ['settings', API_CALL_TRACKING_SETTING_KEY],
+    queryFn: () => getSetting(API_CALL_TRACKING_SETTING_KEY),
+  })
   const { data: orsApiKeySetting } = useQuery({
     queryKey: ['settings', OPENROUTESERVICE_API_KEY_SETTING],
     queryFn: () => getSetting(OPENROUTESERVICE_API_KEY_SETTING),
   })
   const dbPerfEnabled = dbPerfEnabledSetting !== 'false'
+  const apiCallTrackingEnabled = apiCallTrackingSetting === 'true'
   useEffect(() => {
     if (dbPerfEnabledSetting !== undefined) {
       setPerfLoggingEnabled(dbPerfEnabledSetting !== 'false')
     }
   }, [dbPerfEnabledSetting])
+  useEffect(() => {
+    if (apiCallTrackingSetting !== undefined) {
+      setApiCallTrackingEnabled(apiCallTrackingSetting === 'true')
+    }
+  }, [apiCallTrackingSetting])
   useEffect(() => {
     setOrsApiKeyDraft(orsApiKeySetting ?? '')
   }, [orsApiKeySetting])
@@ -153,6 +204,16 @@ export function SettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', DB_PERF_SETTING_KEY] })
+    },
+  })
+  const setApiCallTrackingMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      setSetting(API_CALL_TRACKING_SETTING_KEY, enabled ? 'true' : 'false'),
+    onMutate: (enabled) => {
+      setApiCallTrackingEnabled(enabled)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', API_CALL_TRACKING_SETTING_KEY] })
     },
   })
   const setOrsApiKeyMutation = useMutation({
@@ -618,6 +679,20 @@ export function SettingsPage() {
                   DB Perf logging (HUD + Log to console)
                 </Label>
               </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="api-call-tracker-toggle"
+                  checked={apiCallTrackingEnabled}
+                  onChange={(e) => setApiCallTrackingMutation.mutate(e.target.checked)}
+                  disabled={setApiCallTrackingMutation.isPending}
+                  className="rounded border-amber-600"
+                />
+                <Label htmlFor="api-call-tracker-toggle" className="font-medium text-amber-800 dark:text-amber-200">
+                  Track external API calls (this session)
+                </Label>
+              </div>
+              <ApiCallTrackerPanel trackingOn={apiCallTrackingEnabled} />
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"

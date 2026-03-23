@@ -307,6 +307,12 @@ pub fn run() {
             sql: include_str!("../migrations/0050_locations_parking_info.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 51,
+            description: "api_cache",
+            sql: include_str!("../migrations/0051_api_cache.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

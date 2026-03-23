@@ -12,6 +12,8 @@ import type {
 type EnrichLegsInput = {
   locations: MovementOrderLocation[]
   orsApiKey?: string | null
+  /** When true, bypass cache for ORS reads; on API failure, fall back to cached values where present. */
+  forceRefresh?: boolean
 }
 
 function hasCoordinates(location: MovementOrderLocation): location is MovementOrderLocation & LatLng {
@@ -29,6 +31,8 @@ export async function enrichMovementLegsWithRouteData(
   const locations = input.locations
   if (locations.length < 2) return []
 
+  const cacheOpts = { forceRefresh: input.forceRefresh === true }
+
   const coordinateCache = new Map<string, LatLng | null>()
 
   const resolveLocationCoordinates = async (
@@ -44,7 +48,8 @@ export async function enrichMovementLegsWithRouteData(
     if (fromAddress) {
       const geocoded = await geocodeLocationWithOpenRouteService(
         fromAddress,
-        input.orsApiKey
+        input.orsApiKey,
+        cacheOpts
       )
       if (geocoded) {
         coordinateCache.set(location.id, geocoded)
@@ -56,7 +61,8 @@ export async function enrichMovementLegsWithRouteData(
     if (fromName) {
       const geocoded = await geocodeLocationWithOpenRouteService(
         fromName,
-        input.orsApiKey
+        input.orsApiKey,
+        cacheOpts
       )
       coordinateCache.set(location.id, geocoded)
       return geocoded
@@ -83,7 +89,8 @@ export async function enrichMovementLegsWithRouteData(
       const drivingSummary = await getDrivingRouteSummary(
         fromCoords,
         toCoords,
-        input.orsApiKey
+        input.orsApiKey,
+        cacheOpts
       )
       drivingTimeMinutes = drivingSummary?.durationMinutes ?? null
       drivingDistanceText = drivingSummary?.distanceText ?? null
@@ -92,7 +99,8 @@ export async function enrichMovementLegsWithRouteData(
       const walkingSummary = await getWalkingRouteSummary(
         fromCoords,
         toCoords,
-        input.orsApiKey
+        input.orsApiKey,
+        cacheOpts
       )
       walkingTimeMinutes = walkingSummary?.durationMinutes ?? null
       walkingDistanceText = walkingSummary?.distanceText ?? null

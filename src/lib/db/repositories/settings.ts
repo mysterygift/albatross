@@ -8,6 +8,7 @@ const CURRENCY_API_DEFAULT_ON_MIGRATION_KEY = '_migration_currency_api_default_o
 const DEFAULTS: Record<string, string> = {
   display_currency: 'GBP',
   enable_currency_conversion_api: 'true',
+  enable_api_call_tracking: 'false',
 }
 
 export const FIRST_LAUNCH_TUTORIAL_SEEN_KEY = 'first_launch_tutorial_seen'

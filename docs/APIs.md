@@ -11,8 +11,8 @@ This guide intentionally excludes all API keys, tokens, and secrets.
 
 ### External HTTP APIs
 
-- OpenRouteService (Directions + Geocoding)
-- Open-Meteo (Geocoding + Forecast)
+- OpenRouteService (Directions + Geocoding; responses cached in SQLite with TTL)
+- Open-Meteo (Forecast for call sheets; coordinates come from OpenRouteService geocoding)
 - Fawaz Ahmed Currency API (via jsDelivr CDN)
 
 ### Internal App APIs
@@ -31,6 +31,7 @@ This guide intentionally excludes all API keys, tokens, and secrets.
 
 - Day Summary Drawer travel-time lines between ordered shoot-day locations.
 - Total travel time and long-move warning context in the schedule UI.
+- Movement Orders: geocoding and route summaries (driving and walking) between ordered locations on the PDF/preview flow.
 
 ### What users need to do
 
@@ -42,6 +43,14 @@ This guide intentionally excludes all API keys, tokens, and secrets.
 - If key, geocode, or directions lookup fails, Albatross returns `null` travel values.
 - UI remains usable; travel rows show unavailable state rather than crashing.
 
+### Caching and freshness
+
+- Identical ORS requests are served from a **persistent SQLite cache** first, so repeat previews and new sessions avoid redundant network calls when data is still considered fresh.
+- **Time-to-live (TTL)** is applied only when **reading** the cache (rows are not deleted when they age out):
+  - **Directions** (driving and walking): treated as stale after **2 days**; the next use triggers a new ORS request and updates the stored response.
+  - **Geocoding**: treated as stale after **30 days**; the next use triggers a new geocode request and updates the stored response.
+- On the **Movement Orders** screen, **Refresh travel data** forces a new ORS round-trip for that enrichment pass (cache bypass for success), while still allowing a last-resort fallback to previously stored data if the network call fails.
+
 ---
 
 ## 2) Open-Meteo (call sheet weather enrichment)
@@ -52,7 +61,8 @@ This guide intentionally excludes all API keys, tokens, and secrets.
 
 ### What users need to do
 
-- Nothing. No key is required for this integration in current code.
+- **OpenRouteService API key** (Settings → APIs): call-sheet weather resolves the shoot location to coordinates via the same ORS geocoding used for logistics. Without a key, automatic weather lookup cannot geocode.
+- Open-Meteo’s forecast endpoint itself does not require a key.
 
 ### What happens on failure
 
@@ -90,10 +100,13 @@ This guide intentionally excludes all API keys, tokens, and secrets.
 
 ### Where it is integrated
 
-- Frontend service wrapper:
+- Frontend service wrapper (includes cache-first reads and TTL):
   - `src/lib/logistics/openRouteService.ts`
 - Travel segment orchestration:
   - `src/lib/logistics/dayTravel.ts`
+- Movement Orders route enrichment:
+  - `src/lib/movement-orders/enrichMovementLegsWithRouteData.ts`
+  - `src/features/movement-orders/page.tsx` (manual **Refresh travel data**)
 - Tauri backend HTTP calls:
   - `src-tauri/src/open_route_service.rs`
 - Command registration:
@@ -136,30 +149,55 @@ This guide intentionally excludes all API keys, tokens, and secrets.
 - Invalid coordinates, missing key, failed HTTP, non-success status, parse errors all return `null`.
 - Failures do not throw into UI flow; travel data remains partial/unavailable.
 
+### Persistent API cache (SQLite)
+
+OpenRouteService responses from the Tauri commands are cached in the **`api_cache`** table (see migrations under `src-tauri/migrations/`). The stored payload is the **JSON shape returned by `invoke`** (e.g. geocode `{ lat, lng }` and directions summary objects), not a separate mapped schema.
+
+**Relevant code**
+
+- Table access (single `SELECT` for reads; single-statement `INSERT … ON CONFLICT … DO UPDATE` for writes):
+  - `src/lib/db/repositories/apiCache.ts`
+- Deterministic cache keys (stable recursive key sort + hash):
+  - `src/lib/api/cacheKey.ts`
+- Request normalization before keying (trim, lowercase text fields, rounded coordinates, non-secret API key fingerprint):
+  - `src/lib/logistics/normalizeOpenRouteServiceParams.ts`
+- TTL rules evaluated **only at read time** (no background jobs, no row deletion for expiry):
+  - `src/lib/api/cacheTTL.ts`
+  - **Directions** (driving and walking share the same cache `endpoint` discriminator with different normalized profiles): **2 days**
+  - **Geocode**: **30 days**
+
+**Behavior summary**
+
+- **Cache hit + not expired + valid JSON:** return cached data; no ORS HTTP call from the Rust layer for that key.
+- **Expired or missing:** call ORS; on success, **upsert** replaces `response_json` and bumps `updated_at` in **one** SQL statement (see `docs/DATABASE_LAYER.md` — no multi-step write, no manual transactions for this path).
+- **`forceRefresh` (e.g. Movement Orders refresh):** skip using cache for the success path, call ORS, then upsert on success.
+- **ORS failure:** if a row exists, the app may still return **previously stored** data (including **expired** entries) as a resilience fallback; it does **not** write to the cache in that case.
+
+Features should **not** read `api_cache` directly; they call `openRouteService` helpers only.
+
 ---
 
 ## 2) Open-Meteo API
 
 ### Endpoints used
 
-- Geocoding: `https://geocoding-api.open-meteo.com/v1/search`
-- Forecast: `https://api.open-meteo.com/v1/forecast`
+- Forecast: `https://api.open-meteo.com/v1/forecast` (daily variables for the shoot date).
 
 ### Where it is integrated
 
 - API client/service:
-  - `src/lib/weather/openMeteo.ts`
+  - `src/lib/weather/openMeteo.ts` (forecast HTTP only; geocode for this flow is `geocodeLocationWithOpenRouteService` in `src/lib/logistics/openRouteService.ts`).
 - Call-sheet feature usage:
   - `src/features/call-sheets/page.tsx`
 
 ### Request/response usage in Albatross
 
-- Geocoding: first result only (`count=1`), reads `latitude`, `longitude`, `timezone`.
-- Forecast: daily fields for target shoot date (weather code, temps, precip, wind, sunrise/sunset).
+- Geocoding for call-sheet weather: OpenRouteService (Tauri `geocode_location_to_lat_lng`); coordinates are passed into Open-Meteo with `timezone=auto` so daily sunrise/sunset align with the resolved place.
+- Forecast: daily fields for target shoot date (weather code, temps, precip, wind, sunrise/sunset), with `past_days` / `forecast_days` sized so the shoot date falls inside the returned `daily.time` range.
 
 ### Error/fallback behavior
 
-- Any geocode/forecast miss returns `null`.
+- Any geocode or forecast miss returns `null`.
 - Call-sheet code uses manual/stored weather as fallback.
 
 ---
@@ -206,7 +244,7 @@ Defined in:
 
 Invoked from:
 
-- `src/lib/logistics/openRouteService.ts`
+- `src/lib/logistics/openRouteService.ts` (cache layer may avoid invoking when SQLite cache is fresh)
 
 ### APF desktop commands
 
@@ -260,7 +298,7 @@ Typical contract style:
 Service APIs orchestrate higher-level behavior around repositories and external APIs:
 
 - `src/lib/logistics/dayTravel.ts`
-- `src/lib/logistics/openRouteService.ts`
+- `src/lib/logistics/openRouteService.ts` (ORS + SQLite `api_cache` via `src/lib/db/repositories/apiCache.ts`)
 - `src/lib/weather/openMeteo.ts`
 
 ---
@@ -281,4 +319,5 @@ When adding or changing an API integration:
 2. Document user-facing behavior and fallback behavior.
 3. Document command contracts if a Tauri boundary is involved.
 4. Add source-file references for future maintainers.
-5. Confirm no keys/secrets were added to docs.
+5. For OpenRouteService, if caching or TTL rules change, update the **Persistent API cache** section and `src/lib/api/cacheTTL.ts` in sync.
+6. Confirm no keys/secrets were added to docs.

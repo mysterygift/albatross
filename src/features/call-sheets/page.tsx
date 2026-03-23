@@ -520,13 +520,16 @@ export function CallSheetsPage() {
       locationQuery: string
       shootDate: string
       fallbackWeather: string | null
+      weatherAddressHint: string | null
     }) => {
-      const { baseData, locationQuery, shootDate, fallbackWeather } = options
+      const { baseData, locationQuery, shootDate, fallbackWeather, weatherAddressHint } = options
       if (!baseData || !currentProductionId || !shootDay) throw new Error('Missing data')
       let apiWeather: Awaited<ReturnType<typeof getWeatherForCallSheet>> = null
       let usedFallback = true
       try {
-        apiWeather = await getWeatherForCallSheet(locationQuery, shootDate)
+        apiWeather = await getWeatherForCallSheet(locationQuery, shootDate, {
+          addressHint: weatherAddressHint,
+        })
         if (apiWeather != null) usedFallback = false
       } catch {
         // use fallback below
@@ -590,6 +593,7 @@ export function CallSheetsPage() {
         ? [locationsForDay[0].name, locationsForDay[0].address].filter(Boolean).join(', ')
         : ''
     const fallbackWeather = weatherSummary || weatherFromDay || null
+    const weatherAddressHint = locationsForDay[0]?.address?.trim() || null
     generateMutation.mutate({
       save,
       openAfter,
@@ -597,6 +601,7 @@ export function CallSheetsPage() {
       locationQuery,
       shootDate: shootDay.shoot_date,
       fallbackWeather,
+      weatherAddressHint,
     })
   }
 

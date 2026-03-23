@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getDb } from '@/lib/db/client'
-import { ensureSettingsDefaults } from '@/lib/db/repositories/settings'
+import { API_CALL_TRACKING_SETTING_KEY, setApiCallTrackingEnabled } from '@/lib/dev/apiCallTracker'
+import { ensureSettingsDefaults, getSetting } from '@/lib/db/repositories/settings'
 import { listProductions } from '@/lib/db/repositories/production'
 import type { Production } from '@/lib/db/types'
 
@@ -25,6 +26,8 @@ export function ProductionProvider({ children }: { children: ReactNode }) {
     settingsDefaultsEnsured = true
     getDb()
       .then(() => ensureSettingsDefaults())
+      .then(() => getSetting(API_CALL_TRACKING_SETTING_KEY))
+      .then((v) => setApiCallTrackingEnabled(v === 'true'))
       .catch(console.error)
   }, [])
 
