@@ -4,7 +4,6 @@ import type { Location, Scene, ShootDay, Shot, StripboardStrip } from '@/lib/db/
 import {
   computeSmartSchedulingInsights,
   type InsightDayGroup,
-  type SharedSetupCharacteristics,
   type SmartSchedulingInsight,
 } from '@/lib/schedule/smartSchedulingInsights'
 import { cn } from '@/lib/utils'
@@ -27,49 +26,6 @@ function scopeCaption(shootDayCount: number): string {
     return 'Analyzing scheduled shot strips for this production (no shoot days yet).'
   }
   return `Analyzing ${shootDayCount} shoot day${shootDayCount === 1 ? '' : 's'} and every scheduled shot strip in this production.`
-}
-
-function formatDayInvolvedLine(insight: SmartSchedulingInsight): string {
-  const labels = insight.byDay.map((g) => g.dayLabel)
-  if (labels.length <= 3) {
-    return labels.join(' · ')
-  }
-  return `${labels.slice(0, 2).join(' · ')} · +${labels.length - 2} more`
-}
-
-function SharedAttributes({ shared }: { shared: SharedSetupCharacteristics }) {
-  const rows: { label: string; value: string }[] = []
-  if (shared.groupScope === 'scene' && shared.sceneNumber) {
-    rows.push({ label: 'Grouped by', value: `Scene ${shared.sceneNumber}` })
-  } else if (shared.groupScope === 'location' && shared.location) {
-    rows.push({ label: 'Grouped by', value: `Location · ${shared.location}` })
-  }
-  if (shared.support) rows.push({ label: 'Support', value: shared.support })
-  if (shared.shotSize) rows.push({ label: 'Shot size', value: shared.shotSize })
-  if (shared.dayNight) rows.push({ label: 'Scene time', value: shared.dayNight })
-  if (shared.location && shared.groupScope !== 'location') {
-    rows.push({ label: 'Location', value: shared.location })
-  }
-  if (shared.castNote) rows.push({ label: 'Cast', value: shared.castNote })
-
-  if (rows.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground italic">
-        No extra shared fields beyond the summary (metadata is sparse on these shots).
-      </p>
-    )
-  }
-
-  return (
-    <dl className="grid gap-1.5 text-xs m-0">
-      {rows.map((r) => (
-        <div key={r.label} className="flex gap-2 flex-wrap">
-          <dt className="text-muted-foreground shrink-0 font-medium">{r.label}</dt>
-          <dd className="m-0 text-foreground/90">{r.value}</dd>
-        </div>
-      ))}
-    </dl>
-  )
 }
 
 function DayShotBlock({ group }: { group: InsightDayGroup }) {
@@ -136,14 +92,8 @@ function InsightOpportunityRow({
       </button>
       {expanded && (
         <div className="px-3 pb-3 pt-0 space-y-3 border-t border-border/50 bg-muted/10">
-          <div className="pt-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-              Summary
-            </p>
-            <p className="text-sm text-foreground/85 leading-snug">{insight.summary}</p>
-          </div>
           {insight.suggestion && (
-            <div className="rounded-md border border-primary/25 bg-primary/5 px-2.5 py-2">
+            <div className="pt-2 rounded-md border border-primary/25 bg-primary/5 px-2.5 py-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-primary/90 mb-1">
                 Suggestion
               </p>
@@ -158,18 +108,6 @@ function InsightOpportunityRow({
               <p className="text-xs text-muted-foreground leading-relaxed">{insight.planningNote}</p>
             </div>
           )}
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
-              Shared setup
-            </p>
-            <SharedAttributes shared={insight.shared} />
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-              Days involved ({insight.distinctDayCount})
-            </p>
-            <p className="text-xs text-foreground/85">{formatDayInvolvedLine(insight)}</p>
-          </div>
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
               Shots by day
@@ -281,11 +219,6 @@ export function SmartSchedulingInsightsPanel({
             <p className="text-xs text-muted-foreground mt-0.5">{scopeCaption(shootDays.length)}</p>
           </div>
           {body}
-          {!isLoading && result.state === 'ready' && result.insights.length > 0 && (
-            <p className="text-xs text-muted-foreground pt-0.5">
-              For planning only — review strips on the board; nothing here changes the schedule.
-            </p>
-          )}
         </div>
       </div>
     </section>

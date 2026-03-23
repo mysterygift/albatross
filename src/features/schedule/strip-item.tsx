@@ -9,7 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { X, Film, Truck, Phone, Utensils, Moon, StickyNote, Clock, Skull, Trash2 } from 'lucide-react'
+import { X, Film, Truck, Megaphone, Utensils, Moon, StickyNote, Clock, Skull, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { StripboardStrip, StripType } from '@/lib/db/types'
 import type { Scene, Shot } from '@/lib/db/types'
@@ -18,7 +18,7 @@ const STRIP_ICONS: Record<StripType, typeof Film> = {
   SHOT: Film,
   SCENE: Film,
   MOVE: Truck,
-  CALL: Phone,
+  CALL: Megaphone,
   LUNCH: Utensils,
   WRAP: Moon,
   NOTE: StickyNote,
