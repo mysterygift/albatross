@@ -45,8 +45,10 @@ export type Location = {
   production_id: string
   name: string
   booked_status: 'unbooked' | 'hold' | 'booked' | 'wrap'
+  /** Canonical full address used by logistics documents such as Movement Orders. */
   address: string | null
   what3words: string | null
+  parking_info: string | null
   availability_constraints: string | null
   permit_fee: number | null
   location_fee: number | null

@@ -301,6 +301,12 @@ pub fn run() {
             sql: include_str!("../migrations/0049_equipment_department_crew_alignment.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 50,
+            description: "locations_parking_info",
+            sql: include_str!("../migrations/0050_locations_parking_info.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
@@ -326,6 +332,7 @@ pub fn run() {
             apf_desktop::pop_pending_apf_open_paths,
             apf_desktop::grant_read_access_for_apf,
             open_route_service::get_driving_travel_time_minutes,
+            open_route_service::get_route_summary,
             open_route_service::geocode_location_to_lat_lng,
         ])
         .setup(|app| {

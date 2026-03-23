@@ -84,7 +84,8 @@ This guide intentionally excludes all API keys, tokens, and secrets.
 
 ### Endpoints used
 
-- Directions: `https://api.openrouteservice.org/v2/directions/driving-car`
+- Directions (driving): `https://api.openrouteservice.org/v2/directions/driving-car`
+- Directions (walking): `https://api.openrouteservice.org/v2/directions/foot-walking`
 - Geocoding: `https://api.openrouteservice.org/geocode/search`
 
 ### Where it is integrated
@@ -112,8 +113,10 @@ This guide intentionally excludes all API keys, tokens, and secrets.
 
 - Directions request body:
   - `{"coordinates": [[start_lng, start_lat], [end_lng, end_lat]]}`
-- Directions response field consumed:
+- Directions response fields consumed:
   - `routes[0].summary.duration` (seconds), converted to rounded minutes.
+  - `routes[0].summary.distance` (meters), converted to document-friendly distance text.
+  - `routes[0].segments[].steps[].instruction` (compact route directions summary).
 - Geocode request:
   - GET with query params `text`, `size=1`, `api_key`.
 - Geocode response consumed:
@@ -194,6 +197,7 @@ These are internal app APIs, but they are explicit runtime contracts.
 ### Logistics commands
 
 - `get_driving_travel_time_minutes(start_lat, start_lng, end_lat, end_lng, ors_api_key?) -> Option<i64>`
+- `get_route_summary(start_lat, start_lng, end_lat, end_lng, profile, ors_api_key?) -> Option<{ duration_minutes, distance_meters, instructions[] }>`
 - `geocode_location_to_lat_lng(query, ors_api_key?) -> Option<{lat, lng}>`
 
 Defined in:

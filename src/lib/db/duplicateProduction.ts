@@ -132,8 +132,22 @@ export async function duplicateProduction(
     const id = newId()
     locationIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO locations (id, production_id, name, booked_status, address, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      bindValues: [id, newProdId, r.name, r.booked_status ?? 'unbooked', r.address, r.availability_constraints, r.permit_fee, r.location_fee, r.notes, ts, ts],
+      sql: `INSERT INTO locations (id, production_id, name, booked_status, address, what3words, parking_info, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      bindValues: [
+        id,
+        newProdId,
+        r.name,
+        r.booked_status ?? 'unbooked',
+        r.address,
+        r.what3words ?? null,
+        r.parking_info ?? null,
+        r.availability_constraints,
+        r.permit_fee,
+        r.location_fee,
+        r.notes,
+        ts,
+        ts,
+      ],
     })
   }
   for (const r of scenes) {

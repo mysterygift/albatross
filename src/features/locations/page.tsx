@@ -62,6 +62,7 @@ const locationSchema = z.object({
   booked_status: z.enum(['unbooked', 'hold', 'booked', 'wrap']),
   address: z.string().optional(),
   what3words: z.string().optional(),
+  parking_info: z.string().optional(),
   availability_constraints: z.string().optional(),
   permit_fee: feeSchema,
   location_fee: feeSchema,
@@ -233,6 +234,7 @@ function LocationForm({
       booked_status: defaultValues.booked_status ?? 'unbooked',
       address: defaultValues.address ?? '',
       what3words: defaultValues.what3words ?? '',
+      parking_info: defaultValues.parking_info ?? '',
       availability_constraints: defaultValues.availability_constraints ?? '',
       permit_fee: defaultValues.permit_fee ?? undefined,
       location_fee: defaultValues.location_fee ?? undefined,
@@ -271,6 +273,10 @@ function LocationForm({
         <div className="space-y-1.5">
             <Label>what3words</Label>
             <Input {...form.register('what3words')} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Parking information</Label>
+          <Textarea {...form.register('parking_info')} rows={2} />
         </div>
         <div className="space-y-1.5">
           <Label>Availability constraints</Label>

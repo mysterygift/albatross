@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-const ORS_DIRECTIONS_URL: &str =
-    "https://api.openrouteservice.org/v2/directions/driving-car";
 const ORS_GEOCODE_URL: &str = "https://api.openrouteservice.org/geocode/search";
+const ORS_DIRECTIONS_URL_BASE: &str = "https://api.openrouteservice.org/v2/directions";
 
 #[derive(Deserialize)]
 struct OrsDirectionsResponse {
@@ -12,11 +11,23 @@ struct OrsDirectionsResponse {
 #[derive(Deserialize)]
 struct OrsRoute {
     summary: Option<OrsSummary>,
+    segments: Option<Vec<OrsSegment>>,
 }
 
 #[derive(Deserialize)]
 struct OrsSummary {
     duration: Option<f64>,
+    distance: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct OrsSegment {
+    steps: Option<Vec<OrsStep>>,
+}
+
+#[derive(Deserialize)]
+struct OrsStep {
+    instruction: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -40,6 +51,13 @@ pub struct LatLngOut {
     lng: f64,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct RouteSummaryOut {
+    pub duration_minutes: Option<i64>,
+    pub distance_meters: Option<i64>,
+    pub instructions: Vec<String>,
+}
+
 fn resolve_ors_api_key(ors_api_key: Option<String>) -> Option<String> {
     ors_api_key
         .map(|v| v.trim().to_string())
@@ -52,14 +70,40 @@ fn resolve_ors_api_key(ors_api_key: Option<String>) -> Option<String> {
         })
 }
 
-#[tauri::command]
-pub async fn get_driving_travel_time_minutes(
+fn compact_instructions(route: &OrsRoute) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let segments = match &route.segments {
+        Some(v) => v,
+        None => return out,
+    };
+    for segment in segments {
+        let steps = match &segment.steps {
+            Some(v) => v,
+            None => continue,
+        };
+        for step in steps {
+            let instruction = match &step.instruction {
+                Some(v) => v.trim(),
+                None => continue,
+            };
+            if instruction.is_empty() {
+                continue;
+            }
+            // Preserve full instruction sequence exactly as returned by ORS.
+            out.push(instruction.to_string());
+        }
+    }
+    out
+}
+
+async fn get_route_summary_internal(
     start_lat: f64,
     start_lng: f64,
     end_lat: f64,
     end_lng: f64,
+    profile: &str,
     ors_api_key: Option<String>,
-) -> Option<i64> {
+) -> Option<RouteSummaryOut> {
     let key = resolve_ors_api_key(ors_api_key);
     let key = match key {
         Some(v) => v,
@@ -73,8 +117,9 @@ pub async fn get_driving_travel_time_minutes(
         "coordinates": [[start_lng, start_lat], [end_lng, end_lat]]
     });
 
+    let directions_url = format!("{}/{}", ORS_DIRECTIONS_URL_BASE, profile);
     let response = match reqwest::Client::new()
-        .post(ORS_DIRECTIONS_URL)
+        .post(directions_url)
         .header("Authorization", key)
         .header("Content-Type", "application/json")
         .json(&request_body)
@@ -104,19 +149,68 @@ pub async fn get_driving_travel_time_minutes(
         }
     };
 
-    let duration_seconds = parsed
-        .routes
-        .and_then(|routes| routes.into_iter().next())
-        .and_then(|route| route.summary)
-        .and_then(|summary| summary.duration);
+    let route = parsed.routes.and_then(|routes| routes.into_iter().next())?;
+    let summary = route.summary.as_ref();
+    let duration_minutes = summary
+        .and_then(|s| s.duration)
+        .filter(|seconds| *seconds >= 0.0)
+        .map(|seconds| (seconds / 60.0).round() as i64);
+    let distance_meters = summary
+        .and_then(|s| s.distance)
+        .filter(|meters| *meters >= 0.0)
+        .map(|meters| meters.round() as i64);
+    let instructions = compact_instructions(&route);
 
-    match duration_seconds {
-        Some(seconds) if seconds >= 0.0 => Some((seconds / 60.0).round() as i64),
-        _ => {
-            log::warn!("OpenRouteService response had no valid route duration");
-            None
-        }
-    }
+    Some(RouteSummaryOut {
+        duration_minutes,
+        distance_meters,
+        instructions,
+    })
+}
+
+#[tauri::command]
+pub async fn get_driving_travel_time_minutes(
+    start_lat: f64,
+    start_lng: f64,
+    end_lat: f64,
+    end_lng: f64,
+    ors_api_key: Option<String>,
+) -> Option<i64> {
+    get_route_summary_internal(
+        start_lat,
+        start_lng,
+        end_lat,
+        end_lng,
+        "driving-car",
+        ors_api_key,
+    )
+    .await
+    .and_then(|summary| summary.duration_minutes)
+}
+
+#[tauri::command]
+pub async fn get_route_summary(
+    start_lat: f64,
+    start_lng: f64,
+    end_lat: f64,
+    end_lng: f64,
+    profile: String,
+    ors_api_key: Option<String>,
+) -> Option<RouteSummaryOut> {
+    let normalized_profile = match profile.trim() {
+        "driving-car" => "driving-car",
+        "foot-walking" => "foot-walking",
+        _ => return None,
+    };
+    get_route_summary_internal(
+        start_lat,
+        start_lng,
+        end_lat,
+        end_lng,
+        normalized_profile,
+        ors_api_key,
+    )
+    .await
 }
 
 #[tauri::command]
