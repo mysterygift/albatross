@@ -7,7 +7,7 @@
  * Test: DnD strips between columns, drag scene from unscheduled to column, Add dropdown,
  * multi-select Assign to Day, location/search filters, day totals & runtime warning (>10h), lock toggle.
  */
-import { useState, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -197,6 +197,8 @@ export function StripboardPage() {
   const [newlyCreatedShootDayId, setNewlyCreatedShootDayId] = useState<string | null>(null)
   const [newDaySuccessToast, setNewDaySuccessToast] = useState(false)
   const newDayColumnRef = useRef<HTMLDivElement | null>(null)
+  const columnsScrollRef = useRef<HTMLDivElement | null>(null)
+  const [showColumnsLeftFeather, setShowColumnsLeftFeather] = useState(false)
 
   const stripboard = useStripboard(currentProductionId ?? null)
   const filters = { search: search || undefined, locationId }
@@ -288,6 +290,30 @@ export function StripboardPage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor)
   )
+
+  const updateColumnsLeftFeather = useCallback(() => {
+    const el = columnsScrollRef.current
+    if (!el) {
+      setShowColumnsLeftFeather(false)
+      return
+    }
+    setShowColumnsLeftFeather(el.scrollLeft > 1)
+  }, [])
+
+  useLayoutEffect(() => {
+    const el = columnsScrollRef.current
+    const tick = () => updateColumnsLeftFeather()
+    const rafId = requestAnimationFrame(tick)
+    if (!el) {
+      return () => cancelAnimationFrame(rafId)
+    }
+    const ro = new ResizeObserver(tick)
+    ro.observe(el)
+    return () => {
+      cancelAnimationFrame(rafId)
+      ro.disconnect()
+    }
+  }, [shootDays.length, updateColumnsLeftFeather])
 
   const columnId = (shootDayId: string, shootDayUnitId: string) => `col:${shootDayId}:${shootDayUnitId}`
   const parseColumnId = (id: string): { shootDayId: string; shootDayUnitId: string } | null => {
@@ -631,8 +657,13 @@ export function StripboardPage() {
           />
 
           {/* Scroll area: day columns + Boneyard column fixed at far right (you can chuck strips here whenever you want). */}
-          <div className="flex-1 overflow-auto min-w-0">
-            <div className="flex gap-4 pb-4 min-h-full">
+          <div className="relative flex-1 min-w-0">
+            <div
+              ref={columnsScrollRef}
+              onScroll={updateColumnsLeftFeather}
+              className="h-full overflow-auto"
+            >
+              <div className="flex gap-4 pb-4 min-h-full">
               {shootDays.map((day) => {
                 const dayUnitsList = dayUnitsByDayId.get(day.id) ?? []
                 const stripsByUnit = dayUnitsList.map((shootDayUnit) => ({
@@ -693,7 +724,14 @@ export function StripboardPage() {
                 estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
                 onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
               />
+              </div>
             </div>
+            <div
+              aria-hidden
+              className={`pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-linear-to-r from-background to-transparent transition-opacity duration-200 ${
+                showColumnsLeftFeather ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
           </div>
         </div>
 

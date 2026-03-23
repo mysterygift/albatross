@@ -4,9 +4,10 @@ TO–DO
 3. When adding a cast member to a shot via the shot participation window, the single search bar filters the scene, shot and description using a single search bar. They should be filtered by scene number/description only.
 ~~4. Reduce padding in header elements in the Cast detail view.~~
 ~7. Add way for users to configure the crew hierachy and roles in the settings page to allow them to tailor crew structure to their production.~
-8. The drop down menu for projects is buggy as hell (random crashes when clicking out of drop down menu). This should be removed and the favoured workflow should be for users to go into the productions tab and to change production there. New Project button in the top bar of each page isn't functional and is redundant. Legacy feature from first version of project.
+~~8. The drop down menu for projects is buggy as hell (random crashes when clicking out of drop down menu). This should be removed and the favoured workflow should be for users to go into the productions tab and to change production there. New Project button in the top bar of each page isn't functional and is redundant. Legacy feature from first version of project.~~
 9. Source alpha testers & collate feedback.
-10. PDF EXPORTS LAYOUT CLEANUP
+~~10. PDF EXPORTS LAYOUT CLEANUP~~
+11. Increase default window size.
 
 ~~EQUIPMENT~~
 ~~1. Order Forms in from relevant crew (e.g. Best Boy Electric)~~
@@ -27,7 +28,7 @@ CALL SHEET
 1. Need to add text field to Call Sheet Form for safety information.
 2. Need to APPEND LOCATIONS type + form to include a parking address/w3w – this then needs to feed into the call sheet (AS WELL AS THE FIRST LOCATION ITSELF)
 ~~3. Add ability to watermark paperwork exports with the target's name. (+ call sheet distribution with mailto: links? Who do we even send this from? If we had this in the cloud we could use a centralised email server for it paid for by customers, but because this is free maybe it just makes you have to send them out person by person...this is tedious but quicker than sending a call sheet email one by one WITHOUT the app and automatically generates watermarks for each person too). –– THIS WOULD WORK GREAT FOR SHARING SCRIPTS TOO!~~
-4. Improve parsing of location data for weather lookup – maybe we change address to have fixed fields that make it easier to use rather than relying on consistent user input.
+4. Improve parsing of location data for weather lookup – maybe we change address to have fixed fields that make it easier to use rather than relying on consistent user input. Geosearching is part of the open-meteo API.
 
 
 SCHEDULE
