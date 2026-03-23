@@ -39,6 +39,7 @@ import { listStripsByProduction } from '@/lib/db/repositories/stripboard-strips'
 import { listBookingsByProduction } from '@/lib/db/repositories/booking'
 import { listCast, listCrew } from '@/lib/db/repositories/person'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
+import { getSetting } from '@/lib/db/repositories/settings'
 import { getCastIdsBySceneIds } from '@/lib/db/repositories/scene-cast'
 import { getCastIdsByShotIds } from '@/lib/db/repositories/shot-cast'
 import { getCallSheetCastRequirements } from '@/lib/call-sheets/castRequirements'
@@ -123,6 +124,7 @@ function formatTravelMinutes(minutes: number): string {
 
 const RUNTIME_WARNING_THRESHOLD_MINUTES = 630 // 10.5h
 const LONG_MOVE_WARNING_THRESHOLD_MINUTES = 60
+const OPENROUTESERVICE_API_KEY_SETTING = 'openrouteservice_api_key'
 const defaultCrewHierarchy = getDefaultCrewHierarchyConfig()
 
 type DaySummaryStats = {
@@ -474,6 +476,7 @@ function DaySummaryDrawer({
   locationStack,
   warnings,
   turnaround,
+  orsApiKeySetting,
 }: {
   event: CalendarShootDayEvent | null
   open: boolean
@@ -489,6 +492,7 @@ function DaySummaryDrawer({
   locationStack: DaySummaryLocationStack
   warnings: DaySummaryWarning[]
   turnaround: DayTurnaroundSummary
+  orsApiKeySetting: string
 }) {
   const [isEditing, setIsEditing] = useState(false)
   const [callTimeInput, setCallTimeInput] = useState('')
@@ -531,7 +535,8 @@ function DaySummaryDrawer({
         address: location.address,
         lat: location.lat,
         lng: location.lng,
-      }))
+      })),
+      { orsApiKey: orsApiKeySetting }
     )
       .then((segments) => {
         if (cancelled) return
@@ -549,7 +554,7 @@ function DaySummaryDrawer({
     return () => {
       cancelled = true
     }
-  }, [event?.shootDayUnitId, locationStack.orderedLocations, travelRefreshTick])
+  }, [event?.shootDayUnitId, locationStack.orderedLocations, travelRefreshTick, orsApiKeySetting])
 
   const totalTravelMinutes = useMemo(() => {
     const valid = travelSegments
@@ -1108,6 +1113,10 @@ export function ScheduleCalendarPage() {
     queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
+  const { data: orsApiKeySetting = '' } = useQuery({
+    queryKey: ['settings', OPENROUTESERVICE_API_KEY_SETTING],
+    queryFn: async () => (await getSetting(OPENROUTESERVICE_API_KEY_SETTING)) ?? '',
+  })
   const crewHierarchy = hierarchyData ?? defaultCrewHierarchy
 
   const eventsByDate = useMemo(() => {
@@ -1473,6 +1482,7 @@ export function ScheduleCalendarPage() {
         locationStack={daySummaryLocationStack}
         warnings={daySummaryWarnings}
         turnaround={dayTurnaroundSummary}
+        orsApiKeySetting={orsApiKeySetting}
         onSaveEdits={async ({ shootDayId, callTime, wrapTime, notes }) => {
           await updateDaySummaryMutation.mutateAsync({
             shootDayId,

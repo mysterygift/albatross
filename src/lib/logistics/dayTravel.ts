@@ -30,7 +30,8 @@ function hasCoordinates(location: DayTravelLocation): location is DayTravelLocat
  * Segments with missing/unavailable travel data return `travelMinutes: null`.
  */
 export async function getTravelSegmentsForDayUnit(
-  locations: DayTravelLocation[]
+  locations: DayTravelLocation[],
+  options?: { orsApiKey?: string | null }
 ): Promise<DayTravelSegment[]> {
   if (locations.length < 2) return []
 
@@ -51,7 +52,7 @@ export async function getTravelSegmentsForDayUnit(
       coordinateCache.set(location.id, null)
       return null
     }
-    const resolved = await geocodeLocationWithOpenRouteService(geocodeQuery)
+    const resolved = await geocodeLocationWithOpenRouteService(geocodeQuery, options?.orsApiKey)
     coordinateCache.set(location.id, resolved)
     return resolved
   }
@@ -66,7 +67,8 @@ export async function getTravelSegmentsForDayUnit(
     if (fromCoords && toCoords) {
       travelMinutes = await getDrivingTravelTimeMinutes(
         fromCoords,
-        toCoords
+        toCoords,
+        options?.orsApiKey
       )
     }
 

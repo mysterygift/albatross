@@ -3,8 +3,13 @@ import { getSetting } from '@/lib/db/repositories/settings'
 
 const OPENROUTESERVICE_API_KEY_SETTING = 'openrouteservice_api_key'
 
-async function getOrsApiKey(): Promise<string> {
+export async function getOpenRouteServiceApiKey(): Promise<string> {
   return (await getSetting(OPENROUTESERVICE_API_KEY_SETTING))?.trim() ?? ''
+}
+
+async function resolveOrsApiKey(orsApiKey?: string | null): Promise<string> {
+  if (typeof orsApiKey === 'string') return orsApiKey.trim()
+  return getOpenRouteServiceApiKey()
 }
 
 /**
@@ -13,7 +18,8 @@ async function getOrsApiKey(): Promise<string> {
  */
 export async function getDrivingTravelTimeMinutes(
   start: LatLng,
-  end: LatLng
+  end: LatLng,
+  orsApiKey?: string | null
 ): Promise<number | null> {
   const startLat = Number(start?.lat)
   const startLng = Number(start?.lng)
@@ -31,13 +37,13 @@ export async function getDrivingTravelTimeMinutes(
 
   try {
     const { invoke } = await import('@tauri-apps/api/core')
-    const orsApiKey = await getOrsApiKey()
+    const resolvedOrsApiKey = await resolveOrsApiKey(orsApiKey)
     const minutes = await invoke<number | null>('get_driving_travel_time_minutes', {
       startLat,
       startLng,
       endLat,
       endLng,
-      orsApiKey,
+      orsApiKey: resolvedOrsApiKey,
     })
     return typeof minutes === 'number' && Number.isFinite(minutes) ? Math.max(0, Math.round(minutes)) : null
   } catch {
@@ -47,16 +53,17 @@ export async function getDrivingTravelTimeMinutes(
 }
 
 export async function geocodeLocationWithOpenRouteService(
-  query: string
+  query: string,
+  orsApiKey?: string | null
 ): Promise<LatLng | null> {
   const trimmedQuery = query.trim()
   if (!trimmedQuery) return null
   try {
     const { invoke } = await import('@tauri-apps/api/core')
-    const orsApiKey = await getOrsApiKey()
+    const resolvedOrsApiKey = await resolveOrsApiKey(orsApiKey)
     const coordinates = await invoke<LatLng | null>('geocode_location_to_lat_lng', {
       query: trimmedQuery,
-      orsApiKey,
+      orsApiKey: resolvedOrsApiKey,
     })
     return coordinates && Number.isFinite(coordinates.lat) && Number.isFinite(coordinates.lng)
       ? coordinates
