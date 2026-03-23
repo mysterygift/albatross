@@ -1,4 +1,5 @@
 mod apf_desktop;
+mod open_route_service;
 
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -324,6 +325,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             apf_desktop::pop_pending_apf_open_paths,
             apf_desktop::grant_read_access_for_apf,
+            open_route_service::get_driving_travel_time_minutes,
+            open_route_service::geocode_location_to_lat_lng,
         ])
         .setup(|app| {
             let cold = apf_desktop::collect_apf_paths_from_os_args(std::env::args_os().skip(1));

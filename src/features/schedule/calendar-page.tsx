@@ -47,6 +47,10 @@ import {
   getEffectiveCrewHierarchyOrDefault,
   getDefaultCrewHierarchyConfig,
 } from '@/lib/people/crewHierarchyResolver'
+import {
+  getTravelSegmentsForDayUnit,
+  type DayTravelSegment,
+} from '@/lib/logistics/dayTravel'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -110,7 +114,15 @@ function formatDateLabel(dateStr: string): string {
   })
 }
 
+function formatTravelMinutes(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
 const RUNTIME_WARNING_THRESHOLD_MINUTES = 630 // 10.5h
+const LONG_MOVE_WARNING_THRESHOLD_MINUTES = 60
 const defaultCrewHierarchy = getDefaultCrewHierarchyConfig()
 
 type DaySummaryStats = {
@@ -125,6 +137,8 @@ type DaySummaryLocationStackEntry = {
   locationId: string
   name: string
   address: string | null
+  lat: number | null
+  lng: number | null
 }
 
 type DaySummaryLocationStack = {
@@ -157,7 +171,7 @@ function getOrderedLocationStackForDayUnit(args: {
   }>
   shotsById: Map<string, { scene_id: string }>
   scenesById: Map<string, { location_id: string | null }>
-  locationsById: Map<string, { name: string; address: string | null }>
+  locationsById: Map<string, { name: string; address: string | null; lat: number | null; lng: number | null }>
 }): DaySummaryLocationStack {
   const { strips, shotsById, scenesById, locationsById } = args
   const ordered = [...strips].sort((a, b) => a.sort_index - b.sort_index)
@@ -192,10 +206,16 @@ function getOrderedLocationStackForDayUnit(args: {
       locationId,
       name: location.name,
       address: location.address ?? null,
+      lat: location.lat,
+      lng: location.lng,
     })
   }
 
   return { orderedLocations, missingLocationSceneCount: missingLocationSceneIds.size }
+}
+
+function toNullableCoordinate(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 function formatNamesSummary(names: string[]): string {
@@ -477,6 +497,9 @@ function DaySummaryDrawer({
   const [callTimeError, setCallTimeError] = useState<string | null>(null)
   const [wrapTimeError, setWrapTimeError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [travelSegments, setTravelSegments] = useState<DayTravelSegment[]>([])
+  const [isTravelLoading, setIsTravelLoading] = useState(false)
+  const [travelRefreshTick, setTravelRefreshTick] = useState(0)
 
   useEffect(() => {
     if (!event) return
@@ -488,6 +511,63 @@ function DaySummaryDrawer({
     setSaveError(null)
     setIsEditing(false)
   }, [event?.shootDayUnitId, open])
+
+  useEffect(() => {
+    let cancelled = false
+    const orderedLocations = locationStack.orderedLocations
+    if (!event || orderedLocations.length < 2) {
+      setTravelSegments([])
+      setIsTravelLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setIsTravelLoading(true)
+    void getTravelSegmentsForDayUnit(
+      orderedLocations.map((location) => ({
+        id: location.locationId,
+        name: location.name,
+        address: location.address,
+        lat: location.lat,
+        lng: location.lng,
+      }))
+    )
+      .then((segments) => {
+        if (cancelled) return
+        setTravelSegments(segments)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setTravelSegments([])
+      })
+      .finally(() => {
+        if (cancelled) return
+        setIsTravelLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [event?.shootDayUnitId, locationStack.orderedLocations, travelRefreshTick])
+
+  const totalTravelMinutes = useMemo(() => {
+    const valid = travelSegments
+      .map((segment) => segment.travelMinutes)
+      .filter((minutes): minutes is number => minutes != null)
+    if (valid.length === 0) return null
+    return valid.reduce((sum, minutes) => sum + minutes, 0)
+  }, [travelSegments])
+
+  const hasLongMove = useMemo(
+    () =>
+      travelSegments.some(
+        (segment) =>
+          typeof segment.travelMinutes === 'number' &&
+          segment.travelMinutes >= LONG_MOVE_WARNING_THRESHOLD_MINUTES
+      ),
+    [travelSegments]
+  )
 
   if (!event) return null
 
@@ -504,6 +584,8 @@ function DaySummaryDrawer({
     setSaveError(null)
     setIsEditing(false)
   }
+
+  const canRefreshTravel = locationStack.orderedLocations.length >= 2
 
   const handleSave = async () => {
     setCallTimeError(null)
@@ -571,9 +653,19 @@ function DaySummaryDrawer({
             </div>
             <div className="mt-4 flex items-center gap-2">
               {!isEditing ? (
-                <Button size="sm" variant="outline" onClick={() => setIsEditing(true)}>
-                  Edit day details
-                </Button>
+                <>
+                  <Button size="sm" variant="outline" onClick={() => setIsEditing(true)}>
+                    Edit day details
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setTravelRefreshTick((tick) => tick + 1)}
+                    disabled={!canRefreshTravel || isTravelLoading}
+                  >
+                    {isTravelLoading ? 'Refreshing travel…' : 'Refresh travel times'}
+                  </Button>
+                </>
               ) : (
                 <>
                   <Button size="sm" onClick={handleSave} disabled={isSaving}>
@@ -745,16 +837,42 @@ function DaySummaryDrawer({
               ) : (
                 <ol className="mt-3 space-y-2">
                   {locationStack.orderedLocations.map((location, index) => (
-                    <li key={location.locationId} className="rounded-md border border-border/50 px-2.5 py-2">
-                      <p className="text-foreground text-sm font-medium">
-                        {index + 1}. {location.name}
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {location.address?.trim() ? location.address : 'Address missing'}
-                      </p>
+                    <li key={location.locationId} className="space-y-2">
+                      <div className="rounded-md border border-border/50 px-2.5 py-2">
+                        <p className="text-foreground text-sm font-medium">
+                          {index + 1}. {location.name}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {location.address?.trim() ? location.address : 'Address missing'}
+                        </p>
+                      </div>
+                      {index < locationStack.orderedLocations.length - 1 && (
+                        <p className="px-1 text-xs text-muted-foreground">
+                          {isTravelLoading
+                            ? '↓ Loading travel time…'
+                            : travelSegments[index]?.travelMinutes != null
+                              ? `↓ ${formatTravelMinutes(travelSegments[index]!.travelMinutes!)} drive`
+                              : '↓ Travel time unavailable'}
+                        </p>
+                      )}
                     </li>
                   ))}
                 </ol>
+              )}
+              {locationStack.orderedLocations.length > 1 && !isTravelLoading && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {totalTravelMinutes != null
+                    ? `Total travel time: ${formatTravelMinutes(totalTravelMinutes)}`
+                    : 'Total travel time unavailable'}
+                </p>
+              )}
+              {locationStack.orderedLocations.length > 1 && isTravelLoading && (
+                <p className="mt-2 text-xs text-muted-foreground">Total travel time: loading…</p>
+              )}
+              {!isTravelLoading && hasLongMove && (
+                <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+                  <span className="font-medium">Long move between locations</span> (1h+)
+                </p>
               )}
               {locationStack.missingLocationSceneCount > 0 && (
                 <p className="mt-2 text-xs text-muted-foreground">
@@ -1104,7 +1222,18 @@ export function ScheduleCalendarPage() {
     const locationsById = new Map(
       locations.map((location) => [
         location.id,
-        { name: location.name, address: location.address ?? null },
+        {
+          name: location.name,
+          address: location.address ?? null,
+          lat: toNullableCoordinate(
+            (location as unknown as Record<string, unknown>).latitude ??
+              (location as unknown as Record<string, unknown>).lat
+          ),
+          lng: toNullableCoordinate(
+            (location as unknown as Record<string, unknown>).longitude ??
+              (location as unknown as Record<string, unknown>).lng
+          ),
+        },
       ])
     )
     return getOrderedLocationStackForDayUnit({

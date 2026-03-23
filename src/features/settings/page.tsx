@@ -66,6 +66,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown, Users } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import {
   ensureDemoData,
   resetDemoData,
@@ -82,6 +83,7 @@ import { DEMO_SLUG } from '@/lib/db/seed/constants'
 import type { BudgetAccount } from '@/lib/db/types'
 
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
+const OPENROUTESERVICE_API_KEY_SETTING = 'openrouteservice_api_key'
 
 export function SettingsPage() {
   const navigate = useNavigate()
@@ -103,9 +105,11 @@ export function SettingsPage() {
   const [accountToDelete, setAccountToDelete] = useState<BudgetAccount | null>(null)
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
   const [colorToast, setColorToast] = useState<string | null>(null)
-  const [settingsTab, setSettingsTab] = useState<'budget' | 'people' | 'developer_tools'>('budget')
+  const [settingsTab, setSettingsTab] = useState<'budget' | 'people' | 'apis' | 'developer_tools'>('budget')
   const queryClient = useQueryClient()
   const [tutorialToast, setTutorialToast] = useState<string | null>(null)
+  const [orsApiKeyDraft, setOrsApiKeyDraft] = useState('')
+  const [orsApiKeyToast, setOrsApiKeyToast] = useState<string | null>(null)
 
   const toggleAccountExpanded = useCallback((accountId: string) => {
     setExpandedAccountIds((prev) => {
@@ -127,12 +131,19 @@ export function SettingsPage() {
     queryKey: ['settings', DB_PERF_SETTING_KEY],
     queryFn: () => getSetting(DB_PERF_SETTING_KEY),
   })
+  const { data: orsApiKeySetting } = useQuery({
+    queryKey: ['settings', OPENROUTESERVICE_API_KEY_SETTING],
+    queryFn: () => getSetting(OPENROUTESERVICE_API_KEY_SETTING),
+  })
   const dbPerfEnabled = dbPerfEnabledSetting !== 'false'
   useEffect(() => {
     if (dbPerfEnabledSetting !== undefined) {
       setPerfLoggingEnabled(dbPerfEnabledSetting !== 'false')
     }
   }, [dbPerfEnabledSetting])
+  useEffect(() => {
+    setOrsApiKeyDraft(orsApiKeySetting ?? '')
+  }, [orsApiKeySetting])
 
   const setDbPerfEnabledMutation = useMutation({
     mutationFn: (enabled: boolean) =>
@@ -142,6 +153,19 @@ export function SettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', DB_PERF_SETTING_KEY] })
+    },
+  })
+  const setOrsApiKeyMutation = useMutation({
+    mutationFn: async (nextValue: string) => {
+      const trimmed = nextValue.trim()
+      await setSetting(OPENROUTESERVICE_API_KEY_SETTING, trimmed)
+      return trimmed
+    },
+    onSuccess: (savedValue) => {
+      queryClient.setQueryData(['settings', OPENROUTESERVICE_API_KEY_SETTING], savedValue)
+      setOrsApiKeyDraft(savedValue)
+      setOrsApiKeyToast(savedValue ? 'OpenRouteService API key saved.' : 'OpenRouteService API key cleared.')
+      setTimeout(() => setOrsApiKeyToast(null), 3000)
     },
   })
   const { data: costReportGroups = [] } = useQuery({
@@ -281,10 +305,11 @@ export function SettingsPage() {
     <div className="space-y-5">
       <h1 className="text-2xl font-semibold">Settings</h1>
 
-      <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as 'budget' | 'people' | 'developer_tools')} className="w-full">
+      <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as 'budget' | 'people' | 'apis' | 'developer_tools')} className="w-full">
         <TabsList className="h-9 rounded-md border border-border bg-muted/30 w-fit">
           <TabsTrigger value="budget" className="px-4 text-sm data-[state=active]:bg-background">Budget</TabsTrigger>
           <TabsTrigger value="people" className="px-4 text-sm data-[state=active]:bg-background">People</TabsTrigger>
+          <TabsTrigger value="apis" className="px-4 text-sm data-[state=active]:bg-background">APIs</TabsTrigger>
           <TabsTrigger value="developer_tools" className="px-4 text-sm data-[state=active]:bg-background">Developer Tools</TabsTrigger>
         </TabsList>
 
@@ -463,6 +488,62 @@ export function SettingsPage() {
               <p className="text-sm text-muted-foreground">Select a production to configure crew structure.</p>
             </div>
       )}
+        </TabsContent>
+
+        <TabsContent value="apis" className="space-y-5 mt-5 outline-none">
+          <Card>
+            <CardHeader>
+              <CardTitle>OpenRouteService API key</CardTitle>
+              <CardDescription>
+                Paste your personal OpenRouteService API key to enable route-based travel times. You can get a free key from openrouteservice.org.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="ors-api-key">API key</Label>
+                <Input
+                  id="ors-api-key"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={orsApiKeyDraft}
+                  onChange={(e) => setOrsApiKeyDraft(e.target.value)}
+                  placeholder="Paste your OpenRouteService API key"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => setOrsApiKeyMutation.mutate(orsApiKeyDraft)}
+                  disabled={setOrsApiKeyMutation.isPending}
+                >
+                  {setOrsApiKeyMutation.isPending ? 'Saving…' : 'Save key'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOrsApiKeyMutation.mutate('')}
+                  disabled={setOrsApiKeyMutation.isPending}
+                >
+                  Clear key
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => shellOpen('https://openrouteservice.org')}
+                >
+                  Get free key
+                </Button>
+              </div>
+              {setOrsApiKeyMutation.error instanceof Error && (
+                <p className="text-sm text-destructive">{setOrsApiKeyMutation.error.message}</p>
+              )}
+              {orsApiKeyToast && (
+                <p className="text-sm text-muted-foreground rounded-md border border-border bg-card px-3 py-2">
+                  {orsApiKeyToast}
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="developer_tools" className="space-y-5 mt-5 outline-none">
