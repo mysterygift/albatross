@@ -12,7 +12,10 @@ import { listShootDayUnitsByShootDay } from '@/lib/db/repositories/shoot-day-uni
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import { listStripsByShootDay } from '@/lib/db/repositories/stripboard-strips'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
-import { listCrew } from '@/lib/db/repositories/person'
+import { listBookingsByShootDay } from '@/lib/db/repositories/booking'
+import { getCastIdsBySceneIds } from '@/lib/db/repositories/scene-cast'
+import { getCastIdsByShotIds } from '@/lib/db/repositories/shot-cast'
+import { listCast, listCrew } from '@/lib/db/repositories/person'
 import { getProductionById } from '@/lib/db/repositories/production'
 import {
   getDefaultCrewHierarchyConfig,
@@ -25,7 +28,14 @@ import { getMovementOrderLocationContacts } from '@/lib/movement-orders/location
 import { buildMovementOrderLegSkeleton } from '@/lib/movement-orders/movementLegs'
 import { enrichMovementLegsWithRouteData } from '@/lib/movement-orders/enrichMovementLegsWithRouteData'
 import { generateMovementOrderPDF } from '@/lib/pdf/movementOrder'
+import { exportPersonalizedDocuments } from '@/lib/documents/exportPersonalizedDocuments'
 import { openInSystem, saveFileWithDialog } from '@/lib/files'
+import { sanitizeForFilename } from '@/lib/files/sanitizeForFilename'
+import {
+  getCallSheetCastRequirements,
+  type CallSheetCastResult,
+} from '@/lib/call-sheets/castRequirements'
+import { getCallSheetCrewRequirements } from '@/lib/call-sheets/crewRequirements'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -38,6 +48,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { MovementOrderData } from '@/lib/movement-orders/types'
+import {
+  MovementOrderDistributionDialog,
+  type MovementOrderRecipient,
+} from '@/features/movement-orders/MovementOrderDistributionDialog'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
@@ -53,6 +67,15 @@ export function MovementOrdersPage() {
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
+  const [distributionOpen, setDistributionOpen] = useState(false)
+  const [distributionStatus, setDistributionStatus] = useState<{
+    loading: boolean
+    message: string | null
+    error: string | null
+  }>({ loading: false, message: null, error: null })
+  const [distributionExportSuccessMessage, setDistributionExportSuccessMessage] = useState<
+    string | null
+  >(null)
   const defaultCrewHierarchy = getDefaultCrewHierarchyConfig()
 
   const { data: production } = useQuery({
@@ -109,10 +132,22 @@ export function MovementOrdersPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: cast = [] } = useQuery({
+    queryKey: ['cast', currentProductionId],
+    queryFn: () => listCast(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
   const { data: crew = [] } = useQuery({
     queryKey: ['crew', currentProductionId],
     queryFn: () => listCrew(currentProductionId ?? ''),
     enabled: !!currentProductionId,
+  })
+
+  const { data: bookingsForDay = [] } = useQuery({
+    queryKey: ['bookings-by-shoot-day', shootDayId],
+    queryFn: () => listBookingsByShootDay(shootDayId!),
+    enabled: !!shootDayId,
   })
 
   const { data: hierarchyData } = useQuery({
@@ -129,6 +164,53 @@ export function MovementOrdersPage() {
   const selectedUnit = useMemo(
     () => units.find((unit) => unit.id === selectedDayUnit?.unit_id) ?? null,
     [units, selectedDayUnit]
+  )
+
+  /** Same strip scope as call sheets for cast/crew recipients (all strips on the unit, any status). */
+  const unitStrips = useMemo(
+    () =>
+      strips
+        .filter((strip) => strip.shoot_day_unit_id === shootDayUnitId)
+        .sort((a, b) => a.sort_index - b.sort_index),
+    [strips, shootDayUnitId]
+  )
+
+  const sceneIdsScheduled = useMemo(
+    () => unitStrips.filter((s) => s.scene_id).map((s) => s.scene_id!),
+    [unitStrips]
+  )
+  const shotIdsScheduled = useMemo(
+    () => unitStrips.filter((s) => s.shot_id).map((s) => s.shot_id!),
+    [unitStrips]
+  )
+
+  const { data: castBySceneId = new Map<string, string[]>() } = useQuery({
+    queryKey: ['cast-by-scene-movement-order-distribution', sceneIdsScheduled.join(',')],
+    queryFn: () => getCastIdsBySceneIds(sceneIdsScheduled),
+    enabled: sceneIdsScheduled.length > 0,
+  })
+
+  const { data: castByShotId = new Map<string, string[]>() } = useQuery({
+    queryKey: ['cast-by-shot-movement-order-distribution', shotIdsScheduled.join(',')],
+    queryFn: () => getCastIdsByShotIds(shotIdsScheduled),
+    enabled: shotIdsScheduled.length > 0,
+  })
+
+  const castResult: CallSheetCastResult = useMemo(() => {
+    const bookedPersonIds = new Set(bookingsForDay.map((b) => b.person_id))
+    return getCallSheetCastRequirements({
+      sceneIdsScheduled,
+      shotIdsScheduled,
+      castBySceneId,
+      castByShotId,
+      bookedPersonIds,
+      cast,
+    })
+  }, [sceneIdsScheduled, shotIdsScheduled, castBySceneId, castByShotId, bookingsForDay, cast])
+
+  const crewGroupsForPreview = useMemo(
+    () => getCallSheetCrewRequirements(crewHierarchy, bookingsForDay, crew),
+    [crewHierarchy, bookingsForDay, crew]
   )
 
   const selectedUnitScheduledStrips = useMemo(
@@ -204,6 +286,37 @@ export function MovementOrdersPage() {
   })
   const movementOrderDataForView = enrichedMovementOrderData ?? movementOrderData
 
+  const distributionContext = useMemo(() => {
+    if (!movementOrderDataForView) return null
+    return {
+      productionName: movementOrderDataForView.productionName,
+      shootDate: movementOrderDataForView.shootDate,
+      unitName: movementOrderDataForView.unitName,
+      dayNumber: movementOrderDataForView.dayNumber,
+    }
+  }, [movementOrderDataForView])
+
+  const distributionRecipients: MovementOrderRecipient[] = useMemo(() => {
+    if (!movementOrderDataForView) return []
+    const castRecipients: MovementOrderRecipient[] = (castResult.castRows ?? []).map((row) => ({
+      id: `cast-${row.person_id}`,
+      fullName: row.name,
+      type: 'cast' as const,
+    }))
+    const crewRecipients: MovementOrderRecipient[] = crewGroupsForPreview.flatMap((group) =>
+      group.rows.map((row) => ({
+        id: `crew-${row.person_id}`,
+        fullName: row.name,
+        type: 'crew' as const,
+      }))
+    )
+    const map = new Map<string, MovementOrderRecipient>()
+    for (const r of [...castRecipients, ...crewRecipients]) {
+      if (!map.has(r.id)) map.set(r.id, r)
+    }
+    return Array.from(map.values())
+  }, [movementOrderDataForView, castResult.castRows, crewGroupsForPreview])
+
   const generateMutation = useMutation({
     mutationFn: async (options: {
       data: MovementOrderData | null
@@ -251,6 +364,7 @@ export function MovementOrdersPage() {
 
   const handleGenerate = (save: boolean, openAfter?: boolean) => {
     setPdfError(null)
+    setDistributionExportSuccessMessage(null)
     generateMutation.mutate({
       data: movementOrderDataForView,
       save,
@@ -268,11 +382,20 @@ export function MovementOrdersPage() {
     // Selection changes invalidate previous preview context.
     setNumPages(null)
     setPdfError(null)
+    setDistributionOpen(false)
+    setDistributionStatus({ loading: false, message: null, error: null })
+    setDistributionExportSuccessMessage(null)
     setPreviewPdfUrl((previous) => {
       if (previous) URL.revokeObjectURL(previous)
       return null
     })
   }, [shootDayId, shootDayUnitId])
+
+  useEffect(() => {
+    if (!distributionExportSuccessMessage) return
+    const t = setTimeout(() => setDistributionExportSuccessMessage(null), 6000)
+    return () => clearTimeout(t)
+  }, [distributionExportSuccessMessage])
 
   if (!currentProductionId) {
     return (
@@ -372,7 +495,29 @@ export function MovementOrdersPage() {
               >
                 {generateMutation.isPending ? 'Generating...' : 'Save & Open'}
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDistributionExportSuccessMessage(null)
+                  setDistributionStatus({ loading: false, message: null, error: null })
+                  setDistributionOpen(true)
+                }}
+                disabled={
+                  !movementOrderDataForView ||
+                  !shootDayId ||
+                  !shootDayUnitId ||
+                  distributionStatus.loading
+                }
+              >
+                Distribute Movement Orders
+              </Button>
             </div>
+
+            {distributionExportSuccessMessage && (
+              <p className="text-sm text-emerald-600 dark:text-emerald-400" role="status">
+                {distributionExportSuccessMessage}
+              </p>
+            )}
 
             {pdfError && (
               <p className="text-sm text-destructive">{pdfError}</p>
@@ -546,6 +691,78 @@ export function MovementOrdersPage() {
           )}
         </CardContent>
       </Card>
+
+      <MovementOrderDistributionDialog
+        open={distributionOpen}
+        onOpenChange={(open) => {
+          if (!open && distributionStatus.loading) return
+          setDistributionOpen(open)
+        }}
+        context={distributionContext}
+        recipients={distributionRecipients}
+        loading={distributionStatus.loading}
+        statusMessage={distributionStatus.message}
+        error={distributionStatus.error}
+        onGenerateSelected={async (selected) => {
+          if (!movementOrderDataForView) return
+          setDistributionExportSuccessMessage(null)
+          setDistributionStatus({ loading: true, message: null, error: null })
+          try {
+            let baseBytes: Uint8Array
+            try {
+              const pdfBytes = await generateMovementOrderPDF(movementOrderDataForView)
+              baseBytes = new Uint8Array(pdfBytes)
+            } catch {
+              throw new Error('Failed to generate movement order PDF. Please try again.')
+            }
+            if (!baseBytes || baseBytes.length === 0) {
+              throw new Error('Failed to generate base PDF.')
+            }
+
+            const shootDate = movementOrderDataForView.shootDate
+            const unitName = movementOrderDataForView.unitName
+
+            const result = await exportPersonalizedDocuments({
+              basePDFBytes: baseBytes,
+              recipients: selected,
+              buildFileName: (recipient) => {
+                const safeDate = sanitizeForFilename(shootDate)
+                const safeUnit = sanitizeForFilename(unitName || 'unit')
+                const safeName = sanitizeForFilename(recipient.fullName)
+                return `movement-order-${safeDate}-${safeUnit}-${safeName}.pdf`
+              },
+              directoryPickerTitle: 'Select directory for personalised movement orders',
+              onProgress: (current, total) => {
+                setDistributionStatus((prev) => ({
+                  ...prev,
+                  message: `Generating ${current} of ${total} personalised movement orders…`,
+                }))
+              },
+            })
+
+            if (result && result.written > 0) {
+              const pathSuffix = result.directoryPath
+                ? ` Saved to: ${result.directoryPath}`
+                : ''
+              setDistributionExportSuccessMessage(
+                `Generated ${result.written} personalised movement order${result.written === 1 ? '' : 's'}.${pathSuffix}`,
+              )
+              setDistributionOpen(false)
+              setDistributionStatus({ loading: false, message: null, error: null })
+            } else {
+              // Directory cancel: end loading only; keep dialog and recipient selection unchanged.
+              setDistributionStatus({ loading: false, message: null, error: null })
+            }
+          } catch (e) {
+            setDistributionStatus({
+              loading: false,
+              message: null,
+              error:
+                (e as Error)?.message ?? 'Failed to generate personalised movement orders.',
+            })
+          }
+        }}
+      />
     </div>
   )
 }

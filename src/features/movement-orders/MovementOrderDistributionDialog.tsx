@@ -1,17 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
+
 type RecipientType = 'cast' | 'crew'
 
-export interface CallSheetRecipient {
+export interface MovementOrderRecipient {
   id: string
   fullName: string
   type: RecipientType
 }
 
-export interface CallSheetDistributionDialogProps {
+export interface MovementOrderDistributionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   context: {
@@ -20,14 +28,14 @@ export interface CallSheetDistributionDialogProps {
     unitName: string
     dayNumber: number | null
   } | null
-  recipients: CallSheetRecipient[]
-  onGenerateSelected?: (selected: CallSheetRecipient[]) => void
+  recipients: MovementOrderRecipient[]
+  onGenerateSelected?: (selected: MovementOrderRecipient[]) => void
   loading?: boolean
   statusMessage?: string | null
   error?: string | null
 }
 
-export function CallSheetDistributionDialog({
+export function MovementOrderDistributionDialog({
   open,
   onOpenChange,
   context,
@@ -36,7 +44,7 @@ export function CallSheetDistributionDialog({
   loading = false,
   statusMessage,
   error,
-}: CallSheetDistributionDialogProps) {
+}: MovementOrderDistributionDialogProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     () => new Set(recipients.map((r) => r.id)),
   )
@@ -45,6 +53,7 @@ export function CallSheetDistributionDialog({
     () => recipients.map((r) => r.id).sort().join(','),
     [recipients],
   )
+
   useEffect(() => {
     // Reset to all selected when the recipient set changes (e.g. shoot day / unit).
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional sync with recipientIdKey
@@ -92,9 +101,9 @@ export function CallSheetDistributionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl border-border bg-card flex max-h-[min(90vh,720px)] flex-col gap-4 overflow-hidden">
         <DialogHeader className="shrink-0">
-          <DialogTitle>Distribute Call Sheets</DialogTitle>
+          <DialogTitle>Distribute Movement Orders</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Choose which cast and crew should receive a personalised copy of this call sheet.
+            Choose which cast and crew should receive a personalised copy of this movement order.
           </DialogDescription>
         </DialogHeader>
 
@@ -191,4 +200,3 @@ export function CallSheetDistributionDialog({
     </Dialog>
   )
 }
-

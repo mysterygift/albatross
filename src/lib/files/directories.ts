@@ -19,12 +19,12 @@ const normalizeDirectory = (directory: string) => directory.replace(/[/\\]+$/, '
 
 /**
  * Returns a filename that does not already exist in the directory, appending a numeric suffix
- * (-2, -3, …) before the extension when necessary. Also considers names already claimed in
+ * (-1, -2, …) before the extension when necessary. Also considers names already claimed in
  * the current batch (pass existingNamesFromBatch so multiple recipients that sanitize to the
  * same base name get unique filenames).
  *
- * Example: "call-sheet-2026-06-14-main-unit-jane-smith.pdf" →
- *   "call-sheet-2026-06-14-main-unit-jane-smith-2.pdf" if the base already exists.
+ * Example: "movement-order-2026-05-12-main-unit-john-doe.pdf" →
+ *   "movement-order-2026-05-12-main-unit-john-doe-1.pdf" if the base name is taken.
  */
 export async function ensureUniqueFilenameInDirectory(
   directory: string,
@@ -44,7 +44,7 @@ export async function ensureUniqueFilenameInDirectory(
   const lastDot = desiredFileName.lastIndexOf('.')
   const base = lastDot > 0 ? desiredFileName.slice(0, lastDot) : desiredFileName
   const ext = lastDot > 0 ? desiredFileName.slice(lastDot) : ''
-  let n = 2
+  let n = 1
   while (taken.has(`${base}-${n}${ext}`)) n += 1
   return `${base}-${n}${ext}`
 }

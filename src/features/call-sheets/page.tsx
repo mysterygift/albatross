@@ -86,6 +86,9 @@ export function CallSheetsPage() {
     message: string | null
     error: string | null
   }>({ loading: false, message: null, error: null })
+  const [distributionExportSuccessMessage, setDistributionExportSuccessMessage] = useState<
+    string | null
+  >(null)
 
   const { data: production } = useQuery({
     queryKey: ['production', currentProductionId],
@@ -351,6 +354,16 @@ export function CallSheetsPage() {
     setSunsetManual('')
   }, [shootDayId])
 
+  useEffect(() => {
+    setDistributionExportSuccessMessage(null)
+  }, [shootDayId, shootDayUnitId])
+
+  useEffect(() => {
+    if (!distributionExportSuccessMessage) return
+    const t = setTimeout(() => setDistributionExportSuccessMessage(null), 6000)
+    return () => clearTimeout(t)
+  }, [distributionExportSuccessMessage])
+
   const buildCallSheetData = useMemo(() => {
     if (!production || !shootDay || !shootDayUnitId) return null
     const dayUnit = dayUnits.find((u) => u.id === shootDayUnitId)
@@ -570,6 +583,7 @@ export function CallSheetsPage() {
   const handleGenerate = (save: boolean, openAfter?: boolean) => {
     const baseData = buildCallSheetData
     if (!baseData || !shootDay) return
+    setDistributionExportSuccessMessage(null)
     setWeatherFallbackMessage(null)
     const locationQuery =
       locationsForDay.length > 0
@@ -796,12 +810,25 @@ export function CallSheetsPage() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => handleGenerate(true, true)}
-                disabled={!buildCallSheetData || generateMutation.isPending}
+                onClick={() => {
+                  setDistributionExportSuccessMessage(null)
+                  setDistributionStatus({ loading: false, message: null, error: null })
+                  setDistributionOpen(true)
+                }}
+                disabled={
+                  !buildCallSheetData ||
+                  generateMutation.isPending ||
+                  distributionStatus.loading
+                }
               >
                 Distribute Call Sheets
               </Button>
             </div>
+            {distributionExportSuccessMessage && (
+              <p className="text-sm text-emerald-600 dark:text-emerald-400" role="status">
+                {distributionExportSuccessMessage}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -832,7 +859,10 @@ export function CallSheetsPage() {
 
       <CallSheetDistributionDialog
         open={distributionOpen}
-        onOpenChange={setDistributionOpen}
+        onOpenChange={(open) => {
+          if (!open && distributionStatus.loading) return
+          setDistributionOpen(open)
+        }}
         context={distributionContext}
         recipients={distributionRecipients}
         loading={distributionStatus.loading}
@@ -840,6 +870,7 @@ export function CallSheetsPage() {
         error={distributionStatus.error}
         onGenerateSelected={async (selected) => {
           if (!buildCallSheetData) return
+          setDistributionExportSuccessMessage(null)
           setDistributionStatus({ loading: true, message: null, error: null })
           try {
             const result = await exportDistributedCallSheets({
@@ -853,21 +884,16 @@ export function CallSheetsPage() {
               },
             })
             if (result && result.written > 0) {
-              const pathLine = result.directoryPath
-                ? `\nSaved to: ${result.directoryPath}`
+              const pathSuffix = result.directoryPath
+                ? ` Saved to: ${result.directoryPath}`
                 : ''
-              setDistributionStatus({
-                loading: false,
-                message: `Generated ${result.written} personalised call sheet${result.written === 1 ? '' : 's'}.${pathLine}`,
-                error: null,
-              })
+              setDistributionExportSuccessMessage(
+                `Generated ${result.written} personalised call sheet${result.written === 1 ? '' : 's'}.${pathSuffix}`,
+              )
               setDistributionOpen(false)
+              setDistributionStatus({ loading: false, message: null, error: null })
             } else {
-              setDistributionStatus({
-                loading: false,
-                message: 'Export cancelled.',
-                error: null,
-              })
+              setDistributionStatus({ loading: false, message: null, error: null })
             }
           } catch (e) {
             setDistributionStatus({
