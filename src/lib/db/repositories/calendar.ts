@@ -132,7 +132,7 @@ export async function listCalendarShootDayEvents(
 
   return rows.map((r) => {
     const primaryLocationId = r.primary_location_id as string | null
-    return {
+    const mapped = {
       shootDayId: r.shoot_day_id as string,
       shootDayUnitId: r.shoot_day_unit_id as string,
       date: r.date as string,
@@ -146,6 +146,7 @@ export async function listCalendarShootDayEvents(
       primaryLocationId,
       shotCount: Number(r.shot_count) || 0,
       estMinutes: Number(r.est_minutes) || 0,
-    }
+    } satisfies CalendarShootDayEvent
+    return mapped
   })
 }

@@ -345,14 +345,15 @@ async function runDemoContentSeed(
   for (let d = 0; d < 12; d++) {
     const shootDate = addDaysLocal(startDate, d)
     await db.execute(
-      `INSERT INTO shoot_days (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      `INSERT INTO shoot_days (id, production_id, shoot_date, day_number, call_time, wrap_time, notes, weather_manual, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         idSource.shootDay(d + 1),
         productionId,
         shootDate,
         d + 1,
         '07:00',
+        '18:00',
         d === 0 ? 'First day' : null,
         'Sunny',
         ts,

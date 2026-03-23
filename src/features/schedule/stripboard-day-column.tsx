@@ -24,6 +24,7 @@ export function StripboardDayColumn({
   shots,
   estimatedShootMinutesByShotId,
   onUpdateStripEstimatedMinutes,
+  onUpdateCallWrapTime,
   columnId,
   pageEighthsTarget,
   onSendToBoneyard,
@@ -40,6 +41,7 @@ export function StripboardDayColumn({
   shots: Shot[]
   estimatedShootMinutesByShotId: Map<string, number>
   onUpdateStripEstimatedMinutes?: (stripId: string, minutes: number | null) => void
+  onUpdateCallWrapTime?: (stripId: string, time: string) => void
   columnId: (shootDayId: string, shootDayUnitId: string) => string
   isLocked: boolean
   pageEighthsTarget: number
@@ -75,6 +77,7 @@ export function StripboardDayColumn({
             shots={shots}
             estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
             onUpdateStripEstimatedMinutes={onUpdateStripEstimatedMinutes}
+            onUpdateCallWrapTime={onUpdateCallWrapTime}
             columnId={columnId(day.id, shootDayUnit.id)}
             isLocked={shootDayUnit.is_locked !== 0}
             pageEighthsTarget={pageEighthsTarget}
@@ -104,6 +107,7 @@ function UnitColumn({
   shots,
   estimatedShootMinutesByShotId,
   onUpdateStripEstimatedMinutes,
+  onUpdateCallWrapTime,
   columnId: colId,
   isLocked,
   pageEighthsTarget,
@@ -121,6 +125,7 @@ function UnitColumn({
   shots: Shot[]
   estimatedShootMinutesByShotId: Map<string, number>
   onUpdateStripEstimatedMinutes?: (stripId: string, minutes: number | null) => void
+  onUpdateCallWrapTime?: (stripId: string, time: string) => void
   columnId: string
   isLocked: boolean
   pageEighthsTarget: number
@@ -299,6 +304,7 @@ function UnitColumn({
                     : undefined
                 }
                 onUpdateEstimatedMinutes={onUpdateStripEstimatedMinutes}
+                onUpdateCallWrapTime={onUpdateCallWrapTime}
                 onSendToBoneyard={onSendToBoneyard}
                 onDeleteStrip={onDeleteStrip}
                 disabled={isLocked}

@@ -50,6 +50,7 @@ import { createShootDayWithDefaultMainUnit } from '@/lib/db/repositories/schedul
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import type { ShotWithScene } from '@/lib/db/repositories/stripboard-strips'
 import { SmartSchedulingInsightsPanel } from './smart-scheduling-insights-panel'
+import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
 
 const STRIP_TYPES: { type: StripType; label: string }[] = [
   { type: 'MOVE', label: 'Move / Setup' },
@@ -67,6 +68,7 @@ function AddStripPopover({
   dayUnits,
   units,
   onCreate,
+  stripsByDayUnitKey,
   isPending,
 }: {
   productionId: string
@@ -74,6 +76,7 @@ function AddStripPopover({
   dayUnits: { id: string; shoot_day_id: string; unit_id: string }[]
   units: { id: string; name: string }[]
   onCreate: (data: CreateStripData) => void
+  stripsByDayUnitKey: Map<string, StripboardStrip[]>
   isPending: boolean
 }) {
   const [stripType, setStripType] = useState<StripType>('NOTE')
@@ -81,6 +84,8 @@ function AddStripPopover({
   const [unitId, setUnitId] = useState<string>('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [time, setTime] = useState('')
+  const [timeError, setTimeError] = useState<string | null>(null)
 
   const dayUnitsForDay = shootDayId
     ? dayUnits.filter((du) => du.shoot_day_id === shootDayId)
@@ -88,9 +93,34 @@ function AddStripPopover({
   const shootDayUnitId = unitId
     ? dayUnitsForDay.find((du) => du.unit_id === unitId)?.id
     : null
+  const selectedColumnStrips = shootDayUnitId
+    ? stripsByDayUnitKey.get(`${shootDayId}:${shootDayUnitId}`) ?? []
+    : []
+  const hasExistingOfType =
+    (stripType === 'CALL' || stripType === 'WRAP') &&
+    selectedColumnStrips.some((s) => s.strip_type === stripType && s.strip_status === 'SCHEDULED')
 
   const handleCreate = () => {
     if (!shootDayUnitId) return
+    if (hasExistingOfType) return
+    if (stripType === 'CALL' || stripType === 'WRAP') {
+      const normalized = normalizeScheduleTimeInput(time)
+      if (!normalized) {
+        setTimeError('Enter time as HH:MM')
+        return
+      }
+      setTimeError(null)
+      onCreate({
+        production_id: productionId,
+        shoot_day_id: shootDayId,
+        shoot_day_unit_id: shootDayUnitId,
+        strip_type: stripType,
+        title: normalized,
+        description: null,
+      })
+      setTime('')
+      return
+    }
     onCreate({
       production_id: productionId,
       shoot_day_id: shootDayId,
@@ -152,24 +182,47 @@ function AddStripPopover({
               ))}
             </SelectContent>
           </Select>
-          <Label>Title (optional)</Label>
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Company move to location B"
-            className="h-9"
-          />
-          <Label>Description (optional)</Label>
-          <Input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Optional notes"
-            className="h-9"
-          />
+          {(stripType === 'CALL' || stripType === 'WRAP') ? (
+            <>
+              <Label>Time</Label>
+              <Input
+                value={time}
+                onChange={(e) => {
+                  setTime(e.target.value)
+                  if (timeError) setTimeError(null)
+                }}
+                placeholder="HH:MM"
+                className="h-9"
+              />
+              {timeError && <p className="text-xs text-destructive">{timeError}</p>}
+              {hasExistingOfType && (
+                <p className="text-xs text-destructive">
+                  This unit already has a {stripType} strip.
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <Label>Title (optional)</Label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Company move to location B"
+                className="h-9"
+              />
+              <Label>Description (optional)</Label>
+              <Input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Optional notes"
+                className="h-9"
+              />
+            </>
+          )}
           <Button
             className="w-full"
             size="sm"
-            disabled={!shootDayUnitId || isPending}
+            disabled={!shootDayUnitId || isPending || hasExistingOfType}
             onClick={handleCreate}
           >
             {isPending ? 'Adding…' : 'Add strip'}
@@ -223,6 +276,7 @@ export function StripboardPage() {
     estimatedShootMinutesByShotId,
     setLockedMutation,
     updateEstimatedMutation,
+    updateCallWrapTimeMutation,
     moveToUnscheduledMutation,
     moveToBoneyardMutation,
     deleteStripMutation,
@@ -554,6 +608,7 @@ export function StripboardPage() {
             dayUnits={dayUnits}
             units={units}
             onCreate={(data) => createStripMutation.mutate(data)}
+            stripsByDayUnitKey={stripsByDayUnit}
             isPending={createStripMutation.isPending}
           />
         </div>
@@ -688,6 +743,9 @@ export function StripboardPage() {
                     estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
                     onUpdateStripEstimatedMinutes={(stripId, minutes) =>
                       updateEstimatedMutation.mutate({ stripId, minutes })
+                    }
+                    onUpdateCallWrapTime={(stripId, time) =>
+                      updateCallWrapTimeMutation.mutate({ stripId, time })
                     }
                     columnId={columnId}
                     isLocked={false}
