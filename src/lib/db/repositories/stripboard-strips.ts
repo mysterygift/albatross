@@ -543,34 +543,8 @@ export async function deleteStrip(stripId: string): Promise<void> {
   const existing = await getStripByIdRaw(db, stripId)
   if (!existing) return
   const isCallWrap = CALL_WRAP_TYPES.includes(existing.strip_type as StripType)
-  const shootDayId = (existing.shoot_day_id as string | null) ?? null
-  if (isCallWrap && shootDayId) {
-    await runInSerializedTransaction(async () => {
-      const conn = await getDb()
-      const statements: Array<{ sql: string; bindValues: unknown[] }> = [
-        { sql: 'BEGIN', bindValues: [] },
-        {
-          sql: `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
-          bindValues: [ts, ts, stripId],
-        },
-        outboxStatementForRow({
-          entity: TABLE,
-          entityId: stripId,
-          operation: 'delete',
-          payloadJson: null,
-        }),
-      ]
-      await syncShootDayCallWrapForMainUnit(
-        conn,
-        shootDayId,
-        ts,
-        statements,
-        nextTitle !== undefined ? { [stripId]: nextTitle ?? null } : undefined
-      )
-      statements.push({ sql: 'COMMIT', bindValues: [] })
-      await executeBatch(conn, statements)
-    })
-    return
+  if (isCallWrap) {
+    throw new Error('CALL/WRAP strips cannot be deleted.')
   }
   const result = await db.execute(
     `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,

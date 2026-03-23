@@ -127,7 +127,7 @@ export function StripItem({
   )
 }
 
-const NON_SHOT_STRIP_TYPES = ['MOVE', 'CALL', 'LUNCH', 'WRAP', 'NOTE'] as const
+const DELETABLE_NON_SHOT_STRIP_TYPES = ['MOVE', 'LUNCH', 'NOTE'] as const
 
 function SortableStripInner({
   strip,
@@ -154,7 +154,7 @@ function SortableStripInner({
 }) {
   const isShotOrScene = strip.strip_type === 'SHOT' || strip.strip_type === 'SCENE'
   const showBoneyard = isShotOrScene && onSendToBoneyard
-  const showDelete = NON_SHOT_STRIP_TYPES.includes(strip.strip_type as (typeof NON_SHOT_STRIP_TYPES)[number]) && onDeleteStrip
+  const showDelete = DELETABLE_NON_SHOT_STRIP_TYPES.includes(strip.strip_type as (typeof DELETABLE_NON_SHOT_STRIP_TYPES)[number]) && onDeleteStrip
   const [localMinutes, setLocalMinutes] = useState<string>(
     strip.estimated_minutes != null ? String(strip.estimated_minutes) : ''
   )

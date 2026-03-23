@@ -733,6 +733,7 @@ export type CalendarShootDayEvent = {
   callTime: string | null
   lunchTime: string | null
   wrapTime: string | null
+  notes: string | null
   primaryLocationName: string | null
   primaryLocationId: string | null
   shotCount: number

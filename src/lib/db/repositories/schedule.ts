@@ -19,6 +19,79 @@ const SHOT_TABLE = 'shots'
 const STRIP_TABLE = 'stripboard_items'
 const SCENE_CAST_TABLE = 'scene_cast'
 const SHOT_CAST_TABLE = 'shot_cast'
+const DEFAULT_CALL_SORT_INDEX = 1000
+const DEFAULT_WRAP_SORT_INDEX = 2000
+
+async function syncMainUnitCallWrapStripsFromShootDay(args: {
+  shootDayId: string
+  callTime?: string | null
+  wrapTime?: string | null
+}): Promise<void> {
+  const db = await getDb()
+  const ts = now()
+
+  if (args.callTime !== undefined) {
+    const callRows = await db.select<Record<string, unknown>[]>(
+      `
+      SELECT s.id
+      FROM ${STRIPBOARD_STRIPS_TABLE} s
+      INNER JOIN ${SDU_TABLE} sdu ON sdu.id = s.shoot_day_unit_id AND sdu.deleted_at IS NULL
+      INNER JOIN units u ON u.id = sdu.unit_id AND u.deleted_at IS NULL
+      WHERE s.shoot_day_id = $1
+        AND s.strip_type = 'CALL'
+        AND s.strip_status = 'SCHEDULED'
+        AND s.deleted_at IS NULL
+        AND LOWER(u.name) LIKE '%main%'
+      `,
+      [args.shootDayId]
+    )
+    const callTitle = args.callTime ? `Call ${args.callTime}` : null
+    for (const row of callRows) {
+      const stripId = row.id as string
+      await db.execute(
+        `UPDATE ${STRIPBOARD_STRIPS_TABLE} SET title = $1, description = NULL, updated_at = $2 WHERE id = $3`,
+        [callTitle, ts, stripId]
+      )
+      await outboxPush(
+        STRIPBOARD_STRIPS_TABLE,
+        stripId,
+        'update',
+        JSON.stringify({ title: callTitle, description: null })
+      )
+    }
+  }
+
+  if (args.wrapTime !== undefined) {
+    const wrapRows = await db.select<Record<string, unknown>[]>(
+      `
+      SELECT s.id
+      FROM ${STRIPBOARD_STRIPS_TABLE} s
+      INNER JOIN ${SDU_TABLE} sdu ON sdu.id = s.shoot_day_unit_id AND sdu.deleted_at IS NULL
+      INNER JOIN units u ON u.id = sdu.unit_id AND u.deleted_at IS NULL
+      WHERE s.shoot_day_id = $1
+        AND s.strip_type = 'WRAP'
+        AND s.strip_status = 'SCHEDULED'
+        AND s.deleted_at IS NULL
+        AND LOWER(u.name) LIKE '%main%'
+      `,
+      [args.shootDayId]
+    )
+    const wrapTitle = args.wrapTime ? `Wrap ${args.wrapTime}` : null
+    for (const row of wrapRows) {
+      const stripId = row.id as string
+      await db.execute(
+        `UPDATE ${STRIPBOARD_STRIPS_TABLE} SET title = $1, description = NULL, updated_at = $2 WHERE id = $3`,
+        [wrapTitle, ts, stripId]
+      )
+      await outboxPush(
+        STRIPBOARD_STRIPS_TABLE,
+        stripId,
+        'update',
+        JSON.stringify({ title: wrapTitle, description: null })
+      )
+    }
+  }
+}
 
 function rowToShootDay(r: Record<string, unknown>): ShootDay {
   return {
@@ -144,30 +217,19 @@ export async function createShootDay(data: {
   police_station_name?: string | null
   police_station_address?: string | null
 }): Promise<ShootDay> {
-  const db = await getDb()
-  const id = uuid()
-  const ts = now()
-  await db.execute(
-    `INSERT INTO ${DAY_TABLE} (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [
-      id,
-      data.production_id,
-      data.shoot_date,
-      data.day_number ?? null,
-      data.call_time ?? null,
-      data.notes ?? null,
-      data.weather_manual ?? null,
-      ts,
-      ts,
-    ]
-  )
-  await outboxPush(DAY_TABLE, id, 'create', JSON.stringify({ ...data, id }))
-  if (data.wrap_time != null || data.meal_times_json != null || data.weather_json != null ||
+  const day = await createShootDayWithDefaultMainUnit({
+    productionId: data.production_id,
+    shootDate: data.shoot_date,
+    callTime: data.call_time ?? null,
+    wrapTime: data.wrap_time ?? null,
+    notes: data.notes ?? null,
+    weatherManual: data.weather_manual ?? null,
+  })
+  if (data.day_number != null || data.meal_times_json != null || data.weather_json != null ||
       data.parking_base_address != null || data.special_notes != null || data.hospital_name != null ||
       data.hospital_address != null || data.police_station_name != null || data.police_station_address != null) {
-    await updateShootDay(id, {
-      wrap_time: data.wrap_time ?? undefined,
+    await updateShootDay(day.shootDay.id, {
+      day_number: data.day_number ?? undefined,
       meal_times_json: data.meal_times_json ?? undefined,
       weather_json: data.weather_json ?? undefined,
       parking_base_address: data.parking_base_address ?? undefined,
@@ -178,10 +240,9 @@ export async function createShootDay(data: {
       police_station_address: data.police_station_address ?? undefined,
     })
   }
-  const day = await getShootDayById(id)
-  if (!day) throw new Error('Shoot day not found after create')
-  await resequenceShootDays(data.production_id)
-  return day
+  const createdDay = await getShootDayById(day.shootDay.id)
+  if (!createdDay) throw new Error('Shoot day not found after create')
+  return createdDay
 }
 
 const SHOOT_DAY_UPDATE_KEYS = [
@@ -210,6 +271,13 @@ export async function updateShootDay(
   vals.push(ts, id)
   await db.execute(`UPDATE ${DAY_TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1}`, vals)
   await outboxPush(DAY_TABLE, id, 'update', JSON.stringify(data))
+  if (data.call_time !== undefined || data.wrap_time !== undefined) {
+    await syncMainUnitCallWrapStripsFromShootDay({
+      shootDayId: id,
+      callTime: data.call_time,
+      wrapTime: data.wrap_time,
+    })
+  }
   return (await getShootDayById(id))!
 }
 
@@ -313,23 +381,32 @@ export async function moveShootDayToDate(
   return result
 }
 
-/**
- * Create a new shoot day for the given production and attach a default Main Unit.
- * No strips are created. Returns the created shoot day plus identifiers needed by callers.
- */
-export async function createShootDayWithDefaultMainUnit(args: {
+type CreateShootDayWithDefaultMainUnitArgs = {
   productionId: string
   shootDate: string
-}): Promise<{ shootDay: ShootDay; mainUnitId: string; shootDayUnitId: string }> {
+  callTime?: string | null
+  wrapTime?: string | null
+  notes?: string | null
+  weatherManual?: string | null
+  mainUnitId?: string
+}
+
+/**
+ * Create a new shoot day for the given production and attach a default Main Unit.
+ * Also seeds default CALL + WRAP strips so calendar-day call/wrap always map to stripboard.
+ */
+export async function createShootDayWithDefaultMainUnit(args: CreateShootDayWithDefaultMainUnitArgs): Promise<{ shootDay: ShootDay; mainUnitId: string; shootDayUnitId: string }> {
   const { productionId, shootDate } = args
   if (!productionId) throw new Error('productionId is required')
   if (!shootDate) throw new Error('shootDate is required')
 
-  // Ensure Main Unit exists for this production (may create it if missing).
-  const mainUnit = await ensureMainUnit(productionId)
-
+  const mainUnit = args.mainUnitId
+    ? { id: args.mainUnitId }
+    : await ensureMainUnit(productionId)
   const shootDayId = uuid()
   const shootDayUnitId = uuid()
+  const callStripId = uuid()
+  const wrapStripId = uuid()
   const ts = now()
 
   await runInSerializedTransaction(async () => {
@@ -337,9 +414,20 @@ export async function createShootDayWithDefaultMainUnit(args: {
     const statements: Array<{ sql: string; bindValues: unknown[] }> = [
       { sql: 'BEGIN', bindValues: [] },
       {
-        sql: `INSERT INTO ${DAY_TABLE} (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        bindValues: [shootDayId, productionId, shootDate, null, null, null, null, ts, ts],
+        sql: `INSERT INTO ${DAY_TABLE} (id, production_id, shoot_date, day_number, call_time, wrap_time, notes, weather_manual, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        bindValues: [
+          shootDayId,
+          productionId,
+          shootDate,
+          null,
+          args.callTime ?? null,
+          args.wrapTime ?? null,
+          args.notes ?? null,
+          args.weatherManual ?? null,
+          ts,
+          ts,
+        ],
       },
       outboxStatementForRow({
         entity: DAY_TABLE,
@@ -349,9 +437,10 @@ export async function createShootDayWithDefaultMainUnit(args: {
           production_id: productionId,
           shoot_date: shootDate,
           day_number: null,
-          call_time: null,
-          notes: null,
-          weather_manual: null,
+          call_time: args.callTime ?? null,
+          wrap_time: args.wrapTime ?? null,
+          notes: args.notes ?? null,
+          weather_manual: args.weatherManual ?? null,
           id: shootDayId,
         }),
       }),
@@ -366,6 +455,44 @@ export async function createShootDayWithDefaultMainUnit(args: {
         operation: 'create',
         payloadJson: JSON.stringify({ shoot_day_id: shootDayId, unit_id: mainUnit.id }),
       }),
+      {
+        sql: `INSERT INTO ${STRIPBOARD_STRIPS_TABLE} (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 'CALL', NULL, NULL, NULL, NULL, NULL, $5, NULL, 'SCHEDULED', $6, $7)`,
+        bindValues: [callStripId, productionId, shootDayId, shootDayUnitId, DEFAULT_CALL_SORT_INDEX, ts, ts],
+      },
+      outboxStatementForRow({
+        entity: STRIPBOARD_STRIPS_TABLE,
+        entityId: callStripId,
+        operation: 'create',
+        payloadJson: JSON.stringify({
+          id: callStripId,
+          production_id: productionId,
+          shoot_day_id: shootDayId,
+          shoot_day_unit_id: shootDayUnitId,
+          strip_type: 'CALL',
+          sort_index: DEFAULT_CALL_SORT_INDEX,
+          strip_status: 'SCHEDULED',
+        }),
+      }),
+      {
+        sql: `INSERT INTO ${STRIPBOARD_STRIPS_TABLE} (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 'WRAP', NULL, NULL, NULL, NULL, NULL, $5, NULL, 'SCHEDULED', $6, $7)`,
+        bindValues: [wrapStripId, productionId, shootDayId, shootDayUnitId, DEFAULT_WRAP_SORT_INDEX, ts, ts],
+      },
+      outboxStatementForRow({
+        entity: STRIPBOARD_STRIPS_TABLE,
+        entityId: wrapStripId,
+        operation: 'create',
+        payloadJson: JSON.stringify({
+          id: wrapStripId,
+          production_id: productionId,
+          shoot_day_id: shootDayId,
+          shoot_day_unit_id: shootDayUnitId,
+          strip_type: 'WRAP',
+          sort_index: DEFAULT_WRAP_SORT_INDEX,
+          strip_status: 'SCHEDULED',
+        }),
+      }),
       { sql: 'COMMIT', bindValues: [] },
     ]
     await executeBatch(db, statements)
@@ -376,6 +503,106 @@ export async function createShootDayWithDefaultMainUnit(args: {
   if (!shootDay) throw new Error('Shoot day not found after create')
 
   return { shootDay, mainUnitId: mainUnit.id, shootDayUnitId }
+}
+
+/**
+ * Legacy schedule migration: ensure every shoot day unit has both CALL and WRAP strips.
+ * Safe to run repeatedly; inserts only missing strips.
+ */
+export async function ensureCallWrapStripsForProduction(productionId: string): Promise<void> {
+  if (!productionId) return
+  const db = await getDb()
+  const ts = now()
+  const dayUnits = await db.select<Record<string, unknown>[]>(
+    `SELECT sdu.id AS shoot_day_unit_id, sdu.shoot_day_id
+     FROM ${SDU_TABLE} sdu
+     INNER JOIN ${DAY_TABLE} sd ON sd.id = sdu.shoot_day_id
+     WHERE sd.production_id = $1
+       AND sd.deleted_at IS NULL
+       AND sdu.deleted_at IS NULL`,
+    [productionId]
+  )
+  if (dayUnits.length === 0) return
+
+  const existingRows = await db.select<Record<string, unknown>[]>(
+    `SELECT shoot_day_unit_id, strip_type
+     FROM ${STRIPBOARD_STRIPS_TABLE}
+     WHERE production_id = $1
+       AND deleted_at IS NULL
+       AND strip_status = 'SCHEDULED'
+       AND strip_type IN ('CALL', 'WRAP')
+       AND shoot_day_unit_id IS NOT NULL`,
+    [productionId]
+  )
+  const existingByDayUnit = new Map<string, Set<string>>()
+  for (const row of existingRows) {
+    const dayUnitId = row.shoot_day_unit_id as string
+    const stripType = row.strip_type as string
+    const set = existingByDayUnit.get(dayUnitId) ?? new Set<string>()
+    set.add(stripType)
+    existingByDayUnit.set(dayUnitId, set)
+  }
+
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN', bindValues: [] }]
+  for (const du of dayUnits) {
+    const shootDayUnitId = du.shoot_day_unit_id as string
+    const shootDayId = du.shoot_day_id as string
+    const existing = existingByDayUnit.get(shootDayUnitId) ?? new Set<string>()
+    if (!existing.has('CALL')) {
+      const callStripId = uuid()
+      statements.push(
+        {
+          sql: `INSERT INTO ${STRIPBOARD_STRIPS_TABLE} (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, 'CALL', NULL, NULL, NULL, NULL, NULL, $5, NULL, 'SCHEDULED', $6, $7)`,
+          bindValues: [callStripId, productionId, shootDayId, shootDayUnitId, DEFAULT_CALL_SORT_INDEX, ts, ts],
+        },
+        outboxStatementForRow({
+          entity: STRIPBOARD_STRIPS_TABLE,
+          entityId: callStripId,
+          operation: 'create',
+          payloadJson: JSON.stringify({
+            id: callStripId,
+            production_id: productionId,
+            shoot_day_id: shootDayId,
+            shoot_day_unit_id: shootDayUnitId,
+            strip_type: 'CALL',
+            sort_index: DEFAULT_CALL_SORT_INDEX,
+            strip_status: 'SCHEDULED',
+          }),
+        })
+      )
+    }
+    if (!existing.has('WRAP')) {
+      const wrapStripId = uuid()
+      statements.push(
+        {
+          sql: `INSERT INTO ${STRIPBOARD_STRIPS_TABLE} (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, 'WRAP', NULL, NULL, NULL, NULL, NULL, $5, NULL, 'SCHEDULED', $6, $7)`,
+          bindValues: [wrapStripId, productionId, shootDayId, shootDayUnitId, DEFAULT_WRAP_SORT_INDEX, ts, ts],
+        },
+        outboxStatementForRow({
+          entity: STRIPBOARD_STRIPS_TABLE,
+          entityId: wrapStripId,
+          operation: 'create',
+          payloadJson: JSON.stringify({
+            id: wrapStripId,
+            production_id: productionId,
+            shoot_day_id: shootDayId,
+            shoot_day_unit_id: shootDayUnitId,
+            strip_type: 'WRAP',
+            sort_index: DEFAULT_WRAP_SORT_INDEX,
+            strip_status: 'SCHEDULED',
+          }),
+        })
+      )
+    }
+  }
+  statements.push({ sql: 'COMMIT', bindValues: [] })
+  if (statements.length <= 2) return
+  await runInSerializedTransaction(async () => {
+    const conn = await getDb()
+    await executeBatch(conn, statements)
+  })
 }
 
 export type MoveShootDayUnitResult =
