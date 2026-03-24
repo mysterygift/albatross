@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback, Fragment, type ReactNode } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
@@ -100,6 +100,7 @@ import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { ActualisationPage } from '@/features/budget/actualisation/page'
 import { ExpenseDetailPanel } from '@/features/budget/ExpenseDetailPanel'
 import { LineItemDetailPanel } from '@/features/budget/LineItemDetailPanel'
+import { FloatsTab } from '@/features/budget/FloatsTab'
 import { LogSpendPanel } from '@/features/budget/LogSpendPanel'
 import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
 import { getBudgetItemWithDetails } from '@/lib/db/repositories/budgetItemDetails'
@@ -115,11 +116,39 @@ import {
   getRelatedLineItemsForExpense,
   sumEstimatedForLineItems,
 } from '@/lib/budget/matching'
+import { getFloatSummaryForProduction } from '@/lib/budget/floatSummary'
+import { listFloatsByProduction } from '@/lib/db/repositories/floats'
+import { listFloatExpenseLinksByProduction } from '@/lib/db/repositories/floatReconciliation'
 
 const BUDGET_VIEW_MODE_KEY = 'budgetViewMode'
 const COST_REPORT_LAYOUT_MODE_KEY = 'costReportLayoutMode'
-type BudgetViewMode = 'budget' | 'cost_report' | 'actualisation'
+type BudgetViewMode = 'budget' | 'cost_report' | 'actualisation' | 'floats'
 type CostReportLayoutMode = 'chart' | 'groups'
+
+function tabParamToViewMode(tab: string | null): BudgetViewMode | null {
+  if (tab === 'budget' || tab === 'cost_report' || tab === 'actualisation' || tab === 'floats') {
+    return tab
+  }
+  return null
+}
+
+function readStoredBudgetViewMode(): BudgetViewMode {
+  if (typeof window === 'undefined') return 'budget'
+  const stored = localStorage.getItem(BUDGET_VIEW_MODE_KEY)
+  if (stored === 'cost_report') return 'cost_report'
+  if (stored === 'actualisation') return 'actualisation'
+  if (stored === 'floats') return 'floats'
+  return 'budget'
+}
+
+function initialBudgetViewModeFromLocation(): BudgetViewMode {
+  if (typeof window === 'undefined') return 'budget'
+  const params = new URLSearchParams(window.location.search)
+  const fromTab = tabParamToViewMode(params.get('tab'))
+  if (fromTab) return fromTab
+  if (params.get('floats') === 'outstanding') return 'floats'
+  return readStoredBudgetViewMode()
+}
 
 // Actuals are derived from expenses only. budget_item.actual_cost is deprecated/committed and not used for actual calculations.
 
@@ -148,6 +177,8 @@ type DerivedRuleFormValues = z.infer<typeof derivedRuleSchema>
 export function BudgetPage() {
   const location = useLocation()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const budgetFloatsOutstandingUrl = searchParams.get('floats') === 'outstanding'
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const { format, ensureRate, conversionBanner } = useCurrency()
   const { progress, updateProgress } = useFirstLaunchTutorial()
@@ -164,13 +195,7 @@ export function BudgetPage() {
   const [examinedAccountId, setExaminedAccountId] = useState<string | null>(null)
   const [examinedLineItemId, setExaminedLineItemId] = useState<string | null>(null)
   const [examineAccountFilter, setExamineAccountFilter] = useState<ClassificationFilter>('all')
-  const [viewMode, setViewMode] = useState<BudgetViewMode>(() => {
-    if (typeof window === 'undefined') return 'budget'
-    const stored = localStorage.getItem(BUDGET_VIEW_MODE_KEY)
-    if (stored === 'cost_report') return 'cost_report'
-    if (stored === 'actualisation') return 'actualisation'
-    return 'budget'
-  })
+  const [viewMode, setViewMode] = useState<BudgetViewMode>(initialBudgetViewModeFromLocation)
   const [costReportExpandedLeafId, setCostReportExpandedLeafId] = useState<string | null>(null)
   const [productionTotalsModalOpen, setProductionTotalsModalOpen] = useState(false)
   const [productionTotalToEdit, setProductionTotalToEdit] = useState<ProductionTotalWithAccountIds | null>(null)
@@ -184,6 +209,17 @@ export function BudgetPage() {
   useEffect(() => {
     localStorage.setItem(BUDGET_VIEW_MODE_KEY, viewMode)
   }, [viewMode])
+
+  useEffect(() => {
+    const fromTab = tabParamToViewMode(searchParams.get('tab'))
+    if (fromTab) {
+      setViewMode(fromTab)
+      return
+    }
+    if (searchParams.get('floats') === 'outstanding') {
+      setViewMode('floats')
+    }
+  }, [searchParams])
   useEffect(() => {
     localStorage.setItem(COST_REPORT_LAYOUT_MODE_KEY, costReportLayoutMode)
   }, [costReportLayoutMode])
@@ -200,9 +236,11 @@ export function BudgetPage() {
     if (state?.examineExpenseId) {
       setExaminedExpenseId(state.examineExpenseId)
       setViewMode('actualisation')
-      navigate(location.pathname, { replace: true, state: {} })
+      const next = new URLSearchParams(searchParams)
+      next.set('tab', 'actualisation')
+      navigate(`${location.pathname}?${next.toString()}`, { replace: true, state: {} })
     }
-  }, [state?.examineExpenseId, location.pathname, navigate])
+  }, [state?.examineExpenseId, location.pathname, navigate, searchParams])
 
   const queryClient = useQueryClient()
   const backfillRanForProduction = useRef<Set<string>>(new Set())
@@ -304,6 +342,46 @@ export function BudgetPage() {
     queryFn: () => listPeopleByProduction(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
+
+  const crew = useMemo(() => people.filter((p) => p.is_cast === 0), [people])
+
+  const { data: productionFloats = [] } = useQuery({
+    queryKey: ['floats', currentProductionId],
+    queryFn: () => listFloatsByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: productionFloatExpenseLinks = [] } = useQuery({
+    queryKey: ['float-expense-links-by-production', currentProductionId],
+    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const floatProductionSummary = useMemo(
+    () =>
+      getFloatSummaryForProduction({
+        floats: productionFloats,
+        floatExpenseLinks: productionFloatExpenseLinks,
+        people,
+      }),
+    [productionFloats, productionFloatExpenseLinks, people]
+  )
+
+  const handleBudgetTabChange = useCallback(
+    (v: string) => {
+      const mode = v as BudgetViewMode
+      setViewMode(mode)
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.set('tab', mode)
+          return next
+        },
+        { replace: true }
+      )
+    },
+    [setSearchParams]
+  )
 
   const { data: locations = [] } = useQuery({
     queryKey: ['locations', currentProductionId],
@@ -647,11 +725,7 @@ export function BudgetPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Budget</h1>
         <div className="flex flex-wrap items-center gap-3">
-          <Tabs
-            value={viewMode}
-            onValueChange={(v) => setViewMode(v as BudgetViewMode)}
-            className="w-auto"
-          >
+          <Tabs value={viewMode} onValueChange={handleBudgetTabChange} className="w-auto">
             <TabsList className="h-9 border border-border bg-muted/30">
               <TabsTrigger value="budget" className="px-3 text-sm data-[state=active]:bg-background">
                 Budget
@@ -660,7 +734,10 @@ export function BudgetPage() {
                 Cost Report
               </TabsTrigger>
               <TabsTrigger value="actualisation" className="px-3 text-sm data-[state=active]:bg-background">
-                Match Expenses
+                Actualisation
+              </TabsTrigger>
+              <TabsTrigger value="floats" className="px-3 text-sm data-[state=active]:bg-background">
+                Floats
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -720,6 +797,19 @@ export function BudgetPage() {
 
       {viewMode === 'actualisation' ? (
         <ActualisationPage />
+      ) : viewMode === 'floats' ? (
+        <FloatsTab
+          productionId={currentProductionId}
+          productionCurrency={productionCurrency}
+          format={format}
+          crew={crew}
+          people={people}
+          budgetItems={items}
+          accounts={accounts}
+          floatSummary={floatProductionSummary}
+          productionFloats={productionFloats}
+          activateActionableFilter={budgetFloatsOutstandingUrl}
+        />
       ) : viewMode === 'cost_report' ? (
         <>
           <CostReportView
@@ -834,7 +924,7 @@ export function BudgetPage() {
                   <TableHead className="text-right">Actual</TableHead>
                   <TableHead className="text-right">Variance</TableHead>
                   <TableHead className="text-right w-[70px]">% Spent</TableHead>
-                  <TableHead className="w-[96px]">Actions</TableHead>
+                  <TableHead className="w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -853,6 +943,11 @@ export function BudgetPage() {
                     onExamineAccount: (accountId) => {
                       setExaminedExpenseId(null)
                       setExaminedAccountId(accountId)
+                    },
+                    onExamineLineItem: (lineItemId) => {
+                      setExaminedExpenseId(null)
+                      setExaminedAccountId(null)
+                      setExaminedLineItemId(lineItemId)
                     },
                   })
                 )}
@@ -1082,11 +1177,19 @@ export function BudgetPage() {
                       queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
                       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
                       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
+                      queryClient.invalidateQueries({ queryKey: ['floats', currentProductionId] })
                     }
-                    if (examinedLineItemId)
+                    if (examinedLineItemId) {
                       queryClient.invalidateQueries({
                         queryKey: ['budget-item-with-details', examinedLineItemId],
                       })
+                      queryClient.invalidateQueries({
+                        queryKey: ['floats-by-budget-item', examinedLineItemId],
+                      })
+                      queryClient.invalidateQueries({
+                        queryKey: ['float-expense-links-by-production', currentProductionId],
+                      })
+                    }
                   }}
                   relatedSpendInAccount={relatedSpendInAccount}
                 />
@@ -1205,7 +1308,7 @@ export function BudgetPage() {
                                   <p className="text-xs text-muted-foreground truncate mt-0.5">{item.vendor}</p>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2 shrink-0">
+                              <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
                                 <p className="text-sm font-medium">{format(item.estimated_cost, productionCurrency).formatted}</p>
                                 <Button
                                   type="button"
@@ -2279,6 +2382,7 @@ function renderAccountRow(
     createInlineItemMutation: { mutate: (data: { account_id: string; description: string; estimated_cost: number }) => void; isPending: boolean }
     postableAccounts: BudgetAccount[]
     onExamineAccount: (accountId: string) => void
+    onExamineLineItem: (lineItemId: string) => void
   }
 ): ReactNode {
   const { account } = node
@@ -2330,7 +2434,7 @@ function renderAccountRow(
           ? `${Math.round(totals.percentSpent * 100)}%`
           : '—'}
       </TableCell>
-      <TableCell className="w-[96px]">
+      <TableCell className="w-[120px]">
         {isLeaf && (
           <div className="flex items-center gap-1">
             <Button
@@ -2368,7 +2472,21 @@ function renderAccountRow(
               {item.description}
             </TableCell>
             <TableCell className="text-right">{ctx.format(item.estimated_cost, ctx.productionCurrency).formatted}</TableCell>
-            <TableCell colSpan={4} />
+            <TableCell colSpan={3} />
+            <TableCell className="w-[120px]">
+              <div className="flex items-center gap-0.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => ctx.onExamineLineItem(item.id)}
+                  aria-label="Examine line item"
+                >
+                  <Eye className="size-4" />
+                </Button>
+              </div>
+            </TableCell>
           </TableRow>
         )
       })

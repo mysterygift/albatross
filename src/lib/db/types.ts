@@ -130,6 +130,35 @@ export type BudgetItemWithDetails = {
   details: BudgetItemDetails | null
 }
 
+/** Petty cash float allocated from a budget line item to a crew member (allocation only; not reconciliation). */
+export type PettyCashFloat = {
+  id: string
+  production_id: string
+  budget_item_id: string
+  person_id: string
+  amount: number
+  currency: string
+  issued_date: string
+  notes: string | null
+  created_at: number
+  updated_at: number
+  deleted_at: number | null
+}
+
+/** Reconciliation of an expense against a petty cash float (matched_amount only; no budget mutations). */
+export type FloatExpenseLink = {
+  id: string
+  float_id: string
+  expense_id: string
+  matched_amount: number
+  created_at: number
+  updated_at: number
+  deleted_at: number | null
+}
+
+/** Derived float reconciliation status (not stored in DB). */
+export type PettyCashFloatReconciliationStatus = 'unmatched' | 'partial' | 'matched' | 'overspent'
+
 export type Vendor = {
   id: string
   production_id: string

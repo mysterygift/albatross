@@ -313,6 +313,18 @@ pub fn run() {
             sql: include_str!("../migrations/0051_api_cache.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 52,
+            description: "floats",
+            sql: include_str!("../migrations/0052_floats.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 53,
+            description: "float_expense_links",
+            sql: include_str!("../migrations/0053_float_expense_links.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
