@@ -965,7 +965,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (progress?.currentSection === 'dashboard') {
-      setTutorialOpen(true)
+      queueMicrotask(() => setTutorialOpen(true))
     }
   }, [progress?.currentSection])
 

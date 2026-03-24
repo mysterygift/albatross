@@ -115,7 +115,7 @@ export function CrewManagerPage() {
 
   useEffect(() => {
     if (progress?.currentSection === 'crew') {
-      setTutorialOpen(true)
+      queueMicrotask(() => setTutorialOpen(true))
     }
   }, [progress?.currentSection])
 
@@ -294,7 +294,7 @@ export function CrewManagerPage() {
       !hasAutoOpenedWizardRef.current
     ) {
       hasAutoOpenedWizardRef.current = true
-      setWizardOpen(true)
+      queueMicrotask(() => setWizardOpen(true))
     }
   }, [currentProductionId, crewLoading, crew.length])
 

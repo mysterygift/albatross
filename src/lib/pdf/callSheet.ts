@@ -603,7 +603,7 @@ function buildPrincipalCastColumns(rows: CallSheetCastRow[]): PrincipalCastCol[]
   if (hasAgent) cols.push({ key: 'agent', label: 'AGENT', width: 52 })
 
   const target = PAGE_WIDTH - 2 * MARGIN
-  let sum = cols.reduce((s, c) => s + c.width, 0)
+  const sum = cols.reduce((s, c) => s + c.width, 0)
   if (sum < target) {
     const castCol = cols.find((c) => c.key === 'cast')
     if (castCol) castCol.width += target - sum
@@ -1387,7 +1387,7 @@ function drawDepartmentalRequirementsSection(
   let sectionHeadingDrawn = false
   for (const block of blocks) {
     const needLines = estimateDepartmentalBlockLines(block) + 2
-    let pr = addPageIfNeeded(doc, refs.page, refs.y, needLines)
+    const pr = addPageIfNeeded(doc, refs.page, refs.y, needLines)
     refs.page = pr.page
     if (pr.isNew) {
       drawSupportContinuationHeader(refs.page, font, bold, data, refs.y)
@@ -1449,7 +1449,7 @@ function drawHealthSafetyStuntsSection(
       keyContacts: block.keyContacts,
       crewGroup: block.crewGroup,
     })
-    let pr = addPageIfNeeded(doc, refs.page, refs.y, needLines + 2)
+    const pr = addPageIfNeeded(doc, refs.page, refs.y, needLines + 2)
     refs.page = pr.page
     if (pr.isNew) {
       drawSupportContinuationHeader(refs.page, font, bold, data, refs.y)
@@ -1972,7 +1972,7 @@ export async function generateCallSheetPdf(data: CallSheetData): Promise<Uint8Ar
 
   // ---------- Advanced schedule (forward days) ----------
   if ((data.advancedScheduleDays?.length ?? 0) > 0) {
-    let pr = addPageIfNeeded(doc, page, y, 44)
+    const pr = addPageIfNeeded(doc, page, y, 44)
     page = pr.page
     if (pr.isNew) {
       y.current = PAGE_HEIGHT - MARGIN

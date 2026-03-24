@@ -361,14 +361,6 @@ export function VendorDetailPage() {
     },
   })
 
-  if (!vendorId || !currentProductionId) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
-        Missing vendor or production.
-      </div>
-    )
-  }
-
   const archiveMutation = useMutation({
     mutationFn: () => softDeleteVendor(vendorId!),
     onSuccess: () => {
@@ -503,6 +495,14 @@ export function VendorDetailPage() {
   })
 
   const isArchived = !!vendor?.deleted_at
+
+  if (!vendorId || !currentProductionId) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
+        Missing vendor or production.
+      </div>
+    )
+  }
 
   if (vendorLoading || vendor == null) {
     return (

@@ -283,25 +283,29 @@ export function ActualisationPage() {
 
   useEffect(() => {
     if (!matchSpendModalOpen) {
+      queueMicrotask(() => {
+        setSelectedAllocationItemIds([])
+        setAllocationAmounts({})
+        setMatchSpendSaveError(null)
+        setEditingLinkId(null)
+        setEditingLinkAmount('')
+        setEditingLinkError(null)
+        setLinkIdToConfirmRemove(null)
+        setDeleteLinkError(null)
+      })
+    }
+  }, [matchSpendModalOpen])
+
+  useEffect(() => {
+    queueMicrotask(() => {
       setSelectedAllocationItemIds([])
       setAllocationAmounts({})
-      setMatchSpendSaveError(null)
       setEditingLinkId(null)
       setEditingLinkAmount('')
       setEditingLinkError(null)
       setLinkIdToConfirmRemove(null)
       setDeleteLinkError(null)
-    }
-  }, [matchSpendModalOpen])
-
-  useEffect(() => {
-    setSelectedAllocationItemIds([])
-    setAllocationAmounts({})
-    setEditingLinkId(null)
-    setEditingLinkAmount('')
-    setEditingLinkError(null)
-    setLinkIdToConfirmRemove(null)
-    setDeleteLinkError(null)
+    })
   }, [selectedExpenseId])
 
   const candidateLineItems = useMemo(() => {

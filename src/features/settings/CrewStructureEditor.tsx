@@ -147,8 +147,10 @@ export function CrewStructureEditor({ productionId }: Props) {
   useEffect(() => {
     if (loadedConfig) {
       const copy = deepClone(loadedConfig)
-      setInitialConfig(copy)
-      setEditedConfig(copy)
+      queueMicrotask(() => {
+        setInitialConfig(copy)
+        setEditedConfig(copy)
+      })
     }
   }, [loadedConfig])
 

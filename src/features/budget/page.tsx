@@ -267,11 +267,11 @@ export function BudgetPage() {
   useEffect(() => {
     const fromTab = tabParamToViewMode(searchParams.get('tab'))
     if (fromTab) {
-      setViewMode(fromTab)
+      queueMicrotask(() => setViewMode(fromTab))
       return
     }
     if (searchParams.get('floats') === 'outstanding') {
-      setViewMode('floats')
+      queueMicrotask(() => setViewMode('floats'))
     }
   }, [searchParams])
   useEffect(() => {
@@ -280,7 +280,7 @@ export function BudgetPage() {
 
   useEffect(() => {
     if (progress?.currentSection === 'budget') {
-      setTutorialOpen(true)
+      queueMicrotask(() => setTutorialOpen(true))
     }
   }, [progress?.currentSection])
 
@@ -288,8 +288,10 @@ export function BudgetPage() {
   const state = location.state as { examineExpenseId?: string } | null
   useEffect(() => {
     if (state?.examineExpenseId) {
-      setExaminedExpenseId(state.examineExpenseId)
-      setViewMode('actualisation')
+      queueMicrotask(() => {
+        setExaminedExpenseId(state.examineExpenseId!)
+        setViewMode('actualisation')
+      })
       const next = new URLSearchParams(searchParams)
       next.set('tab', 'actualisation')
       navigate(`${location.pathname}?${next.toString()}`, { replace: true, state: {} })
@@ -331,15 +333,17 @@ export function BudgetPage() {
       selectedRevisionId: revisionId,
     })
 
-    setBaseCompareRevisionId((prev) => {
-      if (defaults.baseRevisionId == null) return null
-      if (prev && budgetRevisions.some((r) => r.id === prev)) return prev
-      return defaults.baseRevisionId
-    })
-    setTargetCompareRevisionId((prev) => {
-      if (defaults.compareRevisionId == null) return null
-      if (prev && budgetRevisions.some((r) => r.id === prev)) return prev
-      return defaults.compareRevisionId
+    queueMicrotask(() => {
+      setBaseCompareRevisionId((prev) => {
+        if (defaults.baseRevisionId == null) return null
+        if (prev && budgetRevisions.some((r) => r.id === prev)) return prev
+        return defaults.baseRevisionId
+      })
+      setTargetCompareRevisionId((prev) => {
+        if (defaults.compareRevisionId == null) return null
+        if (prev && budgetRevisions.some((r) => r.id === prev)) return prev
+        return defaults.compareRevisionId
+      })
     })
   }, [budgetRevisions, liveRevisionId, revisionId])
 
@@ -367,38 +371,46 @@ export function BudgetPage() {
         return next
       }, { replace: true })
     },
-    [createRevisionOpen, currentProductionId, setSelectedRevisionId, setSearchParams, workingBudgetRevision?.id]
+    [currentProductionId, setSelectedRevisionId, setSearchParams]
   )
 
   useEffect(() => {
     if (!createRevisionOpen) return
-    setCreateRevisionName('')
-    setCreateRevisionMode('blank')
-    setCreateRevisionSourceId(liveRevisionId ?? revisionId ?? budgetRevisions[0]?.id ?? null)
-    setCreateRevisionNameError(null)
-    setCreateRevisionSourceError(null)
-    setCreateRevisionSubmitError(null)
-  }, [createRevisionOpen])
+    queueMicrotask(() => {
+      setCreateRevisionName('')
+      setCreateRevisionMode('blank')
+      setCreateRevisionSourceId(liveRevisionId ?? revisionId ?? budgetRevisions[0]?.id ?? null)
+      setCreateRevisionNameError(null)
+      setCreateRevisionSourceError(null)
+      setCreateRevisionSubmitError(null)
+    })
+  }, [createRevisionOpen, liveRevisionId, revisionId, budgetRevisions])
 
   useEffect(() => {
     if (liveConfirmOpen) return
-    setPendingLiveRevisionId(null)
-    setLiveToggleError(null)
+    queueMicrotask(() => {
+      setPendingLiveRevisionId(null)
+      setLiveToggleError(null)
+    })
   }, [liveConfirmOpen])
 
   useEffect(() => {
     if (!manageRevisionsOpen) {
-      setRenameRevisionError(null)
-      setManageRevisionError(null)
-      setDeleteConfirmRevisionId(null)
+      queueMicrotask(() => {
+        setRenameRevisionError(null)
+        setManageRevisionError(null)
+        setDeleteConfirmRevisionId(null)
+      })
       return
     }
     const nextDrafts = Object.fromEntries(
       budgetRevisions.map((revision) => [revision.id, revision.name] as const)
     )
-    setRevisionDraftNames(nextDrafts)
-    setRenameRevisionError(null)
-    setManageRevisionError(null)
+    queueMicrotask(() => {
+      setRevisionDraftNames(nextDrafts)
+      setRenameRevisionError(null)
+      setManageRevisionError(null)
+    })
   }, [manageRevisionsOpen, budgetRevisions])
 
   const createRevisionMutation = useMutation({
@@ -606,7 +618,7 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, revisionId] })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
     })
-  }, [currentProductionId, queryClient])
+  }, [currentProductionId, queryClient, revisionId])
 
   const { data: categories = [] } = useQuery({
     queryKey: ['budget-categories', currentProductionId],
@@ -874,7 +886,7 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
       queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
     }
-  }, [examinedExpenseId, currentProductionId, queryClient])
+  }, [examinedExpenseId, currentProductionId, queryClient, revisionId])
 
   const handleUpdateExpenseRequest = useCallback(
     async (data: {
@@ -1117,7 +1129,7 @@ export function BudgetPage() {
   // Export reflects line item detail; hierarchical rollup export may be added later.
   // Total actual = sum(expenses.amount) only; do not use budget_items.actual_cost.
   // Derived totals (fringes, contingency) are budget-side overlays and are not included in Total actual.
-  const exportCsv = async () => {
+  const exportCsv = useCallback(async () => {
     const rows: (string | number)[][] = [
       ['Account / Category', 'Description', 'Estimated', 'Actual', 'Variance'],
       ...items.map((i) => {
@@ -1156,7 +1168,17 @@ export function BudgetPage() {
       csv,
       true
     )
-  }
+  }, [
+    items,
+    accounts,
+    categories,
+    expenses,
+    totalEstimated,
+    totalActual,
+    variance,
+    fringeTotals.totalFringesAmount,
+    contingencyTotals.totalContingencyAmount,
+  ])
 
   useEffect(() => {
     const onLogSpend = () => setLogSpendOpen(true)
@@ -2840,8 +2862,6 @@ function CostReportView({
         },
         new Uint8Array(arraybuffer as ArrayBuffer)
       )
-    } catch (err) {
-      throw err
     } finally {
       clearHexStyles(el)
       el.classList.remove('cost-report-exporting-pdf')
@@ -3125,11 +3145,15 @@ function ProductionTotalsModal({
 
   useEffect(() => {
     if (editTotal) {
-      setFormName(editTotal.name)
-      setFormAccountIds([...editTotal.account_ids])
+      queueMicrotask(() => {
+        setFormName(editTotal.name)
+        setFormAccountIds([...editTotal.account_ids])
+      })
     } else if (createOpen) {
-      setFormName('')
-      setFormAccountIds([])
+      queueMicrotask(() => {
+        setFormName('')
+        setFormAccountIds([])
+      })
     }
   }, [editTotal, createOpen])
 

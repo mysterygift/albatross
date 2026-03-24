@@ -27,6 +27,7 @@ export async function setFirstLaunchTutorialSeen(seen: boolean): Promise<void> {
   try {
     await setSetting(FIRST_LAUNCH_TUTORIAL_SEEN_KEY, seen ? 'true' : 'false')
   } catch {
+    // Best-effort persistence; do not block user flows on settings write failures.
   }
 }
 

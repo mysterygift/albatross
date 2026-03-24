@@ -507,27 +507,31 @@ function DaySummaryDrawer({
 
   useEffect(() => {
     if (!event) return
-    setCallTimeInput(event.callTime ?? '')
-    setWrapTimeInput(event.wrapTime ?? '')
-    setNotesInput(event.notes ?? '')
-    setCallTimeError(null)
-    setWrapTimeError(null)
-    setSaveError(null)
-    setIsEditing(false)
+    queueMicrotask(() => {
+      setCallTimeInput(event.callTime ?? '')
+      setWrapTimeInput(event.wrapTime ?? '')
+      setNotesInput(event.notes ?? '')
+      setCallTimeError(null)
+      setWrapTimeError(null)
+      setSaveError(null)
+      setIsEditing(false)
+    })
   }, [event?.shootDayUnitId, open])
 
   useEffect(() => {
     let cancelled = false
     const orderedLocations = locationStack.orderedLocations
     if (!event || orderedLocations.length < 2) {
-      setTravelSegments([])
-      setIsTravelLoading(false)
+      queueMicrotask(() => {
+        setTravelSegments([])
+        setIsTravelLoading(false)
+      })
       return () => {
         cancelled = true
       }
     }
 
-    setIsTravelLoading(true)
+    queueMicrotask(() => setIsTravelLoading(true))
     void getTravelSegmentsForDayUnit(
       orderedLocations.map((location) => ({
         id: location.locationId,

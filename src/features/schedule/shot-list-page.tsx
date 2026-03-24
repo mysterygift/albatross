@@ -2173,7 +2173,9 @@ function DurationEditor({
   disabled?: boolean
 }) {
   const valueRef = useRef(value)
-  valueRef.current = value
+  useEffect(() => {
+    valueRef.current = value
+  }, [value])
   const repeatRef = useRef<{
     timeoutId: ReturnType<typeof setTimeout>
     intervalId: ReturnType<typeof setInterval> | 0

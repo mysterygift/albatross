@@ -630,14 +630,16 @@ function TechnicalSpecsPanel({ deliverableId, onClose }: { deliverableId: string
   const [notes, setNotes] = useState('')
 
   useEffect(() => {
-    setResolution(spec?.resolution ?? '')
-    setCodec(spec?.codec ?? '')
-    setBitrate(spec?.bitrate ?? '')
-    setAudioMix(spec?.audio_mix ?? '')
-    setLanguage(spec?.language ?? '')
-    setSubtitles(spec?.subtitles ?? '')
-    setGraphics(spec?.graphics ?? '')
-    setNotes(spec?.notes ?? '')
+    queueMicrotask(() => {
+      setResolution(spec?.resolution ?? '')
+      setCodec(spec?.codec ?? '')
+      setBitrate(spec?.bitrate ?? '')
+      setAudioMix(spec?.audio_mix ?? '')
+      setLanguage(spec?.language ?? '')
+      setSubtitles(spec?.subtitles ?? '')
+      setGraphics(spec?.graphics ?? '')
+      setNotes(spec?.notes ?? '')
+    })
   }, [spec])
 
   const saveMutation = useMutation({

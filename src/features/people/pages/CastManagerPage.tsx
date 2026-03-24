@@ -79,7 +79,7 @@ export function CastManagerPage() {
 
   useEffect(() => {
     if (progress?.currentSection === 'cast') {
-      setTutorialOpen(true)
+      queueMicrotask(() => setTutorialOpen(true))
     }
   }, [progress?.currentSection])
 

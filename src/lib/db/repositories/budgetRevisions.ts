@@ -129,24 +129,20 @@ export async function getLiveBudgetRevisionForProduction(
 export async function listBudgetRevisionsByProduction(
   productionId: string
 ): Promise<BudgetRevision[]> {
-  try {
-    const db = await getDb()
-    const rows = await db.select<Record<string, unknown>[]>(
-      `SELECT * FROM ${TABLE}
-       WHERE production_id = $1 AND deleted_at IS NULL
-       ORDER BY is_live DESC, updated_at DESC, created_at DESC`,
-      [productionId]
-    )
-    if (rows.length > 0) return rows.map(rowToBudgetRevision)
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${TABLE}
+     WHERE production_id = $1 AND deleted_at IS NULL
+     ORDER BY is_live DESC, updated_at DESC, created_at DESC`,
+    [productionId]
+  )
+  if (rows.length > 0) return rows.map(rowToBudgetRevision)
 
-    // Existing productions that already have budget data should never appear as "no revisions".
-    if (!(await hasAnyBudgetScopedDataForProduction(productionId))) return []
-    const revisionId = await getOrCreateLiveBudgetRevisionIdForProduction(productionId)
-    const created = await getBudgetRevisionByIdForProduction(productionId, revisionId)
-    return created ? [created] : []
-  } catch (err) {
-    throw err
-  }
+  // Existing productions that already have budget data should never appear as "no revisions".
+  if (!(await hasAnyBudgetScopedDataForProduction(productionId))) return []
+  const revisionId = await getOrCreateLiveBudgetRevisionIdForProduction(productionId)
+  const created = await getBudgetRevisionByIdForProduction(productionId, revisionId)
+  return created ? [created] : []
 }
 
 export async function getBudgetRevisionByIdForProduction(
@@ -277,39 +273,35 @@ export async function setBudgetRevisionApprovalForProduction(params: {
   if (!['unapproved', 'pending', 'approved'].includes(params.approval)) {
     throw new Error('Invalid budget revision approval status')
   }
-  try {
-    const existing = await getBudgetRevisionByIdForProduction(params.productionId, params.revisionId)
-    if (!existing) throw new Error('Revision not found for production')
+  const existing = await getBudgetRevisionByIdForProduction(params.productionId, params.revisionId)
+  if (!existing) throw new Error('Revision not found for production')
 
-    const db = await getDb()
-    const ts = now()
-    try {
+  const db = await getDb()
+  const ts = now()
+  try {
+    await db.execute(
+      `UPDATE ${TABLE}
+       SET approval = $3, updated_at = $4
+       WHERE production_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [params.productionId, params.revisionId, params.approval, ts]
+    )
+  } catch (updateError) {
+    const updateMessage = updateError instanceof Error ? updateError.message : String(updateError)
+    if (!ensuredApprovalColumn && updateMessage.includes('no such column: approval')) {
+      await db.execute(
+        `ALTER TABLE ${TABLE}
+         ADD COLUMN approval TEXT NOT NULL DEFAULT 'unapproved' CHECK (approval IN ('unapproved', 'pending', 'approved'))`
+      )
+      ensuredApprovalColumn = true
       await db.execute(
         `UPDATE ${TABLE}
          SET approval = $3, updated_at = $4
          WHERE production_id = $1 AND id = $2 AND deleted_at IS NULL`,
         [params.productionId, params.revisionId, params.approval, ts]
       )
-    } catch (updateError) {
-      const updateMessage = updateError instanceof Error ? updateError.message : String(updateError)
-      if (!ensuredApprovalColumn && updateMessage.includes('no such column: approval')) {
-        await db.execute(
-          `ALTER TABLE ${TABLE}
-           ADD COLUMN approval TEXT NOT NULL DEFAULT 'unapproved' CHECK (approval IN ('unapproved', 'pending', 'approved'))`
-        )
-        ensuredApprovalColumn = true
-        await db.execute(
-          `UPDATE ${TABLE}
-           SET approval = $3, updated_at = $4
-           WHERE production_id = $1 AND id = $2 AND deleted_at IS NULL`,
-          [params.productionId, params.revisionId, params.approval, ts]
-        )
-      } else {
-        throw updateError
-      }
+    } else {
+      throw updateError
     }
-  } catch (error) {
-    throw error
   }
 }
 

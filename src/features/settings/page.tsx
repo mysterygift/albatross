@@ -1376,7 +1376,7 @@ function EditAccountNameForm({
 }) {
   const [name, setName] = useState(account.name)
   useEffect(() => {
-    setName(account.name)
+    queueMicrotask(() => setName(account.name))
   }, [account.id, account.name])
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -1433,13 +1433,15 @@ function CostReportGroupForm({
   const [accountIds, setAccountIds] = useState<string[]>(initialAccountIds)
 
   useEffect(() => {
-    setName(initialName)
-    setCode(initialCode)
+    queueMicrotask(() => {
+      setName(initialName)
+      setCode(initialCode)
+    })
   }, [initialName, initialCode])
 
   useEffect(() => {
-    setAccountIds(initialAccountIds)
-  }, [initialAccountIds.join(',')])
+    queueMicrotask(() => setAccountIds(initialAccountIds))
+  }, [initialAccountIds])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()

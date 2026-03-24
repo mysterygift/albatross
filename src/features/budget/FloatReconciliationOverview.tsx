@@ -117,7 +117,9 @@ export function FloatReconciliationOverview({
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
-    if (activateActionableFilter) setFilterActionable(true)
+    if (activateActionableFilter) {
+      queueMicrotask(() => setFilterActionable(true))
+    }
   }, [activateActionableFilter])
 
   const displayRows = useMemo(() => {
