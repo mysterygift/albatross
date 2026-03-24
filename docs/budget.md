@@ -15,6 +15,7 @@ This document is both a **user guide** (how to use the Budget feature) and a **d
 - [5. Cost Report tab](#5-cost-report-tab)
 - [6. Settings](#6-settings)
 - [7. Actualisation and Match Spend](#7-actualisation-and-match-spend)
+- [8. Floats tab](#8-floats-tab)
 
 **Part II — Developer guide**
 
@@ -53,7 +54,8 @@ The Budget page provides:
 6. **Uncoded spend** — Expandable section for expenses with no account; **Recode** assigns an account.
 7. **Legacy uncoded budget items** — Read-only list of items with no account (excluded from rollups until recoded/backfilled).
 8. **Manage derived costs** — Fringes and Contingency rules (percentage overlays scoped to account subtrees).
-9. **Export CSV** — Line-item report; when derived totals exist, adds FRINGES, CONTINGENCY, TOTAL + DERIVED. Total actual remains sum(expenses) only.
+9. **Floats** — **Floats** tab: petty cash allocated to a line item and crew member; reconcile to expenses via **float–expense links** (separate from Match Spend; does not change Total actual).
+10. **Export CSV** — Line-item report; when derived totals exist, adds FRINGES, CONTINGENCY, TOTAL + DERIVED. Total actual remains sum(expenses) only.
 
 Currency comes from the production’s `currency_code`; display conversion is configured in Settings.
 
@@ -104,7 +106,7 @@ Validation errors (e.g. “Purchase amount is required and must be greater than 
 
 ### 5. Cost Report tab
 
-The Budget page has two tabs: **Budget** and **Cost Report**. The Cost Report tab shows the same data in a print-oriented layout.
+On the **Budget** route, **Cost Report** is one of four main tabs (with Budget, Match Expenses, and Floats). The Cost Report tab shows the same core budget data in a print-oriented layout.
 
 - **Summary cards** — Same three cards (Total estimated, Total actual, Variance) as the Budget tab.
 - **Layout** — Toggle **Chart of accounts** (default) or **By groups** (if you have cost report groups). Chart of accounts shows the full account tree in one table. By groups shows one section per group with a table of accounts in that group and a group total row.
@@ -122,7 +124,7 @@ The Budget page has two tabs: **Budget** and **Cost Report**. The Cost Report ta
 
 ### 7. Actualisation and Match Spend
 
-The Budget page has three tabs: **Budget**, **Cost Report**, and **Match Expenses**. The **Match Expenses** tab (value `actualisation`) renders the Actualisation workspace from `src/features/budget/actualisation/page.tsx`. Its purpose is to reconcile expenses to budget line items by creating and managing **links** between an expense and one or more line items, with **matched amounts** (partial allocation). It does not change `expenses.amount` or `budget_items.estimated_cost`; those remain the source of truth.
+The Budget page has four tabs: **Budget**, **Cost Report**, **Match Expenses**, and **Floats**. The **Match Expenses** tab (value `actualisation`) renders the Actualisation workspace from `src/features/budget/actualisation/page.tsx`. Its purpose is to reconcile expenses to budget line items by creating and managing **links** between an expense and one or more line items, with **matched amounts** (partial allocation). It does not change `expenses.amount` or `budget_items.estimated_cost`; those remain the source of truth.
 
 **Reconciliation summary card**
 
@@ -164,6 +166,50 @@ The Budget page has three tabs: **Budget**, **Cost Report**, and **Match Expense
 
 ---
 
+### 8. Floats tab
+
+The **Floats** tab (`viewMode` / localStorage value `floats`) is for **petty cash floats**: cash issued to crew against a specific **budget line item**. Floats and their reconciliation to expenses are **orthogonal** to budget actuals: Total actual on the Budget tab is still **sum(expenses.amount)** only. **Float–expense links** (`float_expense_links`) do not appear in `budget_item_expense_links` and are not used for the Cost Report variance columns.
+
+**Navigation**
+
+- Choose **Floats** on the Budget page tab strip (same shell as Budget / Cost Report / Match Expenses).
+- Persisted tab: `localStorage` key `budgetViewMode` (see `BudgetPage` in `src/features/budget/page.tsx`).
+- Deep link: `?tab=floats` sets the Floats tab. `?floats=outstanding` opens the Floats tab and turns on the **Unreconciled floats** filter once (useful for reminders / bookmarks).
+
+**Allocate float**
+
+1. Click **Allocate float**.
+2. **Budget line item** — Searchable combobox of all line items for the production (add line items on the **Budget** tab first if empty).
+3. **Crew member** — Dropdown of **People** marked as crew; add crew in People if empty.
+4. **Amount**, **Currency** (defaults to production currency), **Issued date**, optional **Notes**.
+5. **Save allocation** — Inserts a row in `floats` (`production_id`, `budget_item_id`, `person_id`, `amount`, `currency`, `issued_date`, `notes`). Closes the dialog and refreshes float queries.
+
+**Float reconciliation overview**
+
+- Summary cards: **Total allocated**, **Total matched**, **Total remaining** (unreturned / unreconciled cash), and **By status** counts (Unmatched, Partial, Matched, Overspent).
+- If floats use more than one currency, a warning explains that headline totals sum numeric amounts; per-row currency still applies in the table.
+- **Unreconciled floats** toggle — Shows only floats whose status is not **Matched** (unmatched, partial, or overspent).
+- Main table: Crew member (with **issued … ago** and reminder hints: remaining amount, outstanding days after 7 days, overspent warning), **Department** (from `Person.department`, or “Unassigned”), budget line label (account code + description), Allocated / Matched / Remaining, status badge, **Reconcile**.
+- **By department** — Collapsible groups with per-department totals and the same reconcile actions.
+
+**Reconcile (per float)**
+
+Opens **Reconcile float** (`FloatReconciliationDialog`): same *idea* as Match Spend, but links **expenses → float** instead of expenses → budget line items.
+
+- **Header summary** — Float currency, allocated / matched / remaining, issued date, status badge. Warnings when there is remaining to reconcile, when the float is **overspent** (matched total &gt; allocated amount), or when the float is older than 7 days.
+- **Available expenses** (left) — Expenses that still have **unallocated** amount for float matching: `expense.amount` minus amounts already matched in **Actualisation** (`budget_item_expense_links`) minus amounts already matched to **any** float (`float_expense_links`). Expenses already linked to a float (even this one) are excluded from the candidate list; an expense can have **at most one** active float link at a time.
+- Select one or more expenses, enter a **Match** amount each. **Save** creates `float_expense_links` rows in one transaction. The total matched to the float can exceed the float allocation (allowed; float shows **Overspent**). Each match amount must be &gt; 0 and must not exceed that expense’s remaining unallocated amount (after budget + float allocations).
+- **Existing reconciliations** — Lists current links for this float; **Remove** (with confirm) soft-deletes a link, freeing that amount on the expense for budget or float matching again.
+- **Mixed currency** — If the float currency differs from production currency, “float remaining after save” in the summary shows “—” with a short note; overspend-vs-allocation warning still applies when currencies match.
+
+**Relationship to Match Spend**
+
+- Budget reconciliation: expense → line item via `budget_item_expense_links`.
+- Float reconciliation: expense → float via `float_expense_links`.
+- An expense’s “room” for a new float match is reduced by both budget allocations and existing float links (`getExpenseUnallocatedForFloatMatching` in `src/lib/budget/floatExpenseMatching.ts`).
+
+---
+
 ## Part II — Developer guide
 
 ### 7. Data model
@@ -182,8 +228,10 @@ The Budget page has three tabs: **Budget**, **Cost Report**, and **Match Expense
 | **ProductionTotal / ProductionTotalAccount** | `production_totals`, `production_total_accounts` | User-defined rollup subtotals (Cost Report). Header accounts only. |
 | **CostReportGroup / CostReportGroupAccount** | `cost_report_groups`, `cost_report_group_accounts` | Groups of accounts for reporting (Settings; “By groups” layout). |
 | **BudgetItemExpenseLink** | `budget_item_expense_links` | Links a budget line item to an expense with `matched_amount`; supports partial allocation; soft-deleted via `deleted_at`. Used by Actualisation / Match Spend. |
+| **PettyCashFloat** | `floats` | Petty cash issued to a crew member against a budget line item: `production_id`, `budget_item_id`, `person_id`, `amount`, `currency`, `issued_date`, `notes`, soft delete via `deleted_at`. Does not change `expenses` or budget actuals. |
+| **FloatExpenseLink** | `float_expense_links` | Links a float to an expense with `matched_amount` &gt; 0; soft-deleted via `deleted_at`. At most one active link per `(float_id, expense_id)` and **at most one active float link per expense** (unique partial indexes). Used by the Floats tab reconciliation dialog. |
 
-Types: `src/lib/db/types.ts`. Repositories: `budget.ts`, `budgetAccounts.ts`, `budgetDerived.ts`, `budgetReconciliation.ts`, `expenseTransactions.ts`, `purchaseTransactions.ts`, `rentalTransactions.ts`, `createTypedExpense.ts`, `productionTotals.ts`, `costReportGroups.ts`.
+Types: `src/lib/db/types.ts`. Repositories: `budget.ts`, `budgetAccounts.ts`, `budgetDerived.ts`, `budgetReconciliation.ts`, `floats.ts`, `floatReconciliation.ts`, `expenseTransactions.ts`, `purchaseTransactions.ts`, `rentalTransactions.ts`, `createTypedExpense.ts`, `productionTotals.ts`, `costReportGroups.ts`.
 
 #### 7.2 Typed expenses: transaction_type and details
 
@@ -208,6 +256,7 @@ Types: `src/lib/db/types.ts`. Repositories: `budget.ts`, `budgetAccounts.ts`, `b
 - **Variance** — Total estimated − total actual. % Spent = actual / budget when budget > 0.
 - **Uncoded spend** — Sum of expenses where `account_id IS NULL`; recode assigns an account.
 - **Legacy items** — `account_id IS NULL`; excluded from account rollups and derived bases until recoded or backfilled.
+- **Floats** — `floats.amount` and `float_expense_links.matched_amount` are for **petty cash tracking and reconciliation UI only**. They are **not** subtracted from Total actual and are not part of `computeAccountTotals` actuals.
 
 #### 7.4 Chart of accounts
 
@@ -224,6 +273,15 @@ Rules have name, rate (decimal 0–1), base_kind (budget | actual), scope_mode, 
 - **Links:** Table `budget_item_expense_links`: `id`, `production_id`, `budget_item_id`, `expense_id`, `matched_amount`, timestamps, `deleted_at`. One expense can link to many line items; one line item to many expenses. These amounts are not normalised elsewhere; `expenses.amount` and `budget_items.estimated_cost` remain the source of truth.
 - **Derived statuses (not stored):** For line items: unmatched / partial / matched / overspent (from `sum(matched_amount)` vs `estimated_cost`). For expenses: unallocated / partial / allocated (from `sum(matched_amount)` vs `expense.amount`). Computed in `src/lib/budget/reconciliation.ts`.
 
+#### 7.7 Floats and float–expense links
+
+- **Float row** — Allocation only: ties a cash float to one `budget_item_id` and one `person_id`. `createFloat` in `floats.ts` inserts a row; `listFloatsByProduction`, `listFloatsByBudgetItem`, `listFloatsByPerson`, `getFloatById` for reads. `updateFloat` / `softDeleteFloat` exist in the repository but are **not** wired in the Budget UI as of this writing.
+- **Float–expense links** — `floatReconciliation.ts`: `listFloatExpenseLinksByProduction`, `listFloatExpenseLinksByFloat`, `listFloatExpenseLinksByExpense`; `createFloatExpenseLinks` (bulk insert in `runInSerializedTransaction` + `executeBatch`; validates production, float, expenses, no duplicate expense in payload, each `matched_amount` &gt; 0, expense has no other active float link, each amount ≤ expense unallocated after **budget** links); `deleteFloatExpenseLink` (soft delete). Links are local-only (no outbox).
+- **Derived float status (not stored):** `getPettyCashFloatDerived` in `floatExpenseMatching.ts` — `allocated` = float amount, `matched` = sum of link `matched_amount`, `remaining` = allocated − matched; status `unmatched` | `partial` | `matched` | `overspent`. Production overview rows: `getFloatSummaryForProduction` in `floatSummary.ts` (joins people for name/department). `groupFloatsByDepartment`, `isActionableFloatStatus` for UI filters.
+- **Reminders** — `floatReminders.ts`: `issuedDateToAgeDays`, `formatIssuedDaysAgo`, `computeFloatReminderSeverity` for table hints (e.g. outstanding after 7 days).
+
+**UI modules:** `FloatsTab.tsx` (tab shell), `AllocateFloatDialog.tsx`, `FloatReconciliationOverview.tsx`, `FloatReconciliationDialog.tsx`, `FloatReconciliationStatusBadge.tsx`. Migrations: `0052_floats.sql`, `0053_float_expense_links.sql`.
+
 ---
 
 ### 8. Repositories and persistence
@@ -238,6 +296,8 @@ Rules have name, rate (decimal 0–1), base_kind (budget | actual), scope_mode, 
 - **createTypedExpense.ts** — **Creation pipeline:** single entry point for Log Spend. Validates account (postable, same production). Per type: parse draft with type schema, compute amount (labour: rate×days; purchase: required > 0; rental: calculateRentalExpenseAmount; allow: provisional_amount ?? 0; deposit: 0), build details_json, vendor_id where applicable. One atomic transaction: runInSerializedTransaction + executeBatch(BEGIN, INSERT expense, INSERT expense_transaction_details ON CONFLICT DO UPDATE, optional location update + location outbox for purchase, expense outbox, COMMIT). No separate BEGIN/COMMIT calls (per DATABASE_LAYER.md).
 - **productionTotals.ts** — Production totals and production_total_accounts; create/update/delete with runInSerializedTransaction + executeBatch.
 - **costReportGroups.ts** — Cost report groups and group–account mappings; list, create, update, setGroupAccountIds, delete. Used by Cost Report “By groups” and Settings.
+- **floats.ts** — `createFloat`, list by production / budget item / person, `getFloatById`, `updateFloat`, `softDeleteFloat`. Float allocations are not synced; no outbox.
+- **floatReconciliation.ts** — Float–expense link listing and `createFloatExpenseLinks` / `deleteFloatExpenseLink` as in §7.7. Not synced; no outbox.
 
 ---
 
@@ -265,6 +325,8 @@ All in `src/lib/budget/calculations.ts`:
 
 **Reconciliation helpers** (`src/lib/budget/reconciliation.ts`): `sumMatchedAmountForBudgetItem`, `sumAllocatedAmountForExpense`, `getBudgetItemRemainingEstimate`, `getExpenseUnallocatedAmount`, `getBudgetItemMatchStatus`, `getExpenseAllocationStatus`, `getReconciliationSummary`. Used by Actualisation UI and for future completion checks; derived status is not persisted.
 
+**Float helpers** (`src/lib/budget/floatExpenseMatching.ts`, `floatSummary.ts`, `floatReminders.ts`): see §7.7. `getExpenseUnallocatedForFloatMatching` combines budget allocation (`sumAllocatedAmountForExpense`) with existing float links (`sumFloatMatchedForExpense`) to compute how much of an expense can still be matched to a float.
+
 ---
 
 ### 11. Query keys and invalidation
@@ -285,8 +347,15 @@ Production-scoped keys:
 - `['budget-item-expense-links', productionId]` — All non-deleted links for the production. Invalidate on create/update/delete link (bulk or single).
 - `['budget-item-expense-links-for-expense', expenseId]` — Links for one expense. Invalidate when that expense’s links change.
 - `['budget-item-expense-links-for-item', budgetItemId]` — Links for one line item. Invalidate when that item’s links change.
+- `['floats', productionId]` — All non-deleted floats for the production (`listFloatsByProduction`).
+- `['floats-by-budget-item', budgetItemId]` — Reserved / invalidated when floats for a line item may change (e.g. allocate dialog, line item saves).
+- `['float-expense-links-by-production', productionId]` — All active float–expense links for the production.
+- `['float-expense-links', floatId]` — Links for one float (dialog / detail use).
+- `['float-expense-links-for-expense', expenseId]` — Links for one expense.
 
-After create/update/delete in the Match Spend modal, invalidate the production list plus the relevant for-expense and for-item keys so the reconciliation summary, tables, and linked panels refresh.
+After create/update/delete in the Match Spend modal, invalidate the production list plus the relevant for-expense and for-item keys so the reconciliation summary, tables, and linked panels refresh. After allocating a float or saving float reconciliation, invalidate `floats`, `float-expense-links-by-production`, and any `float-expense-links-for-expense` keys for affected expenses; `AllocateFloatDialog` also invalidates `floats-by-budget-item` for the chosen line item.
+
+**Note:** `FloatReconciliationDialog` reuses `['expenses', productionId]` and `['budget-item-expense-links', productionId]` for candidate expense lists; keep those fresh when matching either way.
 
 ---
 
@@ -306,8 +375,9 @@ When adding or changing budget-related features:
 3. **Currency** — Use `useCurrency().format(amount, productionCurrency)` for monetary display.
 4. **Production scope** — Guard with “Select a production first” when needed.
 5. **Actuals** — Actuals come from **expenses only**. Do not use budget_item.actual_cost for totals. Derived (fringes, contingency) are budget-side overlays only.
-6. **Leaf-only posting** — Only postable accounts receive items/expenses; use listPostableAccounts for dropdowns.
-7. **Transactions** — Multi-statement writes: runInSerializedTransaction + executeBatch(BEGIN, …, COMMIT). See docs/DATABASE_LAYER.md.
+6. **Floats** — Float allocations and float–expense links do not change Total actual or account actuals. Invalidate float and float-link query keys after mutations.
+7. **Leaf-only posting** — Only postable accounts receive items/expenses; use listPostableAccounts for dropdowns.
+8. **Transactions** — Multi-statement writes: runInSerializedTransaction + executeBatch(BEGIN, …, COMMIT). See docs/DATABASE_LAYER.md.
 
 ---
 
@@ -315,7 +385,7 @@ When adding or changing budget-related features:
 
 ### 14. Cost Report (reference)
 
-- **View state** — BudgetViewMode 'budget' | 'cost_report' in localStorage ('budgetViewMode'). Cost Report tab uses same data as Budget tab plus production totals and cost report groups (for “By groups” layout).
+- **View state** — BudgetViewMode `'budget' | 'cost_report' | 'actualisation' | 'floats'` in localStorage (`budgetViewMode`). Cost Report tab uses same data as Budget tab plus production totals and cost report groups (for “By groups” layout). Floats tab uses float and float-link queries only.
 - **Layout mode** — Chart of accounts (default) vs By groups; persisted in localStorage. By groups: one section per group (header + table of accounts in group + ancestors, group total row). Group totals = sum of accountTotals over unique leaf descendants of group accounts.
 - **Production totals** — Tables production_totals, production_total_accounts. Only header accounts; each total references one or more header accounts. “Configure production totals” modal: create/edit/delete totals, attach header accounts. Subtotals block shows each total and “Subtotal before derived” (deduped leaf set), then Derived, then Total budget incl. derived and Total actual.
 - **Print** — Content wrapped in `.cost-report-print`; `@media print` in index.css hides `.no-print`, forces print-friendly colours.
@@ -332,6 +402,7 @@ When adding or changing budget-related features:
 - **Set/change transaction type on existing expense** — No UI to convert an untyped expense to typed (e.g. “Make this a Labour expense”) or to create expense_transaction_details for it.
 - **Other** — No phase filtering; no column sorting in account table; export is CSV only; BudgetItem.status not shown/editable; duplicate production behaviour for derived rules may need to be defined.
 - **Match Spend** — No audit tables for link changes; no project-completion safeguards; no automatic or fuzzy matching yet.
+- **Floats** — No UI to edit float amount/notes or soft-delete a float after allocation (`updateFloat` / `softDeleteFloat` exist in `floats.ts` only). No automatic suggestion of expenses for a float.
 
 ---
 
@@ -343,3 +414,4 @@ When adding or changing budget-related features:
 - **Examine Account** — Sheet shows both line items (view-only) and expenses (with Examine spend). Expense Detail Panel uses registry + typed-expense-views (LabourTransactionEditor, etc.) for read/edit; Deposit and untyped have no or limited edit.
 - **Registry** — Single source of truth per type (label, parse, ReadComponent, EditComponent, save, editable). See typed-expense-registry-and-editor.md.
 - **Actualisation and Match Spend** — The **Match Expenses** tab and Match Spend modal were added to support reconciling expenses to line items via `budget_item_expense_links`. Users can create, edit, and remove links with matched amounts. Derived statuses (unmatched, partial, matched, overspent for line items; unallocated, partial, allocated for expenses) are computed in `src/lib/budget/reconciliation.ts` and not stored.
+- **Floats tab** — **Floats** tab, `floats` and `float_expense_links` tables, **Allocate float**, and **Reconcile float** (`FloatReconciliationDialog`) track petty cash per line item and crew member and match expenses to floats separately from Match Spend. Overview summaries and status badges use `getFloatSummaryForProduction` / `getPettyCashFloatDerived`; expense eligibility uses `getExpenseUnallocatedForFloatMatching`. Does not affect Total actual or `computeAccountTotals`.

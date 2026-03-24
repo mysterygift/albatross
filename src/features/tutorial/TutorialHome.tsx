@@ -12,8 +12,6 @@ type TutorialHomeProps = {
   onOpenChange: (open: boolean) => void
   progress: FirstLaunchTutorialProgress | null
   onProgressChange: (updater: (prev: FirstLaunchTutorialProgress) => FirstLaunchTutorialProgress) => void
-  onSkip: () => void
-  onReset: () => void | Promise<void>
   /** When false, show a notice that the tutorial is designed for the demo production and offer to open it. */
   isDemoProductionCurrent?: boolean
   onOpenDemoProduction?: () => void | Promise<void>
@@ -48,8 +46,6 @@ export function TutorialHome({
   onOpenChange,
   progress,
   onProgressChange,
-  onSkip,
-  onReset,
   isDemoProductionCurrent = true,
   onOpenDemoProduction,
   isPreparingDemo = false,
@@ -107,11 +103,6 @@ export function TutorialHome({
   )
 
   const handleContinueLater = () => {
-    onOpenChange(false)
-  }
-
-  const handleSkip = () => {
-    onSkip()
     onOpenChange(false)
   }
 
@@ -254,35 +245,10 @@ export function TutorialHome({
             })}
           </div>
 
-          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-            {/* <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleSkip}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                Skip for now
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={isPreparingDemo}
-                onClick={() => {
-                  if (window.confirm('Reset tutorial progress?')) {
-                    void Promise.resolve(onReset())
-                  }
-                }}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                Reset tutorial
-              </Button>
-            </div> */}
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handleContinueLater} className="text-xs border-zinc-600">
-                Continue later
-              </Button>
-            </div>
+          <div className="mt-6 flex justify-end">
+            <Button variant="outline" size="sm" onClick={handleContinueLater} className="text-xs border-zinc-600">
+              Continue later
+            </Button>
           </div>
         </div>
       </DialogContent>

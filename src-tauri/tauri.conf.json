@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Albatross",
-  "version": "0.1.0",
-  "identifier": "com.albatross.app",
+  "version": "0.2.0",
+  "identifier": "com.albatross",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -42,7 +42,7 @@
         "mimeType": "application/octet-stream",
         "role": "Editor",
         "exportedType": {
-          "identifier": "com.albatross.app.apf",
+          "identifier": "com.albatross.apf",
           "conformsTo": ["public.data", "public.archive"]
         }
       }

@@ -11,7 +11,7 @@ This document describes the onboarding and first-launch tutorial system as imple
 - **Skip for now:** The entry modal closes. The demo production is **not** created or opened. The user can still reopen the tutorial later from the top bar or Settings.
 - **Tutorial Home:** A hub dialog that lists six sections (Dashboard, Schedule, Budget, Crew, Cast, Equipment). The user can start/resume/review each section. Each section has a **section tutorial** (multi-step panel) on its corresponding page.
 - **Reopen:** From the **top bar** (help icon) or **Settings → Developer Tools → Open Tutorial Home**, the user opens Tutorial Home **directly** (no entry modal).
-- **Reset:** From Tutorial Home or Settings, the user can reset tutorial progress. After reset, the **entry modal** can show again on the next appropriate load (e.g. next app launch).
+- **Reset:** From **Settings → Developer Tools → Reset tutorial progress**, the user can reset tutorial progress. After reset, the **entry modal** can show again on the next appropriate load (e.g. next app launch).
 
 Only **one** of the entry modal and Tutorial Home is visible at any time; they never both show.
 
@@ -21,11 +21,11 @@ Only **one** of the entry modal and Tutorial Home is visible at any time; they n
 
 | Path | Role |
 |------|------|
-| `src/app/layout.tsx` | Root shell. Owns entry-modal vs Tutorial Home visibility, calls `useFirstLaunchTutorial`, wires Start Tutorial and reset flows to `prepareDemoForTutorialHub` (demo ensure + query invalidation), handles location state for “open Tutorial Home” / “reset”. |
+| `src/app/layout.tsx` | Root shell. Owns entry-modal vs Tutorial Home visibility, calls `useFirstLaunchTutorial`, wires Start Tutorial to `prepareDemoForTutorialHub` (demo ensure + query invalidation), handles location state for “open Tutorial Home” and Settings-driven reset (`resetTutorial: true`). |
 | `src/hooks/useFirstLaunchTutorial.ts` | Loads and exposes tutorial progress and flags (`showFirstLaunchTutorial`, `progress`). Exposes `skipEntryModal`, `completeFirstLaunchTutorial`, `resetFirstLaunchTutorial`, `updateProgress`. Syncs with persisted progress and legacy “seen” setting. |
 | `src/features/tutorial/progress.ts` | Defines `FirstLaunchTutorialProgress` and section state types. `getFirstLaunchTutorialProgress()` / `setFirstLaunchTutorialProgress()` read/write structured JSON. `sanitizeProgress()` normalises loaded data so malformed or partial state doesn’t break the app. |
 | `src/features/tutorial/TutorialEntryModal.tsx` | Pre-tutorial gate: “Welcome to Albatross”, Start Tutorial (with loading/error), Skip for now. |
-| `src/features/tutorial/TutorialHome.tsx` | Hub dialog: section list (Start / Resume / Review), Skip for now, Continue later, Reset. Shows a demo-production notice and “Open demo production” when current production is not the demo. |
+| `src/features/tutorial/TutorialHome.tsx` | Hub dialog: section list (Start / Resume / Review) and **Continue later**. Shows a demo-production notice and “Open demo production” when current production is not the demo. |
 | `src/features/tutorial/ensureAndOpenDemoProductionForTutorial.ts` | Async helper: ensures demo production exists (via `ensureDemoData()`), then sets it as current production via optional callback. Used from layout’s `prepareDemoForTutorialHub` (Start Tutorial, reset → hub, section navigation, Open demo production). |
 | `src/features/tutorial/tutorialSections.ts` | Defines `TUTORIAL_SECTION_IDS` and `TUTORIAL_SECTIONS` (id, title, description, route, icon). Single source of truth for section list and routes. |
 | `src/features/tutorial/SectionTutorialPanel.tsx` | Per-section multi-step panel (steps, next/back, complete / continue later). Used on each section page (dashboard, schedule, budget, crew, cast, equipment). |
@@ -44,7 +44,7 @@ Only **one** of the entry modal and Tutorial Home is visible at any time; they n
 
 - **Legacy “seen” flag**  
   - Key: `first_launch_tutorial_seen` in settings.  
-  - Set to `'true'` when the user dismisses Tutorial Home or completes all sections; set to `'false'` on reset.  
+  - Kept in sync on each structured progress write (`setFirstLaunchTutorialProgress`): `'true'` when `dismissed` is true or every section is complete; `'false'` on reset. Closing the hub with **Continue later** does not by itself change this flag (no `dismissed` / progress write).  
   - Used together with structured progress to decide whether to show first-launch onboarding.
 
 ---
@@ -53,7 +53,7 @@ Only **one** of the entry modal and Tutorial Home is visible at any time; they n
 
 - **`seenEntryModal`** – `true` once the user has either skipped or started from the entry modal. Prevents the entry modal from showing again on subsequent loads.
 - **`seenIntro`** – Set when the user has seen the Tutorial Home intro (e.g. after opening the hub).
-- **`dismissed`** – `true` when the user clicks “Skip for now” in Tutorial Home (dismisses the hub; section progress is preserved).
+- **`dismissed`** – `true` when `completeFirstLaunchTutorial()` has run (marks hub dismissed while preserving section progress). That helper is exposed from the hook but **not** wired from Tutorial Home today; it can also be inferred when migrating legacy-only installs (see `getFirstLaunchTutorialProgress()`).
 - **`currentSection`** – Section id when a section tutorial is active (e.g. `'budget'`); `null` when none.
 - **`sections`** – `Record<TutorialSectionId, TutorialSectionState>` where state is `'not_started' | 'in_progress' | 'complete'`.
 - **`sectionSteps`** – Optional `Partial<Record<TutorialSectionId, number>>` for the current step index per section.
@@ -71,7 +71,7 @@ Default shape is from `getDefaultTutorialProgress()`. After load, `sanitizeProgr
 - `isLoading` – `true` until progress (and legacy seen) has been loaded.
 - `showFirstLaunchTutorial` – `true` when the user is in “first-launch” mode: not dismissed, not all complete, and legacy seen is false.
 - `progress` – `FirstLaunchTutorialProgress | null` (null until load completes).
-- `completeFirstLaunchTutorial()` – Marks the tutorial as dismissed (sets `dismissed` and `seenIntro`, syncs legacy seen). Used when the user clicks “Skip for now” in Tutorial Home.
+- `completeFirstLaunchTutorial()` – Marks the tutorial as dismissed (sets `dismissed` and `seenIntro`, syncs legacy seen). Exposed for reuse; there is no Tutorial Home control that calls it (hub only offers **Continue later**, which closes the dialog without setting `dismissed`).
 - `resetFirstLaunchTutorial()` – Resets progress to default (including `seenEntryModal: false`) and sets legacy seen to false. Does **not** touch demo production or other app data.
 - `skipEntryModal()` – Sets `seenEntryModal: true` and persists. Used when the user clicks “Skip for now” on the **entry** modal. Does not create/open demo or mark tutorial complete.
 - `updateProgress(updater)` – Applies an updater to `progress`, persists, and dispatches a custom event so other subscribers stay in sync.
@@ -109,7 +109,7 @@ No navigation or extra UI is done inside the seed helper; layout owns query refr
 
 - The **canonical demo production** is identified by slug `DEMO_SLUG` (`'demo-production-albatross'` in `src/lib/db/seed/constants.ts`). Creation/seeding is via `ensureDemoData()` in `src/lib/db/seed/demoProductionSeed.ts`.
 - **Tutorial Home** receives `isDemoProductionCurrent` (derived from `currentProduction?.slug === DEMO_SLUG`) and an `onOpenDemoProduction` callback that runs the same `prepareDemoForTutorialHub()` path as Start Tutorial (idempotent if the demo already exists).
-- After **tutorial reset** (from Tutorial Home or Settings with reset), layout runs `prepareDemoForTutorialHub()` before the user continues, so the demo production is created again if it was missing (e.g. user reset or deleted demo data earlier).
+- After **tutorial reset** from Settings (navigate with `resetTutorial: true`), layout runs `prepareDemoForTutorialHub()` before the user continues, so the demo production is created again if it was missing (e.g. user reset or deleted demo data earlier).
 - Starting a **section** from the hub (Start / Resume / Review) also runs `prepareDemoForTutorialHub()` first so navigation never assumes a demo that is not there.
 - If demo preparation fails, Tutorial Home shows an alert (`role="alert"`) with **Dismiss**; **Open demo production** retries the same prepare path.
 - If the user has switched away from the demo production while in the hub, Tutorial Home shows a short notice: “This tutorial is designed for the demo production” and an **Open demo production** button. The app does not hard-fail if the wrong production is selected.
@@ -123,8 +123,7 @@ No navigation or extra UI is done inside the seed helper; layout owns query refr
   - Settings → Developer Tools → **Open Tutorial Home** navigates with `state: { openTutorialHome: true }`. Layout’s effect sees this, closes the entry modal, and opens Tutorial Home. So reopening **always** goes straight to Tutorial Home, not the entry modal.
 
 - **Reset:**  
-  - **Tutorial Home:** “Reset tutorial” button → confirmation “Reset tutorial progress?” → `resetFirstLaunchTutorial()` then `prepareDemoForTutorialHub()` (with a short “Preparing demo production…” overlay on the hub). The hub stays open with fresh progress; the demo production is ensured if absent.  
-  - **Settings:** “Reset tutorial progress” → same confirmation → navigate with `state: { openTutorialHome: true, resetTutorial: true }`. Layout runs `resetFirstLaunchTutorial()`, then `prepareDemoForTutorialHub()`, then opens Tutorial Home (same ensure-if-missing behaviour).  
+  - **Settings → Developer Tools → Reset tutorial progress** → confirmation “Reset tutorial progress?” → navigate with `state: { openTutorialHome: true, resetTutorial: true }`. Layout runs `resetFirstLaunchTutorial()`, then `prepareDemoForTutorialHub()`, then opens Tutorial Home (with a short “Preparing demo production…” overlay when prepare runs).  
   - Reset clears all tutorial progress (including `seenEntryModal: false`) and the legacy seen flag. It does **not** delete or reset the demo production or other app/settings by itself; immediately after reset, **prepare** recreates the canonical demo if it does not exist. After reset, the **entry modal** can show again on the next appropriate onboarding trigger (e.g. next app load when `showFirstLaunchTutorial` is true).
 
 ---
@@ -152,7 +151,7 @@ Section progress and step index are stored in `progress.sections` and `progress.
 
 ## Modal and UI rules
 
-- **Entry modal and Tutorial Home** are mutually exclusive: opening one closes the other (handled in `AppLayout`).
+- **Entry modal and Tutorial Home** are mutually exclusive: opening one closes the other (handled in `AppLayout`). Tutorial Home has no **Skip** or **Reset** actions; reset is only from Settings (Developer Tools).
 - **Section tutorial panels** are non-modal and only shown on the matching route when `currentSection` is that section; closing a panel does not open Tutorial Home automatically.
 - **Resilience:** Loaded progress is sanitised (`sanitizeProgress()`). Missing or invalid settings/defaults are handled so the app falls back to a safe default progress instead of throwing.
 
@@ -161,7 +160,7 @@ Section progress and step index are stored in `progress.sections` and `progress.
 ## Summary
 
 - **First launch:** Entry modal → Start (prepare demo, open Tutorial Home) or Skip (close modal, set `seenEntryModal`; no demo).
-- **Tutorial Home:** Hub for six sections; can be opened from entry (after Start) or from top bar / Settings (reopen). Dismissing the hub sets `dismissed` and legacy seen; progress is kept.
+- **Tutorial Home:** Hub for six sections; can be opened from entry (after Start) or from top bar / Settings (reopen). **Continue later** (or closing the dialog) only hides the hub; section progress is kept. Legacy “tutorial seen” / `dismissed` are unchanged unless something else persists progress (e.g. completing all sections updates legacy seen via `setFirstLaunchTutorialProgress`).
 - **Reset:** Clears progress (including `seenEntryModal`) and legacy seen; then ensures the demo production exists and selects it (if missing) via `prepareDemoForTutorialHub`; entry modal can show again on next eligible load.
 - **Demo:** Start Tutorial, reset → hub, section picks from the hub, and **Open demo production** all use `prepareDemoForTutorialHub` so the canonical demo exists and queries refresh; Tutorial Home can still prompt to open the demo if the user switched production.
 

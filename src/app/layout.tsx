@@ -32,7 +32,6 @@ export function AppLayout() {
   const {
     isLoading: tutorialLoading,
     showFirstLaunchTutorial,
-    completeFirstLaunchTutorial,
     resetFirstLaunchTutorial,
     skipEntryModal,
     progress,
@@ -200,24 +199,10 @@ export function AppLayout() {
         }}
         progress={progress}
         onProgressChange={updateProgress}
-        onSkip={completeFirstLaunchTutorial}
         isPreparingDemo={isPreparingTutorialHub}
         tutorialHubError={tutorialHubError}
         onDismissTutorialHubError={() => setTutorialHubError(null)}
         onBeforeSectionNavigate={handleBeforeTutorialSectionNavigate}
-        onReset={async () => {
-          resetFirstLaunchTutorial()
-          setTutorialEntryOpen(false)
-          setTutorialHubError(null)
-          setIsPreparingTutorialHub(true)
-          try {
-            await prepareDemoForTutorialHub()
-          } catch {
-            setTutorialHubError('Unable to prepare the demo production. Please try again.')
-          } finally {
-            setIsPreparingTutorialHub(false)
-          }
-        }}
         isDemoProductionCurrent={isDemoProductionCurrent}
         onOpenDemoProduction={async () => {
           setTutorialHubError(null)
