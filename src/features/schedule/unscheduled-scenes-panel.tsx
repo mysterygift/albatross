@@ -118,7 +118,7 @@ export function UnscheduledShotsPanel({
   return (
     <div
       ref={setDroppableRef}
-      className={`flex w-72 shrink-0 flex-col gap-3 rounded-lg border bg-card p-4 min-h-0 overflow-auto transition-colors ${isOver ? 'border-primary ring-2 ring-primary/50' : 'border-border'}`}
+      className={`flex w-72 shrink-0 self-start flex-col gap-3 rounded-lg border bg-card p-4 overflow-hidden transition-colors ${isOver ? 'border-primary ring-2 ring-primary/50' : 'border-border'}`}
     >
       {isOver && (
         <p className="text-center text-sm font-medium text-primary">Drop here to unschedule</p>

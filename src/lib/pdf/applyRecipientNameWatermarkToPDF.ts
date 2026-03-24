@@ -37,7 +37,7 @@ export async function applyRecipientNameWatermarkToPDF(
   let doc: PDFDocument
   try {
     doc = await PDFDocument.load(baseBytes, { ignoreEncryption: false })
-  } catch (err) {
+  } catch {
     throw new Error('applyRecipientNameWatermarkToPDF: Failed to read input PDF bytes.')
   }
 

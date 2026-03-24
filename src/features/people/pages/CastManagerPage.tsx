@@ -79,7 +79,7 @@ export function CastManagerPage() {
 
   useEffect(() => {
     if (progress?.currentSection === 'cast') {
-      setTutorialOpen(true)
+      queueMicrotask(() => setTutorialOpen(true))
     }
   }, [progress?.currentSection])
 
@@ -170,6 +170,12 @@ export function CastManagerPage() {
 
   const dialogOpen = addOpen || !!editingId
   const editPerson = editingId ? cast.find((p) => p.id === editingId) : null
+
+  useEffect(() => {
+    const onAddCast = () => setAddOpen(true)
+    window.addEventListener('albatross-menu-people-add-cast', onAddCast)
+    return () => window.removeEventListener('albatross-menu-people-add-cast', onAddCast)
+  }, [])
 
   if (!currentProductionId) {
     return (

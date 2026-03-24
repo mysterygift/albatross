@@ -19,6 +19,21 @@ export type CreateProductionFromTemplateParams = {
   name: string
   notes: string | null
   template: ProductionTemplate
+  /** When true, production is created as episodic with `initialEpisodeName` (irreversible). */
+  isEpisodic?: boolean
+  initialEpisodeName?: string | null
+}
+
+function createOptionsFromEpisodicParams(
+  base: { skipBudgetSeed?: boolean },
+  params: CreateProductionFromTemplateParams
+): { skipBudgetSeed?: boolean; episodicInitialEpisodeName?: string } {
+  if (!params.isEpisodic) return base
+  const n = (params.initialEpisodeName ?? '').trim()
+  if (!n) {
+    throw new Error('Episodic production requires a first episode name')
+  }
+  return { ...base, episodicInitialEpisodeName: n }
 }
 
 /**
@@ -33,12 +48,12 @@ export async function createProductionFromTemplate(
 
   switch (template) {
     case 'blank':
-      return createProduction({ name, notes })
+      return createProduction({ name, notes }, createOptionsFromEpisodicParams({}, params))
 
     case 'demo': {
       const production = await createProduction(
         { name, notes },
-        { skipBudgetSeed: true }
+        createOptionsFromEpisodicParams({ skipBudgetSeed: true }, params)
       )
       await seedDemoProductionContent(production.id)
       await setProductionCreatedFromTemplate(production.id, 'demo')
@@ -48,7 +63,7 @@ export async function createProductionFromTemplate(
     case 'default': {
       const production = await createProduction(
         { name, notes },
-        { skipBudgetSeed: true }
+        createOptionsFromEpisodicParams({ skipBudgetSeed: true }, params)
       )
       await seedDefaultProductionContent(production.id)
       return production
@@ -122,7 +137,7 @@ async function seedDefaultProductionContent(productionId: string): Promise<void>
     const DEL_TABLE = 'deliverables'
     for (const name of DEFAULT_STARTER_DELIVERABLES) {
       statements.push({
-        sql: `INSERT INTO ${DEL_TABLE} (id, production_id, name, due_date, status, recipient, delivery_method, delivered_by, delivered_at, approval_status, created_at, updated_at) VALUES ($1, $2, $3, NULL, 'not_started', NULL, NULL, NULL, NULL, NULL, $4, $5)`,
+        sql: `INSERT INTO ${DEL_TABLE} (id, production_id, episode_id, name, due_date, status, recipient, delivery_method, delivered_by, delivered_at, approval_status, created_at, updated_at) VALUES ($1, $2, NULL, $3, NULL, 'not_started', NULL, NULL, NULL, NULL, NULL, $4, $5)`,
         bindValues: [uuid(), productionId, name, ts, ts],
       })
     }

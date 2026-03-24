@@ -36,6 +36,7 @@ export function minimalProductionRow(overrides: Partial<ApfTableRow> = {}): ApfT
     currency_code: 'GBP',
     wrapped_at: null,
     created_from_template: null,
+    is_episodic: 0,
     ...overrides,
   }
 }

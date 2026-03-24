@@ -1,6 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
+import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
+import { tasksTutorialSteps } from '@/features/tutorial/sections/tasksTutorial'
 import {
   listTasksByProductionWithFilters,
   listTasksByProduction,
@@ -95,6 +98,7 @@ function formatDueDate(d: string | null): string {
 
 export function ReadinessPage() {
   const { currentProductionId } = useCurrentProduction()
+  const { progress, updateProgress } = useFirstLaunchTutorial()
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [addSubtaskParent, setAddSubtaskParent] = useState<ProductionTask | null>(null)
@@ -109,6 +113,13 @@ export function ReadinessPage() {
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [applyTemplateOpen, setApplyTemplateOpen] = useState(false)
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
+  const [tutorialOpen, setTutorialOpen] = useState(false)
+
+  useEffect(() => {
+    if (progress?.currentSection === 'tasks') {
+      setTutorialOpen(true)
+    }
+  }, [progress?.currentSection])
 
   const filters: TaskFilters = useMemo(
     () => ({
@@ -266,6 +277,17 @@ export function ReadinessPage() {
       setApplyTemplateOpen(false)
     },
   })
+
+  useEffect(() => {
+    const onMenuNewTask = () => {
+      setCreateOpen(true)
+      setAddSubtaskParent(null)
+    }
+    window.addEventListener('albatross-menu-tasks-new-task', onMenuNewTask)
+    return () => {
+      window.removeEventListener('albatross-menu-tasks-new-task', onMenuNewTask)
+    }
+  }, [])
 
   if (!currentProductionId) {
     return (
@@ -667,6 +689,38 @@ export function ReadinessPage() {
         onOpenChange={setApplyTemplateOpen}
         onApply={(params) => applyTemplateMutation.mutate(params)}
         isPending={applyTemplateMutation.isPending}
+      />
+      <SectionTutorialPanel
+        open={tutorialOpen}
+        onOpenChange={(open) => {
+          setTutorialOpen(open)
+          if (!open) {
+            updateProgress((prev) => ({
+              ...prev,
+              currentSection: prev.currentSection === 'tasks' ? null : prev.currentSection,
+              sections: {
+                ...prev.sections,
+                tasks: prev.sections.tasks === 'not_started' ? 'in_progress' : prev.sections.tasks,
+              },
+            }))
+          }
+        }}
+        sectionId="tasks"
+        sectionTitle="Tasks"
+        steps={tasksTutorialSteps}
+        progress={progress}
+        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
+        onCompleteSection={() => {
+          setTutorialOpen(false)
+          updateProgress((prev) => ({
+            ...prev,
+            currentSection: prev.currentSection === 'tasks' ? null : prev.currentSection,
+            sections: {
+              ...prev.sections,
+              tasks: 'complete',
+            },
+          }))
+        }}
       />
     </div>
   )

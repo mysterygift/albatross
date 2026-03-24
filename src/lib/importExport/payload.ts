@@ -20,6 +20,28 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
+ * v1 `.apf` files lack `episodes`, `shooting_blocs`, and `is_episodic` on productions.
+ * Inject empty episodic tables and default flag so `parseApfV1DataFileJson` matches current key set.
+ */
+export function coerceLegacyApfDataRawForV2TableKeys(dataRaw: unknown): unknown {
+  if (!isPlainObject(dataRaw)) return dataRaw
+  const formatVersion = dataRaw.formatVersion
+  const tablesRaw = dataRaw.tables
+  if (typeof formatVersion !== 'number' || formatVersion > 1 || !isPlainObject(tablesRaw)) {
+    return dataRaw
+  }
+  const tables = { ...tablesRaw } as Record<string, unknown>
+  if (!('episodes' in tables)) tables.episodes = []
+  if (!('shooting_blocs' in tables)) tables.shooting_blocs = []
+  const prows = tables.productions
+  if (Array.isArray(prows) && prows.length > 0 && isPlainObject(prows[0]) && !('is_episodic' in prows[0])) {
+    const p0 = { ...prows[0], is_episodic: 0 }
+    tables.productions = [p0, ...prows.slice(1)]
+  }
+  return { ...dataRaw, tables }
+}
+
+/**
  * Validates envelope + `tables` contains exactly the v1 key set, each an array.
  * Does not validate per-table columns (DB import phase will use repositories / SQL).
  */

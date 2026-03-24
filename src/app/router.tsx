@@ -18,6 +18,7 @@ import { LocationsPage } from '@/features/locations/page'
 import { EquipmentPage } from '@/features/equipment/page'
 import { DocumentsPage } from '@/features/documents/page'
 import { CallSheetsPage } from '@/features/call-sheets/page'
+import { MovementOrdersPage } from '@/features/movement-orders/page'
 import { ReadinessPage } from '@/features/readiness/page'
 import { DeliverablesPage } from '@/features/deliverables/page'
 import { MusicClearancePage } from '@/features/music-clearance/page'
@@ -54,6 +55,7 @@ export const router = createBrowserRouter([
       { path: 'equipment', element: <EquipmentPage /> },
       { path: 'documents', element: <DocumentsPage /> },
       { path: 'call-sheets', element: <CallSheetsPage /> },
+      { path: 'movement-orders', element: <MovementOrdersPage /> },
       { path: 'readiness', element: <ReadinessPage /> },
       { path: 'deliverables', element: <DeliverablesPage /> },
       { path: 'music-clearance', element: <MusicClearancePage /> },

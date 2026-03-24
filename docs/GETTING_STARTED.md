@@ -73,13 +73,13 @@ ESLint runs on `src` (see [eslint.config.js](../eslint.config.js)). Fix any repo
 
 ### Tests
 
-There is **no test framework** in the project yet (no Vitest, Jest, or frontend test script in `package.json`). Rust tests are not set up in `src-tauri` either. For now, rely on:
+Unit and integration tests use **Vitest** (`npm test` / `npm run test` runs `vitest run`). Tests live under `src/` (e.g. `*.test.ts`, `*.integration.test.tsx`). Rust tests in `src-tauri` are optional per crate.
+
+Also use:
 
 - **Lint:** `npm run lint`
-- **Manual verification:** Run the app, use the relevant flows (e.g. create/edit productions, stripboard, budget)
-- **Developer tools:** In dev, **Settings → Developer tools** (see below) for demo data, DB perf, and cascade verification
-
-If you add a test framework later, add a `test` (or `test:unit`) script and document it here.
+- **Manual verification:** Run the app, use the relevant flows (e.g. create/edit productions, stripboard, budget, episodic settings)
+- **Developer tools:** In dev, **Settings → Developer tools** for demo data, DB perf, and cascade verification
 
 ---
 
@@ -110,7 +110,7 @@ This gets you used to: feature folders, React Router, and the `@/` alias.
 ### 5.3 Example: change existing data (repositories + migrations)
 
 - **Read path:** Repositories in `src/lib/db/repositories/` own all DB access. Domain types live in `src/lib/db/types.ts`. Features in `src/features/<feature>/` use TanStack Query and call these repos.
-- **Write path:** Repositories use the shared client in `src/lib/db/client.ts`. All writes are serialized (write queue); multi-statement transactions must use `runInSerializedTransaction` so BEGIN/COMMIT run as one queued task and you don’t get “database is locked” or “cannot start a transaction within a transaction”.
+- **Write path:** Repositories use the shared client in `src/lib/db/client.ts`. Wrapped `execute()` calls are serialized (re-entrant global queue); multi-statement transactions must use `executeBatch` inside `runInSerializedTransaction` so BEGIN/COMMIT run in one round-trip and you avoid “database is locked” or “cannot start a transaction within a transaction”. See [docs/DATABASE_LAYER.md](DATABASE_LAYER.md).
 - **Schema change:** Add a new migration:
   1. Add a new `.sql` file under `src-tauri/migrations/` with a clear name, e.g. `0012_add_my_column.sql`.
   2. In [src-tauri/src/lib.rs](../src-tauri/src/lib.rs), add a new `Migration { version: 12, description: "...", sql: include_str!("../migrations/0012_add_my_column.sql"), kind: MigrationKind::Up }` to the `migrations` vector, in **version order**.
@@ -125,7 +125,8 @@ This gets you used to: feature folders, React Router, and the `@/` alias.
 - **Demo production slug is fixed:** Demo data is keyed only by the slug `demo-production-albatross`. “Create Demo Production”, “Reset Demo Data”, and “Open Demo Production” in Settings → Developer tools only create, delete, or open that slug. They never delete or match other productions by name.
 - **Developer tools only in dev:** The “Developer tools” card in Settings (demo seed, Reset Demo, DB Perf toggle, Verify Cascades, experimental currency API) is rendered only when `import.meta.env.DEV` is true. You won’t see it in a production build.
 - **Vite watch ignores `src-tauri/`:** The Vite config has `watch: { ignored: ['**/src-tauri/**'] }`. Changes to Rust or Tauri config require restarting `npm run tauri:dev` (or running a Tauri build) to take effect; hot reload only applies to the frontend.
-- **Database locking:** The app uses a write queue, WAL, and `busy_timeout` to reduce “database is locked” errors. For any block that does BEGIN … COMMIT/ROLLBACK, use `runInSerializedTransaction` from `@/lib/db/client` so the whole transaction is one queued task. See comments in [src/lib/db/client.ts](../src/lib/db/client.ts).
+- **Database locking:** The app uses WAL, `busy_timeout`, and a **re-entrant global serializer** for `execute()` so the Tauri SQL pool does not run conflicting writes on different connections. For any block that does BEGIN … COMMIT/ROLLBACK, use `executeBatch` inside `runInSerializedTransaction` per [docs/DATABASE_LAYER.md](DATABASE_LAYER.md). See [src/lib/db/client.ts](../src/lib/db/client.ts).
+- **Episodic productions:** A production can be created as **episodic** (checkbox on **Productions**); that choice is **irreversible**. Episodic projects get **episodes** (story units) and **shooting blocs** (date ranges); scenes belong to an episode, shoot days can be tagged with a bloc, and Schedule (calendar/stripboard/shot lists) surfaces filters and labels. Manage episodes and bloc names/ranges in **Settings** when an episodic production is selected. See [docs/schedule.md](schedule.md) § “Episodic productions” and import/export notes in [docs/project-import-export-format-v1.md](project-import-export-format-v1.md).
 - **Strict TypeScript:** The project uses strict options (e.g. `noUnusedLocals`, `noUnusedParameters`). The build is `tsc -b && vite build`; fix type and lint errors before committing.
 
 ---

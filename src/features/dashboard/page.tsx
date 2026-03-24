@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { dashboardTutorialSteps } from '@/features/tutorial/sections/dashboardTutorial'
@@ -20,16 +21,21 @@ import {
   riskWatchQueryKey,
   type RiskWatchItem,
 } from '@/lib/budget/vendors/riskWatch'
+import { getOutstandingFloatReminders } from '@/lib/budget/floatReminders'
+import { listFloatsByProduction } from '@/lib/db/repositories/floats'
+import { listFloatExpenseLinksByProduction } from '@/lib/db/repositories/floatReconciliation'
+import { listPeopleByProduction } from '@/lib/db/repositories/person'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { AlertCircle, CheckCircle2, Clapperboard, Film, Truck, Phone, Utensils, Moon, StickyNote, ChevronRight, Package } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle2, Clapperboard, Film, Truck, Phone, Utensils, Moon, StickyNote, ChevronRight, Package, ChevronDown } from 'lucide-react'
 import type { StripboardStrip, StripType } from '@/lib/db/types'
 import type { Scene, Shot } from '@/lib/db/types'
 import type { DashboardBudgetHealthData } from '@/lib/dashboard/budgetHealth'
 import type { DashboardNextShootDayData } from '@/lib/dashboard/nextShootDay'
-import type { ProductionTask } from '@/lib/db/types'
+import type { FloatExpenseLink, Person, PettyCashFloat, ProductionTask } from '@/lib/db/types'
+import { cn } from '@/lib/utils'
 
 const TASK_PRIORITY_LABELS: Record<1 | 2 | 3, string> = {
   1: 'High',
@@ -709,6 +715,142 @@ function VendorFinanceCards({
   )
 }
 
+function PettyCashFloatsCard({
+  floats,
+  floatLinks,
+  people,
+  isLoading,
+  isError,
+  format,
+  productionCurrency,
+}: {
+  floats: PettyCashFloat[]
+  floatLinks: FloatExpenseLink[]
+  people: Person[]
+  isLoading: boolean
+  isError?: boolean
+  format: (amount: number, currency: string) => { formatted: string }
+  productionCurrency: string
+}) {
+  const [listOpen, setListOpen] = useState(false)
+  const reminders = useMemo(
+    () => getOutstandingFloatReminders({ floats, floatExpenseLinks: floatLinks, people }),
+    [floats, floatLinks, people]
+  )
+  const topFive = reminders.reminders.slice(0, 5)
+  const multiCurrency =
+    new Set(reminders.reminders.map((r) => r.currency)).size > 1
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Petty cash floats</CardTitle>
+          <CardDescription>Outstanding float reconciliation</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-20 rounded bg-muted/50 animate-pulse" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Petty cash floats</CardTitle>
+          <CardDescription>Outstanding float reconciliation</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load float data.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <span>Petty cash floats</span>
+          {reminders.unresolvedCount > 0 && (
+            <span className="text-destructive">
+              <AlertTriangle className="size-4" aria-hidden />
+            </span>
+          )}
+        </CardTitle>
+        <CardDescription>Unresolved allocations and reconciliation</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {reminders.unresolvedCount === 0 ? (
+          <div className="flex items-center gap-2 py-1">
+            <CheckCircle2 className="size-5 shrink-0 text-green-600 dark:text-green-400" />
+            <p className="text-sm text-muted-foreground">All floats are fully reconciled.</p>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm">
+              <span className="font-medium text-foreground">{reminders.unresolvedCount}</span>{' '}
+              <span className="text-muted-foreground">
+                float{reminders.unresolvedCount !== 1 ? 's' : ''} still need attention ·{' '}
+              </span>
+              <span className="font-medium tabular-nums">
+                {multiCurrency ? (
+                  <span className="text-muted-foreground">multiple currencies — see Budget</span>
+                ) : (
+                  format(
+                    reminders.totalOutstanding,
+                    reminders.reminders[0]?.currency ?? productionCurrency
+                  ).formatted
+                )}
+              </span>
+              {!multiCurrency && <span className="text-muted-foreground"> unreturned / unmatched</span>}
+            </p>
+            {reminders.hasCritical && (
+              <p className="text-xs text-destructive flex items-start gap-1.5">
+                <AlertTriangle className="size-3.5 shrink-0 mt-0.5" aria-hidden />
+                Some floats have been outstanding for over 14 days or are overspent.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => setListOpen((o) => !o)}
+              className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-left text-sm hover:bg-muted/40 transition-colors"
+            >
+              <span className="font-medium">Top outstanding floats</span>
+              <ChevronDown className={cn('size-4 shrink-0 transition-transform', listOpen && 'rotate-180')} />
+            </button>
+            {listOpen && (
+              <ul className="space-y-2 text-sm border border-border rounded-md divide-y divide-border">
+                {topFive.map((r) => (
+                  <li key={r.floatId} className="px-3 py-2 flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-medium truncate min-w-0">{r.personName}</span>
+                    <span className="text-muted-foreground tabular-nums shrink-0">
+                      {r.remaining > 0
+                        ? format(r.remaining, r.currency).formatted
+                        : `${format(-r.remaining, r.currency).formatted} overspent`}
+                      {' · '}
+                      {r.ageDays} day{r.ageDays !== 1 ? 's' : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+        <Link
+          to="/budget?tab=floats&floats=outstanding"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          View all in Budget
+          <ChevronRight className="size-3.5" />
+        </Link>
+      </CardContent>
+    </Card>
+  )
+}
+
 function DeliverablesCard({
   deliverables,
   isLoading,
@@ -813,6 +955,8 @@ export function DashboardPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const { currentProduction, currentProductionId } = useCurrentProduction()
+  const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
+  const revisionId = workingBudgetRevision?.id
   const { format, ensureRate } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const wrapSuccess = (location.state as { wrapSuccess?: boolean } | null)?.wrapSuccess === true
@@ -821,7 +965,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (progress?.currentSection === 'dashboard') {
-      setTutorialOpen(true)
+      queueMicrotask(() => setTutorialOpen(true))
     }
   }, [progress?.currentSection])
 
@@ -854,8 +998,8 @@ export function DashboardPage() {
     isLoading: budgetHealthLoading,
     isError: budgetHealthError,
   } = useQuery({
-    queryKey: ['dashboard-budget-health', currentProductionId],
-    queryFn: () => getDashboardBudgetHealthData(currentProductionId!),
+    queryKey: ['dashboard-budget-health', currentProductionId, revisionId],
+    queryFn: () => getDashboardBudgetHealthData(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
 
@@ -884,10 +1028,43 @@ export function DashboardPage() {
     isLoading: riskWatchLoading,
     isError: riskWatchError,
   } = useQuery({
-    queryKey: riskWatchQueryKey(currentProductionId ?? ''),
-    queryFn: () => getVendorFinanceRiskItems(currentProductionId!),
+    queryKey: riskWatchQueryKey(currentProductionId ?? '', revisionId),
+    queryFn: () => getVendorFinanceRiskItems(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
+
+  const {
+    data: dashFloats = [],
+    isLoading: dashFloatsLoading,
+    isError: dashFloatsError,
+  } = useQuery({
+    queryKey: ['floats', currentProductionId, revisionId],
+    queryFn: () => listFloatsByProduction(currentProductionId!, revisionId),
+    enabled: !!currentProductionId,
+  })
+
+  const {
+    data: dashFloatLinks = [],
+    isLoading: dashFloatLinksLoading,
+    isError: dashFloatLinksError,
+  } = useQuery({
+    queryKey: ['float-expense-links-by-production', currentProductionId, revisionId],
+    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId!, revisionId),
+    enabled: !!currentProductionId,
+  })
+
+  const {
+    data: dashPeople = [],
+    isLoading: dashPeopleLoading,
+    isError: dashPeopleError,
+  } = useQuery({
+    queryKey: ['people', currentProductionId],
+    queryFn: () => listPeopleByProduction(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
+  const floatCardLoading = dashFloatsLoading || dashFloatLinksLoading || dashPeopleLoading
+  const floatCardError = dashFloatsError || dashFloatLinksError || dashPeopleError
 
   const required = tasks.filter((t) => t.priority === 1)
   const requiredComplete = required.filter((t) => t.is_complete === 1).length
@@ -974,6 +1151,16 @@ export function DashboardPage() {
             format={format}
             productionCurrency={productionCurrency}
             onNavigate={() => navigate('/budget')}
+          />
+
+          <PettyCashFloatsCard
+            floats={dashFloats}
+            floatLinks={dashFloatLinks}
+            people={dashPeople}
+            isLoading={floatCardLoading}
+            isError={floatCardError}
+            format={format}
+            productionCurrency={productionCurrency}
           />
 
           <TasksDueSoonCard

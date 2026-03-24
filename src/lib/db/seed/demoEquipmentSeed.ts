@@ -30,6 +30,16 @@ import {
 } from '@/lib/people/crewHierarchyResolver'
 import { IDS } from './constants'
 
+export type DemoEquipmentSeedIdSource = {
+  equipment: (n: number) => string
+  equipmentItemUuid: (n: number) => string
+  vendorInvoice: (n: number) => string
+  equipmentReminderTask: (n: number) => string
+  shootDay: (n: number) => string
+  equipmentList: (n: number) => string
+  equipmentListItem: (n: number) => string
+}
+
 const LISTS_TABLE = 'equipment_lists'
 const ITEMS_TABLE = 'equipment_list_items'
 const FALLBACK_DEPARTMENT = 'Production'
@@ -298,7 +308,8 @@ export async function seedDemoEquipment(
   startDate: string,
   ts: string,
   addDaysLocal: (yyyyMmDd: string, days: number) => string,
-  vendorIdByCompanyName: Record<string, string>
+  vendorIdByCompanyName: Record<string, string>,
+  ids: DemoEquipmentSeedIdSource = IDS
 ): Promise<void> {
   const db = await getDb()
   let reminderTaskIdx = 0
@@ -310,10 +321,10 @@ export async function seedDemoEquipment(
 
     for (let i = 0; i < DEMO_EQUIPMENT.length; i++) {
       const def = DEMO_EQUIPMENT[i]!
-      const id = IDS.equipment(i + 1)
-      const itemUuid = IDS.equipmentItemUuid(i + 1)
+      const id = ids.equipment(i + 1)
+      const itemUuid = ids.equipmentItemUuid(i + 1)
       const vendorId = def.vendorKey ? vendorIdByCompanyName[def.vendorKey] ?? null : null
-      const invoiceId = def.invoiceIdx != null ? IDS.vendorInvoice(def.invoiceIdx) : null
+      const invoiceId = def.invoiceIdx != null ? ids.vendorInvoice(def.invoiceIdx) : null
       const rentalStart = def.rentalStartOffset != null ? addDaysLocal(startDate, def.rentalStartOffset) : null
       const returnDue = def.returnDueOffset != null ? addDaysLocal(startDate, def.returnDueOffset) : null
 
@@ -338,7 +349,7 @@ export async function seedDemoEquipment(
       statements.push(...buildCreateEquipmentStatements(id, itemUuid, ts, data))
 
       if (isReminderEligible(def) && returnDue) {
-        const taskId = IDS.equipmentReminderTask(reminderTaskIdx + 1)
+        const taskId = ids.equipmentReminderTask(reminderTaskIdx + 1)
         reminderTaskIdx++
         const taskDept = taskDepartment(def.department)
         const taskStatements = buildCreateTaskStatements(
@@ -369,12 +380,12 @@ export async function seedDemoEquipment(
   // Equipment lists and list items (no outbox for demo)
   const shootDayIds = new Map<number, string>()
   for (let d = 1; d <= 12; d++) {
-    shootDayIds.set(d, IDS.shootDay(d))
+    shootDayIds.set(d, ids.shootDay(d))
   }
 
   for (let listIdx = 0; listIdx < DEMO_LISTS.length; listIdx++) {
     const listDef = DEMO_LISTS[listIdx]!
-    const listId = IDS.equipmentList(listIdx + 1)
+    const listId = ids.equipmentList(listIdx + 1)
     const shootDayId = listDef.shootDayIdx != null ? shootDayIds.get(listDef.shootDayIdx) ?? null : null
 
     await db.execute(
@@ -394,8 +405,8 @@ export async function seedDemoEquipment(
 
     for (let itemIdx = 0; itemIdx < listDef.items.length; itemIdx++) {
       const listItemDef = listDef.items[itemIdx]!
-      const equipmentId = IDS.equipment(listItemDef.equipmentIndex + 1)
-      const listItemId = IDS.equipmentListItem(
+      const equipmentId = ids.equipment(listItemDef.equipmentIndex + 1)
+      const listItemId = ids.equipmentListItem(
         listIdx * 200 + itemIdx + 1
       )
       await db.execute(

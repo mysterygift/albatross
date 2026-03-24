@@ -24,12 +24,13 @@ export type DashboardBudgetHealthData = {
  * Uses same source-of-truth as Budget page: items.estimated_cost, expenses.amount, links.
  */
 export async function getDashboardBudgetHealthData(
-  productionId: string
+  productionId: string,
+  revisionId?: string
 ): Promise<DashboardBudgetHealthData> {
   const [items, expenses, links] = await Promise.all([
-    listBudgetItemsByProduction(productionId),
+    listBudgetItemsByProduction(productionId, { revisionId }),
     listExpensesByProduction(productionId),
-    listBudgetItemExpenseLinksByProduction(productionId),
+    listBudgetItemExpenseLinksByProduction(productionId, revisionId),
   ])
 
   const totalEstimated = items.reduce((s, i) => s + i.estimated_cost, 0)

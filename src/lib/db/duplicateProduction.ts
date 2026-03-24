@@ -35,6 +35,14 @@ function mapId(map: IdMap, oldId: string | null): string | null {
   return map.get(oldId) ?? oldId
 }
 
+/** Episode ids not present in the map (e.g. archived source episodes) become null to satisfy FK on the copy. */
+function mapEpisodeIdForDuplicate(map: IdMap, oldId: string | null | undefined): string | null {
+  if (oldId == null) return null
+  const t = String(oldId).trim()
+  if (t === '') return null
+  return map.has(t) ? map.get(t)! : null
+}
+
 export async function duplicateProduction(
   sourceProductionId: string,
   newName: string
@@ -51,9 +59,12 @@ export async function duplicateProduction(
   const newProdId = newId()
   const currencyCode = (prodRows[0]!.currency_code as string) ?? 'GBP'
   const notes = (prodRows[0]!.notes as string | null) ?? null
+  const isEpisodicRaw = prodRows[0]!.is_episodic
+  const isEpisodic =
+    isEpisodicRaw === undefined || isEpisodicRaw === null ? 0 : Number(isEpisodicRaw) === 1 ? 1 : 0
 
   // Load all source data first (reads only).
-  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs] = await Promise.all([
+  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs, episodes, shootingBlocs] = await Promise.all([
     db.select<Record<string, unknown>[]>(`SELECT * FROM units WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM people WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM locations WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -84,6 +95,11 @@ export async function duplicateProduction(
     db.select<Record<string, unknown>[]>(`SELECT * FROM equipment_terms WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM documents WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM production_crew_hierarchy_configs WHERE production_id = $1`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM episodes WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM shooting_blocs WHERE production_id = $1 AND deleted_at IS NULL`,
+      [sourceProductionId]
+    ),
   ])
 
   const taskIdMap: IdMap = new Map()
@@ -92,6 +108,7 @@ export async function duplicateProduction(
   const personIdMap: IdMap = new Map()
   const locationIdMap: IdMap = new Map()
   const sceneIdMap: IdMap = new Map()
+  const episodeIdMap: IdMap = new Map()
   const shootDayIdMap: IdMap = new Map()
   const shootDayUnitIdMap: IdMap = new Map()
   const categoryIdMap: IdMap = new Map()
@@ -100,6 +117,7 @@ export async function duplicateProduction(
   const deliverableIdMap: IdMap = new Map()
   const musicTrackIdMap: IdMap = new Map()
   const documentIdMap: IdMap = new Map()
+  const shootingBlocIdMap: IdMap = new Map()
   const docNewPaths: { oldPath: string; newPath: string; docId: string }[] = []
 
   const slug = await withSlugLock(() => ensureUniqueSlug(slugify(newName)))
@@ -107,10 +125,27 @@ export async function duplicateProduction(
   const statements: Stmt[] = [
     { sql: 'BEGIN TRANSACTION', bindValues: [] },
     {
-      sql: `INSERT INTO ${TABLE_PRODUCTIONS} (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      bindValues: [newProdId, newName, slug, currencyCode, notes, ts, ts],
+      sql: `INSERT INTO ${TABLE_PRODUCTIONS} (id, name, slug, currency_code, notes, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      bindValues: [newProdId, newName, slug, currencyCode, notes, isEpisodic, ts, ts],
     },
   ]
+
+  for (const r of episodes) {
+    const id = newId()
+    episodeIdMap.set(r.id as string, id)
+    statements.push({
+      sql: `INSERT INTO episodes (id, production_id, name, sort_order, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      bindValues: [id, newProdId, r.name, r.sort_order ?? 0, ts, ts],
+    })
+  }
+  for (const r of shootingBlocs) {
+    const blocId = newId()
+    shootingBlocIdMap.set(r.id as string, blocId)
+    statements.push({
+      sql: `INSERT INTO shooting_blocs (id, production_id, name, start_date, end_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      bindValues: [blocId, newProdId, r.name, r.start_date, r.end_date, ts, ts],
+    })
+  }
 
   for (const r of units) {
     const id = newId()
@@ -132,25 +167,68 @@ export async function duplicateProduction(
     const id = newId()
     locationIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO locations (id, production_id, name, booked_status, address, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      bindValues: [id, newProdId, r.name, r.booked_status ?? 'unbooked', r.address, r.availability_constraints, r.permit_fee, r.location_fee, r.notes, ts, ts],
+      sql: `INSERT INTO locations (id, production_id, name, booked_status, address, what3words, parking_info, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      bindValues: [
+        id,
+        newProdId,
+        r.name,
+        r.booked_status ?? 'unbooked',
+        r.address,
+        r.what3words ?? null,
+        r.parking_info ?? null,
+        r.availability_constraints,
+        r.permit_fee,
+        r.location_fee,
+        r.notes,
+        ts,
+        ts,
+      ],
     })
   }
   for (const r of scenes) {
     const id = newId()
     sceneIdMap.set(r.id as string, id)
     const locId = mapId(locationIdMap, r.location_id as string | null)
+    const episodeId = mapId(episodeIdMap, (r.episode_id as string | null) ?? null)
     statements.push({
-      sql: `INSERT INTO scenes (id, production_id, scene_number, heading, title, description, int_ext, day_night, page_eighths, location_id, duration_minutes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      bindValues: [id, newProdId, r.scene_number, r.heading, r.title, r.description, r.int_ext, r.day_night, r.page_eighths, locId, r.duration_minutes ?? null, ts, ts],
+      sql: `INSERT INTO scenes (id, production_id, scene_number, heading, title, description, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      bindValues: [
+        id,
+        newProdId,
+        r.scene_number,
+        r.heading,
+        r.title,
+        r.description,
+        r.int_ext,
+        r.day_night,
+        r.page_eighths,
+        locId,
+        r.duration_minutes ?? null,
+        episodeId,
+        ts,
+        ts,
+      ],
     })
   }
   for (const r of shootDays) {
     const id = newId()
     shootDayIdMap.set(r.id as string, id)
+    const shootingBlocId = mapId(shootingBlocIdMap, (r.shooting_bloc_id as string | null) ?? null)
     statements.push({
-      sql: `INSERT INTO shoot_days (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, wrap_time, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      bindValues: [id, newProdId, r.shoot_date, r.day_number, r.call_time, r.notes, r.weather_manual, r.wrap_time ?? null, ts, ts],
+      sql: `INSERT INTO shoot_days (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, wrap_time, shooting_bloc_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      bindValues: [
+        id,
+        newProdId,
+        r.shoot_date,
+        r.day_number,
+        r.call_time,
+        r.notes,
+        r.weather_manual,
+        r.wrap_time ?? null,
+        shootingBlocId,
+        ts,
+        ts,
+      ],
     })
   }
   for (const r of sduRows) {
@@ -351,9 +429,10 @@ export async function duplicateProduction(
   for (const r of deliverables) {
     const id = newId()
     deliverableIdMap.set(r.id as string, id)
+    const newEpisodeId = mapEpisodeIdForDuplicate(episodeIdMap, r.episode_id as string | null)
     statements.push({
-      sql: `INSERT INTO deliverables (id, production_id, name, due_date, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      bindValues: [id, newProdId, r.name, r.due_date, r.status ?? 'pending', ts, ts],
+      sql: `INSERT INTO deliverables (id, production_id, episode_id, name, due_date, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      bindValues: [id, newProdId, newEpisodeId, r.name, r.due_date, r.status ?? 'pending', ts, ts],
     })
   }
   for (const r of techSpecs) {
@@ -368,9 +447,10 @@ export async function duplicateProduction(
   for (const r of musicTracks) {
     const id = newId()
     musicTrackIdMap.set(r.id as string, id)
+    const episodeId = mapEpisodeIdForDuplicate(episodeIdMap, r.episode_id as string | null)
     statements.push({
-      sql: `INSERT INTO music_tracks (id, production_id, title, artist, publisher_label, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      bindValues: [id, newProdId, r.title, r.artist, r.publisher_label, ts, ts],
+      sql: `INSERT INTO music_tracks (id, production_id, episode_id, title, artist, publisher_label, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      bindValues: [id, newProdId, episodeId, r.title, r.artist, r.publisher_label, ts, ts],
     })
   }
   for (const r of clearances) {

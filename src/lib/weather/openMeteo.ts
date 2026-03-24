@@ -1,16 +1,18 @@
+import { recordApiCall } from '@/lib/dev/apiCallTracker'
+import { geocodeLocationWithOpenRouteService } from '@/lib/logistics/openRouteService'
+
 /**
- * Open-Meteo weather lookup for call sheets.
- * Geocoding: https://geocoding-api.open-meteo.com/v1/search
+ * Open-Meteo weather for call sheets: geocode via OpenRouteService (Tauri), forecast via Open-Meteo.
  * Forecast: https://api.open-meteo.com/v1/forecast
  * Triggered only on View/Generate from the Call Sheets page; not on page load or selection change.
  */
 
-const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast'
 
 export type GeocodeResult = {
   latitude: number
   longitude: number
+  /** IANA zone or `auto` (Open-Meteo derives from coordinates). ORS geocode supplies `auto`. */
   timezone: string
 }
 
@@ -42,25 +44,6 @@ function formatSunTimeForCallSheet(iso: string | null | undefined): string | nul
 }
 
 /**
- * Geocode a location string. Returns first result or null if none/no query.
- */
-export async function geocodeLocation(name: string): Promise<GeocodeResult | null> {
-  const query = name?.trim()
-  if (!query || query.length < 2) return null
-  const params = new URLSearchParams({ name: query, count: '1', format: 'json' })
-  const res = await fetch(`${GEOCODE_URL}?${params}`)
-  if (!res.ok) return null
-  const data = (await res.json()) as { results?: Array<{ latitude: number; longitude: number; timezone: string }> }
-  const first = data.results?.[0]
-  if (!first) return null
-  return {
-    latitude: first.latitude,
-    longitude: first.longitude,
-    timezone: first.timezone ?? 'UTC',
-  }
-}
-
-/**
  * Fetch daily forecast for a given date at coordinates. Returns that day's data or null.
  */
 export async function fetchForecastForDate(
@@ -71,13 +54,16 @@ export async function fetchForecastForDate(
 ): Promise<ForecastDay | null> {
   const daily =
     'weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,sunrise,sunset'
+  const { past_days, forecast_days } = forecastWindowForShootDate(dateStr)
   const params = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lon),
     timezone: timezone,
     daily: daily,
-    forecast_days: '16',
+    forecast_days: String(forecast_days),
+    past_days: String(past_days),
   })
+  recordApiCall('open_meteo_forecast')
   const res = await fetch(`${FORECAST_URL}?${params}`)
   if (!res.ok) return null
   const data = (await res.json()) as {
@@ -174,20 +160,87 @@ function geocodeRelevantPart(locationQuery: string): string {
   return after || trimmed
 }
 
+async function geocodeQueryWithOpenRouteService(
+  query: string,
+  orsApiKey?: string | null
+): Promise<GeocodeResult | null> {
+  const q = query.trim()
+  if (q.length < 2) return null
+  const coords = await geocodeLocationWithOpenRouteService(q, orsApiKey)
+  if (!coords) return null
+  return {
+    latitude: coords.lat,
+    longitude: coords.lng,
+    timezone: 'auto',
+  }
+}
+
 /**
- * Try geocoding with the given query, then with simpler fallbacks (e.g. "City" only) when that returns no results.
+ * Try OpenRouteService geocoding with the given query, then simpler comma-separated fallbacks.
  */
-async function geocodeWithFallbacks(query: string): Promise<GeocodeResult | null> {
-  let geo = await geocodeLocation(query)
+async function geocodeWithFallbacks(
+  query: string,
+  orsApiKey?: string | null
+): Promise<GeocodeResult | null> {
+  const trimmed = query.trim()
+  if (trimmed.length < 2) return null
+
+  let geo = await geocodeQueryWithOpenRouteService(trimmed, orsApiKey)
   if (geo) return geo
-  const parts = query.split(',').map((p) => p.trim()).filter(Boolean)
+
+  const parts = trimmed.split(',').map((p) => p.trim()).filter(Boolean)
   if (parts.length <= 1) return null
-  geo = await geocodeLocation(parts.slice(-2).join(', '))
-  if (geo) return geo
-  if (parts.length >= 2) {
-    geo = await geocodeLocation(parts[parts.length - 1]!)
+
+  const lastTwo = parts.slice(-2).join(', ')
+  if (lastTwo !== trimmed) {
+    geo = await geocodeQueryWithOpenRouteService(lastTwo, orsApiKey)
+    if (geo) return geo
+  }
+
+  const last = parts[parts.length - 1]!
+  if (last.length >= 2 && last !== trimmed && last !== lastTwo) {
+    geo = await geocodeQueryWithOpenRouteService(last, orsApiKey)
   }
   return geo
+}
+
+function parseYmd(dateStr: string): { y: number; m: number; d: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim())
+  if (!m) return null
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const d = Number(m[3])
+  if (!Number.isFinite(y) || mo < 1 || mo > 12 || d < 1 || d > 31) return null
+  return { y, m: mo, d }
+}
+
+/** Open-Meteo daily `time` must include the shoot date; past shoots need `past_days`, future shoots need enough `forecast_days`. */
+function forecastWindowForShootDate(shootDateStr: string): { past_days: number; forecast_days: number } {
+  const shoot = parseYmd(shootDateStr)
+  if (!shoot) return { past_days: 0, forecast_days: 16 }
+
+  const now = new Date()
+  const tUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  const sUtc = Date.UTC(shoot.y, shoot.m - 1, shoot.d)
+  const diffDays = Math.round((sUtc - tUtc) / 86400000)
+
+  const MAX_PAST = 92
+  const MAX_FORECAST = 16
+
+  if (diffDays < 0) {
+    const past = Math.min(Math.max(-diffDays, 1), MAX_PAST)
+    return { past_days: past, forecast_days: MAX_FORECAST }
+  }
+
+  const futureSpan = Math.min(Math.max(diffDays + 1, 1), MAX_FORECAST)
+  return { past_days: 0, forecast_days: futureSpan }
+}
+
+export type GetWeatherForCallSheetOptions = {
+  /** Raw address line (no scene heading); tried if primary geocode queries fail. */
+  addressHint?: string | null
+  /** Optional ORS key; if omitted, uses Settings → OpenRouteService API key. */
+  orsApiKey?: string | null
 }
 
 /**
@@ -196,12 +249,23 @@ async function geocodeWithFallbacks(query: string): Promise<GeocodeResult | null
  */
 export async function getWeatherForCallSheet(
   locationQuery: string,
-  shootDate: string
+  shootDate: string,
+  options?: GetWeatherForCallSheetOptions
 ): Promise<CallSheetWeatherFromApi | null> {
   if (!locationQuery?.trim() || !shootDate) return null
+  const full = locationQuery.trim()
   const geocodeQuery = geocodeRelevantPart(locationQuery)
   if (!geocodeQuery) return null
-  const geo = await geocodeWithFallbacks(geocodeQuery)
+
+  const orsKey = options?.orsApiKey
+  let geo = await geocodeWithFallbacks(geocodeQuery, orsKey)
+  if (!geo && full !== geocodeQuery) {
+    geo = await geocodeWithFallbacks(full, orsKey)
+  }
+  const hint = options?.addressHint?.trim()
+  if (!geo && hint && hint.length >= 2 && hint !== geocodeQuery && hint !== full) {
+    geo = await geocodeWithFallbacks(hint, orsKey)
+  }
   if (!geo) return null
   const day = await fetchForecastForDate(
     geo.latitude,
@@ -222,8 +286,9 @@ export async function getWeatherForCallSheet(
  */
 export async function getWeatherSummaryForCallSheet(
   locationQuery: string,
-  shootDate: string
+  shootDate: string,
+  options?: GetWeatherForCallSheetOptions
 ): Promise<string | null> {
-  const r = await getWeatherForCallSheet(locationQuery, shootDate)
+  const r = await getWeatherForCallSheet(locationQuery, shootDate, options)
   return r?.summary ?? null
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Button } from '@/components/ui/button'
@@ -9,16 +9,21 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { X, Film, Truck, Phone, Utensils, Moon, StickyNote, Clock, Skull, Trash2 } from 'lucide-react'
+import { X, Film, Truck, Megaphone, Utensils, Moon, StickyNote, Clock, Skull, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { StripboardStrip, StripType } from '@/lib/db/types'
+import type { StripboardStrip, StripType, Episode } from '@/lib/db/types'
 import type { Scene, Shot } from '@/lib/db/types'
+import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
+import {
+  episodeLabelForSceneRow,
+  NO_EPISODE_ASSIGNMENT_LABEL,
+} from '@/lib/schedule/episodicScheduleDisplay'
 
 const STRIP_ICONS: Record<StripType, typeof Film> = {
   SHOT: Film,
   SCENE: Film,
   MOVE: Truck,
-  CALL: Phone,
+  CALL: Megaphone,
   LUNCH: Utensils,
   WRAP: Moon,
   NOTE: StickyNote,
@@ -30,31 +35,50 @@ export function StripItem({
   shots,
   estimatedMinutesDefault,
   onUpdateEstimatedMinutes,
+  onUpdateCallWrapTime,
   isOverlay,
   onRemove,
   onSendToBoneyard,
   onDeleteStrip,
+  scheduledCallCountOnDay = 0,
+  scheduledWrapCountOnDay = 0,
   disabled,
   className,
+  isEpisodic,
+  episodeById,
 }: {
   strip: StripboardStrip
   scenes: Scene[]
   shots: Shot[]
   estimatedMinutesDefault?: number
   onUpdateEstimatedMinutes?: (stripId: string, minutes: number | null) => void
+  onUpdateCallWrapTime?: (stripId: string, time: string) => void
   isOverlay?: boolean
   /** Boneyard: permanent delete. Only in Boneyard panel. */
   onRemove?: (strip: StripboardStrip) => void
   /** Scheduled SHOT/SCENE strips only: send to Boneyard (amber skull). */
   onSendToBoneyard?: (strip: StripboardStrip) => void
-  /** Scheduled MOVE/CALL/LUNCH/WRAP/NOTE strips: delete (grey trash). */
+  /** Scheduled MOVE/CALL/LUNCH/WRAP/NOTE strips: delete (grey trash). CALL/WRAP only when counts allow (see stripboard parent). */
   onDeleteStrip?: (strip: StripboardStrip) => void
+  /** For this shoot day column: total SCHEDULED Call / Wrap strips (multi-unit). Used to allow Call/Wrap trash only when not the sole strip of that type on the day. */
+  scheduledCallCountOnDay?: number
+  scheduledWrapCountOnDay?: number
   disabled?: boolean
   className?: string
+  /** When true, show episode label from scene (shots inherit via scene). */
+  isEpisodic?: boolean
+  episodeById?: Map<string, Episode>
 }) {
   const shot = strip.shot_id ? shots.find((sh) => sh.id === strip.shot_id) : null
   const scene = shot ? scenes.find((s) => s.id === shot.scene_id) : (strip.scene_id ? scenes.find((s) => s.id === strip.scene_id) : null)
   const Icon = STRIP_ICONS[strip.strip_type]
+  const episodeStripLabel =
+    isEpisodic &&
+    episodeById &&
+    scene &&
+    (strip.strip_type === 'SHOT' || strip.strip_type === 'SCENE')
+      ? episodeLabelForSceneRow({ scene, episodeById })
+      : null
 
   const label = (
     <div className="flex flex-col gap-0 min-w-0 flex-1">
@@ -64,6 +88,15 @@ export function StripItem({
           <>
             <span className="font-medium shrink-0">Scene {scene.scene_number} / Shot {shot.shot_number}</span>
             <div className="flex gap-1 shrink-0 flex-wrap">
+              {episodeStripLabel && (
+                <Badge
+                  variant={episodeStripLabel === NO_EPISODE_ASSIGNMENT_LABEL ? 'outline' : 'secondary'}
+                  className="text-[10px] max-w-[6.5rem] truncate"
+                  title={episodeStripLabel}
+                >
+                  {episodeStripLabel}
+                </Badge>
+              )}
               {scene.int_ext && <Badge variant="secondary" className="text-[10px]">{scene.int_ext}</Badge>}
               {scene.day_night && <Badge variant="outline" className="text-[10px]">{scene.day_night}</Badge>}
               {scene.page_eighths != null && <Badge variant="outline" className="text-[10px]">{scene.page_eighths}/8</Badge>}
@@ -76,6 +109,15 @@ export function StripItem({
               {scene.title ?? scene.heading ?? ''}
             </span>
             <div className="flex gap-1 shrink-0 flex-wrap">
+              {episodeStripLabel && (
+                <Badge
+                  variant={episodeStripLabel === NO_EPISODE_ASSIGNMENT_LABEL ? 'outline' : 'secondary'}
+                  className="text-[10px] max-w-[6.5rem] truncate"
+                  title={episodeStripLabel}
+                >
+                  {episodeStripLabel}
+                </Badge>
+              )}
               {scene.int_ext && <Badge variant="secondary" className="text-[10px]">{scene.int_ext}</Badge>}
               {scene.day_night && <Badge variant="outline" className="text-[10px]">{scene.day_night}</Badge>}
               {scene.page_eighths != null && <Badge variant="outline" className="text-[10px]">{scene.page_eighths}/8</Badge>}
@@ -113,49 +155,68 @@ export function StripItem({
       strip={strip}
       estimatedMinutesDefault={estimatedMinutesDefault}
       onUpdateEstimatedMinutes={onUpdateEstimatedMinutes}
+      onUpdateCallWrapTime={onUpdateCallWrapTime}
       disabled={disabled}
       onRemove={onRemove}
       onSendToBoneyard={onSendToBoneyard}
       onDeleteStrip={onDeleteStrip}
+      scheduledCallCountOnDay={scheduledCallCountOnDay}
+      scheduledWrapCountOnDay={scheduledWrapCountOnDay}
       label={label}
       className={className}
     />
   )
 }
 
-const NON_SHOT_STRIP_TYPES = ['MOVE', 'CALL', 'LUNCH', 'WRAP', 'NOTE'] as const
+const DELETABLE_NON_SHOT_STRIP_TYPES = ['MOVE', 'LUNCH', 'NOTE'] as const
 
 function SortableStripInner({
   strip,
   estimatedMinutesDefault,
   onUpdateEstimatedMinutes,
+  onUpdateCallWrapTime,
   disabled,
   onRemove,
   onSendToBoneyard,
   onDeleteStrip,
+  scheduledCallCountOnDay = 0,
+  scheduledWrapCountOnDay = 0,
   label,
   className,
 }: {
   strip: StripboardStrip
   estimatedMinutesDefault?: number
   onUpdateEstimatedMinutes?: (stripId: string, minutes: number | null) => void
+  onUpdateCallWrapTime?: (stripId: string, time: string) => void
   disabled?: boolean
   onRemove?: (strip: StripboardStrip) => void
   onSendToBoneyard?: (strip: StripboardStrip) => void
   onDeleteStrip?: (strip: StripboardStrip) => void
+  scheduledCallCountOnDay?: number
+  scheduledWrapCountOnDay?: number
   label: React.ReactNode
   className?: string
 }) {
   const isShotOrScene = strip.strip_type === 'SHOT' || strip.strip_type === 'SCENE'
   const showBoneyard = isShotOrScene && onSendToBoneyard
-  const showDelete = NON_SHOT_STRIP_TYPES.includes(strip.strip_type as (typeof NON_SHOT_STRIP_TYPES)[number]) && onDeleteStrip
+  const isCallWrap = strip.strip_type === 'CALL' || strip.strip_type === 'WRAP'
+  const canDeleteThisCallWrap =
+    isCallWrap &&
+    onDeleteStrip &&
+    ((strip.strip_type === 'CALL' && scheduledCallCountOnDay >= 2) ||
+      (strip.strip_type === 'WRAP' && scheduledWrapCountOnDay >= 2))
+  const showDelete =
+    onDeleteStrip &&
+    (DELETABLE_NON_SHOT_STRIP_TYPES.includes(strip.strip_type as (typeof DELETABLE_NON_SHOT_STRIP_TYPES)[number]) ||
+      canDeleteThisCallWrap)
   const [localMinutes, setLocalMinutes] = useState<string>(
     strip.estimated_minutes != null ? String(strip.estimated_minutes) : ''
   )
-  useEffect(() => {
-    setLocalMinutes(strip.estimated_minutes != null ? String(strip.estimated_minutes) : '')
-  }, [strip.id, strip.estimated_minutes])
-
+  const [localTime, setLocalTime] = useState<string>(() => {
+    const m = (strip.title ?? '').match(/(\d{1,2}:\d{2})$/)
+    return normalizeScheduleTimeInput(m?.[1] ?? '') ?? ''
+  })
+  const [timeError, setTimeError] = useState<string | null>(null)
   const {
     attributes,
     listeners,
@@ -178,6 +239,7 @@ function SortableStripInner({
     (strip.strip_type === 'SHOT' || strip.strip_type === 'SCENE') &&
     onUpdateEstimatedMinutes &&
     !disabled
+  const showCallWrapTimeEditor = isCallWrap && onUpdateCallWrapTime && !disabled
 
   const commitEstMin = () => {
     if (!onUpdateEstimatedMinutes) return
@@ -195,6 +257,16 @@ function SortableStripInner({
   }
 
   const placeholder = estimatedMinutesDefault ? `${estimatedMinutesDefault}` : '—'
+  const commitCallWrapTime = () => {
+    if (!onUpdateCallWrapTime) return
+    const normalized = normalizeScheduleTimeInput(localTime)
+    if (!normalized) {
+      setTimeError('Enter time as HH:MM')
+      return
+    }
+    setTimeError(null)
+    onUpdateCallWrapTime(strip.id, normalized)
+  }
 
   return (
     <li
@@ -255,6 +327,60 @@ function SortableStripInner({
               <p className="text-muted-foreground text-xs">
                 Leave empty to use shot list total ({placeholder} min).
               </p>
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
+      {showCallWrapTimeEditor && (
+        <Popover
+          onOpenChange={(open) => {
+            if (!open) commitCallWrapTime()
+          }}
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0 h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <Clock className="size-3.5" />
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="left">Edit strip time</TooltipContent>
+          </Tooltip>
+          <PopoverContent
+            align="end"
+            className="w-56"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-3">
+              <p className="text-sm font-medium">
+                {strip.strip_type === 'CALL' ? 'Call time' : 'Wrap time'}
+              </p>
+              <Input
+                type="text"
+                inputMode="numeric"
+                className="h-8 bg-input border-border text-sm"
+                value={localTime}
+                onChange={(e) => {
+                  setLocalTime(e.target.value)
+                  if (timeError) setTimeError(null)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitCallWrapTime()
+                  }
+                }}
+                placeholder="HH:MM"
+              />
+              {timeError && <p className="text-xs text-destructive">{timeError}</p>}
             </div>
           </PopoverContent>
         </Popover>

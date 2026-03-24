@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Upload, ExternalLink } from 'lucide-react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { useEffect } from 'react'
 
 export function DocumentsPage() {
   const { currentProductionId } = useCurrentProduction()
@@ -48,6 +49,12 @@ export function DocumentsPage() {
     const fullPath = await resolveAppDataPath(filePath)
     await revealItemInDir(fullPath)
   }
+
+  useEffect(() => {
+    const onMenuUpload = () => uploadMutation.mutate()
+    window.addEventListener('albatross-menu-documents-upload-file', onMenuUpload)
+    return () => window.removeEventListener('albatross-menu-documents-upload-file', onMenuUpload)
+  }, [uploadMutation])
 
   if (!currentProductionId) {
     return (

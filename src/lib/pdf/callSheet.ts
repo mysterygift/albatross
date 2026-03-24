@@ -12,6 +12,12 @@ import type { CallSheetCastRow } from '@/lib/call-sheets/castRequirements'
 import type { CallSheetCrewGroup, CallSheetCrewRow } from '@/lib/call-sheets/crewRequirements'
 import { primaryContactShowsEmail } from '@/lib/call-sheets/primaryContacts'
 import { formatScheduleDnColumn } from '@/lib/call-sheets/scheduleStripRow'
+import {
+  buildMainScheduleColumns,
+  buildAdvancedScheduleColumns,
+  type MainScheduleColKey,
+  type AdvancedScheduleColKey,
+} from '@/lib/pdf/callSheetScheduleColumns'
 
 export interface CallSheetStrip {
   strip_type: 'SCENE' | 'SHOT' | 'MOVE' | 'CALL' | 'LUNCH' | 'WRAP' | 'NOTE'
@@ -33,6 +39,8 @@ export interface CallSheetStrip {
   rowNotes?: string | null
   /** Derived from NOTE text / color_tag in stripboard; used for IF TIME PERMITS grouping. */
   ifTimePermits?: boolean
+  /** Episode display for EP column; from scene episode when strip is SCENE/SHOT. */
+  episodeLabel?: string | null
 }
 
 /** Next-day preview block for ADVANCED SCHEDULE (assembled from shoot_days + strips). */
@@ -128,6 +136,12 @@ export interface CallSheetData {
   transportRows?: CallSheetTransportRow[]
   /** Upcoming shoot days (1–2) after `shootDate`, same unit when possible. */
   advancedScheduleDays?: CallSheetAdvancedDay[]
+  /** From production; drives episodic masthead / schedule column behavior. */
+  isEpisodicProduction?: boolean
+  /** When true with episodic production, EP column is shown in schedule tables. */
+  includeEpisodesInSchedule?: boolean
+  /** Episodic only: shoot day bloc display name, or null to omit masthead line. */
+  shootingBlocMastheadLabel?: string | null
 }
 
 // Typography and spacing
@@ -152,7 +166,8 @@ const FONT_RUN_TITLE = 9
 const FONT_RUN_SUB = 7.5
 const FONT_CONF = 6.5
 const SCHEDULE_SPECIAL_FILL = rgb(0.93, 0.93, 0.93)
-const DITTO_MARK = '\u3003'
+/** ASCII ditto: Unicode U+3003 is not encodable in pdf-lib StandardFonts (WinAnsi). */
+const DITTO_MARK = '"'
 const GRAY = rgb(0.45, 0.45, 0.45)
 
 /** Page 2+ support layer: slightly tighter than briefing blocks. */
@@ -392,18 +407,18 @@ function drawShootingScheduleTable(
   font: Awaited<ReturnType<PDFDocument['embedFont']>>,
   bold: Awaited<ReturnType<PDFDocument['embedFont']>>
 ): void {
-  const cols = [
-    { label: 'LOC', w: 46 },
-    { label: 'SC/SH', w: 38 },
-    { label: 'SHOT DESCRIPTION', w: 208 },
-    { label: 'D/N', w: 38 },
-    { label: 'PGS', w: 24 },
-    { label: 'CAST', w: 66 },
-    { label: 'NOTES', w: 66 },
-  ] as const
+  const cols = buildMainScheduleColumns(data)
   const tableW = cols.reduce((s, c) => s + c.w, 0)
   const x0 = MARGIN
   const pad = 2
+
+  const colIndex = (k: MainScheduleColKey): number => {
+    const i = cols.findIndex((c) => c.key === k)
+    if (i < 0) throw new Error(`Missing schedule column ${k}`)
+    return i
+  }
+
+  const wFor = (k: MainScheduleColKey): number => cols[colIndex(k)]!.w
 
   const drawHeader = (): void => {
     const pg = refs.page
@@ -490,11 +505,12 @@ function drawShootingScheduleTable(
 
   const drawScheduleRow = (s: CallSheetStrip): void => {
     const isSpecial = scheduleStripIsSpecial(s.strip_type)
-    const setW = cols[2]!.w - pad * 2
-    const notesW = cols[6]!.w - pad * 2
-    const castW = cols[5]!.w - pad * 2
+    const setW = wFor('synopsis') - pad * 2
+    const notesW = wFor('notes') - pad * 2
+    const castW = wFor('cast') - pad * 2
 
     let loc = ''
+    let ep = ''
     let ScSh = ''
     let setLines: string[]
     let dn = ''
@@ -504,6 +520,7 @@ function drawShootingScheduleTable(
 
     if (isSpecial) {
       loc = ''
+      ep = ''
       ScSh = ''
       setLines = wrapLinesLimited(specialScheduleSetLine(s), setW, font, FONT_SCHED, 2)
       dn = ''
@@ -512,6 +529,7 @@ function drawShootingScheduleTable(
       notesLines = ['']
     } else {
       loc = s.locDitto ? DITTO_MARK : (s.locLabel ?? '')
+      ep = (s.episodeLabel ?? '').trim()
       const sn = s.scene_number?.trim()
       const sh = s.shot_number?.trim()
       if (sn && sh) ScSh = `${sn} · ${sh}`
@@ -542,14 +560,37 @@ function drawShootingScheduleTable(
     const yTop = refs.y.current
     const setFont = bold
 
-    drawColumnText(0, [loc], font, yTop)
-    drawColumnText(1, [ScSh], font, yTop)
-    drawColumnText(2, setLines, setFont, yTop)
-    drawColumnText(3, [dn], font, yTop)
-    drawColumnText(4, [pgs], font, yTop)
-    const castLines = wrapLinesLimited(castStr, castW, font, FONT_SCHED, nLines)
-    drawColumnText(5, castLines, font, yTop)
-    drawColumnText(6, notesLines, font, yTop)
+    for (const c of cols) {
+      const ci = colIndex(c.key)
+      switch (c.key) {
+        case 'loc':
+          drawColumnText(ci, [loc], font, yTop)
+          break
+        case 'ep':
+          drawColumnText(ci, [ep], font, yTop)
+          break
+        case 'scsh':
+          drawColumnText(ci, [ScSh], font, yTop)
+          break
+        case 'synopsis':
+          drawColumnText(ci, setLines, setFont, yTop)
+          break
+        case 'dn':
+          drawColumnText(ci, [dn], font, yTop)
+          break
+        case 'pgs':
+          drawColumnText(ci, [pgs], font, yTop)
+          break
+        case 'cast': {
+          const castLines = wrapLinesLimited(castStr, castW, font, FONT_SCHED, nLines)
+          drawColumnText(ci, castLines, font, yTop)
+          break
+        }
+        case 'notes':
+          drawColumnText(ci, notesLines, font, yTop)
+          break
+      }
+    }
 
     refs.y.current -= rowH
     drawRule(refs.page, refs.y.current, x0, x0 + tableW, rgb(0.78, 0.78, 0.78))
@@ -603,7 +644,7 @@ function buildPrincipalCastColumns(rows: CallSheetCastRow[]): PrincipalCastCol[]
   if (hasAgent) cols.push({ key: 'agent', label: 'AGENT', width: 52 })
 
   const target = PAGE_WIDTH - 2 * MARGIN
-  let sum = cols.reduce((s, c) => s + c.width, 0)
+  const sum = cols.reduce((s, c) => s + c.width, 0)
   if (sum < target) {
     const castCol = cols.find((c) => c.key === 'cast')
     if (castCol) castCol.width += target - sum
@@ -833,6 +874,11 @@ function drawMasthead(
   idParts.push(`Unit: ${data.unitName}`)
   page.drawText(idParts.join('  ·  ').slice(0, 95), { x: MARGIN, y: y.current, size: FONT_BODY, font })
   y.current -= LINE_BODY
+  const bloc = data.shootingBlocMastheadLabel?.trim()
+  if (bloc) {
+    page.drawText(`Shooting bloc: ${bloc}`.slice(0, 95), { x: MARGIN, y: y.current, size: FONT_BODY, font })
+    y.current -= LINE_BODY
+  }
   /** Unit call / wrap live under Essential times (structured); avoid repeating them here. */
   y.current -= 4
 }
@@ -1387,7 +1433,7 @@ function drawDepartmentalRequirementsSection(
   let sectionHeadingDrawn = false
   for (const block of blocks) {
     const needLines = estimateDepartmentalBlockLines(block) + 2
-    let pr = addPageIfNeeded(doc, refs.page, refs.y, needLines)
+    const pr = addPageIfNeeded(doc, refs.page, refs.y, needLines)
     refs.page = pr.page
     if (pr.isNew) {
       drawSupportContinuationHeader(refs.page, font, bold, data, refs.y)
@@ -1449,7 +1495,7 @@ function drawHealthSafetyStuntsSection(
       keyContacts: block.keyContacts,
       crewGroup: block.crewGroup,
     })
-    let pr = addPageIfNeeded(doc, refs.page, refs.y, needLines + 2)
+    const pr = addPageIfNeeded(doc, refs.page, refs.y, needLines + 2)
     refs.page = pr.page
     if (pr.isNew) {
       drawSupportContinuationHeader(refs.page, font, bold, data, refs.y)
@@ -1748,20 +1794,22 @@ function drawAdvancedScheduleSection(
     const drawLightBlock = (list: CallSheetStrip[], showItpBanner: boolean): void => {
       if (list.length === 0) return
       const hasCast = list.some((s) => (s.castCompact?.trim() ?? '').length > 0)
-      const cols: { label: string; w: number }[] = [
-        { label: 'LOC', w: 40 },
-        { label: 'SC/SH', w: 34 },
-        { label: 'SHOT DESCRIPTION', w: hasCast ? 198 : 262 },
-        { label: 'D/N', w: 30 },
-        { label: 'PGS', w: 20 },
-      ]
-      if (hasCast) cols.push({ label: 'CAST', w: 48 })
+      const cols = buildAdvancedScheduleColumns({
+        includeEpisodesInSchedule: data.includeEpisodesInSchedule === true,
+        hasCast,
+      })
       const tableW = cols.reduce((s, c) => s + c.w, 0)
       const x0 = MARGIN
       const pad = 2
       const xStarts: number[] = [x0]
       for (let i = 1; i < cols.length; i++) {
         xStarts.push(xStarts[i - 1]! + cols[i - 1]!.w)
+      }
+
+      const advColIdx = (k: AdvancedScheduleColKey): number => {
+        const i = cols.findIndex((c) => c.key === k)
+        if (i < 0) throw new Error(`Missing advanced schedule column ${k}`)
+        return i
       }
 
       const drawTableHead = (): void => {
@@ -1799,14 +1847,15 @@ function drawAdvancedScheduleSection(
       ensure(36, false)
       drawTableHead()
 
-      const castIdx = hasCast ? cols.length - 1 : -1
+      const synopsisW = cols[advColIdx('synopsis')].w - pad * 2
+      const castEntry = cols.find((c) => c.key === 'cast')
+      const castW = castEntry ? castEntry.w - pad * 2 : 0
 
       for (const s of list) {
         const isSpecial = scheduleStripIsSpecial(s.strip_type)
-        const setW = cols[2]!.w - pad * 2
-        const castW = castIdx >= 0 ? cols[castIdx]!.w - pad * 2 : 0
 
         let loc = ''
+        let ep = ''
         let ScSh = ''
         let setLines: string[]
         let dn = ''
@@ -1815,18 +1864,20 @@ function drawAdvancedScheduleSection(
 
         if (isSpecial) {
           loc = ''
+          ep = ''
           ScSh = ''
-          setLines = wrapLinesLimited(specialScheduleSetLine(s), setW, font, FONT_ADV, 1)
+          setLines = wrapLinesLimited(specialScheduleSetLine(s), synopsisW, font, FONT_ADV, 1)
           dn = ''
           pgs = ''
           castStr = ''
         } else {
           loc = s.locDitto ? DITTO_MARK : (s.locLabel ?? '')
+          ep = (s.episodeLabel ?? '').trim()
           const sn = s.scene_number?.trim()
           const sh = s.shot_number?.trim()
           if (sn && sh) ScSh = `${sn} · ${sh}`
           else ScSh = sn ?? sh ?? ''
-          setLines = wrapLinesLimited(setSynopsisSource(s), setW, font, FONT_ADV, 1)
+          setLines = wrapLinesLimited(setSynopsisSource(s), synopsisW, font, FONT_ADV, 1)
           dn = formatScheduleDnColumn(s.int_ext, s.day_night)
           pgs = s.page_eighths != null ? `${s.page_eighths}/8` : ''
           castStr = s.castCompact ?? ''
@@ -1856,13 +1907,31 @@ function drawAdvancedScheduleSection(
           })
         }
 
-        drawCell(0, loc, false)
-        drawCell(1, ScSh, false)
-        drawCell(2, setLines[0] ?? '', true)
-        drawCell(3, dn, false)
-        drawCell(4, pgs, false)
-        if (castIdx >= 0) {
-          drawCell(castIdx, wrapLinesLimited(castStr, castW, font, FONT_ADV, 1)[0] ?? '', false)
+        for (const c of cols) {
+          const ci = advColIdx(c.key)
+          switch (c.key) {
+            case 'loc':
+              drawCell(ci, loc, false)
+              break
+            case 'ep':
+              drawCell(ci, ep, false)
+              break
+            case 'scsh':
+              drawCell(ci, ScSh, false)
+              break
+            case 'synopsis':
+              drawCell(ci, setLines[0] ?? '', true)
+              break
+            case 'dn':
+              drawCell(ci, dn, false)
+              break
+            case 'pgs':
+              drawCell(ci, pgs, false)
+              break
+            case 'cast':
+              drawCell(ci, wrapLinesLimited(castStr, castW, font, FONT_ADV, 1)[0] ?? '', false)
+              break
+          }
         }
 
         refs.y.current -= rowH
@@ -1972,7 +2041,7 @@ export async function generateCallSheetPdf(data: CallSheetData): Promise<Uint8Ar
 
   // ---------- Advanced schedule (forward days) ----------
   if ((data.advancedScheduleDays?.length ?? 0) > 0) {
-    let pr = addPageIfNeeded(doc, page, y, 44)
+    const pr = addPageIfNeeded(doc, page, y, 44)
     page = pr.page
     if (pr.isNew) {
       y.current = PAGE_HEIGHT - MARGIN

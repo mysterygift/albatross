@@ -39,13 +39,18 @@ export const DEMO_VENDORS: DemoVendorDef[] = [
   { company_name: 'Meridian Production Offices', primary_contact_full_name: 'Laura Finch', primary_contact_email: 'laura.finch@meridianoffices-demo.co.uk' },
 ]
 
+export type DemoVendorIdSource = {
+  vendor: (n: number) => string
+}
+
 /**
- * Seed vendors for the demo production only. Uses deterministic IDs from IDS.vendor(1..18).
+ * Seed demo-pattern vendors. Uses deterministic IDs from `ids.vendor(1..18)`.
  * Returns a map of company_name → vendor id for use by budget and vendor finance seeds.
  */
 export async function seedDemoVendors(
   productionId: string,
-  ts: string
+  ts: string,
+  ids: DemoVendorIdSource = IDS
 ): Promise<Record<string, string>> {
   const map: Record<string, string> = {}
 
@@ -57,7 +62,7 @@ export async function seedDemoVendors(
 
     for (let i = 0; i < DEMO_VENDORS.length; i++) {
       const v = DEMO_VENDORS[i]!
-      const id = IDS.vendor(i + 1)
+      const id = ids.vendor(i + 1)
       map[v.company_name] = id
       statements.push({
         sql: `INSERT INTO ${TABLE} (id, production_id, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at, deleted_at)

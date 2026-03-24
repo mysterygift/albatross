@@ -10,12 +10,6 @@ import {
   unarchiveProduction,
   findExistingDemoTemplateProduction,
 } from '@/lib/db/repositories/production'
-import { pickApfFileForImport, pickApfSavePath } from '@/lib/files'
-import {
-  exportProductionAsApf,
-  userMessageForExportFailure,
-  userMessageForImportFailure,
-} from '@/lib/importExport'
 import { createProductionFromTemplate } from '@/lib/db/createProductionFromTemplate'
 import {
   useReactTable,
@@ -50,7 +44,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { useForm } from 'react-hook-form'
+import { Checkbox } from '@/components/ui/checkbox'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
@@ -68,20 +63,37 @@ import {
   Loader2,
 } from 'lucide-react'
 import type { Production } from '@/lib/db/types'
-import { runApfImportWithUiFollowUp } from '@/features/productions/apfImportFlow'
 import { useCurrentProduction } from './context'
-import { Controller } from 'react-hook-form'
+import { useApfActions } from '@/features/productions/useApfActions'
 
 const templateEnum = z.enum(['blank', 'demo', 'default'])
-const productionSchema = z.object({
+const editProductionSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   notes: z.string().optional(),
-  template: templateEnum,
 })
-type ProductionForm = z.infer<typeof productionSchema>
+const newProductionFormSchema = z
+  .object({
+    name: z.string().min(1, 'Name is required'),
+    notes: z.string().optional(),
+    template: templateEnum,
+    isEpisodic: z.boolean(),
+    initialEpisodeName: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.isEpisodic) return
+    if (!(data.initialEpisodeName ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Enter a name for the first episode',
+        path: ['initialEpisodeName'],
+      })
+    }
+  })
+type NewProductionForm = z.infer<typeof newProductionFormSchema>
+type EditProductionForm = z.infer<typeof editProductionSchema>
 
 const TEMPLATE_OPTIONS: {
-  value: ProductionForm['template']
+  value: NewProductionForm['template']
   label: string
   description: string
   preview: string
@@ -132,7 +144,10 @@ export function ProductionsPage() {
   const [actionToast, setActionToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [verifyDeleteResult, setVerifyDeleteResult] = useState<string | null>(null)
   const [verifyDeletePending, setVerifyDeletePending] = useState(false)
-  const [demoOverrideTarget, setDemoOverrideTarget] = useState<{ production: Production; formData: ProductionForm } | null>(null)
+  const [demoOverrideTarget, setDemoOverrideTarget] = useState<{
+    production: Production
+    formData: NewProductionForm
+  } | null>(null)
   const [demoOverrideError, setDemoOverrideError] = useState<string | null>(null)
   const [overrideDeletePending, setOverrideDeletePending] = useState(false)
   const [showArchived, setShowArchived] = useState(() => {
@@ -142,10 +157,15 @@ export function ProductionsPage() {
       return false
     }
   })
-  const [apfBusy, setApfBusy] = useState<'export' | 'import' | null>(null)
   const queryClient = useQueryClient()
   const { currentProductionId, currentProduction, setCurrentProductionId, refetchProductions } =
     useCurrentProduction()
+  const { apfBusy, handleImportApf, handleExportApf } = useApfActions({
+    onMessage: (msg) => {
+      setActionToast({ type: msg.type, message: msg.message })
+      setTimeout(() => setActionToast(null), msg.timeoutMs)
+    },
+  })
   const { data: productions = [] } = useQuery({
     queryKey: ['productions', { includeArchived: showArchived }],
     queryFn: () => listProductions({ includeArchived: showArchived }),
@@ -161,72 +181,27 @@ export function ProductionsPage() {
     }
   }
 
-  async function handleExportApf() {
-    if (!currentProduction || apfBusy) return
-    setApfBusy('export')
-    try {
-      const path = await pickApfSavePath(currentProduction.name)
-      if (path == null) return
-      await exportProductionAsApf(currentProduction.id, path)
-      const baseName = path.split(/[/\\]/).pop() ?? 'file.apf'
-      setActionToast({ type: 'success', message: `Project exported as “${baseName}”.` })
-      setTimeout(() => setActionToast(null), 5000)
-    } catch (e) {
-      setActionToast({ type: 'error', message: userMessageForExportFailure(e) })
-      setTimeout(() => setActionToast(null), 6000)
-    } finally {
-      setApfBusy(null)
-    }
-  }
-
-  async function handleImportApf() {
-    if (apfBusy) return
-    setApfBusy('import')
-    try {
-      const path = await pickApfFileForImport()
-      if (path == null) return
-      const outcome = await runApfImportWithUiFollowUp(path, {
-        queryClient,
-        refetchProductions,
-        setCurrentProductionId,
-        persistShowArchived: (value) => {
-          try {
-            localStorage.setItem('showArchivedProductions', String(value))
-          } catch {
-            /* ignore */
-          }
-        },
-      })
-      if (outcome.kind === 'error') {
-        setActionToast({ type: 'error', message: outcome.message })
-        setTimeout(() => setActionToast(null), 6000)
-        return
-      }
-      if (outcome.revealArchivedInList) {
-        setShowArchived(true)
-      }
-      setActionToast({ type: 'success', message: outcome.message })
-      setTimeout(() => setActionToast(null), 8000)
-    } catch (e) {
-      setActionToast({ type: 'error', message: userMessageForImportFailure(e) })
-      setTimeout(() => setActionToast(null), 6000)
-    } finally {
-      setApfBusy(null)
-    }
-  }
-
   useEffect(() => {
     const onRevealArchived = () => setShowArchived(true)
     window.addEventListener('albatross-reveal-archived-productions', onRevealArchived)
     return () => window.removeEventListener('albatross-reveal-archived-productions', onRevealArchived)
   }, [])
 
+  useEffect(() => {
+    const onOpenNewProjectDialog = () => setOpen(true)
+    window.addEventListener('albatross-open-new-production-dialog', onOpenNewProjectDialog)
+    return () =>
+      window.removeEventListener('albatross-open-new-production-dialog', onOpenNewProjectDialog)
+  }, [])
+
   const createMutation = useMutation({
-    mutationFn: (data: ProductionForm) =>
+    mutationFn: (data: NewProductionForm) =>
       createProductionFromTemplate({
         name: data.name,
         notes: data.notes ?? null,
         template: data.template,
+        isEpisodic: data.isEpisodic,
+        initialEpisodeName: data.isEpisodic ? data.initialEpisodeName?.trim() : undefined,
       }),
     onSuccess: (production) => {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
@@ -240,7 +215,7 @@ export function ProductionsPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<ProductionForm> }) =>
+    mutationFn: ({ id, data }: { id: string; data: EditProductionForm }) =>
       updateProduction(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
@@ -349,10 +324,15 @@ export function ProductionsPage() {
       accessorKey: 'name',
       header: 'Name',
       cell: ({ row }) => (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className={row.original.archived_at ? 'text-muted-foreground' : ''}>
             {row.original.name}
           </span>
+          {row.original.is_episodic && (
+            <span className="rounded border border-violet-500/30 bg-yellow-500/10 px-1.5 py-0.5 text-xs font-medium text-white-800 dark:border-violet-400/35 dark:bg-yellow-500/15 dark:text-white-300">
+              Episodic
+            </span>
+          )}
           {row.original.archived_at && (
             <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-400 text-xs font-medium">
               Archived
@@ -783,16 +763,23 @@ function ProductionFormDialog({
   error,
   onDismissError,
 }: {
-  onSubmit: (data: ProductionForm) => void
+  onSubmit: (data: NewProductionForm) => void
   onCancel: () => void
   isLoading: boolean
   error?: string | null
   onDismissError?: () => void
 }) {
-  const form = useForm<ProductionForm>({
-    resolver: zodResolver(productionSchema),
-    defaultValues: { name: '', notes: '', template: 'default' },
+  const form = useForm<NewProductionForm>({
+    resolver: zodResolver(newProductionFormSchema),
+    defaultValues: {
+      name: '',
+      notes: '',
+      template: 'default',
+      isEpisodic: false,
+      initialEpisodeName: '',
+    },
   })
+  const isEpisodic = form.watch('isEpisodic')
   return (
     <>
       <DialogHeader className="space-y-1.5">
@@ -817,6 +804,48 @@ function ProductionFormDialog({
         <div className="space-y-2">
           <Label htmlFor="notes">Project description</Label>
           <Textarea id="notes" {...form.register('notes')} rows={2} placeholder="Optional" className="resize-none" />
+        </div>
+        <div className="rounded-lg border border-border bg-muted/20 px-3.5 py-3 space-y-3">
+          <Controller
+            name="isEpisodic"
+            control={form.control}
+            render={({ field }) => (
+              <label className="flex cursor-pointer items-start gap-3">
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={(c) => field.onChange(c === true)}
+                  className="mt-0.5"
+                  id="is-episodic"
+                />
+                <div className="space-y-1 min-w-0">
+                  <span className="text-sm font-medium text-foreground leading-snug">Episodic production</span>
+                  <p className="text-muted-foreground text-xs leading-snug">
+                    For series and multi-episode work. Scenes, schedule, and deliverables can be tied to episodes in later releases.
+                  </p>
+                </div>
+              </label>
+            )}
+          />
+          {isEpisodic && (
+            <>
+              <p className="text-amber-700 dark:text-amber-400 text-xs font-medium leading-snug border border-amber-500/35 rounded-md bg-amber-500/10 px-2.5 py-2">
+                You cannot turn off episodic mode after the project is created. Be sure this is the right choice for this production.
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="initial-episode">First episode name</Label>
+                <Input
+                  id="initial-episode"
+                  {...form.register('initialEpisodeName')}
+                  placeholder="e.g. Episode 1 or 101"
+                />
+                {form.formState.errors.initialEpisodeName && (
+                  <p className="text-destructive text-sm">
+                    {form.formState.errors.initialEpisodeName.message}
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </div>
         <div className="space-y-2.5">
           <Label className="text-foreground">Project template</Label>
@@ -887,13 +916,13 @@ function EditProductionForm({
   isLoading,
 }: {
   production: Production
-  onSubmit: (data: ProductionForm) => void
+  onSubmit: (data: EditProductionForm) => void
   onCancel: () => void
   isLoading: boolean
 }) {
-  const form = useForm<ProductionForm>({
-    resolver: zodResolver(productionSchema),
-    defaultValues: { name: production.name, notes: production.notes ?? '', template: 'default' },
+  const form = useForm<EditProductionForm>({
+    resolver: zodResolver(editProductionSchema),
+    defaultValues: { name: production.name, notes: production.notes ?? '' },
   })
   return (
     <>

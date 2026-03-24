@@ -37,17 +37,19 @@ export function CallSheetDistributionDialog({
   statusMessage,
   error,
 }: CallSheetDistributionDialogProps) {
-  const initialSelectedIds = useMemo(() => new Set(recipients.map((r) => r.id)), [recipients])
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(initialSelectedIds)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(recipients.map((r) => r.id)),
+  )
 
-  // When the recipient list changes (e.g. different shoot day/unit while dialog open), reset selection to all selected
   const recipientIdKey = useMemo(
     () => recipients.map((r) => r.id).sort().join(','),
     [recipients],
   )
   useEffect(() => {
+    // Reset to all selected when the recipient set changes (e.g. shoot day / unit).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional sync with recipientIdKey
     setSelectedIds(new Set(recipients.map((r) => r.id)))
-  }, [recipientIdKey])
+  }, [recipientIdKey, recipients])
 
   const hasRecipients = recipients.length > 0
   const anySelected = selectedIds.size > 0
@@ -112,10 +114,22 @@ export function CallSheetDistributionDialog({
             </p>
             {hasRecipients && (
               <div className="flex shrink-0 items-center gap-2 text-xs">
-                <Button type="button" variant="ghost" size="xs" onClick={handleSelectAll}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onClick={handleSelectAll}
+                  disabled={loading}
+                >
                   Select all
                 </Button>
-                <Button type="button" variant="ghost" size="xs" onClick={handleClearAll}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onClick={handleClearAll}
+                  disabled={loading}
+                >
                   Clear all
                 </Button>
               </div>
@@ -130,6 +144,7 @@ export function CallSheetDistributionDialog({
                     <Checkbox
                       checked={selectedIds.has(r.id)}
                       onCheckedChange={(v) => handleToggle(r.id, v === true)}
+                      disabled={loading}
                       className="mt-0.5"
                     />
                     <div className="min-w-0 flex-1">
@@ -169,7 +184,7 @@ export function CallSheetDistributionDialog({
             Cancel
           </Button>
           <Button type="button" disabled={!anySelected || loading} onClick={handleGenerate}>
-            {loading ? 'Exporting…' : 'Generate Selected Copies'}
+            {loading ? 'Generating…' : 'Generate Selected Copies'}
           </Button>
         </DialogFooter>
       </DialogContent>

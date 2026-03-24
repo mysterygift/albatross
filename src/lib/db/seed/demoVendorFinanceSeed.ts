@@ -10,6 +10,15 @@ import { executeBatch, getDb, runInSerializedTransaction } from '../client'
 import { buildCreateTaskStatements } from '../repositories/tasks'
 import { IDS } from './constants'
 
+export type DemoVendorFinanceIdSource = {
+  vendorPO: (n: number) => string
+  vendorInvoice: (n: number) => string
+  expense: (n: number) => string
+  invoiceReminderTask: (n: number) => string
+  vendorInvoiceExpenseLink: (n: number) => string
+  vendorPOExpenseLink: (n: number) => string
+}
+
 const TABLE_INVOICES = 'vendor_invoices'
 const TABLE_POS = 'vendor_purchase_orders'
 const TABLE_INVOICE_EXPENSE = 'vendor_invoice_expenses'
@@ -120,7 +129,8 @@ export async function seedDemoVendorFinance(
   startDate: string,
   ts: string,
   addDaysLocal: (yyyyMmDd: string, days: number) => string,
-  vendorIdByCompanyName: Record<string, string>
+  vendorIdByCompanyName: Record<string, string>,
+  ids: DemoVendorFinanceIdSource = IDS
 ): Promise<void> {
   const db = await getDb()
 
@@ -135,7 +145,7 @@ export async function seedDemoVendorFinance(
     // 1) POs (no outbox for demo seed)
     for (let i = 0; i < DEMO_PO_LIST.length; i++) {
       const po = DEMO_PO_LIST[i]!
-      const id = IDS.vendorPO(i + 1)
+      const id = ids.vendorPO(i + 1)
       poIds.push(id)
       statements.push({
         sql: `INSERT INTO ${TABLE_POS} (id, production_id, vendor_id, po_number, description, issue_date, due_date, amount, status, approval, notes, created_at, updated_at)
@@ -161,7 +171,7 @@ export async function seedDemoVendorFinance(
     // 2) Invoices (no outbox for demo seed); link po_id where po_index set
     for (let i = 0; i < DEMO_INVOICE_LIST.length; i++) {
       const inv = DEMO_INVOICE_LIST[i]!
-      const id = IDS.vendorInvoice(i + 1)
+      const id = ids.vendorInvoice(i + 1)
       invoiceIds.push(id)
       const poId = inv.po_index != null ? poIds[inv.po_index - 1]! : null
       statements.push({
@@ -191,7 +201,7 @@ export async function seedDemoVendorFinance(
     for (let i = 0; i < DEMO_INVOICE_LIST.length; i++) {
       const inv = DEMO_INVOICE_LIST[i]!
       const dueDate = addDaysLocal(startDate, inv.due_offset)
-      const taskId = IDS.invoiceReminderTask(taskIdx + 1)
+      const taskId = ids.invoiceReminderTask(taskIdx + 1)
       taskIdx++
       const taskStatements = buildCreateTaskStatements(
         taskId,
@@ -200,7 +210,7 @@ export async function seedDemoVendorFinance(
           description: reminderDescription(inv.invoice_number, inv.vendorCompany),
           due_date: dueDate,
           assigned_department: INVOICE_REMINDER_DEPARTMENT,
-          vendor_invoice_id: IDS.vendorInvoice(i + 1),
+          vendor_invoice_id: ids.vendorInvoice(i + 1),
           is_complete: inv.status === 'paid' ? 1 : 0,
         },
         ts
@@ -211,9 +221,9 @@ export async function seedDemoVendorFinance(
     // 4) Invoice ↔ expense links
     for (let linkIdx = 0; linkIdx < DEMO_INVOICE_EXPENSE_LINKS.length; linkIdx++) {
       const [invIdx, expIdx] = DEMO_INVOICE_EXPENSE_LINKS[linkIdx]!
-      const invoiceId = IDS.vendorInvoice(invIdx + 1)
-      const expenseId = IDS.expense(expIdx + 1)
-      const linkId = IDS.vendorInvoiceExpenseLink(linkIdx + 1)
+      const invoiceId = ids.vendorInvoice(invIdx + 1)
+      const expenseId = ids.expense(expIdx + 1)
+      const linkId = ids.vendorInvoiceExpenseLink(linkIdx + 1)
       statements.push({
         sql: `INSERT INTO ${TABLE_INVOICE_EXPENSE} (id, vendor_invoice_id, expense_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
         bindValues: [linkId, invoiceId, expenseId, ts, ts],
@@ -223,9 +233,9 @@ export async function seedDemoVendorFinance(
     // 5) PO ↔ expense links
     for (let linkIdx = 0; linkIdx < DEMO_PO_EXPENSE_LINKS.length; linkIdx++) {
       const [poIdx, expIdx] = DEMO_PO_EXPENSE_LINKS[linkIdx]!
-      const poId = IDS.vendorPO(poIdx + 1)
-      const expenseId = IDS.expense(expIdx + 1)
-      const linkId = IDS.vendorPOExpenseLink(linkIdx + 1)
+      const poId = ids.vendorPO(poIdx + 1)
+      const expenseId = ids.expense(expIdx + 1)
+      const linkId = ids.vendorPOExpenseLink(linkIdx + 1)
       statements.push({
         sql: `INSERT INTO ${TABLE_PO_EXPENSE} (id, vendor_purchase_order_id, expense_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
         bindValues: [linkId, poId, expenseId, ts, ts],

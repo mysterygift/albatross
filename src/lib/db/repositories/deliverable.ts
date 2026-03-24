@@ -1,14 +1,57 @@
 import { getDb, now, uuid } from '../client'
 import { outboxPush } from '../outbox'
 import type { Deliverable, TechnicalSpec } from '../types'
+import { getProductionById } from './production'
+import { getActiveEpisodeByIdForProduction, getEpisodeByIdForProductionIncludeArchived } from './episodes'
 
 const DEL_TABLE = 'deliverables'
 const SPEC_TABLE = 'technical_specs'
 
+function normalizeEpisodeIdForWrite(raw: string | null | undefined): string | null {
+  if (raw == null) return null
+  const t = String(raw).trim()
+  return t === '' ? null : t
+}
+
+/** Enforces episodic rules when setting deliverable episode scope (create/update/template). */
+export async function assertDeliverableEpisodeAllowed(
+  productionId: string,
+  episodeId: string | null
+): Promise<void> {
+  const prod = await getProductionById(productionId)
+  if (!prod) throw new Error('Production not found')
+  const hasEpisode = episodeId != null
+  if (!prod.is_episodic && hasEpisode) {
+    throw new Error('Episode cannot be set for non-episodic productions.')
+  }
+  if (prod.is_episodic && hasEpisode) {
+    const ep = await getActiveEpisodeByIdForProduction(productionId, episodeId!)
+    if (!ep) throw new Error('Episode not found or archived.')
+  }
+}
+
+export type DeliverableScopeLabel =
+  | { kind: 'project_wide' }
+  | { kind: 'episode'; name: string; archived: boolean }
+
+/** Display label for list/detail; include-archived read so archived episodes stay readable. */
+export async function resolveDeliverableScopeLabel(
+  productionId: string,
+  episodeId: string | null
+): Promise<DeliverableScopeLabel> {
+  if (episodeId == null || episodeId.trim() === '') return { kind: 'project_wide' }
+  const ep = await getEpisodeByIdForProductionIncludeArchived(productionId, episodeId)
+  if (!ep) return { kind: 'episode', name: 'Unknown episode', archived: false }
+  return { kind: 'episode', name: ep.name, archived: ep.deleted_at != null }
+}
+
 function rowToDeliverable(r: Record<string, unknown>): Deliverable {
+  const eid = r.episode_id
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    episode_id:
+      eid == null || (typeof eid === 'string' && eid.trim() === '') ? null : (eid as string),
     name: r.name as string,
     due_date: r.due_date as string | null,
     status: r.status as string,
@@ -45,12 +88,33 @@ function rowToTechnicalSpec(r: Record<string, unknown>): TechnicalSpec {
   }
 }
 
-export async function listDeliverablesByProduction(productionId: string): Promise<Deliverable[]> {
+export type ListDeliverablesOptions = {
+  filter?: 'all' | 'project_wide' | 'episode'
+  /** Required when filter === 'episode'. */
+  episodeId?: string
+}
+
+export async function listDeliverablesByProduction(
+  productionId: string,
+  options?: ListDeliverablesOptions
+): Promise<Deliverable[]> {
   const db = await getDb()
-  const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${DEL_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY due_date, name`,
-    [productionId]
-  )
+  const filter = options?.filter ?? 'all'
+  const clauses = [`production_id = $1`, `deleted_at IS NULL`]
+  const bind: unknown[] = [productionId]
+  let i = 2
+  if (filter === 'project_wide') {
+    clauses.push(`episode_id IS NULL`)
+  } else if (filter === 'episode') {
+    const eid = options?.episodeId?.trim()
+    if (!eid) {
+      throw new Error('episodeId is required when filtering by episode.')
+    }
+    clauses.push(`episode_id = $${i++}`)
+    bind.push(eid)
+  }
+  const sql = `SELECT * FROM ${DEL_TABLE} WHERE ${clauses.join(' AND ')} ORDER BY due_date, name`
+  const rows = await db.select<Record<string, unknown>[]>(sql, bind)
   return rows.map(rowToDeliverable)
 }
 
@@ -64,16 +128,20 @@ export async function createDeliverable(data: {
   delivered_by?: string | null
   delivered_at?: string | null
   approval_status?: string | null
+  episode_id?: string | null
 }): Promise<Deliverable> {
+  const episodeId = normalizeEpisodeIdForWrite(data.episode_id)
+  await assertDeliverableEpisodeAllowed(data.production_id, episodeId)
   const db = await getDb()
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${DEL_TABLE} (id, production_id, name, due_date, status, recipient, delivery_method, delivered_by, delivered_at, approval_status, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    `INSERT INTO ${DEL_TABLE} (id, production_id, episode_id, name, due_date, status, recipient, delivery_method, delivered_by, delivered_at, approval_status, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       id,
       data.production_id,
+      episodeId,
       data.name,
       data.due_date ?? null,
       data.status ?? 'not_started',
@@ -86,7 +154,7 @@ export async function createDeliverable(data: {
       ts,
     ]
   )
-  await outboxPush(DEL_TABLE, id, 'create', JSON.stringify({ ...data, id }))
+  await outboxPush(DEL_TABLE, id, 'create', JSON.stringify({ ...data, id, episode_id: episodeId }))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${DEL_TABLE} WHERE id = $1`, [id])
   return rowToDeliverable(rows[0]!)
 }
@@ -100,6 +168,7 @@ const DELIVERABLE_UPDATE_KEYS = [
   'delivered_by',
   'delivered_at',
   'approval_status',
+  'episode_id',
 ] as const
 
 export async function updateDeliverable(
@@ -107,14 +176,25 @@ export async function updateDeliverable(
   data: Partial<Pick<Deliverable, (typeof DELIVERABLE_UPDATE_KEYS)[number]>>
 ): Promise<Deliverable> {
   const db = await getDb()
+  if (data.episode_id !== undefined) {
+    const existingRows = await db.select<Record<string, unknown>[]>(
+      `SELECT * FROM ${DEL_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
+      [id]
+    )
+    if (!existingRows.length) throw new Error('Deliverable not found')
+    const existing = rowToDeliverable(existingRows[0]!)
+    const nextEp = normalizeEpisodeIdForWrite(data.episode_id)
+    await assertDeliverableEpisodeAllowed(existing.production_id, nextEp)
+  }
   const ts = now()
   const cols: string[] = []
   const vals: unknown[] = []
   let i = 1
   for (const k of DELIVERABLE_UPDATE_KEYS) {
     if (data[k] !== undefined) {
+      const v = k === 'episode_id' ? normalizeEpisodeIdForWrite(data.episode_id as string | null) : data[k]
       cols.push(`${k} = $${i++}`)
-      vals.push(data[k])
+      vals.push(v)
     }
   }
   if (cols.length === 0) {

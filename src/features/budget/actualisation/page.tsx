@@ -16,18 +16,29 @@ import { riskWatchQueryKey } from '@/lib/budget/vendors/riskWatch'
 import {
   getReconciliationSummary,
   getBudgetItemMatchStatus,
-  getExpenseAllocationStatus,
   getBudgetItemRemainingEstimate,
-  getExpenseUnallocatedAmount,
   sumAllocatedAmountForExpense,
   sumMatchedAmountForBudgetItem,
 } from '@/lib/budget/reconciliation'
+import { getExpenseUnallocatedForFloatMatching, sumFloatMatchedForExpense } from '@/lib/budget/floatExpenseMatching'
+import { listFloatExpenseLinksByExpense, listFloatExpenseLinksByProduction } from '@/lib/db/repositories/floatReconciliation'
+import { listFloatsByProduction } from '@/lib/db/repositories/floats'
+import { listPeopleByProduction } from '@/lib/db/repositories/person'
+import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import {
   filterLineItemsByClassification,
   filterExpensesByClassification,
   type ClassificationFilter,
 } from '@/lib/budget/matching'
-import type { BudgetItemReconciliationStatus, Expense, ExpenseReconciliationStatus } from '@/lib/db/types'
+import type {
+  BudgetItemExpenseLink,
+  BudgetItemReconciliationStatus,
+  Expense,
+  ExpenseReconciliationStatus,
+  FloatExpenseLink,
+  Person,
+  PettyCashFloat,
+} from '@/lib/db/types'
 import type { LineItemType } from '@/lib/db/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -56,6 +67,7 @@ import {
 import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
 import { LineItemMatchStatusBadge } from '@/features/budget/actualisation/LineItemMatchStatusBadge'
 import { ExpenseAllocationStatusBadge } from '@/features/budget/actualisation/ExpenseAllocationStatusBadge'
+import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -99,11 +111,39 @@ function expenseDescription(expense: Expense): string {
   return (expense.vendor ?? expense.notes ?? 'Expense').trim() || 'Expense'
 }
 
+function getExpenseAllocationStatusIncludingFloats(
+  expense: Expense,
+  budgetLinks: BudgetItemExpenseLink[],
+  floatLinksForExpense: FloatExpenseLink[]
+): ExpenseReconciliationStatus {
+  const budget = sumAllocatedAmountForExpense(expense.id, budgetLinks)
+  const floatPart = sumFloatMatchedForExpense(expense.id, floatLinksForExpense)
+  const total = budget + floatPart
+  if (total === 0) return 'unallocated'
+  if (total < expense.amount) return 'partial'
+  return 'allocated'
+}
+
+function buildFloatAllocationLabel(
+  floatId: string,
+  floatById: Map<string, PettyCashFloat>,
+  personById: Map<string, Person>
+): string {
+  const fl = floatById.get(floatId)
+  const person = fl ? personById.get(fl.person_id) : null
+  const name = person?.name?.trim() ? person.name.trim() : 'Unknown'
+  const dept = person?.department?.trim() ? person.department.trim() : ''
+  const deptPart = dept && dept !== 'Unassigned' ? ` (${dept})` : ''
+  return `${name}${deptPart}`
+}
+
 export function ActualisationPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const { format } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const queryClient = useQueryClient()
+  const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
+  const revisionId = workingBudgetRevision?.id
 
   const [typeFilter, setTypeFilter] = useState<ClassificationFilter>('all')
   const [lineItemStatusFilter, setLineItemStatusFilter] = useState<'all' | BudgetItemReconciliationStatus>('all')
@@ -122,8 +162,8 @@ export function ActualisationPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const { data: items = [] } = useQuery({
-    queryKey: ['budget-items', currentProductionId],
-    queryFn: () => listBudgetItemsByProduction(currentProductionId!),
+    queryKey: ['budget-items', currentProductionId, revisionId],
+    queryFn: () => listBudgetItemsByProduction(currentProductionId!, { revisionId }),
     enabled: !!currentProductionId,
   })
   const { data: expenses = [] } = useQuery({
@@ -132,8 +172,8 @@ export function ActualisationPage() {
     enabled: !!currentProductionId,
   })
   const { data: links = [] } = useQuery({
-    queryKey: ['budget-item-expense-links', currentProductionId],
-    queryFn: () => listBudgetItemExpenseLinksByProduction(currentProductionId!),
+    queryKey: ['budget-item-expense-links', currentProductionId, revisionId],
+    queryFn: () => listBudgetItemExpenseLinksByProduction(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
   const { data: accounts = [] } = useQuery({
@@ -143,14 +183,38 @@ export function ActualisationPage() {
   })
 
   const { data: linksForSelectedItem = [] } = useQuery({
-    queryKey: ['budget-item-expense-links-for-item', selectedLineItemId],
-    queryFn: () => listBudgetItemExpenseLinksForBudgetItem(selectedLineItemId!),
+    queryKey: ['budget-item-expense-links-for-item', selectedLineItemId, revisionId],
+    queryFn: () => listBudgetItemExpenseLinksForBudgetItem(selectedLineItemId!, revisionId),
     enabled: !!selectedLineItemId,
   })
   const { data: linksForSelectedExpense = [] } = useQuery({
-    queryKey: ['budget-item-expense-links-for-expense', selectedExpenseId],
-    queryFn: () => listBudgetItemExpenseLinksForExpense(selectedExpenseId!),
+    queryKey: ['budget-item-expense-links-for-expense', selectedExpenseId, revisionId],
+    queryFn: () => listBudgetItemExpenseLinksForExpense(selectedExpenseId!, revisionId),
     enabled: !!selectedExpenseId,
+  })
+
+  const { data: floatLinksForSelectedExpense = [] } = useQuery({
+    queryKey: ['float-expense-links-for-expense', selectedExpenseId, revisionId],
+    queryFn: () => listFloatExpenseLinksByExpense(selectedExpenseId!, revisionId),
+    enabled: !!selectedExpenseId,
+  })
+
+  const { data: productionFloatExpenseLinks = [] } = useQuery({
+    queryKey: ['float-expense-links-by-production', currentProductionId, revisionId],
+    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId!, revisionId),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: productionFloats = [] } = useQuery({
+    queryKey: ['floats', currentProductionId, revisionId],
+    queryFn: () => listFloatsByProduction(currentProductionId!, revisionId),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: people = [] } = useQuery({
+    queryKey: ['people', currentProductionId],
+    queryFn: () => listPeopleByProduction(currentProductionId!),
+    enabled: !!currentProductionId,
   })
 
   const accountById = useMemo(() => {
@@ -162,6 +226,19 @@ export function ActualisationPage() {
     () => getReconciliationSummary({ budgetItems: items, expenses, links }),
     [items, expenses, links]
   )
+
+  const floatLinksByExpenseId = useMemo(() => {
+    const m = new Map<string, FloatExpenseLink[]>()
+    for (const l of productionFloatExpenseLinks) {
+      const arr = m.get(l.expense_id) ?? []
+      arr.push(l)
+      m.set(l.expense_id, arr)
+    }
+    return m
+  }, [productionFloatExpenseLinks])
+
+  const floatById = useMemo(() => new Map(productionFloats.map((f) => [f.id, f])), [productionFloats])
+  const personById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people])
 
   const filteredItems = useMemo(() => {
     let list = filterLineItemsByClassification(items, typeFilter)
@@ -184,43 +261,51 @@ export function ActualisationPage() {
   const filteredExpenses = useMemo(() => {
     let list = filterExpensesByClassification(expenses, typeFilter)
     if (expenseStatusFilter !== 'all') {
-      list = list.filter((e) => getExpenseAllocationStatus(e, links) === expenseStatusFilter)
+      list = list.filter(
+        (e) =>
+          getExpenseAllocationStatusIncludingFloats(e, links, floatLinksByExpenseId.get(e.id) ?? []) ===
+          expenseStatusFilter
+      )
     }
     list = [...list].sort((a, b) => {
-      const statusA = getExpenseAllocationStatus(a, links)
-      const statusB = getExpenseAllocationStatus(b, links)
+      const statusA = getExpenseAllocationStatusIncludingFloats(a, links, floatLinksByExpenseId.get(a.id) ?? [])
+      const statusB = getExpenseAllocationStatusIncludingFloats(b, links, floatLinksByExpenseId.get(b.id) ?? [])
       const orderA = EXPENSE_STATUS_ORDER.indexOf(statusA)
       const orderB = EXPENSE_STATUS_ORDER.indexOf(statusB)
       if (orderA !== orderB) return orderA - orderB
       return b.date.localeCompare(a.date)
     })
     return list
-  }, [expenses, typeFilter, expenseStatusFilter, links])
+  }, [expenses, typeFilter, expenseStatusFilter, links, floatLinksByExpenseId])
 
   const expenseById = useMemo(() => new Map(expenses.map((e) => [e.id, e])), [expenses])
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
 
   useEffect(() => {
     if (!matchSpendModalOpen) {
+      queueMicrotask(() => {
+        setSelectedAllocationItemIds([])
+        setAllocationAmounts({})
+        setMatchSpendSaveError(null)
+        setEditingLinkId(null)
+        setEditingLinkAmount('')
+        setEditingLinkError(null)
+        setLinkIdToConfirmRemove(null)
+        setDeleteLinkError(null)
+      })
+    }
+  }, [matchSpendModalOpen])
+
+  useEffect(() => {
+    queueMicrotask(() => {
       setSelectedAllocationItemIds([])
       setAllocationAmounts({})
-      setMatchSpendSaveError(null)
       setEditingLinkId(null)
       setEditingLinkAmount('')
       setEditingLinkError(null)
       setLinkIdToConfirmRemove(null)
       setDeleteLinkError(null)
-    }
-  }, [matchSpendModalOpen])
-
-  useEffect(() => {
-    setSelectedAllocationItemIds([])
-    setAllocationAmounts({})
-    setEditingLinkId(null)
-    setEditingLinkAmount('')
-    setEditingLinkError(null)
-    setLinkIdToConfirmRemove(null)
-    setDeleteLinkError(null)
+    })
   }, [selectedExpenseId])
 
   const candidateLineItems = useMemo(() => {
@@ -244,7 +329,11 @@ export function ActualisationPage() {
   const selectedExpenseForModal = selectedExpenseId ? expenseById.get(selectedExpenseId) ?? null : null
   const allocationValidation = useMemo(() => {
     if (!selectedExpenseForModal) return { canSave: false, payload: null }
-    const unallocated = getExpenseUnallocatedAmount(selectedExpenseForModal, links)
+    const unallocated = getExpenseUnallocatedForFloatMatching(
+      selectedExpenseForModal,
+      links,
+      floatLinksForSelectedExpense
+    )
     const allocatingNow = selectedAllocationItemIds.reduce(
       (sum, id) =>
         sum +
@@ -257,7 +346,7 @@ export function ActualisationPage() {
         const n = parseFloat(allocationAmounts[id] ?? '')
         return Number.isFinite(n) && n > 0
       })
-    const canSave = allValid && allocatingNow <= unallocated
+    const canSave = allValid && allocatingNow <= unallocated + 1e-9
     const payload =
       selectedAllocationItemIds.length >= 1
         ? {
@@ -269,13 +358,13 @@ export function ActualisationPage() {
           }
         : null
     return { canSave, payload }
-  }, [selectedExpenseForModal, links, selectedAllocationItemIds, allocationAmounts])
+  }, [selectedExpenseForModal, links, floatLinksForSelectedExpense, selectedAllocationItemIds, allocationAmounts])
 
-  function invalidateLinksForExpenseAndItem(productionId: string, expenseId: string, budgetItemId: string) {
-    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', productionId] })
-    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId] })
-    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item', budgetItemId] })
-    queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(productionId) })
+  function invalidateLinksForExpenseAndItem(productionId: string, budgetRevisionId: string | undefined, expenseId: string, budgetItemId: string) {
+    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', productionId, budgetRevisionId] })
+    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId, budgetRevisionId] })
+    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item', budgetItemId, budgetRevisionId] })
+    queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(productionId, budgetRevisionId) })
   }
 
   useEffect(() => {
@@ -300,10 +389,10 @@ export function ActualisationPage() {
       setMatchSpendModalOpen(false)
       setMatchSpendSaveError(null)
       setSuccessMessage('Spend matched.')
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', variables.productionId] })
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', variables.expenseId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', variables.productionId, revisionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', variables.expenseId, revisionId] })
       variables.allocations.forEach((a) => {
-        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item', a.budgetItemId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item', a.budgetItemId, revisionId] })
       })
     },
     onError: (err: Error) => {
@@ -327,7 +416,7 @@ export function ActualisationPage() {
       setEditingLinkError(null)
       setSuccessMessage('Allocation updated.')
       if (currentProductionId && variables.expenseId && variables.budgetItemId) {
-        invalidateLinksForExpenseAndItem(currentProductionId, variables.expenseId, variables.budgetItemId)
+        invalidateLinksForExpenseAndItem(currentProductionId, revisionId, variables.expenseId, variables.budgetItemId)
       }
     },
     onError: (err: Error) => {
@@ -342,7 +431,7 @@ export function ActualisationPage() {
       setDeleteLinkError(null)
       setSuccessMessage('Match removed.')
       if (currentProductionId) {
-        invalidateLinksForExpenseAndItem(currentProductionId, variables.expenseId, variables.budgetItemId)
+        invalidateLinksForExpenseAndItem(currentProductionId, revisionId, variables.expenseId, variables.budgetItemId)
       }
     },
     onError: (err: Error) => {
@@ -356,6 +445,7 @@ export function ActualisationPage() {
     setMatchSpendSaveError(null)
     createLinksMutation.mutate({
       productionId: currentProductionId,
+      revisionId,
       expenseId: allocationValidation.payload.expenseId,
       allocations: allocationValidation.payload.allocations,
     })
@@ -549,9 +639,17 @@ export function ActualisationPage() {
               </TableHeader>
               <TableBody>
                 {filteredExpenses.map((expense) => {
-                  const status = getExpenseAllocationStatus(expense, links)
+                  const status = getExpenseAllocationStatusIncludingFloats(
+                    expense,
+                    links,
+                    floatLinksByExpenseId.get(expense.id) ?? []
+                  )
                   const isSelected = selectedExpenseId === expense.id
-                  const unallocated = getExpenseUnallocatedAmount(expense, links)
+                  const unallocated = getExpenseUnallocatedForFloatMatching(
+                    expense,
+                    links,
+                    floatLinksByExpenseId.get(expense.id) ?? []
+                  )
                   const isPartial = status === 'partial'
                   return (
                     <TableRow
@@ -670,9 +768,15 @@ export function ActualisationPage() {
                 </div>
               )
             }
-            const allocationStatus = getExpenseAllocationStatus(expense, links)
-            const allocatedTotal = sumAllocatedAmountForExpense(expense.id, links)
-            const unallocatedAmount = getExpenseUnallocatedAmount(expense, links)
+            const allocationStatus = getExpenseAllocationStatusIncludingFloats(expense, links, floatLinksForSelectedExpense)
+            const budgetAllocatedTotal = sumAllocatedAmountForExpense(expense.id, links)
+            const floatAllocatedTotal = sumFloatMatchedForExpense(expense.id, floatLinksForSelectedExpense)
+            const allocatedTotal = budgetAllocatedTotal + floatAllocatedTotal
+            const unallocatedAmount = getExpenseUnallocatedForFloatMatching(
+              expense,
+              links,
+              floatLinksForSelectedExpense
+            )
             const account = expense.account_id ? accountById.get(expense.account_id) : null
             return (
               <>
@@ -683,26 +787,34 @@ export function ActualisationPage() {
                       <ClassificationBadge type={expense.transaction_type} />
                       <ExpenseAllocationStatusBadge status={allocationStatus} />
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                      <span>Date</span>
-                      <span className="text-foreground">{formatDateShort(expense.date)}</span>
-                      <span>Account</span>
-                      <span className="text-foreground">
+                    <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
+                      <dt>Date</dt>
+                      <dd className="text-foreground m-0">{formatDateShort(expense.date)}</dd>
+                      <dt>Account</dt>
+                      <dd className="text-foreground m-0">
                         {account ? `${account.code} · ${account.name}` : '—'}
-                      </span>
-                      <span>Amount</span>
-                      <span className="text-foreground font-medium">
+                      </dd>
+                      <dt>Amount</dt>
+                      <dd className="text-foreground m-0 font-medium">
                         {format(expense.amount, productionCurrency).formatted}
-                      </span>
-                      <span>Allocated</span>
-                      <span className="text-foreground">
+                      </dd>
+                      <dt>Allocated (budget)</dt>
+                      <dd className="text-foreground m-0 tabular-nums">
+                        {format(budgetAllocatedTotal, productionCurrency).formatted}
+                      </dd>
+                      <dt>Allocated (float)</dt>
+                      <dd className="text-foreground m-0 tabular-nums">
+                        {format(floatAllocatedTotal, productionCurrency).formatted}
+                      </dd>
+                      <dt>Allocated (total)</dt>
+                      <dd className="text-foreground m-0 tabular-nums font-medium">
                         {format(allocatedTotal, productionCurrency).formatted}
-                      </span>
-                      <span>Unallocated</span>
-                      <span className="text-foreground">
+                      </dd>
+                      <dt>Unallocated</dt>
+                      <dd className="text-foreground m-0 tabular-nums">
                         {format(unallocatedAmount, productionCurrency).formatted}
-                      </span>
-                    </div>
+                      </dd>
+                    </dl>
                   </div>
                 </div>
                 <div className="flex-1 overflow-auto space-y-6 py-2">
@@ -827,13 +939,17 @@ export function ActualisationPage() {
                         <h3 className="font-medium text-foreground">Allocation summary</h3>
                         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
                           <dt>Expense amount</dt>
-                          <dd className="text-foreground tabular-nums">{format(expense.amount, productionCurrency).formatted}</dd>
-                          <dt>Previously allocated</dt>
-                          <dd className="text-foreground tabular-nums">{format(allocatedTotal, productionCurrency).formatted}</dd>
-                          <dt>Allocating now</dt>
-                          <dd className="text-foreground tabular-nums">{format(allocatingNow, productionCurrency).formatted}</dd>
+                          <dd className="text-foreground tabular-nums m-0">{format(expense.amount, productionCurrency).formatted}</dd>
+                          <dt>Previously allocated (budget)</dt>
+                          <dd className="text-foreground tabular-nums m-0">{format(budgetAllocatedTotal, productionCurrency).formatted}</dd>
+                          <dt>Previously allocated (float)</dt>
+                          <dd className="text-foreground tabular-nums m-0">{format(floatAllocatedTotal, productionCurrency).formatted}</dd>
+                          <dt>Previously allocated (total)</dt>
+                          <dd className="text-foreground tabular-nums m-0">{format(allocatedTotal, productionCurrency).formatted}</dd>
+                          <dt>Allocating now (budget)</dt>
+                          <dd className="text-foreground tabular-nums m-0">{format(allocatingNow, productionCurrency).formatted}</dd>
                           <dt>Remaining unallocated after save</dt>
-                          <dd className="text-foreground tabular-nums">{format(remainingAfter, productionCurrency).formatted}</dd>
+                          <dd className="text-foreground tabular-nums m-0">{format(remainingAfter, productionCurrency).formatted}</dd>
                         </dl>
                       </div>
                     )
@@ -845,15 +961,37 @@ export function ActualisationPage() {
                         {deleteLinkError}
                       </p>
                     )}
-                    {linksForSelectedExpense.length === 0 ? (
+                    {linksForSelectedExpense.length === 0 && floatLinksForSelectedExpense.length === 0 ? (
                       <p className="text-sm text-muted-foreground rounded-md border border-dashed border-border bg-muted/20 p-4">
-                        This expense has not been matched yet.
+                        This expense has no budget or float allocations yet.
                       </p>
                     ) : (
                       <ul className="rounded-md border border-border divide-y divide-border">
+                        {floatLinksForSelectedExpense.map((flink) => (
+                          <li key={flink.id} className="px-4 py-3 text-sm bg-violet-500/[0.04] dark:bg-violet-500/[0.08]">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="min-w-0 flex flex-wrap items-center gap-2">
+                                <Badge variant="secondary" className="shrink-0 font-normal text-xs">
+                                  Float
+                                </Badge>
+                                <span className="font-medium text-foreground">
+                                  {buildFloatAllocationLabel(flink.float_id, floatById, personById)}
+                                </span>
+                              </div>
+                              <span className="tabular-nums font-medium shrink-0">
+                                {format(flink.matched_amount, productionCurrency).formatted}
+                              </span>
+                            </div>
+                            <p className="text-muted-foreground text-xs mt-1.5">
+                              Edit or remove on the Budget → Floats tab (reconcile float).
+                            </p>
+                          </li>
+                        ))}
                         {linksForSelectedExpense.map((link) => {
                           const it = itemById.get(link.budget_item_id)
                           if (!it) return null
+                          const itAccount = it.account_id ? accountById.get(it.account_id) : null
+                          const budgetAllocationLabel = `${itAccount?.code ?? '—'} / ${it.description}`
                           const matchedTotal = sumMatchedAmountForBudgetItem(it.id, links)
                           const remainingEstimate = getBudgetItemRemainingEstimate(it, links)
                           const isEditing = editingLinkId === link.id
@@ -910,7 +1048,10 @@ export function ActualisationPage() {
                               ) : isEditing ? (
                                 <>
                                   <div className="flex flex-wrap items-center gap-2 mb-2">
-                                    <span className="font-medium text-foreground">{it.description}</span>
+                                    <Badge variant="outline" className="font-normal text-xs shrink-0">
+                                      Budget
+                                    </Badge>
+                                    <span className="font-medium text-foreground">{budgetAllocationLabel}</span>
                                     <ClassificationBadge type={it.line_item_type as LineItemType | null} />
                                     {wouldOverspendEdit && (
                                       <Tooltip>
@@ -992,7 +1133,10 @@ export function ActualisationPage() {
                               ) : (
                                 <>
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-medium text-foreground">{it.description}</span>
+                                    <Badge variant="outline" className="font-normal text-xs shrink-0">
+                                      Budget
+                                    </Badge>
+                                    <span className="font-medium text-foreground">{budgetAllocationLabel}</span>
                                     <ClassificationBadge type={it.line_item_type as LineItemType | null} />
                                   </div>
                                   <p className="text-muted-foreground text-xs mt-1">

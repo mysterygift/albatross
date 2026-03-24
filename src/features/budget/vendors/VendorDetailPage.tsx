@@ -5,6 +5,7 @@ import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import { useCurrency } from '@/hooks/useCurrency'
 import { getVendorById, updateVendor, softDeleteVendor } from '@/lib/db/repositories/vendors'
 import {
@@ -168,6 +169,8 @@ export function VendorDetailPage() {
   const { vendorId } = useParams<{ vendorId: string }>()
   const navigate = useNavigate()
   const { currentProductionId, currentProduction } = useCurrentProduction()
+  const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
+  const revisionId = workingBudgetRevision?.id
   const { format } = useCurrency()
   const currency = currentProduction?.currency_code ?? 'GBP'
   const queryClient = useQueryClient()
@@ -206,8 +209,8 @@ export function VendorDetailPage() {
   })
 
   const { data: links = [] } = useQuery({
-    queryKey: ['budget-item-expense-links', currentProductionId],
-    queryFn: () => listBudgetItemExpenseLinksByProduction(currentProductionId!),
+    queryKey: ['budget-item-expense-links', currentProductionId, revisionId],
+    queryFn: () => listBudgetItemExpenseLinksByProduction(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
 
@@ -358,14 +361,6 @@ export function VendorDetailPage() {
     },
   })
 
-  if (!vendorId || !currentProductionId) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
-        Missing vendor or production.
-      </div>
-    )
-  }
-
   const archiveMutation = useMutation({
     mutationFn: () => softDeleteVendor(vendorId!),
     onSuccess: () => {
@@ -386,7 +381,7 @@ export function VendorDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
       setCreateInvoiceOpen(false)
     },
   })
@@ -405,7 +400,7 @@ export function VendorDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
       setEditInvoice(null)
     },
   })
@@ -416,7 +411,7 @@ export function VendorDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
       setArchiveInvoiceId(null)
     },
   })
@@ -428,7 +423,7 @@ export function VendorDetailPage() {
       queryClient.invalidateQueries({ queryKey: poListKey })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
       setCreatePOOpen(false)
     },
   })
@@ -439,7 +434,7 @@ export function VendorDetailPage() {
       queryClient.invalidateQueries({ queryKey: poListKey })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
       setEditPO(null)
     },
   })
@@ -449,7 +444,7 @@ export function VendorDetailPage() {
       queryClient.invalidateQueries({ queryKey: poListKey })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
       setArchivePOId(null)
     },
   })
@@ -463,7 +458,7 @@ export function VendorDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['vendor-linked-expense-ids', currentProductionId, vendorId] })
     queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId, vendorId) })
     queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId) })
-    queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
+    queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
   }
 
   const linkInvoiceExpenseMutation = useMutation({
@@ -500,6 +495,14 @@ export function VendorDetailPage() {
   })
 
   const isArchived = !!vendor?.deleted_at
+
+  if (!vendorId || !currentProductionId) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
+        Missing vendor or production.
+      </div>
+    )
+  }
 
   if (vendorLoading || vendor == null) {
     return (

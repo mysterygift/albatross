@@ -287,13 +287,16 @@ function severityOrder(s: RiskWatchItem['severity']): number {
  * Includes Stage 2A (overdue, due soon, PO approval) and Stage 2B (large unpaid, unmatched spend, inactivity, open PO exposure).
  * Sorted by severity (critical first) then by sortDate descending (null last). Capped at RISK_WATCH_CAP.
  */
-export async function getVendorFinanceRiskItems(productionId: string): Promise<RiskWatchItem[]> {
+export async function getVendorFinanceRiskItems(
+  productionId: string,
+  revisionId?: string
+): Promise<RiskWatchItem[]> {
   const [invoices, pos, vendors, expenses, links] = await Promise.all([
     listVendorInvoicesByProduction(productionId),
     listVendorPurchaseOrdersByProduction(productionId),
     listVendors(productionId),
     listExpensesByProduction(productionId),
-    listBudgetItemExpenseLinksByProduction(productionId),
+    listBudgetItemExpenseLinksByProduction(productionId, revisionId),
   ])
 
   const vendorNameById = new Map(vendors.map((v) => [v.id, v.company_name]))
@@ -341,7 +344,10 @@ export async function getVendorFinanceRiskItems(productionId: string): Promise<R
   return items.slice(0, RISK_WATCH_CAP)
 }
 
-/** Query key for Risk Watch items: ['risk-watch', productionId] */
-export function riskWatchQueryKey(productionId: string): readonly [string, string] {
-  return ['risk-watch', productionId]
+/** Query key for Risk Watch items: ['risk-watch', productionId, revisionId?]. */
+export function riskWatchQueryKey(
+  productionId: string,
+  revisionId?: string
+): readonly [string, string, string | undefined] {
+  return ['risk-watch', productionId, revisionId]
 }

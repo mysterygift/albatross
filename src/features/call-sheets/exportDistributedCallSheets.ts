@@ -1,23 +1,9 @@
 import type { CallSheetData } from '@/lib/pdf/callSheet'
 import { generateCallSheetPdf } from '@/lib/pdf/callSheet'
-import { applyRecipientNameWatermarkToPDF } from '@/lib/pdf/applyRecipientNameWatermarkToPDF'
 import type { CallSheetRecipient } from '@/features/call-sheets/CallSheetDistributionDialog'
-import {
-  pickExportDirectory,
-  ensureUniqueFilenameInDirectory,
-  writeFileInDirectory,
-} from '@/lib/files/directories'
-
-function sanitizeForFilename(input: string): string {
-  const trimmed = input.trim()
-  const safe = trimmed
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9._-]/g, '')
-    .replace(/-+/g, '-')
-    .replace(/^[-.]+|[-.]+$/g, '')
-  return safe || 'recipient'
-}
+import { pickExportDirectory } from '@/lib/files/directories'
+import { sanitizeForFilename } from '@/lib/files/sanitizeForFilename'
+import { exportPersonalizedDocuments } from '@/lib/documents/exportPersonalizedDocuments'
 
 export interface ExportDistributedCallSheetsOptions {
   baseData: CallSheetData
@@ -49,55 +35,23 @@ export async function exportDistributedCallSheets(
   let baseBytes: Uint8Array
   try {
     baseBytes = new Uint8Array(await generateCallSheetPdf(baseData))
-  } catch (e) {
+  } catch {
     throw new Error('Failed to generate call sheet PDF. Please try again.')
   }
 
-  if (!baseBytes?.length) {
-    throw new Error('Generated call sheet PDF is empty.')
+  if (!baseBytes || baseBytes.length === 0) {
+    throw new Error('Failed to generate base PDF.')
   }
 
-  const total = recipients.length
-  const usedFilenames = new Set<string>()
-  let written = 0
-
-  for (let i = 0; i < recipients.length; i++) {
-    const recipient = recipients[i]!
-    onProgress?.(i + 1, total)
-
-    let watermarked: Uint8Array
-    try {
-      watermarked = await applyRecipientNameWatermarkToPDF(baseBytes, {
-        recipientFullName: recipient.fullName,
-      })
-    } catch (e) {
-      throw new Error(
-        `Watermarking failed for "${recipient.fullName}". No files have been written.`,
-      )
-    }
-    if (!watermarked?.length) {
-      throw new Error(
-        `Watermarked PDF is empty for "${recipient.fullName}". No files have been written.`,
-      )
-    }
-
-    const safeName = sanitizeForFilename(recipient.fullName)
-    const safeUnit = sanitizeForFilename(baseData.unitName || 'unit')
-    const baseFileName = `call-sheet-${baseData.shootDate}-${safeUnit}-${safeName}.pdf`
-    const fileName = await ensureUniqueFilenameInDirectory(directory, baseFileName, usedFilenames)
-    usedFilenames.add(fileName)
-
-    try {
-      await writeFileInDirectory(directory, fileName, watermarked)
-    } catch (e) {
-      const msg = (e as Error)?.message ?? 'Unknown error'
-      throw new Error(
-        `Could not write file "${fileName}" to the selected directory. ${msg} No further files were written.`,
-      )
-    }
-    written += 1
-  }
-
-  return { written, directoryPath: directory }
+  return exportPersonalizedDocuments({
+    basePDFBytes: baseBytes,
+    recipients,
+    directory,
+    buildFileName: (recipient) => {
+      const safeName = sanitizeForFilename(recipient.fullName)
+      const safeUnit = sanitizeForFilename(baseData.unitName || 'unit')
+      return `call-sheet-${baseData.shootDate}-${safeUnit}-${safeName}.pdf`
+    },
+    onProgress,
+  })
 }
-

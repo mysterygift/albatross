@@ -61,6 +61,7 @@ describe('isApfFormatVersionTooNew / TooOld / doesApfFormatRequireMigration', ()
     expect(isApfFormatVersionTooOld(APF_MIN_SUPPORTED_FORMAT_VERSION - 1)).toBe(true)
     expect(isApfFormatVersionTooOld(APF_MIN_SUPPORTED_FORMAT_VERSION)).toBe(false)
     expect(doesApfFormatRequireMigration(CURRENT_APF_FORMAT_VERSION)).toBe(false)
+    expect(doesApfFormatRequireMigration(1)).toBe(true)
   })
 })
 
@@ -78,8 +79,28 @@ describe('normalizeApfManifestAndData', () => {
     const tables = emptyApfTables()
     tables.productions = [minimalProductionRow()]
     const { manifest, dataFile } = buildFixtureDataAndManifest({ tables })
-    const badData = { ...dataFile, formatVersion: 2 }
+    const badData = { ...dataFile, formatVersion: 99 }
     expect(() => normalizeApfManifestAndData(manifest, badData)).toThrow(ApfInvalidDataError)
+  })
+
+  it('migrates legacy v1 shape (no episodic keys) to current format', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    const { manifest: fullManifest, dataFile } = buildFixtureDataAndManifest({ tables })
+    const manifestV1 = { ...fullManifest, formatVersion: 1 }
+    const dataV1 = JSON.parse(JSON.stringify(dataFile)) as typeof dataFile
+    dataV1.formatVersion = 1
+    delete (dataV1.tables as Record<string, unknown>).episodes
+    delete (dataV1.tables as Record<string, unknown>).shooting_blocs
+    const prow = dataV1.tables.productions[0] as Record<string, unknown>
+    delete prow.is_episodic
+
+    const normalized = normalizeApfManifestAndData(manifestV1, dataV1)
+    expect(normalized.manifest.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
+    expect(normalized.data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
+    expect(normalized.data.tables.episodes).toEqual([])
+    expect(normalized.data.tables.shooting_blocs).toEqual([])
+    expect((normalized.data.tables.productions[0] as Record<string, unknown>).is_episodic).toBe(0)
   })
 })
 
@@ -91,6 +112,19 @@ describe('migrateApfToCurrentVersion', () => {
     const out = migrateApfToCurrentVersion({ manifest, data: dataFile })
     expect(out.manifest.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
     expect(out.data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
+  })
+
+  it('runs v1→v2 when manifest and data declare formatVersion 1', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    const { manifest: m2, dataFile: d2 } = buildFixtureDataAndManifest({ tables })
+    const manifest = { ...m2, formatVersion: 1 as const }
+    const data = JSON.parse(JSON.stringify(d2)) as (typeof d2 & { formatVersion: number })
+    data.formatVersion = 1
+    const out = migrateApfToCurrentVersion({ manifest, data })
+    expect(out.manifest.formatVersion).toBe(2)
+    expect(out.data.formatVersion).toBe(2)
+    expect(Array.isArray(out.data.tables.episodes)).toBe(true)
   })
 })
 

@@ -12,6 +12,7 @@ import {
   Settings,
   FolderOpen,
   Megaphone,
+  Route,
 } from 'lucide-react'
 
 export type NavSubItem = { to: string; label: string }
@@ -67,6 +68,7 @@ export const navItems: NavItem[] = [
   { to: '/equipment', label: 'Equipment', icon: Film },
   { to: '/documents', label: 'Documents', icon: FileText },
   { to: '/call-sheets', label: 'Call Sheets', icon: Megaphone },
+  { to: '/movement-orders', label: 'Movement Orders', icon: Route },
   { to: '/readiness', label: 'Tasks', icon: FileCheck },
   { to: '/deliverables', label: 'Deliverables', icon: FileCheck },
   { to: '/music-clearance', label: 'Music & Archive', icon: Music },

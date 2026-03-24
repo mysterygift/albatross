@@ -19,11 +19,32 @@ export type ApfFileMigrator = {
   migrate: (ctx: ApfMigrationContext) => ApfMigrationContext
 }
 
-/**
- * Registered migrators for older `.apf` payloads. Empty while only format v1 exists.
- * Add `{ fromVersion: 1, toVersion: 2, migrate }` when introducing v2, and bump constants.
- */
-export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = []
+function cloneCtx(ctx: ApfMigrationContext): ApfMigrationContext {
+  return JSON.parse(JSON.stringify(ctx)) as ApfMigrationContext
+}
+
+const migrateV1ToV2: ApfFileMigrator = {
+  fromVersion: 1,
+  toVersion: 2,
+  migrate: (ctx) => {
+    const next = cloneCtx(ctx)
+    next.manifest.formatVersion = 2
+    next.data.formatVersion = 2
+    const t = next.data.tables
+    if (!Array.isArray(t.episodes)) t.episodes = []
+    if (!Array.isArray(t.shooting_blocs)) t.shooting_blocs = []
+    const prows = t.productions
+    if (Array.isArray(prows) && prows.length > 0) {
+      const p0 = { ...prows[0] } as Record<string, unknown>
+      if (!('is_episodic' in p0)) p0.is_episodic = 0
+      t.productions = [p0, ...prows.slice(1)] as typeof t.productions
+    }
+    return next
+  },
+}
+
+/** Registered migrators for older `.apf` payloads (sequential v → v+1). */
+export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [migrateV1ToV2]
 
 /**
  * Applies sequential migrators until `manifest.formatVersion === CURRENT_APF_FORMAT_VERSION`.

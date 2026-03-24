@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import { completeAndArchiveProduction } from '@/lib/db/repositories/production'
 import { useCurrency } from '@/hooks/useCurrency'
 import { listBudgetItemsByProduction, listExpensesByProduction } from '@/lib/db/repositories/budget'
@@ -29,6 +30,10 @@ import {
 import { listShootDaysByProduction } from '@/lib/db/repositories/schedule'
 import { listCalendarShootDayEvents } from '@/lib/db/repositories/calendar'
 import { listDeliverablesByProduction } from '@/lib/db/repositories/deliverable'
+import { listFloatsByProduction } from '@/lib/db/repositories/floats'
+import { listFloatExpenseLinksByProduction } from '@/lib/db/repositories/floatReconciliation'
+import { listPeopleByProduction } from '@/lib/db/repositories/person'
+import { getOutstandingFloatReminders } from '@/lib/budget/floatReminders'
 import type { Expense } from '@/lib/db/types'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -143,6 +148,8 @@ export function WrapProductionPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { currentProduction, currentProductionId, setCurrentProductionId } = useCurrentProduction()
+  const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
+  const revisionId = workingBudgetRevision?.id
   const { format } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -156,8 +163,8 @@ export function WrapProductionPage() {
     setExpandedSections((s) => ({ ...s, [key]: !s[key] }))
 
   const { data: budgetItems = [] } = useQuery({
-    queryKey: ['budget-items', currentProductionId],
-    queryFn: () => listBudgetItemsByProduction(currentProductionId!),
+    queryKey: ['budget-items', currentProductionId, revisionId],
+    queryFn: () => listBudgetItemsByProduction(currentProductionId!, { revisionId }),
     enabled: !!currentProductionId,
   })
   const { data: expenses = [] } = useQuery({
@@ -166,8 +173,8 @@ export function WrapProductionPage() {
     enabled: !!currentProductionId,
   })
   const { data: links = [] } = useQuery({
-    queryKey: ['budget-item-expense-links', currentProductionId],
-    queryFn: () => listBudgetItemExpenseLinksByProduction(currentProductionId!),
+    queryKey: ['budget-item-expense-links', currentProductionId, revisionId],
+    queryFn: () => listBudgetItemExpenseLinksByProduction(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
   const { data: accounts = [] } = useQuery({
@@ -198,6 +205,24 @@ export function WrapProductionPage() {
   const { data: deliverables = [] } = useQuery({
     queryKey: ['deliverables', currentProductionId],
     queryFn: () => listDeliverablesByProduction(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: wrapFloats = [] } = useQuery({
+    queryKey: ['floats', currentProductionId, revisionId],
+    queryFn: () => listFloatsByProduction(currentProductionId!, revisionId),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: wrapFloatExpenseLinks = [] } = useQuery({
+    queryKey: ['float-expense-links-by-production', currentProductionId, revisionId],
+    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId!, revisionId),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: wrapPeople = [] } = useQuery({
+    queryKey: ['people', currentProductionId],
+    queryFn: () => listPeopleByProduction(currentProductionId!),
     enabled: !!currentProductionId,
   })
 
@@ -258,6 +283,21 @@ export function WrapProductionPage() {
     [deliverables]
   )
 
+  const wrapFloatReminders = useMemo(
+    () =>
+      getOutstandingFloatReminders({
+        floats: wrapFloats,
+        floatExpenseLinks: wrapFloatExpenseLinks,
+        people: wrapPeople,
+      }),
+    [wrapFloats, wrapFloatExpenseLinks, wrapPeople]
+  )
+
+  const floatRemindersMultiCurrency =
+    new Set(wrapFloatReminders.reminders.map((r) => r.currency)).size > 1
+  const floatUnreturnedCurrency =
+    wrapFloatReminders.reminders[0]?.currency ?? productionCurrency
+
   const completeAndArchiveMutation = useMutation({
     mutationFn: (productionId: string) => completeAndArchiveProduction(productionId),
     onSuccess: () => {
@@ -268,8 +308,12 @@ export function WrapProductionPage() {
     },
   })
 
+  const budgetSectionReady =
+    readiness.status === 'ready' && wrapFloatReminders.unresolvedCount === 0
+
   const hasAnyIssues =
     readiness.status !== 'ready' ||
+    wrapFloatReminders.unresolvedCount > 0 ||
     scheduleReadiness.status !== 'ready' ||
     deliverablesReadiness.status !== 'ready'
 
@@ -299,7 +343,7 @@ export function WrapProductionPage() {
           title="Budget and Actualisation"
           description="Review budget reconciliation issues before wrapping this production."
           badge={
-            readiness.status === 'ready' ? (
+            budgetSectionReady ? (
               <Badge
                 variant="secondary"
                 className="shrink-0 gap-1 bg-green-600/15 text-green-800 dark:bg-green-500/20 dark:text-green-200"
@@ -365,6 +409,53 @@ export function WrapProductionPage() {
                   {format(readiness.totalRemainingEstimate, productionCurrency).formatted}
                 </p>
               </div>
+            </div>
+
+            <div className="rounded-md border border-border bg-muted/25 p-4">
+              <h4 className="mb-2 text-sm font-medium">Petty cash floats</h4>
+              {wrapFloatReminders.unresolvedCount === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  All floats are fully reconciled.
+                </p>
+              ) : (
+                <div className="space-y-2 text-sm">
+                  <p>
+                    <span className="font-medium text-foreground">
+                      {wrapFloatReminders.unresolvedCount}
+                    </span>{' '}
+                    float{wrapFloatReminders.unresolvedCount !== 1 ? 's' : ''} still outstanding
+                    {floatRemindersMultiCurrency ? (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        — multiple currencies; see Budget for unreturned totals.
+                      </span>
+                    ) : (
+                      <>
+                        {' '}
+                        —{' '}
+                        <span className="font-medium tabular-nums">
+                          {format(wrapFloatReminders.totalOutstanding, floatUnreturnedCurrency).formatted}
+                        </span>{' '}
+                        <span className="text-muted-foreground">unreturned</span>
+                      </>
+                    )}
+                  </p>
+                  {wrapFloatReminders.hasCritical && (
+                    <p className="text-destructive flex items-start gap-2 text-xs">
+                      <AlertTriangle className="size-3.5 shrink-0 mt-0.5" aria-hidden />
+                      <span>Some floats have been outstanding for over 14 days or are overspent.</span>
+                    </p>
+                  )}
+                  <p className="text-muted-foreground text-xs">
+                    <Link
+                      to="/budget?tab=floats&floats=outstanding"
+                      className="underline hover:no-underline font-medium text-foreground"
+                    >
+                      Review floats in Budget
+                    </Link>
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Detail lists */}
@@ -498,7 +589,10 @@ export function WrapProductionPage() {
               </div>
             )}
 
-            {unallocatedExpenses.length === 0 && overspentRows.length === 0 && remainingEstimateRows.length === 0 && (
+            {unallocatedExpenses.length === 0 &&
+              overspentRows.length === 0 &&
+              remainingEstimateRows.length === 0 &&
+              wrapFloatReminders.unresolvedCount === 0 && (
               <p className="text-muted-foreground text-sm">
                 No outstanding reconciliation issues. Budget and actualisation are in good shape for
                 wrap.
@@ -510,6 +604,10 @@ export function WrapProductionPage() {
               {' · '}
               <Link to="/budget?tab=actualisation" className="underline hover:no-underline">
                 Match Expenses
+              </Link>
+              {' · '}
+              <Link to="/budget?tab=floats&floats=outstanding" className="underline hover:no-underline">
+                Petty cash floats
               </Link>
               .
             </p>
@@ -774,8 +872,8 @@ export function WrapProductionPage() {
             )}
           </Button>
           <p className="text-muted-foreground text-sm">
-            Resolve or review outstanding budget, schedule, and deliverables checks before
-            completing this production.
+            Resolve or review outstanding budget, petty cash floats, schedule, and deliverables checks
+            before completing this production.
           </p>
         </div>
       </footer>
@@ -805,6 +903,35 @@ export function WrapProductionPage() {
               {readiness.status !== 'ready' && (
                 <p className="text-muted-foreground text-xs">
                   Unallocated: {readiness.unallocatedExpenseCount} · Unmatched: {readiness.unmatchedLineItemCount} · Overspent: {readiness.overspentLineItemCount}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">Petty cash floats</span>
+                {wrapFloatReminders.unresolvedCount === 0 ? (
+                  <Badge variant="secondary" className="bg-green-600/15 text-green-800 dark:text-green-200">
+                    Ready
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="bg-amber-500/15 text-amber-800 dark:text-amber-200">
+                    Needs review
+                  </Badge>
+                )}
+              </div>
+              {wrapFloatReminders.unresolvedCount > 0 && (
+                <p className="text-muted-foreground text-xs">
+                  {wrapFloatReminders.unresolvedCount} float
+                  {wrapFloatReminders.unresolvedCount !== 1 ? 's' : ''} still outstanding
+                  {floatRemindersMultiCurrency
+                    ? ' (multiple currencies — see Budget).'
+                    : ` — ${format(wrapFloatReminders.totalOutstanding, floatUnreturnedCurrency).formatted} unreturned.`}
+                </p>
+              )}
+              {wrapFloatReminders.hasCritical && (
+                <p className="text-destructive text-xs flex items-start gap-1.5">
+                  <AlertTriangle className="size-3.5 shrink-0 mt-0.5" aria-hidden />
+                  Some floats have been outstanding for over 14 days or are overspent.
                 </p>
               )}
             </div>

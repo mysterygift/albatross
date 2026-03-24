@@ -22,7 +22,6 @@ import { getLineItemTypeConfig, lineItemTypeRegistry } from '@/lib/budget/line-i
 import { ExpenseDetailMetaGrid, ExpenseDetailMetaRow, ExpenseEditorFooter } from '@/features/budget/expense-shared'
 import { LineItemParseErrorCard } from '@/features/budget/line-item-views/LineItemParseErrorCard'
 import type { LineItemEditorRef } from '@/features/budget/line-item-views/types'
-
 const LINE_ITEM_TYPE_SENTINEL_NONE = '__none__'
 
 const LINE_ITEM_TYPE_OPTIONS: Array<{ value: string; label: string }> = [

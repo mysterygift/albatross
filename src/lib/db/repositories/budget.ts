@@ -2,6 +2,7 @@ import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../c
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { BudgetCategory, BudgetItem, Expense } from '../types'
 import { ensureLegacyFallbackAccounts, getAccountById } from './budgetAccounts'
+import { resolveBudgetRevisionId } from './budgetRevisions'
 
 const CAT_TABLE = 'budget_categories'
 const ITEM_TABLE = 'budget_items'
@@ -25,6 +26,7 @@ function rowToItem(r: Record<string, unknown>): BudgetItem {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    budget_revision_id: (r.budget_revision_id as string | null) ?? null,
     category_id: r.category_id as string | null,
     account_id: r.account_id as string | null,
     description: r.description as string,
@@ -147,22 +149,28 @@ export async function deleteBudgetCategory(id: string): Promise<void> {
 // Budget items
 export async function listBudgetItemsByProduction(
   productionId: string,
-  categoryId?: string
+  options?: { revisionId?: string | null; categoryId?: string }
 ): Promise<BudgetItem[]> {
   const db = await getDb()
+  const budgetRevisionId = await resolveBudgetRevisionId({
+    productionId,
+    revisionId: options?.revisionId,
+  })
+  const categoryId = options?.categoryId
   const sql =
     categoryId == null
-      ? `SELECT * FROM ${ITEM_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY description`
-      : `SELECT * FROM ${ITEM_TABLE} WHERE production_id = $1 AND category_id = $2 AND deleted_at IS NULL ORDER BY description`
+      ? `SELECT * FROM ${ITEM_TABLE} WHERE production_id = $1 AND budget_revision_id = $2 AND deleted_at IS NULL ORDER BY description`
+      : `SELECT * FROM ${ITEM_TABLE} WHERE production_id = $1 AND budget_revision_id = $2 AND category_id = $3 AND deleted_at IS NULL ORDER BY description`
   const rows = await db.select<Record<string, unknown>[]>(
     sql,
-    categoryId == null ? [productionId] : [productionId, categoryId]
+    categoryId == null ? [productionId, budgetRevisionId] : [productionId, budgetRevisionId, categoryId]
   )
   return rows.map(rowToItem)
 }
 
 export async function createBudgetItem(data: {
   production_id: string
+  revision_id?: string | null
   category_id?: string | null
   account_id?: string | null
   description: string
@@ -174,14 +182,16 @@ export async function createBudgetItem(data: {
   const db = await getDb()
   const id = uuid()
   const ts = now()
+  const budgetRevisionId = await resolveBudgetRevisionId({ productionId: data.production_id, revisionId: data.revision_id })
   const categoryId = data.category_id ?? null
   const accountId = data.account_id ?? null
   await db.execute(
-    `INSERT INTO ${ITEM_TABLE} (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    `INSERT INTO ${ITEM_TABLE} (id, production_id, budget_revision_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       id,
       data.production_id,
+      budgetRevisionId,
       categoryId,
       accountId,
       data.description,
@@ -409,6 +419,11 @@ const CATEGORY_CODE_TO_FALLBACK = {
   OTHER: 'other' as const,
 }
 
+const backfillAccountIdsInflight = new Map<
+  string,
+  Promise<{ updatedItems: number; updatedExpenses: number }>
+>()
+
 /**
  * Backfill account_id on budget_items and expenses from legacy category_id.
  * Maps ATL->1001, BTL->2001, POST->9001, OTHER->9701 (ensureLegacyFallbackAccounts).
@@ -420,35 +435,51 @@ export async function backfillAccountIdsFromLegacyCategories(productionId: strin
   updatedItems: number
   updatedExpenses: number
 }> {
-  const categories = await listBudgetCategoriesByProduction(productionId)
-  const fallbacks = await ensureLegacyFallbackAccounts(productionId)
-  const categoryIdToAccountId = new Map<string, string>()
-  for (const c of categories) {
-    const key = CATEGORY_CODE_TO_FALLBACK[c.code as keyof typeof CATEGORY_CODE_TO_FALLBACK]
-    if (key) categoryIdToAccountId.set(c.id, fallbacks[key])
-  }
-  if (categoryIdToAccountId.size === 0) return { updatedItems: 0, updatedExpenses: 0 }
+  const existing = backfillAccountIdsInflight.get(productionId)
+  if (existing) return existing
 
-  const ts = now()
-  const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN TRANSACTION', bindValues: [] }]
-  for (const [categoryId, accountId] of categoryIdToAccountId) {
-    statements.push(
-      {
-        sql: `UPDATE ${ITEM_TABLE} SET account_id = $1, updated_at = $2 WHERE production_id = $3 AND account_id IS NULL AND category_id = $4 AND deleted_at IS NULL`,
-        bindValues: [accountId, ts, productionId, categoryId],
-      },
-      {
-        sql: `UPDATE ${EXP_TABLE} SET account_id = $1, updated_at = $2 WHERE production_id = $3 AND account_id IS NULL AND category_id = $4 AND deleted_at IS NULL`,
-        bindValues: [accountId, ts, productionId, categoryId],
-      }
-    )
-  }
-  statements.push({ sql: 'COMMIT', bindValues: [] })
+  const run = (async () => {
+    const categories = await listBudgetCategoriesByProduction(productionId)
+    const categoryIdToFallbackKey = new Map<string, 'atl' | 'btl' | 'post' | 'other'>()
+    for (const c of categories) {
+      const key = CATEGORY_CODE_TO_FALLBACK[c.code as keyof typeof CATEGORY_CODE_TO_FALLBACK]
+      if (key) categoryIdToFallbackKey.set(c.id, key)
+    }
+    if (categoryIdToFallbackKey.size === 0) return { updatedItems: 0, updatedExpenses: 0 }
 
-  await runInSerializedTransaction(async () => {
-    const db = await getDb()
-    await executeBatch(db, statements)
+    const fallbacks = await ensureLegacyFallbackAccounts(productionId)
+    const categoryIdToAccountId = new Map<string, string>()
+    for (const [catId, fk] of categoryIdToFallbackKey) {
+      categoryIdToAccountId.set(catId, fallbacks[fk])
+    }
+
+    const ts = now()
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN TRANSACTION', bindValues: [] }]
+    for (const [categoryId, accountId] of categoryIdToAccountId) {
+      statements.push(
+        {
+          sql: `UPDATE ${ITEM_TABLE} SET account_id = $1, updated_at = $2 WHERE production_id = $3 AND account_id IS NULL AND category_id = $4 AND deleted_at IS NULL`,
+          bindValues: [accountId, ts, productionId, categoryId],
+        },
+        {
+          sql: `UPDATE ${EXP_TABLE} SET account_id = $1, updated_at = $2 WHERE production_id = $3 AND account_id IS NULL AND category_id = $4 AND deleted_at IS NULL`,
+          bindValues: [accountId, ts, productionId, categoryId],
+        }
+      )
+    }
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+
+    await runInSerializedTransaction(async () => {
+      const db = await getDb()
+      await executeBatch(db, statements)
+    })
+
+    return { updatedItems: 0, updatedExpenses: 0 }
+  })()
+
+  backfillAccountIdsInflight.set(productionId, run)
+  run.finally(() => {
+    backfillAccountIdsInflight.delete(productionId)
   })
-
-  return { updatedItems: 0, updatedExpenses: 0 }
+  return run
 }

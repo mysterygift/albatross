@@ -59,14 +59,18 @@ function getStoredView(): ViewMode {
   try {
     const v = localStorage.getItem(PEOPLE_BOOKINGS_VIEW_KEY)
     if (v === 'calendar' || v === 'list') return v
-  } catch {}
+  } catch {
+    // Ignore storage access failures and fall back to default view.
+  }
   return 'calendar'
 }
 
 function setStoredView(view: ViewMode) {
   try {
     localStorage.setItem(PEOPLE_BOOKINGS_VIEW_KEY, view)
-  } catch {}
+  } catch {
+    // Ignore storage access failures.
+  }
 }
 
 export function BookingsPage() {
@@ -197,6 +201,19 @@ export function BookingsPage() {
     },
   })
 
+  useEffect(() => {
+    const onAddBooking = () => {
+      setEditingBooking(null)
+      setPersonId('')
+      setShootDayId('')
+      setRole('')
+      setNotes('')
+      setOpen(true)
+    }
+    window.addEventListener('albatross-menu-people-add-booking', onAddBooking)
+    return () => window.removeEventListener('albatross-menu-people-add-booking', onAddBooking)
+  }, [])
+
   const updateMutation = useMutation({
     mutationFn: () => {
       if (!editingBooking) return Promise.reject(new Error('No booking to update'))
@@ -238,6 +255,12 @@ export function BookingsPage() {
     return ids.map((id) => unitById.get(id)?.name ?? id).join(', ') || '—'
   }
 
+  const departments = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of people) if (p.department) set.add(p.department)
+    return Array.from(set).sort()
+  }, [people])
+
   if (!currentProductionId) {
     return (
       <div>
@@ -246,12 +269,6 @@ export function BookingsPage() {
       </div>
     )
   }
-
-  const departments = useMemo(() => {
-    const set = new Set<string>()
-    for (const p of people) if (p.department) set.add(p.department)
-    return Array.from(set).sort()
-  }, [people])
 
   const hasIntelligenceWarnings =
     bookingIntelligence &&

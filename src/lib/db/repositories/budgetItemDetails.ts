@@ -13,6 +13,7 @@ function rowToItem(r: Record<string, unknown>): BudgetItem {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    budget_revision_id: (r.budget_revision_id as string | null) ?? null,
     category_id: r.category_id as string | null,
     account_id: r.account_id as string | null,
     description: r.description as string,

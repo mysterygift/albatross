@@ -19,14 +19,22 @@ export type DemoBookingSeedIdSource = {
   scene: (n: number) => string
 }
 
+export type SeedDemoBookingsOptions = {
+  /** When set (e.g. episodic stripboard matrix), used instead of Mint Heist `getSceneNumbersForDay`. */
+  sceneNumbersForDay?: (dayNumber: number) => number[]
+  /** Max scene index for building scene id → number map (default 45). */
+  maxSceneNumber?: number
+}
+
 /**
- * Seed cast bookings for demo production. Derives from scene_cast and getSceneNumbersForDay;
+ * Seed cast bookings for demo production. Derives from scene_cast and day scene lists;
  * skips days where person has cast_availability UNAVAILABLE. Only books people with is_cast = 1.
  */
 export async function seedDemoBookings(
   pid: string,
   ts: string,
-  idSource: DemoBookingSeedIdSource = IDS
+  idSource: DemoBookingSeedIdSource = IDS,
+  options?: SeedDemoBookingsOptions
 ): Promise<void> {
   const db = await getDb()
 
@@ -58,8 +66,9 @@ export async function seedDemoBookings(
     }
   }
 
+  const maxScene = options?.maxSceneNumber ?? 45
   const sceneIdToSceneNum = new Map<string, number>()
-  for (let s = 1; s <= 45; s++) {
+  for (let s = 1; s <= maxScene; s++) {
     sceneIdToSceneNum.set(idSource.scene(s), s)
   }
 
@@ -79,7 +88,8 @@ export async function seedDemoBookings(
   const rows: Array<{ person_id: string; shoot_day_id: string }> = []
 
   for (const day of shootDays) {
-    const sceneNumbers = getSceneNumbersForDay(day.day_number)
+    const sceneNumbers =
+      options?.sceneNumbersForDay?.(day.day_number) ?? getSceneNumbersForDay(day.day_number)
     for (const [personId, sceneNums] of personSceneSet) {
       if (!castSet.has(personId)) continue
       const inAnyScene = sceneNumbers.some((sn) => sceneNums.has(sn))

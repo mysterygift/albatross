@@ -45,6 +45,7 @@ export type LogSpendPanelProps = {
   onOpenChange: (open: boolean) => void
   postableAccounts: BudgetAccount[]
   productionId: string
+  revisionId?: string
   productionCurrency: string
   format: FormatAmount
   people: Array<{ id: string; name: string; department: string | null }>
@@ -56,6 +57,7 @@ export function LogSpendPanel({
   onOpenChange,
   postableAccounts,
   productionId,
+  revisionId,
   productionCurrency,
   format,
   people,
@@ -76,8 +78,8 @@ export function LogSpendPanel({
     mutationFn: createTypedExpense,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['expenses', variables.productionId] })
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', variables.productionId] })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(variables.productionId) })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', variables.productionId, revisionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(variables.productionId, revisionId) })
       queryClient.invalidateQueries({ queryKey: ['expense-with-details', data.id] })
       if (variables.transactionType === 'allow') {
         queryClient.invalidateQueries({ queryKey: ['allow-expense-details', variables.productionId] })

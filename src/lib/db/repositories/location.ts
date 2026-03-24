@@ -12,6 +12,7 @@ function rowToLocation(r: Record<string, unknown>): Location {
     booked_status: (r.booked_status as Location['booked_status']) ?? 'unbooked',
     address: r.address as string | null,
     what3words: r.what3words as string | null,
+    parking_info: r.parking_info as string | null,
     availability_constraints: r.availability_constraints as string | null,
     permit_fee: r.permit_fee as number | null,
     location_fee: r.location_fee as number | null,
@@ -41,15 +42,20 @@ export async function getLocationById(id: string): Promise<Location | null> {
 }
 
 type LocationInsert = Pick<Location, 'production_id' | 'name' | 'booked_status'> &
-  Partial<Pick<Location, 'address' | 'what3words' | 'availability_constraints' | 'permit_fee' | 'location_fee' | 'notes'>>
+  Partial<
+    Pick<
+      Location,
+      'address' | 'what3words' | 'parking_info' | 'availability_constraints' | 'permit_fee' | 'location_fee' | 'notes'
+    >
+  >
 
 export async function createLocation(data: LocationInsert): Promise<Location> {
   const db = await getDb()
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, name, booked_status, address, what3words, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    `INSERT INTO ${TABLE} (id, production_id, name, booked_status, address, what3words, parking_info, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       id,
       data.production_id,
@@ -57,6 +63,7 @@ export async function createLocation(data: LocationInsert): Promise<Location> {
       data.booked_status ?? 'unbooked',
       data.address ?? null,
       data.what3words ?? null,
+      data.parking_info ?? null,
       data.availability_constraints ?? null,
       data.permit_fee ?? null,
       data.location_fee ?? null,
@@ -78,7 +85,17 @@ export async function updateLocation(
   const cols: string[] = []
   const vals: unknown[] = []
   let i = 1
-  const allowed = ['name', 'booked_status', 'address', 'what3words', 'availability_constraints', 'permit_fee', 'location_fee', 'notes'] as const
+  const allowed = [
+    'name',
+    'booked_status',
+    'address',
+    'what3words',
+    'parking_info',
+    'availability_constraints',
+    'permit_fee',
+    'location_fee',
+    'notes',
+  ] as const
   for (const k of allowed) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)

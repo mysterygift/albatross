@@ -1,6 +1,7 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxPush, outboxStatementForRows } from '../outbox'
 import type { DeliverableTemplate, DeliverableTemplateItem } from '../types'
+import { assertDeliverableEpisodeAllowed } from './deliverable'
 
 const TEMPLATES_TABLE = 'deliverable_templates'
 const ITEMS_TABLE = 'deliverable_template_items'
@@ -247,6 +248,8 @@ export type ApplyDeliverableTemplateParams = {
   templateId: string
   /** YYYY-MM-DD. Due dates = anchorDate + due_offset_days per item. If omitted, deliverables get null due_date. */
   anchorDate?: string | null
+  /** Episodic: null/omit = project-wide; set = all created deliverables get this episode. */
+  episodeId?: string | null
 }
 
 /**
@@ -257,6 +260,11 @@ export async function applyDeliverableTemplateToProduction(
   params: ApplyDeliverableTemplateParams
 ): Promise<void> {
   const { productionId, templateId, anchorDate } = params
+  const episodeId =
+    params.episodeId == null || String(params.episodeId).trim() === ''
+      ? null
+      : String(params.episodeId).trim()
+  await assertDeliverableEpisodeAllowed(productionId, episodeId)
 
   await runInSerializedTransaction(async () => {
     const db = await getDb()
@@ -285,11 +293,12 @@ export async function applyDeliverableTemplateToProduction(
       deliverableIdByItemIndex.push(delId)
       const status = item.default_status?.trim() || 'not_started'
       statements.push({
-        sql: `INSERT INTO ${DEL_TABLE} (id, production_id, name, due_date, status, recipient, delivery_method, delivered_by, delivered_at, approval_status, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        sql: `INSERT INTO ${DEL_TABLE} (id, production_id, episode_id, name, due_date, status, recipient, delivery_method, delivered_by, delivered_at, approval_status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         bindValues: [
           delId,
           productionId,
+          episodeId,
           item.name,
           dueDate,
           status,

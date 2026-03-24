@@ -115,7 +115,7 @@ export function CrewManagerPage() {
 
   useEffect(() => {
     if (progress?.currentSection === 'crew') {
-      setTutorialOpen(true)
+      queueMicrotask(() => setTutorialOpen(true))
     }
   }, [progress?.currentSection])
 
@@ -294,9 +294,15 @@ export function CrewManagerPage() {
       !hasAutoOpenedWizardRef.current
     ) {
       hasAutoOpenedWizardRef.current = true
-      setWizardOpen(true)
+      queueMicrotask(() => setWizardOpen(true))
     }
   }, [currentProductionId, crewLoading, crew.length])
+
+  useEffect(() => {
+    const onAddCrew = () => setAddOpen(true)
+    window.addEventListener('albatross-menu-people-add-crew', onAddCrew)
+    return () => window.removeEventListener('albatross-menu-people-add-crew', onAddCrew)
+  }, [])
 
   if (!currentProductionId) {
     return (

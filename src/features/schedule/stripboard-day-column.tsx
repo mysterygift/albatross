@@ -10,7 +10,7 @@ import type { ShootDay } from '@/lib/db/types'
 import type { Unit } from '@/lib/db/types'
 import type { ShootDayUnit } from '@/lib/db/types'
 import type { StripboardStrip } from '@/lib/db/types'
-import type { Scene, Shot } from '@/lib/db/types'
+import type { Scene, Shot, Episode } from '@/lib/db/types'
 
 export type ColumnFilter = { int: boolean; ext: boolean; day: boolean; night: boolean }
 
@@ -24,6 +24,7 @@ export function StripboardDayColumn({
   shots,
   estimatedShootMinutesByShotId,
   onUpdateStripEstimatedMinutes,
+  onUpdateCallWrapTime,
   columnId,
   pageEighthsTarget,
   onSendToBoneyard,
@@ -31,6 +32,9 @@ export function StripboardDayColumn({
   onToggleLock,
   columnFilters,
   onColumnFilterChange,
+  isEpisodic,
+  shootingBlocLabel,
+  episodeById,
 }: {
   day: ShootDay
   units: Unit[]
@@ -40,6 +44,7 @@ export function StripboardDayColumn({
   shots: Shot[]
   estimatedShootMinutesByShotId: Map<string, number>
   onUpdateStripEstimatedMinutes?: (stripId: string, minutes: number | null) => void
+  onUpdateCallWrapTime?: (stripId: string, time: string) => void
   columnId: (shootDayId: string, shootDayUnitId: string) => string
   isLocked: boolean
   pageEighthsTarget: number
@@ -50,7 +55,15 @@ export function StripboardDayColumn({
   onToggleLock?: (shootDayUnitId: string, isLocked: boolean) => void
   columnFilters?: Record<string, ColumnFilter>
   onColumnFilterChange?: (colId: string, key: keyof ColumnFilter, value: boolean) => void
+  isEpisodic?: boolean
+  /** Day-level label from `shoot_days.shooting_bloc_id` + bloc catalog; episodic only. */
+  shootingBlocLabel?: string
+  episodeById?: Map<string, Episode>
 }) {
+  const allStripsOnDay = stripsByUnit.flatMap(({ strips }) => strips)
+  const scheduledCallCountOnDay = allStripsOnDay.filter((s) => s.strip_type === 'CALL').length
+  const scheduledWrapCountOnDay = allStripsOnDay.filter((s) => s.strip_type === 'WRAP').length
+
   return (
     <Card className="w-64 shrink-0 flex flex-col bg-card border-border overflow-hidden">
       <CardHeader className="py-3 px-4">
@@ -60,6 +73,14 @@ export function StripboardDayColumn({
             <Badge variant="secondary" className="text-xs">Day {day.day_number}</Badge>
           )}
         </CardTitle>
+        {isEpisodic && shootingBlocLabel != null && (
+          <p
+            className="text-muted-foreground text-xs mt-2 font-medium leading-snug truncate"
+            title={shootingBlocLabel}
+          >
+            {shootingBlocLabel}
+          </p>
+        )}
       </CardHeader>
       <CardContent className="flex-1 overflow-hidden flex flex-col p-0">
         {stripsByUnit.map(({ shootDayUnit, strips: unitStrips }) => {
@@ -75,14 +96,19 @@ export function StripboardDayColumn({
             shots={shots}
             estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
             onUpdateStripEstimatedMinutes={onUpdateStripEstimatedMinutes}
+            onUpdateCallWrapTime={onUpdateCallWrapTime}
             columnId={columnId(day.id, shootDayUnit.id)}
             isLocked={shootDayUnit.is_locked !== 0}
             pageEighthsTarget={pageEighthsTarget}
             onSendToBoneyard={onSendToBoneyard}
             onDeleteStrip={onDeleteStrip}
+            scheduledCallCountOnDay={scheduledCallCountOnDay}
+            scheduledWrapCountOnDay={scheduledWrapCountOnDay}
             onToggleLock={onToggleLock}
             columnFilter={columnFilters?.[columnId(day.id, shootDayUnit.id)] ?? DEFAULT_COLUMN_FILTER}
             onColumnFilterChange={onColumnFilterChange ? (key, value) => onColumnFilterChange(columnId(day.id, shootDayUnit.id), key, value) : undefined}
+            isEpisodic={isEpisodic}
+            episodeById={episodeById}
           />
           )
         })}
@@ -104,14 +130,19 @@ function UnitColumn({
   shots,
   estimatedShootMinutesByShotId,
   onUpdateStripEstimatedMinutes,
+  onUpdateCallWrapTime,
   columnId: colId,
   isLocked,
   pageEighthsTarget,
   onSendToBoneyard,
   onDeleteStrip,
+  scheduledCallCountOnDay,
+  scheduledWrapCountOnDay,
   onToggleLock,
   columnFilter,
   onColumnFilterChange,
+  isEpisodic,
+  episodeById,
 }: {
   day?: ShootDay
   shootDayUnit: ShootDayUnit
@@ -121,14 +152,19 @@ function UnitColumn({
   shots: Shot[]
   estimatedShootMinutesByShotId: Map<string, number>
   onUpdateStripEstimatedMinutes?: (stripId: string, minutes: number | null) => void
+  onUpdateCallWrapTime?: (stripId: string, time: string) => void
   columnId: string
   isLocked: boolean
   pageEighthsTarget: number
   onSendToBoneyard: (strip: StripboardStrip) => void
   onDeleteStrip?: (strip: StripboardStrip) => void
+  scheduledCallCountOnDay: number
+  scheduledWrapCountOnDay: number
   onToggleLock?: (shootDayUnitId: string, isLocked: boolean) => void
   columnFilter: ColumnFilter
   onColumnFilterChange?: (key: keyof ColumnFilter, value: boolean) => void
+  isEpisodic?: boolean
+  episodeById?: Map<string, Episode>
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: colId })
 
@@ -299,10 +335,15 @@ function UnitColumn({
                     : undefined
                 }
                 onUpdateEstimatedMinutes={onUpdateStripEstimatedMinutes}
+                onUpdateCallWrapTime={onUpdateCallWrapTime}
                 onSendToBoneyard={onSendToBoneyard}
                 onDeleteStrip={onDeleteStrip}
+                scheduledCallCountOnDay={scheduledCallCountOnDay}
+                scheduledWrapCountOnDay={scheduledWrapCountOnDay}
                 disabled={isLocked}
                 className={filtersActive && strip.strip_type !== 'SHOT' ? 'opacity-60' : undefined}
+                isEpisodic={isEpisodic}
+                episodeById={episodeById}
               />
             ))}
             {displayStrips.length === 0 && (

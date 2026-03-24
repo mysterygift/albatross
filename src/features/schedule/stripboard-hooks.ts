@@ -23,6 +23,7 @@ import {
   deleteStrip,
   reorderStrip,
   updateStripEstimatedMinutes,
+  updateCallWrapStripTime,
   type CreateStripData,
   type UnscheduledShotsFilters,
 } from '@/lib/db/repositories/stripboard-strips'
@@ -164,6 +165,8 @@ export function useStripboard(productionId: string | null) {
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: stripboardQueryKeys.all })
+    queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
+    queryClient.invalidateQueries({ queryKey: ['shoot-days'] })
     queryClient.invalidateQueries({ queryKey: unscheduledShotsQueryKeys.all })
     queryClient.invalidateQueries({ queryKey: boneyardStripsQueryKeys.all })
     queryClient.invalidateQueries({ queryKey: ['shots'] })
@@ -178,6 +181,12 @@ export function useStripboard(productionId: string | null) {
   const updateEstimatedMutation = useMutation({
     mutationFn: ({ stripId, minutes }: { stripId: string; minutes: number | null }) =>
       updateStripEstimatedMinutes(stripId, minutes),
+    onSuccess: () => invalidate(),
+  })
+
+  const updateCallWrapTimeMutation = useMutation({
+    mutationFn: ({ stripId, time }: { stripId: string; time: string }) =>
+      updateCallWrapStripTime(stripId, time),
     onSuccess: () => invalidate(),
   })
 
@@ -264,6 +273,7 @@ export function useStripboard(productionId: string | null) {
     invalidate,
     setLockedMutation,
     updateEstimatedMutation,
+    updateCallWrapTimeMutation,
     moveToUnscheduledMutation,
     moveToBoneyardMutation,
     deleteStripMutation,

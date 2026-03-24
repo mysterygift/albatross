@@ -11,6 +11,7 @@
 
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import type { BudgetItemExpenseLink } from '../types'
+import { resolveBudgetRevisionId } from './budgetRevisions'
 
 const TABLE = 'budget_item_expense_links'
 
@@ -18,6 +19,7 @@ function rowToLink(r: Record<string, unknown>): BudgetItemExpenseLink {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    budget_revision_id: (r.budget_revision_id as string | null) ?? null,
     budget_item_id: r.budget_item_id as string,
     expense_id: r.expense_id as string,
     matched_amount: (r.matched_amount as number) ?? 0,
@@ -29,36 +31,42 @@ function rowToLink(r: Record<string, unknown>): BudgetItemExpenseLink {
 
 /** Returns all non-deleted links for the production. */
 export async function listBudgetItemExpenseLinksByProduction(
-  productionId: string
+  productionId: string,
+  revisionId?: string | null
 ): Promise<BudgetItemExpenseLink[]> {
   const db = await getDb()
+  const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
-    [productionId]
+    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND budget_revision_id = $2 AND deleted_at IS NULL ORDER BY created_at`,
+    [productionId, budgetRevisionId]
   )
   return rows.map(rowToLink)
 }
 
 /** Returns all non-deleted links for that line item. */
 export async function listBudgetItemExpenseLinksForBudgetItem(
-  budgetItemId: string
+  budgetItemId: string,
+  revisionId?: string | null
 ): Promise<BudgetItemExpenseLink[]> {
   const db = await getDb()
+  const revisionClause = revisionId ? ' AND budget_revision_id = $2' : ''
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE budget_item_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
-    [budgetItemId]
+    `SELECT * FROM ${TABLE} WHERE budget_item_id = $1${revisionClause} AND deleted_at IS NULL ORDER BY created_at`,
+    revisionId ? [budgetItemId, revisionId] : [budgetItemId]
   )
   return rows.map(rowToLink)
 }
 
 /** Returns all non-deleted links for that expense. */
 export async function listBudgetItemExpenseLinksForExpense(
-  expenseId: string
+  expenseId: string,
+  revisionId?: string | null
 ): Promise<BudgetItemExpenseLink[]> {
   const db = await getDb()
+  const revisionClause = revisionId ? ' AND budget_revision_id = $2' : ''
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE expense_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
-    [expenseId]
+    `SELECT * FROM ${TABLE} WHERE expense_id = $1${revisionClause} AND deleted_at IS NULL ORDER BY created_at`,
+    revisionId ? [expenseId, revisionId] : [expenseId]
   )
   return rows.map(rowToLink)
 }
@@ -69,6 +77,7 @@ export async function listBudgetItemExpenseLinksForExpense(
  */
 export async function createBudgetItemExpenseLink(data: {
   productionId: string
+  revisionId?: string | null
   budgetItemId: string
   expenseId: string
   matchedAmount: number
@@ -102,12 +111,17 @@ export async function createBudgetItemExpenseLink(data: {
 
   const id = uuid()
   const ts = now()
+  const budgetRevisionId = await resolveBudgetRevisionId({
+    productionId: data.productionId,
+    revisionId: data.revisionId,
+  })
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, budget_item_id, expense_id, matched_amount, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    `INSERT INTO ${TABLE} (id, production_id, budget_revision_id, budget_item_id, expense_id, matched_amount, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       id,
       data.productionId,
+      budgetRevisionId,
       data.budgetItemId,
       data.expenseId,
       data.matchedAmount,
@@ -121,6 +135,7 @@ export async function createBudgetItemExpenseLink(data: {
 
 export type CreateBudgetItemExpenseLinksParams = {
   productionId: string
+  revisionId?: string | null
   expenseId: string
   allocations: Array<{ budgetItemId: string; matchedAmount: number }>
 }
@@ -134,7 +149,7 @@ export type CreateBudgetItemExpenseLinksParams = {
 export async function createBudgetItemExpenseLinks(
   params: CreateBudgetItemExpenseLinksParams
 ): Promise<BudgetItemExpenseLink[]> {
-  const { productionId, expenseId, allocations } = params
+  const { productionId, revisionId, expenseId, allocations } = params
 
   if (allocations.length === 0) {
     throw new Error('At least one allocation is required')
@@ -198,6 +213,7 @@ export async function createBudgetItemExpenseLinks(
     }
 
     const ts = now()
+    const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
     // One multi-row INSERT = one combined db.execute (DATABASE_LAYER.md §3); avoids explicit
     // BEGIN/COMMIT inside the batch, which can interact badly with the pooled driver (see
     // demoProductionSeed verifyCascades note and §8 demo booking seed pattern).
@@ -206,12 +222,12 @@ export async function createBudgetItemExpenseLinks(
     let param = 1
     for (const a of allocations) {
       valueGroups.push(
-        `($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6})`
+        `($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7})`
       )
-      param += 7
-      insertBind.push(uuid(), productionId, a.budgetItemId, expenseId, a.matchedAmount, ts, ts)
+      param += 8
+      insertBind.push(uuid(), productionId, budgetRevisionId, a.budgetItemId, expenseId, a.matchedAmount, ts, ts)
     }
-    const insertSql = `INSERT INTO ${TABLE} (id, production_id, budget_item_id, expense_id, matched_amount, created_at, updated_at) VALUES ${valueGroups.join(', ')}`
+    const insertSql = `INSERT INTO ${TABLE} (id, production_id, budget_revision_id, budget_item_id, expense_id, matched_amount, created_at, updated_at) VALUES ${valueGroups.join(', ')}`
     await executeBatch(db, [{ sql: insertSql, bindValues: insertBind }])
 
     const links = await db.select<Record<string, unknown>[]>(

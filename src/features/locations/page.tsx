@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
+import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
+import { locationsTutorialSteps } from '@/features/tutorial/sections/locationsTutorial'
 import { useCurrency } from '@/hooks/useCurrency'
 import {
   listLocationsByProduction,
@@ -62,6 +65,7 @@ const locationSchema = z.object({
   booked_status: z.enum(['unbooked', 'hold', 'booked', 'wrap']),
   address: z.string().optional(),
   what3words: z.string().optional(),
+  parking_info: z.string().optional(),
   availability_constraints: z.string().optional(),
   permit_fee: feeSchema,
   location_fee: feeSchema,
@@ -72,12 +76,20 @@ type LocationForm = z.infer<typeof locationSchema>
 
 export function LocationsPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
+  const { progress, updateProgress } = useFirstLaunchTutorial()
   const { format } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [tutorialOpen, setTutorialOpen] = useState(false)
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (progress?.currentSection === 'locations') {
+      setTutorialOpen(true)
+    }
+  }, [progress?.currentSection])
 
   const { data: locations = [] } = useQuery({
     queryKey: ['locations', currentProductionId],
@@ -147,6 +159,14 @@ export function LocationsPage() {
     getCoreRowModel: getCoreRowModel(),
   })
 
+  useEffect(() => {
+    const onAddLocation = () => setOpen(true)
+    window.addEventListener('albatross-menu-locations-add-location', onAddLocation)
+    return () => {
+      window.removeEventListener('albatross-menu-locations-add-location', onAddLocation)
+    }
+  }, [])
+
   if (!currentProductionId) {
     return (
       <div>
@@ -211,6 +231,39 @@ export function LocationsPage() {
           </DialogContent>
         </Dialog>
       )}
+      <SectionTutorialPanel
+        open={tutorialOpen}
+        onOpenChange={(open) => {
+          setTutorialOpen(open)
+          if (!open) {
+            updateProgress((prev) => ({
+              ...prev,
+              currentSection: prev.currentSection === 'locations' ? null : prev.currentSection,
+              sections: {
+                ...prev.sections,
+                locations:
+                  prev.sections.locations === 'not_started' ? 'in_progress' : prev.sections.locations,
+              },
+            }))
+          }
+        }}
+        sectionId="locations"
+        sectionTitle="Locations"
+        steps={locationsTutorialSteps}
+        progress={progress}
+        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
+        onCompleteSection={() => {
+          setTutorialOpen(false)
+          updateProgress((prev) => ({
+            ...prev,
+            currentSection: prev.currentSection === 'locations' ? null : prev.currentSection,
+            sections: {
+              ...prev.sections,
+              locations: 'complete',
+            },
+          }))
+        }}
+      />
     </div>
   )
 }
@@ -233,6 +286,7 @@ function LocationForm({
       booked_status: defaultValues.booked_status ?? 'unbooked',
       address: defaultValues.address ?? '',
       what3words: defaultValues.what3words ?? '',
+      parking_info: defaultValues.parking_info ?? '',
       availability_constraints: defaultValues.availability_constraints ?? '',
       permit_fee: defaultValues.permit_fee ?? undefined,
       location_fee: defaultValues.location_fee ?? undefined,
@@ -271,6 +325,10 @@ function LocationForm({
         <div className="space-y-1.5">
             <Label>what3words</Label>
             <Input {...form.register('what3words')} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Parking information</Label>
+          <Textarea {...form.register('parking_info')} rows={2} />
         </div>
         <div className="space-y-1.5">
           <Label>Availability constraints</Label>

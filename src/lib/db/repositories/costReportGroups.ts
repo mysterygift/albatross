@@ -1,6 +1,7 @@
 import { getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxPush } from '../outbox'
 import type { CostReportGroup } from '../types'
+import { resolveBudgetRevisionId } from './budgetRevisions'
 
 const GROUPS_TABLE = 'cost_report_groups'
 const MAPPINGS_TABLE = 'cost_report_group_accounts'
@@ -11,6 +12,7 @@ function rowToGroup(r: Record<string, unknown>): CostReportGroup {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    budget_revision_id: (r.budget_revision_id as string | null) ?? null,
     code: r.code as string | null,
     name: r.name as string,
     sort_order: (r.sort_order as number) ?? 0,
@@ -36,11 +38,15 @@ export type CostReportGroupWithCount = CostReportGroup & { accountCount: number 
 
 export type CostReportGroupWithAccountIds = CostReportGroup & { account_ids: string[] }
 
-export async function listCostReportGroups(productionId: string): Promise<CostReportGroupWithCount[]> {
+export async function listCostReportGroups(
+  productionId: string,
+  revisionId?: string | null
+): Promise<CostReportGroupWithCount[]> {
   const db = await getDb()
+  const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${GROUPS_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY sort_order ASC, name ASC`,
-    [productionId]
+    `SELECT * FROM ${GROUPS_TABLE} WHERE production_id = $1 AND budget_revision_id = $2 AND deleted_at IS NULL ORDER BY sort_order ASC, name ASC`,
+    [productionId, budgetRevisionId]
   )
   if (rows.length === 0) return []
   const groupIds = rows.map((r) => r.id as string)
@@ -70,12 +76,14 @@ export async function listGroupAccountIds(groupId: string): Promise<string[]> {
 
 /** List cost report groups with account ids in one call (for Cost Report tab). */
 export async function listCostReportGroupsWithAccountIds(
-  productionId: string
+  productionId: string,
+  revisionId?: string | null
 ): Promise<CostReportGroupWithAccountIds[]> {
   const db = await getDb()
+  const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${GROUPS_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY sort_order ASC, name ASC`,
-    [productionId]
+    `SELECT * FROM ${GROUPS_TABLE} WHERE production_id = $1 AND budget_revision_id = $2 AND deleted_at IS NULL ORDER BY sort_order ASC, name ASC`,
+    [productionId, budgetRevisionId]
   )
   if (rows.length === 0) return []
   const groups = rows.map(rowToGroup)
@@ -123,6 +131,7 @@ async function checkUniqueNameAndCode(
 
 export async function createCostReportGroup(data: {
   production_id: string
+  revision_id?: string | null
   name: string
   code?: string | null
   sort_order?: number
@@ -134,14 +143,18 @@ export async function createCostReportGroup(data: {
   const accountIds = data.accountIds ?? []
   const id = uuid()
   const ts = now()
+  const budgetRevisionId = await resolveBudgetRevisionId({
+    productionId: data.production_id,
+    revisionId: data.revision_id,
+  })
 
   await runInSerializedTransaction(async () => {
     const db = await getDb()
     await checkUniqueNameAndCode(db, data.production_id, name, code)
     await db.execute(
-      `INSERT INTO ${GROUPS_TABLE} (id, production_id, code, name, sort_order, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [id, data.production_id, code, name, sortOrder, ts, ts]
+      `INSERT INTO ${GROUPS_TABLE} (id, production_id, budget_revision_id, code, name, sort_order, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [id, data.production_id, budgetRevisionId, code, name, sortOrder, ts, ts]
     )
     for (const accountId of accountIds) {
       await db.execute(

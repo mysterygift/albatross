@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
+import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import {
   listAccounts,
   createAccount,
@@ -66,6 +67,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown, Users } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import {
   ensureDemoData,
   resetDemoData,
@@ -74,18 +76,66 @@ import {
   verifyCascades,
 } from '@/lib/db/seed/demoProductionSeed'
 import { getProductionBySlug } from '@/lib/db/repositories/production'
+import { enableEpisodicProduction } from '@/lib/db/episodicProductionService'
 import { getSetting, setSetting, FIRST_LAUNCH_TUTORIAL_SEEN_KEY, setFirstLaunchTutorialSeen } from '@/lib/db/repositories/settings'
 import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
+import { EpisodesSettingsSection } from '@/features/settings/EpisodesSettingsSection'
+import { ShootingBlocsSettingsSection } from '@/features/settings/ShootingBlocsSettingsSection'
+import {
+  API_CALL_TRACKER_IDS,
+  API_CALL_TRACKER_LABELS,
+  API_CALL_TRACKING_SETTING_KEY,
+  getApiCallCounts,
+  setApiCallTrackingEnabled,
+  subscribeApiCallTracker,
+} from '@/lib/dev/apiCallTracker'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { getRate } from '@/lib/money/exchangeRates'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
 import type { BudgetAccount } from '@/lib/db/types'
 
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
+const OPENROUTESERVICE_API_KEY_SETTING = 'openrouteservice_api_key'
+
+function ApiCallTrackerPanel({ trackingOn }: { trackingOn: boolean }) {
+  const [, bump] = useState(0)
+  useEffect(() => subscribeApiCallTracker(() => bump((n) => n + 1)), [])
+  const counts = getApiCallCounts()
+  return (
+    <div className="mt-3 space-y-2">
+      <p className="text-sm text-amber-800 dark:text-amber-200">
+        Counts are for this app session only and reset when you quit. With tracking off, numbers do not
+        increase.
+      </p>
+      {!trackingOn && (
+        <p className="text-xs text-amber-700/90 dark:text-amber-300/90">Tracking is off — enable above to record new calls.</p>
+      )}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>API</TableHead>
+            <TableHead className="text-right w-24">Calls</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {API_CALL_TRACKER_IDS.map((id) => (
+            <TableRow key={id}>
+              <TableCell className="text-sm">{API_CALL_TRACKER_LABELS[id]}</TableCell>
+              <TableCell className="text-right tabular-nums">{counts[id]}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
 
 export function SettingsPage() {
   const navigate = useNavigate()
-  const { currentProductionId, setCurrentProductionId, refetchProductions } = useCurrentProduction()
+  const { currentProductionId, currentProduction, setCurrentProductionId, refetchProductions } =
+    useCurrentProduction()
+  const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
+  const revisionId = workingBudgetRevision?.id
   const {
     displayCurrency,
     setDisplayCurrency,
@@ -103,9 +153,14 @@ export function SettingsPage() {
   const [accountToDelete, setAccountToDelete] = useState<BudgetAccount | null>(null)
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
   const [colorToast, setColorToast] = useState<string | null>(null)
-  const [settingsTab, setSettingsTab] = useState<'budget' | 'people' | 'developer_tools'>('budget')
+  const [settingsTab, setSettingsTab] = useState<'budget' | 'people' | 'apis' | 'developer_tools'>('budget')
   const queryClient = useQueryClient()
   const [tutorialToast, setTutorialToast] = useState<string | null>(null)
+  const [orsApiKeyDraft, setOrsApiKeyDraft] = useState('')
+  const [orsApiKeyToast, setOrsApiKeyToast] = useState<string | null>(null)
+  const [episodicEnableOpen, setEpisodicEnableOpen] = useState(false)
+  const [episodicInitialEpisode, setEpisodicInitialEpisode] = useState('')
+  const [episodicEnableError, setEpisodicEnableError] = useState<string | null>(null)
 
   const toggleAccountExpanded = useCallback((accountId: string) => {
     setExpandedAccountIds((prev) => {
@@ -127,12 +182,29 @@ export function SettingsPage() {
     queryKey: ['settings', DB_PERF_SETTING_KEY],
     queryFn: () => getSetting(DB_PERF_SETTING_KEY),
   })
+  const { data: apiCallTrackingSetting } = useQuery({
+    queryKey: ['settings', API_CALL_TRACKING_SETTING_KEY],
+    queryFn: () => getSetting(API_CALL_TRACKING_SETTING_KEY),
+  })
+  const { data: orsApiKeySetting } = useQuery({
+    queryKey: ['settings', OPENROUTESERVICE_API_KEY_SETTING],
+    queryFn: () => getSetting(OPENROUTESERVICE_API_KEY_SETTING),
+  })
   const dbPerfEnabled = dbPerfEnabledSetting !== 'false'
+  const apiCallTrackingEnabled = apiCallTrackingSetting === 'true'
   useEffect(() => {
     if (dbPerfEnabledSetting !== undefined) {
       setPerfLoggingEnabled(dbPerfEnabledSetting !== 'false')
     }
   }, [dbPerfEnabledSetting])
+  useEffect(() => {
+    if (apiCallTrackingSetting !== undefined) {
+      setApiCallTrackingEnabled(apiCallTrackingSetting === 'true')
+    }
+  }, [apiCallTrackingSetting])
+  useEffect(() => {
+    setOrsApiKeyDraft(orsApiKeySetting ?? '')
+  }, [orsApiKeySetting])
 
   const setDbPerfEnabledMutation = useMutation({
     mutationFn: (enabled: boolean) =>
@@ -144,9 +216,54 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['settings', DB_PERF_SETTING_KEY] })
     },
   })
+  const setApiCallTrackingMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      setSetting(API_CALL_TRACKING_SETTING_KEY, enabled ? 'true' : 'false'),
+    onMutate: (enabled) => {
+      setApiCallTrackingEnabled(enabled)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', API_CALL_TRACKING_SETTING_KEY] })
+    },
+  })
+  const enableEpisodicMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentProductionId) throw new Error('No production selected')
+      const name = episodicInitialEpisode.trim()
+      if (!name) throw new Error('Enter a name for the first episode')
+      return enableEpisodicProduction({ productionId: currentProductionId, initialEpisodeName: name })
+    },
+    onSuccess: () => {
+      setEpisodicEnableOpen(false)
+      setEpisodicInitialEpisode('')
+      setEpisodicEnableError(null)
+      queryClient.invalidateQueries({ queryKey: ['productions'] })
+      if (currentProductionId) {
+        queryClient.invalidateQueries({ queryKey: ['episodes-management', currentProductionId] })
+      }
+      refetchProductions()
+    },
+    onError: (err) => {
+      setEpisodicEnableError(err instanceof Error ? err.message : 'Could not enable episodic mode')
+    },
+  })
+
+  const setOrsApiKeyMutation = useMutation({
+    mutationFn: async (nextValue: string) => {
+      const trimmed = nextValue.trim()
+      await setSetting(OPENROUTESERVICE_API_KEY_SETTING, trimmed)
+      return trimmed
+    },
+    onSuccess: (savedValue) => {
+      queryClient.setQueryData(['settings', OPENROUTESERVICE_API_KEY_SETTING], savedValue)
+      setOrsApiKeyDraft(savedValue)
+      setOrsApiKeyToast(savedValue ? 'OpenRouteService API key saved.' : 'OpenRouteService API key cleared.')
+      setTimeout(() => setOrsApiKeyToast(null), 3000)
+    },
+  })
   const { data: costReportGroups = [] } = useQuery({
-    queryKey: ['cost-report-groups', currentProductionId],
-    queryFn: () => listCostReportGroups(currentProductionId ?? ''),
+    queryKey: ['cost-report-groups', currentProductionId, revisionId],
+    queryFn: () => listCostReportGroups(currentProductionId ?? '', revisionId),
     enabled: !!currentProductionId,
   })
 
@@ -172,13 +289,14 @@ export function SettingsPage() {
     mutationFn: (data: { name: string; code: string; accountIds: string[] }) =>
       createCostReportGroup({
         production_id: currentProductionId!,
+        revision_id: revisionId,
         name: data.name.trim(),
         code: data.code.trim() || null,
         accountIds: data.accountIds,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!, revisionId] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!, revisionId] })
       setAddGroupOpen(false)
     },
   })
@@ -190,8 +308,8 @@ export function SettingsPage() {
         setGroupAccountIds(editGroup!.id, data.accountIds),
       ]),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!, revisionId] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!, revisionId] })
       setEditGroup(null)
     },
   })
@@ -199,8 +317,8 @@ export function SettingsPage() {
   const deleteGroupMutation = useMutation({
     mutationFn: (groupId: string) => deleteCostReportGroup(groupId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!, revisionId] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!, revisionId] })
     },
   })
 
@@ -281,10 +399,11 @@ export function SettingsPage() {
     <div className="space-y-5">
       <h1 className="text-2xl font-semibold">Settings</h1>
 
-      <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as 'budget' | 'people' | 'developer_tools')} className="w-full">
+      <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as 'budget' | 'people' | 'apis' | 'developer_tools')} className="w-full">
         <TabsList className="h-9 rounded-md border border-border bg-muted/30 w-fit">
           <TabsTrigger value="budget" className="px-4 text-sm data-[state=active]:bg-background">Budget</TabsTrigger>
           <TabsTrigger value="people" className="px-4 text-sm data-[state=active]:bg-background">People</TabsTrigger>
+          <TabsTrigger value="apis" className="px-4 text-sm data-[state=active]:bg-background">APIs</TabsTrigger>
           <TabsTrigger value="developer_tools" className="px-4 text-sm data-[state=active]:bg-background">Developer Tools</TabsTrigger>
         </TabsList>
 
@@ -322,6 +441,97 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {currentProductionId && currentProduction && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Episodic production</CardTitle>
+            <CardDescription>
+              For series and multi-episode work. When enabled, episodes organize script, schedule, and deliveries in later releases.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {currentProduction.is_episodic ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Episodic mode is <span className="font-medium text-foreground">on</span> for this production. This
+                  cannot be turned off.
+                </p>
+                <EpisodesSettingsSection productionId={currentProductionId} />
+                <ShootingBlocsSettingsSection productionId={currentProductionId} />
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Enable episodic mode only if this project is a series or has multiple episodes. You will need at least one episode name to continue.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEpisodicEnableError(null)
+                    setEpisodicInitialEpisode('')
+                    setEpisodicEnableOpen(true)
+                  }}
+                >
+                  Enable episodic mode…
+                </Button>
+              </>
+            )}
+            <Dialog
+              open={episodicEnableOpen}
+              onOpenChange={(open) => {
+                setEpisodicEnableOpen(open)
+                if (!open) {
+                  setEpisodicEnableError(null)
+                  setEpisodicInitialEpisode('')
+                }
+              }}
+            >
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Enable episodic mode</DialogTitle>
+                  <p className="text-muted-foreground text-sm leading-snug">
+                    This choice is permanent. You will not be able to disable episodic mode for this production later. Episodic projects must have at least one episode—you are about to create the first one.
+                  </p>
+                </DialogHeader>
+                <div className="rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-amber-800 dark:text-amber-200 text-xs leading-snug">
+                  This cannot be undone. Only continue if this production should stay episodic for its lifetime.
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="episodic-first-episode">First episode name</Label>
+                  <Input
+                    id="episodic-first-episode"
+                    value={episodicInitialEpisode}
+                    onChange={(e) => setEpisodicInitialEpisode(e.target.value)}
+                    placeholder="e.g. Episode 1"
+                  />
+                </div>
+                {episodicEnableError && (
+                  <p className="text-destructive text-sm">{episodicEnableError}</p>
+                )}
+                <DialogFooter className="gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setEpisodicEnableOpen(false)}
+                    disabled={enableEpisodicMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => enableEpisodicMutation.mutate()}
+                    disabled={enableEpisodicMutation.isPending}
+                  >
+                    {enableEpisodicMutation.isPending ? 'Enabling…' : 'Enable episodic mode'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </CardContent>
+        </Card>
+      )}
 
       {currentProductionId && (
         <Card>
@@ -465,6 +675,62 @@ export function SettingsPage() {
       )}
         </TabsContent>
 
+        <TabsContent value="apis" className="space-y-5 mt-5 outline-none">
+          <Card>
+            <CardHeader>
+              <CardTitle>OpenRouteService API key</CardTitle>
+              <CardDescription>
+                Paste your personal OpenRouteService API key to enable route-based travel times. You can get a free key from openrouteservice.org.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="ors-api-key">API key</Label>
+                <Input
+                  id="ors-api-key"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={orsApiKeyDraft}
+                  onChange={(e) => setOrsApiKeyDraft(e.target.value)}
+                  placeholder="Paste your OpenRouteService API key"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => setOrsApiKeyMutation.mutate(orsApiKeyDraft)}
+                  disabled={setOrsApiKeyMutation.isPending}
+                >
+                  {setOrsApiKeyMutation.isPending ? 'Saving…' : 'Save key'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOrsApiKeyMutation.mutate('')}
+                  disabled={setOrsApiKeyMutation.isPending}
+                >
+                  Clear key
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => shellOpen('https://openrouteservice.org')}
+                >
+                  Get free key
+                </Button>
+              </div>
+              {setOrsApiKeyMutation.error instanceof Error && (
+                <p className="text-sm text-destructive">{setOrsApiKeyMutation.error.message}</p>
+              )}
+              {orsApiKeyToast && (
+                <p className="text-sm text-muted-foreground rounded-md border border-border bg-card px-3 py-2">
+                  {orsApiKeyToast}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="developer_tools" className="space-y-5 mt-5 outline-none">
       <Card>
         <CardHeader>
@@ -537,6 +803,20 @@ export function SettingsPage() {
                   DB Perf logging (HUD + Log to console)
                 </Label>
               </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="api-call-tracker-toggle"
+                  checked={apiCallTrackingEnabled}
+                  onChange={(e) => setApiCallTrackingMutation.mutate(e.target.checked)}
+                  disabled={setApiCallTrackingMutation.isPending}
+                  className="rounded border-amber-600"
+                />
+                <Label htmlFor="api-call-tracker-toggle" className="font-medium text-amber-800 dark:text-amber-200">
+                  Track external API calls (this session)
+                </Label>
+              </div>
+              <ApiCallTrackerPanel trackingOn={apiCallTrackingEnabled} />
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -1216,7 +1496,7 @@ function EditAccountNameForm({
 }) {
   const [name, setName] = useState(account.name)
   useEffect(() => {
-    setName(account.name)
+    queueMicrotask(() => setName(account.name))
   }, [account.id, account.name])
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -1273,13 +1553,15 @@ function CostReportGroupForm({
   const [accountIds, setAccountIds] = useState<string[]>(initialAccountIds)
 
   useEffect(() => {
-    setName(initialName)
-    setCode(initialCode)
+    queueMicrotask(() => {
+      setName(initialName)
+      setCode(initialCode)
+    })
   }, [initialName, initialCode])
 
   useEffect(() => {
-    setAccountIds(initialAccountIds)
-  }, [initialAccountIds.join(',')])
+    queueMicrotask(() => setAccountIds(initialAccountIds))
+  }, [initialAccountIds])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()

@@ -2,6 +2,7 @@
  * Fawaz Ahmed Exchange API (optional, toggleable in Dev Settings).
  * If enable_currency_conversion_api is false, no fetch and no cache read (default is on).
  */
+import { recordApiCall } from '@/lib/dev/apiCallTracker'
 import { getSetting } from '@/lib/db/repositories/settings'
 import {
   getCachedRate,
@@ -28,6 +29,7 @@ export async function getRate(base: string, quote: string): Promise<number | nul
 
   try {
     const url = `${FAWAZ_BASE}/${baseLower}.json`
+    recordApiCall('currency_conversion_api')
     const res = await fetch(url)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = (await res.json()) as Record<string, unknown>

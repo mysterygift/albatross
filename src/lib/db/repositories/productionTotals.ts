@@ -1,6 +1,7 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxStatementForRow } from '../outbox'
 import type { ProductionTotal } from '../types'
+import { resolveBudgetRevisionId } from './budgetRevisions'
 
 const BUDGET_ACCOUNTS_TABLE = 'budget_accounts'
 
@@ -11,6 +12,7 @@ function rowToTotal(r: Record<string, unknown>): ProductionTotal {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    budget_revision_id: (r.budget_revision_id as string | null) ?? null,
     name: r.name as string,
     sort_order: (r.sort_order as number) ?? 0,
     created_at: r.created_at as string,
@@ -21,11 +23,15 @@ function rowToTotal(r: Record<string, unknown>): ProductionTotal {
 
 export type ProductionTotalWithAccountIds = ProductionTotal & { account_ids: string[] }
 
-export async function listProductionTotals(productionId: string): Promise<ProductionTotalWithAccountIds[]> {
+export async function listProductionTotals(
+  productionId: string,
+  revisionId?: string | null
+): Promise<ProductionTotalWithAccountIds[]> {
   const db = await getDb()
+  const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TOTALS_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY sort_order ASC, name ASC`,
-    [productionId]
+    `SELECT * FROM ${TOTALS_TABLE} WHERE production_id = $1 AND budget_revision_id = $2 AND deleted_at IS NULL ORDER BY sort_order ASC, name ASC`,
+    [productionId, budgetRevisionId]
   )
   if (rows.length === 0) return []
   const totals = rows.map(rowToTotal)
@@ -80,6 +86,7 @@ async function validateHeaderAccounts(
 
 export async function createProductionTotal(data: {
   production_id: string
+  revision_id?: string | null
   name: string
   account_ids: string[]
 }): Promise<ProductionTotal> {
@@ -91,14 +98,18 @@ export async function createProductionTotal(data: {
   const id = uuid()
   const ts = now()
   const sortOrder = 0
+  const budgetRevisionId = await resolveBudgetRevisionId({
+    productionId: data.production_id,
+    revisionId: data.revision_id,
+  })
 
   await runInSerializedTransaction(async () => {
     const db = await getDb()
     const statements: Array<{ sql: string; bindValues: unknown[] }> = [
       { sql: 'BEGIN', bindValues: [] },
       {
-        sql: `INSERT INTO ${TOTALS_TABLE} (id, production_id, name, sort_order, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
-        bindValues: [id, data.production_id, name, sortOrder, ts, ts],
+        sql: `INSERT INTO ${TOTALS_TABLE} (id, production_id, budget_revision_id, name, sort_order, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        bindValues: [id, data.production_id, budgetRevisionId, name, sortOrder, ts, ts],
       },
     ]
     for (const accountId of accountIds) {

@@ -7,7 +7,7 @@
  * Test: DnD strips between columns, drag scene from unscheduled to column, Add dropdown,
  * multi-select Assign to Day, location/search filters, day totals & runtime warning (>10h), lock toggle.
  */
-import { useState, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -47,9 +47,17 @@ import {
 } from '@/components/ui/select'
 import type { StripboardStrip, StripType } from '@/lib/db/types'
 import { createShootDayWithDefaultMainUnit } from '@/lib/db/repositories/schedule'
+import { listShootingBlocsByProduction } from '@/lib/db/repositories/shootingBlocs'
+import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
+import {
+  shootingBlocLabelFromAssociation,
+  shootDayMatchesBlocFilter,
+  type ShootingBlocViewFilter,
+} from '@/lib/schedule/episodicScheduleDisplay'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import type { ShotWithScene } from '@/lib/db/repositories/stripboard-strips'
 import { SmartSchedulingInsightsPanel } from './smart-scheduling-insights-panel'
+import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
 
 const STRIP_TYPES: { type: StripType; label: string }[] = [
   { type: 'MOVE', label: 'Move / Setup' },
@@ -67,20 +75,28 @@ function AddStripPopover({
   dayUnits,
   units,
   onCreate,
+  stripsByDayUnitKey,
   isPending,
+  open,
+  onOpenChange,
 }: {
   productionId: string
   shootDays: { id: string; shoot_date: string; day_number: number | null }[]
   dayUnits: { id: string; shoot_day_id: string; unit_id: string }[]
   units: { id: string; name: string }[]
   onCreate: (data: CreateStripData) => void
+  stripsByDayUnitKey: Map<string, StripboardStrip[]>
   isPending: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const [stripType, setStripType] = useState<StripType>('NOTE')
   const [shootDayId, setShootDayId] = useState<string>('')
   const [unitId, setUnitId] = useState<string>('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [time, setTime] = useState('')
+  const [timeError, setTimeError] = useState<string | null>(null)
 
   const dayUnitsForDay = shootDayId
     ? dayUnits.filter((du) => du.shoot_day_id === shootDayId)
@@ -88,9 +104,34 @@ function AddStripPopover({
   const shootDayUnitId = unitId
     ? dayUnitsForDay.find((du) => du.unit_id === unitId)?.id
     : null
+  const selectedColumnStrips = shootDayUnitId
+    ? stripsByDayUnitKey.get(`${shootDayId}:${shootDayUnitId}`) ?? []
+    : []
+  const hasExistingOfType =
+    (stripType === 'CALL' || stripType === 'WRAP') &&
+    selectedColumnStrips.some((s) => s.strip_type === stripType && s.strip_status === 'SCHEDULED')
 
   const handleCreate = () => {
     if (!shootDayUnitId) return
+    if (hasExistingOfType) return
+    if (stripType === 'CALL' || stripType === 'WRAP') {
+      const normalized = normalizeScheduleTimeInput(time)
+      if (!normalized) {
+        setTimeError('Enter time as HH:MM')
+        return
+      }
+      setTimeError(null)
+      onCreate({
+        production_id: productionId,
+        shoot_day_id: shootDayId,
+        shoot_day_unit_id: shootDayUnitId,
+        strip_type: stripType,
+        title: normalized,
+        description: null,
+      })
+      setTime('')
+      return
+    }
     onCreate({
       production_id: productionId,
       shoot_day_id: shootDayId,
@@ -104,7 +145,7 @@ function AddStripPopover({
   }
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1">
           <Plus className="size-4" />
@@ -152,24 +193,47 @@ function AddStripPopover({
               ))}
             </SelectContent>
           </Select>
-          <Label>Title (optional)</Label>
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Company move to location B"
-            className="h-9"
-          />
-          <Label>Description (optional)</Label>
-          <Input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Optional notes"
-            className="h-9"
-          />
+          {(stripType === 'CALL' || stripType === 'WRAP') ? (
+            <>
+              <Label>Time</Label>
+              <Input
+                value={time}
+                onChange={(e) => {
+                  setTime(e.target.value)
+                  if (timeError) setTimeError(null)
+                }}
+                placeholder="HH:MM"
+                className="h-9"
+              />
+              {timeError && <p className="text-xs text-destructive">{timeError}</p>}
+              {hasExistingOfType && (
+                <p className="text-xs text-destructive">
+                  This unit already has a {stripType} strip.
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <Label>Title (optional)</Label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Company move to location B"
+                className="h-9"
+              />
+              <Label>Description (optional)</Label>
+              <Input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Optional notes"
+                className="h-9"
+              />
+            </>
+          )}
           <Button
             className="w-full"
             size="sm"
-            disabled={!shootDayUnitId || isPending}
+            disabled={!shootDayUnitId || isPending || hasExistingOfType}
             onClick={handleCreate}
           >
             {isPending ? 'Adding…' : 'Add strip'}
@@ -181,8 +245,9 @@ function AddStripPopover({
 }
 
 export function StripboardPage() {
-  const { currentProductionId } = useCurrentProduction()
+  const { currentProductionId, currentProduction } = useCurrentProduction()
   const queryClient = useQueryClient()
+  const isEpisodicProduction = currentProduction?.is_episodic === true
 
   const [search, setSearch] = useState('')
   const [locationId, setLocationId] = useState<string | null | undefined>(undefined)
@@ -197,6 +262,14 @@ export function StripboardPage() {
   const [newlyCreatedShootDayId, setNewlyCreatedShootDayId] = useState<string | null>(null)
   const [newDaySuccessToast, setNewDaySuccessToast] = useState(false)
   const newDayColumnRef = useRef<HTMLDivElement | null>(null)
+  const columnsScrollRef = useRef<HTMLDivElement | null>(null)
+  const [showColumnsLeftFeather, setShowColumnsLeftFeather] = useState(false)
+  const [addStripOpen, setAddStripOpen] = useState(false)
+  const [blocViewFilter, setBlocViewFilter] = useState<ShootingBlocViewFilter>('all')
+
+  useEffect(() => {
+    setBlocViewFilter('all')
+  }, [currentProductionId])
 
   const stripboard = useStripboard(currentProductionId ?? null)
   const filters = { search: search || undefined, locationId }
@@ -208,6 +281,28 @@ export function StripboardPage() {
     queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
+
+  const { data: shootingBlocs = [] } = useQuery({
+    queryKey: ['shooting-blocs', currentProductionId],
+    queryFn: () => listShootingBlocsByProduction(currentProductionId!),
+    enabled: !!currentProductionId && isEpisodicProduction,
+  })
+
+  const { data: episodes = [] } = useQuery({
+    queryKey: ['episodes', currentProductionId],
+    queryFn: () => listEpisodesByProduction(currentProductionId!),
+    enabled: !!currentProductionId && isEpisodicProduction,
+  })
+
+  const blocById = useMemo(
+    () => new Map(shootingBlocs.map((b) => [b.id, b])),
+    [shootingBlocs]
+  )
+
+  const episodeById = useMemo(
+    () => new Map(episodes.map((e) => [e.id, e])),
+    [episodes]
+  )
 
   const {
     shootDays,
@@ -221,6 +316,7 @@ export function StripboardPage() {
     estimatedShootMinutesByShotId,
     setLockedMutation,
     updateEstimatedMutation,
+    updateCallWrapTimeMutation,
     moveToUnscheduledMutation,
     moveToBoneyardMutation,
     deleteStripMutation,
@@ -231,6 +327,14 @@ export function StripboardPage() {
     isInsightsDataLoading,
     castPersonIdsByShotId,
   } = stripboard
+
+  const visibleShootDays = useMemo(
+    () =>
+      !isEpisodicProduction
+        ? shootDays
+        : shootDays.filter((d) => shootDayMatchesBlocFilter(d.shooting_bloc_id, blocViewFilter)),
+    [shootDays, blocViewFilter, isEpisodicProduction]
+  )
 
   const mainUnit = units.find((u) => u.name === 'Main Unit') ?? units[0]
 
@@ -288,6 +392,30 @@ export function StripboardPage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor)
   )
+
+  const updateColumnsLeftFeather = useCallback(() => {
+    const el = columnsScrollRef.current
+    if (!el) {
+      setShowColumnsLeftFeather(false)
+      return
+    }
+    setShowColumnsLeftFeather(el.scrollLeft > 1)
+  }, [])
+
+  useLayoutEffect(() => {
+    const el = columnsScrollRef.current
+    const tick = () => updateColumnsLeftFeather()
+    const rafId = requestAnimationFrame(tick)
+    if (!el) {
+      return () => cancelAnimationFrame(rafId)
+    }
+    const ro = new ResizeObserver(tick)
+    ro.observe(el)
+    return () => {
+      cancelAnimationFrame(rafId)
+      ro.disconnect()
+    }
+  }, [shootDays.length, updateColumnsLeftFeather])
 
   const columnId = (shootDayId: string, shootDayUnitId: string) => `col:${shootDayId}:${shootDayUnitId}`
   const parseColumnId = (id: string): { shootDayId: string; shootDayUnitId: string } | null => {
@@ -376,6 +504,22 @@ export function StripboardPage() {
     const t = setTimeout(() => setNewDaySuccessToast(false), 3000)
     return () => clearTimeout(t)
   }, [newDaySuccessToast])
+
+  useEffect(() => {
+    const onMenuNewShootDay = () => {
+      setNewDayError(null)
+      setNewDayOpen(true)
+    }
+    const onMenuAddStrip = () => {
+      setAddStripOpen(true)
+    }
+    window.addEventListener('albatross-menu-schedule-new-shoot-day', onMenuNewShootDay)
+    window.addEventListener('albatross-menu-schedule-add-strip', onMenuAddStrip)
+    return () => {
+      window.removeEventListener('albatross-menu-schedule-new-shoot-day', onMenuNewShootDay)
+      window.removeEventListener('albatross-menu-schedule-add-strip', onMenuAddStrip)
+    }
+  }, [])
 
   useEffect(() => {
     if (!newlyCreatedShootDayId || !shootDays.some((d) => d.id === newlyCreatedShootDayId)) return
@@ -506,9 +650,28 @@ export function StripboardPage() {
           Shoot day created.
         </div>
       )}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold">Schedule — Stripboard</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {isEpisodicProduction && (
+            <Select
+              value={blocViewFilter}
+              onValueChange={(v) => setBlocViewFilter(v as ShootingBlocViewFilter)}
+            >
+              <SelectTrigger className="h-9 w-[200px]" aria-label="Filter stripboard by shooting bloc">
+                <SelectValue placeholder="Bloc" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All blocs</SelectItem>
+                <SelectItem value="unassigned">Outside blocs</SelectItem>
+                {shootingBlocs.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -524,11 +687,14 @@ export function StripboardPage() {
           </Button>
           <AddStripPopover
             productionId={currentProductionId}
-            shootDays={shootDays}
+            shootDays={visibleShootDays}
             dayUnits={dayUnits}
             units={units}
             onCreate={(data) => createStripMutation.mutate(data)}
+            stripsByDayUnitKey={stripsByDayUnit}
             isPending={createStripMutation.isPending}
+            open={addStripOpen}
+            onOpenChange={setAddStripOpen}
           />
         </div>
       </div>
@@ -599,13 +765,19 @@ export function StripboardPage() {
         isLoading={isInsightsDataLoading}
       />
 
+      {isEpisodicProduction && visibleShootDays.length === 0 && shootDays.length > 0 && (
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-2 text-sm text-muted-foreground shrink-0">
+          No shoot days match this bloc filter. Choose &quot;All blocs&quot; to see every day.
+        </div>
+      )}
+
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex flex-1 gap-4 min-h-0 overflow-hidden">
           <UnscheduledShotsPanel
             droppableId="unscheduled-panel"
             unscheduledShots={unscheduled.unscheduledShots}
             locations={locations}
-            shootDays={shootDays}
+            shootDays={visibleShootDays}
             dayUnits={dayUnits}
             search={search}
             onSearchChange={setSearch}
@@ -631,9 +803,14 @@ export function StripboardPage() {
           />
 
           {/* Scroll area: day columns + Boneyard column fixed at far right (you can chuck strips here whenever you want). */}
-          <div className="flex-1 overflow-auto min-w-0">
-            <div className="flex gap-4 pb-4 min-h-full">
-              {shootDays.map((day) => {
+          <div className="relative flex-1 min-w-0">
+            <div
+              ref={columnsScrollRef}
+              onScroll={updateColumnsLeftFeather}
+              className="h-full overflow-auto"
+            >
+              <div className="flex gap-4 pb-4 min-h-full">
+              {visibleShootDays.map((day) => {
                 const dayUnitsList = dayUnitsByDayId.get(day.id) ?? []
                 const stripsByUnit = dayUnitsList.map((shootDayUnit) => ({
                   shootDayUnit,
@@ -648,35 +825,45 @@ export function StripboardPage() {
                     className="shrink-0"
                   >
                     <StripboardDayColumn
-                    day={day}
-                    units={units}
-                    dayUnits={dayUnitsList}
-                    stripsByUnit={stripsByUnit}
-                    scenes={scenes}
-                    shots={shots}
-                    estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
-                    onUpdateStripEstimatedMinutes={(stripId, minutes) =>
-                      updateEstimatedMutation.mutate({ stripId, minutes })
-                    }
-                    columnId={columnId}
-                    isLocked={false}
-                    pageEighthsTarget={PAGE_EIGHTHS_TARGET}
-                    onSendToBoneyard={(strip) => {
-                      moveToBoneyardMutation.mutate(strip.id)
-                      setBoneyardToast(true)
-                    }}
-                    onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
-                    onToggleLock={(shootDayUnitId, isLocked) =>
-                      setLockedMutation.mutate({ shootDayUnitId, isLocked })
-                    }
-                    columnFilters={columnFilters}
-                    onColumnFilterChange={(colId, key, value) =>
-                      setColumnFilters((prev) => ({
-                        ...prev,
-                        [colId]: { ...(prev[colId] ?? { int: false, ext: false, day: false, night: false }), [key]: value },
-                      }))
-                    }
-                  />
+                      day={day}
+                      units={units}
+                      dayUnits={dayUnitsList}
+                      stripsByUnit={stripsByUnit}
+                      scenes={scenes}
+                      shots={shots}
+                      estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
+                      onUpdateStripEstimatedMinutes={(stripId, minutes) =>
+                        updateEstimatedMutation.mutate({ stripId, minutes })
+                      }
+                      onUpdateCallWrapTime={(stripId, time) =>
+                        updateCallWrapTimeMutation.mutate({ stripId, time })
+                      }
+                      columnId={columnId}
+                      isLocked={false}
+                      pageEighthsTarget={PAGE_EIGHTHS_TARGET}
+                      onSendToBoneyard={(strip) => {
+                        moveToBoneyardMutation.mutate(strip.id)
+                        setBoneyardToast(true)
+                      }}
+                      onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
+                      onToggleLock={(shootDayUnitId, isLocked) =>
+                        setLockedMutation.mutate({ shootDayUnitId, isLocked })
+                      }
+                      columnFilters={columnFilters}
+                      onColumnFilterChange={(colId, key, value) =>
+                        setColumnFilters((prev) => ({
+                          ...prev,
+                          [colId]: { ...(prev[colId] ?? { int: false, ext: false, day: false, night: false }), [key]: value },
+                        }))
+                      }
+                      isEpisodic={isEpisodicProduction}
+                      shootingBlocLabel={
+                        isEpisodicProduction
+                          ? shootingBlocLabelFromAssociation(day.shooting_bloc_id, blocById)
+                          : undefined
+                      }
+                      episodeById={isEpisodicProduction ? episodeById : undefined}
+                    />
                   </div>
                 )
               })}
@@ -692,8 +879,17 @@ export function StripboardPage() {
                 shots={shots}
                 estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
                 onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
+                isEpisodic={isEpisodicProduction}
+                episodeById={isEpisodicProduction ? episodeById : undefined}
               />
+              </div>
             </div>
+            <div
+              aria-hidden
+              className={`pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-linear-to-r from-background to-transparent transition-opacity duration-200 ${
+                showColumnsLeftFeather ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
           </div>
         </div>
 
@@ -711,6 +907,8 @@ export function StripboardPage() {
                 }
                 isOverlay
                 disabled
+                isEpisodic={isEpisodicProduction}
+                episodeById={isEpisodicProduction ? episodeById : undefined}
               />
             </div>
           )}
