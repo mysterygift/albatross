@@ -50,7 +50,7 @@ This document is both a **user guide** (how to use the Deliverables feature) and
 | **Add deliverable** | Create a single deliverable with name (required), optional recipient and due date. New items default to status "Not started". |
 | **Edit deliverable** | Side sheet to edit name, due date, recipient, delivery method, delivered by, delivered at, status, and approval status. |
 | **Technical specs** | One spec per deliverable: video (resolution, codec, bitrate), audio/language (audio mix, language), subtitles/graphics, and notes. Opened via the specs (gear) button on a row. |
-| **Apply template** | Choose a template (e.g. Streaming Package, Festival Package, Broadcast Package) and optional anchor date to create multiple deliverables and optional specs in one go. |
+| **Apply template** | Choose a template (e.g. Streaming, Festival, Broadcast, Netflix, Prime Video, Hulu, Disney+, Apple TV packages) and optional anchor date to create multiple deliverables and optional specs in one go. |
 | **Attachments** | From the edit sheet, attach files (e.g. QC reports, subtitle files). List, open in system, or remove. |
 | **Status** | Not started, Preparing, QC, Ready, Delivered. |
 | **Approval** | Pending, Approved, Rejected. |
@@ -104,11 +104,13 @@ If the deliverable has no spec yet, the form starts empty; saving creates the sp
 ### 7. Apply template
 
 1. Click **Apply template** in the header.
-2. Choose a **Template** (e.g. Streaming Package, Festival Package, Broadcast Package).
+2. Choose a **Template** (e.g. Streaming Package, Festival Package, Broadcast Package, or one of the SVOD platform packages).
 3. Optionally set an **Anchor date**. If set, each template item’s due date is anchor date plus its offset (days). If left empty, new deliverables have no due date.
 4. Click **Apply**.
 
 The template’s deliverables are created for the current production; any template items that define default technical spec fields get those specs created. The dialog closes and the table refreshes.
+
+SVOD platform templates (Netflix, Amazon Prime Video, Hulu, Disney+, Apple TV) are intentionally baseline-oriented so teams can start quickly, then fine-tune per title and per partner. They are not strict compliance validators.
 
 ### 8. Attachments
 
@@ -152,6 +154,7 @@ Clicking the card or "View deliverables" goes to the Deliverables page. If there
 | `src-tauri/migrations/0029_deliverables_expanded.sql` | Adds deliverable tracking and spec fields. |
 | `src-tauri/migrations/0030_deliverable_templates.sql` | Tables for deliverable templates and template items. |
 | `src-tauri/migrations/0031_deliverable_template_defaults.sql` | Seed data for default templates (Streaming, Festival, Broadcast). |
+| `src-tauri/migrations/0058_deliverable_template_svod_packages.sql` | Seed data for platform-oriented SVOD templates (Netflix, Prime Video, Hulu, Disney+, Apple TV). |
 | `src/lib/db/seed/demoDeliverableSeed.ts` | Demo production seed: 12 deliverables with rich metadata and technical specs. |
 
 ### 12. Data model

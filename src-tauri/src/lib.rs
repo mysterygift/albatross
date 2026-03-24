@@ -747,6 +747,12 @@ pub fn run() {
             sql: include_str!("../migrations/0056_float_expense_links_revision_uniqueness.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 57,
+            description: "deliverable_template_svod_packages",
+            sql: include_str!("../migrations/0058_deliverable_template_svod_packages.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

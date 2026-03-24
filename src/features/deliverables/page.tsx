@@ -8,6 +8,7 @@ import {
   listDeliverablesByProduction,
   createDeliverable,
   updateDeliverable,
+  deleteDeliverable,
   getTechnicalSpecByDeliverable,
   getTechnicalSpecsByDeliverableIds,
   upsertTechnicalSpec,
@@ -165,6 +166,14 @@ export function DeliverablesPage() {
     },
   })
 
+  const deleteDeliverableMutation = useMutation({
+    mutationFn: (deliverableId: string) => deleteDeliverable(deliverableId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deliverables'] })
+      queryClient.invalidateQueries({ queryKey: ['technical-specs-by-deliverables'] })
+    },
+  })
+
   useEffect(() => {
     const onAddDeliverable = () => setOpen(true)
     const onApplyTemplate = () => setApplyTemplateOpen(true)
@@ -277,7 +286,7 @@ export function DeliverablesPage() {
               <TableHead className="text-muted-foreground text-xs font-medium">Approval</TableHead>
               <TableHead className="text-muted-foreground text-xs font-medium">Audio</TableHead>
               <TableHead className="text-muted-foreground text-xs font-medium">Subtitles</TableHead>
-              <TableHead className="w-[88px] text-muted-foreground text-xs font-medium">Actions</TableHead>
+              <TableHead className="w-[120px] text-muted-foreground text-xs font-medium">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -318,13 +327,23 @@ export function DeliverablesPage() {
                     </TableCell>
                     <TableCell className="max-w-[100px] truncate text-sm text-muted-foreground" title={spec?.audio_mix ?? undefined}>{cell(spec?.audio_mix)}</TableCell>
                     <TableCell className="max-w-[100px] truncate text-sm text-muted-foreground" title={spec?.subtitles ?? undefined}>{cell(spec?.subtitles)}</TableCell>
-                    <TableCell className="w-[88px]">
+                    <TableCell className="w-[120px]">
                       <div className="flex items-center gap-0.5">
                         <Button variant="ghost" size="sm" className="size-8 p-0" onClick={() => setEditDeliverable(d)} title="Edit deliverable">
                           <Pencil className="size-4" />
                         </Button>
                         <Button variant="ghost" size="sm" className="size-8 p-0" onClick={() => setSpecDeliverableId(d.id)} title="Technical specs">
                           <Settings className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="size-8 p-0 text-red-600 hover:text-red-700"
+                          onClick={() => deleteDeliverableMutation.mutate(d.id)}
+                          disabled={deleteDeliverableMutation.isPending}
+                          title="Delete deliverable"
+                        >
+                          <Trash2 className="size-4" />
                         </Button>
                       </div>
                     </TableCell>
