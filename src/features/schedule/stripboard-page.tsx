@@ -70,6 +70,8 @@ function AddStripPopover({
   onCreate,
   stripsByDayUnitKey,
   isPending,
+  open,
+  onOpenChange,
 }: {
   productionId: string
   shootDays: { id: string; shoot_date: string; day_number: number | null }[]
@@ -78,6 +80,8 @@ function AddStripPopover({
   onCreate: (data: CreateStripData) => void
   stripsByDayUnitKey: Map<string, StripboardStrip[]>
   isPending: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const [stripType, setStripType] = useState<StripType>('NOTE')
   const [shootDayId, setShootDayId] = useState<string>('')
@@ -134,7 +138,7 @@ function AddStripPopover({
   }
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1">
           <Plus className="size-4" />
@@ -252,6 +256,7 @@ export function StripboardPage() {
   const newDayColumnRef = useRef<HTMLDivElement | null>(null)
   const columnsScrollRef = useRef<HTMLDivElement | null>(null)
   const [showColumnsLeftFeather, setShowColumnsLeftFeather] = useState(false)
+  const [addStripOpen, setAddStripOpen] = useState(false)
 
   const stripboard = useStripboard(currentProductionId ?? null)
   const filters = { search: search || undefined, locationId }
@@ -458,6 +463,22 @@ export function StripboardPage() {
   }, [newDaySuccessToast])
 
   useEffect(() => {
+    const onMenuNewShootDay = () => {
+      setNewDayError(null)
+      setNewDayOpen(true)
+    }
+    const onMenuAddStrip = () => {
+      setAddStripOpen(true)
+    }
+    window.addEventListener('albatross-menu-schedule-new-shoot-day', onMenuNewShootDay)
+    window.addEventListener('albatross-menu-schedule-add-strip', onMenuAddStrip)
+    return () => {
+      window.removeEventListener('albatross-menu-schedule-new-shoot-day', onMenuNewShootDay)
+      window.removeEventListener('albatross-menu-schedule-add-strip', onMenuAddStrip)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!newlyCreatedShootDayId || !shootDays.some((d) => d.id === newlyCreatedShootDayId)) return
     const el = newDayColumnRef.current
     if (el) {
@@ -610,6 +631,8 @@ export function StripboardPage() {
             onCreate={(data) => createStripMutation.mutate(data)}
             stripsByDayUnitKey={stripsByDayUnit}
             isPending={createStripMutation.isPending}
+            open={addStripOpen}
+            onOpenChange={setAddStripOpen}
           />
         </div>
       </div>

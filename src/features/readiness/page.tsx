@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import {
@@ -266,6 +266,17 @@ export function ReadinessPage() {
       setApplyTemplateOpen(false)
     },
   })
+
+  useEffect(() => {
+    const onMenuNewTask = () => {
+      setCreateOpen(true)
+      setAddSubtaskParent(null)
+    }
+    window.addEventListener('albatross-menu-tasks-new-task', onMenuNewTask)
+    return () => {
+      window.removeEventListener('albatross-menu-tasks-new-task', onMenuNewTask)
+    }
+  }, [])
 
   if (!currentProductionId) {
     return (

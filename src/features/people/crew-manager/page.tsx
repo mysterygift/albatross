@@ -298,6 +298,12 @@ export function CrewManagerPage() {
     }
   }, [currentProductionId, crewLoading, crew.length])
 
+  useEffect(() => {
+    const onAddCrew = () => setAddOpen(true)
+    window.addEventListener('albatross-menu-people-add-crew', onAddCrew)
+    return () => window.removeEventListener('albatross-menu-people-add-crew', onAddCrew)
+  }, [])
+
   if (!currentProductionId) {
     return (
       <div className="space-y-4">

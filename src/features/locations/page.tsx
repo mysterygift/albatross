@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
@@ -147,6 +147,14 @@ export function LocationsPage() {
     columns,
     getCoreRowModel: getCoreRowModel(),
   })
+
+  useEffect(() => {
+    const onAddLocation = () => setOpen(true)
+    window.addEventListener('albatross-menu-locations-add-location', onAddLocation)
+    return () => {
+      window.removeEventListener('albatross-menu-locations-add-location', onAddLocation)
+    }
+  }, [])
 
   if (!currentProductionId) {
     return (

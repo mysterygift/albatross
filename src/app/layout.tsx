@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
+import { SidebarInset, SidebarProvider, useSidebar } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
 import { TopBar } from '@/components/top-bar'
 import { DevPerfHud } from '@/components/dev/DevPerfHud'
@@ -166,6 +166,7 @@ export function AppLayout() {
 
   return (
     <SidebarProvider>
+      <MenuSidebarBridge />
       <ApfDesktopOpenBridge />
       <ApfMenuEventBridge />
       <AppSidebar />
@@ -225,4 +226,16 @@ export function AppLayout() {
       )}
     </SidebarProvider>
   )
+}
+
+function MenuSidebarBridge() {
+  const { toggleSidebar } = useSidebar()
+
+  useEffect(() => {
+    const onToggleSidebar = () => toggleSidebar()
+    window.addEventListener('albatross-menu-view-toggle-sidebar', onToggleSidebar)
+    return () => window.removeEventListener('albatross-menu-view-toggle-sidebar', onToggleSidebar)
+  }, [toggleSidebar])
+
+  return null
 }

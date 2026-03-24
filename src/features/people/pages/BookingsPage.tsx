@@ -197,6 +197,19 @@ export function BookingsPage() {
     },
   })
 
+  useEffect(() => {
+    const onAddBooking = () => {
+      setEditingBooking(null)
+      setPersonId('')
+      setShootDayId('')
+      setRole('')
+      setNotes('')
+      setOpen(true)
+    }
+    window.addEventListener('albatross-menu-people-add-booking', onAddBooking)
+    return () => window.removeEventListener('albatross-menu-people-add-booking', onAddBooking)
+  }, [])
+
   const updateMutation = useMutation({
     mutationFn: () => {
       if (!editingBooking) return Promise.reject(new Error('No booking to update'))

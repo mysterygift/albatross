@@ -1158,6 +1158,26 @@ export function BudgetPage() {
     )
   }
 
+  useEffect(() => {
+    const onLogSpend = () => setLogSpendOpen(true)
+    const onAddLineItem = () => setAddItemOpen(true)
+    const onManageRevisions = () => setManageRevisionsOpen(true)
+    const onExportCsv = () => {
+      void exportCsv()
+    }
+
+    window.addEventListener('albatross-menu-budget-log-spend', onLogSpend)
+    window.addEventListener('albatross-menu-budget-add-line-item', onAddLineItem)
+    window.addEventListener('albatross-menu-budget-manage-revisions', onManageRevisions)
+    window.addEventListener('albatross-menu-budget-export-csv', onExportCsv)
+    return () => {
+      window.removeEventListener('albatross-menu-budget-log-spend', onLogSpend)
+      window.removeEventListener('albatross-menu-budget-add-line-item', onAddLineItem)
+      window.removeEventListener('albatross-menu-budget-manage-revisions', onManageRevisions)
+      window.removeEventListener('albatross-menu-budget-export-csv', onExportCsv)
+    }
+  }, [exportCsv])
+
   if (!currentProductionId) {
     return (
       <div>

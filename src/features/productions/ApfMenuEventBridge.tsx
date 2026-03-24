@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { useQueryClient } from '@tanstack/react-query'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { useApfActions, type ApfActionMessage } from '@/features/productions/useApfActions'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -13,9 +13,11 @@ import {
   runDuplicateLiveAsDraftFromMenu,
 } from '@/features/productions/budgetMenuActions'
 import { listBudgetRevisionsByProduction } from '@/lib/db/repositories/budgetRevisions'
+import { getAcceleratorConflicts, resolveMenuSectionForPath } from '@/app/menuSchema'
 
 export function ApfMenuEventBridge() {
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
   const { currentProductionId, setSelectedBudgetRevisionId } = useCurrentProduction()
   const [banner, setBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -40,17 +42,32 @@ export function ApfMenuEventBridge() {
   })
 
   useEffect(() => {
+    const section = resolveMenuSectionForPath(location.pathname)
+    const conflicts = getAcceleratorConflicts(section)
+    if (conflicts.length > 0 && import.meta.env.DEV) {
+      // Helpful guard while we iterate on command mappings.
+      console.warn('Menu accelerator conflicts detected:', conflicts)
+    }
+    invoke('set_active_menu_section', { section }).catch(() => {
+      /* not running in tauri */
+    })
+  }, [location.pathname])
+
+  useEffect(() => {
     invoke('set_budget_duplicate_live_as_draft_enabled', { enabled: canDuplicateLiveAsDraft }).catch(() => {
       /* not running in tauri */
     })
   }, [canDuplicateLiveAsDraft])
 
   useEffect(() => {
+    let cancelled = false
     let unlistenImport: (() => void) | undefined
     let unlistenExport: (() => void) | undefined
     let unlistenNewProject: (() => void) | undefined
     let unlistenOpenSettings: (() => void) | undefined
     let unlistenDuplicateLiveAsDraft: (() => void) | undefined
+    const unlistenCommands: Array<() => void> = []
+    const pendingUnlisten: Array<() => void> = []
     let onBrowserDuplicateLiveAsDraft: ((event: Event) => void) | undefined
 
     const runDuplicateAction = async () => {
@@ -75,26 +92,131 @@ export function ApfMenuEventBridge() {
       }
     }
 
+    async function registerListener(
+      eventName: string,
+      handler: Parameters<typeof listen>[1],
+      sink?: Array<() => void>,
+    ) {
+      const unlisten = await listen(eventName, handler)
+      if (cancelled) {
+        unlisten()
+        return undefined
+      }
+      pendingUnlisten.push(unlisten)
+      if (sink) sink.push(unlisten)
+      return unlisten
+    }
+
     async function mount() {
       try {
-        unlistenImport = await listen('albatross-menu-import-project', async () => {
+        unlistenImport = await registerListener('albatross-menu-import-project', async () => {
           navigate('/productions')
           await handleImportApf()
         })
-        unlistenExport = await listen('albatross-menu-export-project', async () => {
+        unlistenExport = await registerListener('albatross-menu-export-project', async () => {
           navigate('/productions')
           await handleExportApf()
         })
-        unlistenNewProject = await listen('albatross-menu-new-project', () => {
+        unlistenNewProject = await registerListener('albatross-menu-new-project', () => {
           navigate('/productions')
           window.dispatchEvent(new Event('albatross-open-new-production-dialog'))
         })
-        unlistenOpenSettings = await listen('albatross-menu-open-settings', () => {
+        unlistenOpenSettings = await registerListener('albatross-menu-open-settings', () => {
           navigate('/settings')
         })
-        unlistenDuplicateLiveAsDraft = await listen('albatross-menu-duplicate-live-as-draft', async () => {
+        unlistenDuplicateLiveAsDraft = await registerListener('albatross-menu-duplicate-live-as-draft', async () => {
           await runDuplicateAction()
         })
+
+        const bindNavigateCommand = async (eventName: string, to: string) => {
+          await registerListener(eventName, () => navigate(to), unlistenCommands)
+        }
+        const bindDispatchCommand = async (eventName: string, browserEventName: string, to?: string) => {
+          await registerListener(eventName, () => {
+            if (to) navigate(to)
+            window.dispatchEvent(new Event(browserEventName))
+          }, unlistenCommands)
+        }
+
+        await bindNavigateCommand('albatross-menu-view-go-dashboard', '/')
+        await bindNavigateCommand('albatross-menu-view-go-productions', '/productions')
+        await bindNavigateCommand('albatross-menu-view-go-budget', '/budget')
+        await bindNavigateCommand('albatross-menu-view-go-schedule', '/schedule/calendar')
+        await bindNavigateCommand('albatross-menu-view-go-people', '/people/bookings')
+        await bindNavigateCommand('albatross-menu-view-go-locations', '/locations')
+        await bindNavigateCommand('albatross-menu-view-go-documents', '/documents')
+        await bindNavigateCommand('albatross-menu-view-go-deliverables', '/deliverables')
+        await bindNavigateCommand('albatross-menu-view-go-tasks', '/readiness')
+        await bindDispatchCommand('albatross-menu-view-toggle-sidebar', 'albatross-menu-view-toggle-sidebar')
+
+        await bindDispatchCommand(
+          'albatross-menu-people-add-cast',
+          'albatross-menu-people-add-cast',
+          '/people/cast-manager',
+        )
+        await bindDispatchCommand(
+          'albatross-menu-people-add-crew',
+          'albatross-menu-people-add-crew',
+          '/people/crew-manager',
+        )
+        await bindDispatchCommand(
+          'albatross-menu-people-add-booking',
+          'albatross-menu-people-add-booking',
+          '/people/bookings',
+        )
+        await bindNavigateCommand('albatross-menu-people-open-cast-manager', '/people/cast-manager')
+        await bindNavigateCommand('albatross-menu-people-open-crew-manager', '/people/crew-manager')
+
+        await bindDispatchCommand('albatross-menu-budget-log-spend', 'albatross-menu-budget-log-spend', '/budget')
+        await bindDispatchCommand('albatross-menu-budget-add-line-item', 'albatross-menu-budget-add-line-item', '/budget')
+        await bindDispatchCommand(
+          'albatross-menu-budget-manage-revisions',
+          'albatross-menu-budget-manage-revisions',
+          '/budget',
+        )
+        await bindDispatchCommand('albatross-menu-budget-export-csv', 'albatross-menu-budget-export-csv', '/budget')
+
+        await bindDispatchCommand(
+          'albatross-menu-schedule-new-shoot-day',
+          'albatross-menu-schedule-new-shoot-day',
+          '/schedule/stripboard',
+        )
+        await bindDispatchCommand(
+          'albatross-menu-schedule-add-strip',
+          'albatross-menu-schedule-add-strip',
+          '/schedule/stripboard',
+        )
+        await bindNavigateCommand('albatross-menu-schedule-open-stripboard', '/schedule/stripboard')
+        await bindNavigateCommand('albatross-menu-schedule-open-shot-list', '/schedule/shots')
+        await bindNavigateCommand('albatross-menu-schedule-parse-script-scenes', '/schedule/script-import')
+        await bindDispatchCommand(
+          'albatross-menu-tasks-new-task',
+          'albatross-menu-tasks-new-task',
+          '/readiness',
+        )
+
+        await bindDispatchCommand(
+          'albatross-menu-locations-add-location',
+          'albatross-menu-locations-add-location',
+          '/locations',
+        )
+
+        await bindDispatchCommand(
+          'albatross-menu-documents-upload-file',
+          'albatross-menu-documents-upload-file',
+          '/documents',
+        )
+
+        await bindDispatchCommand(
+          'albatross-menu-deliverables-add-deliverable',
+          'albatross-menu-deliverables-add-deliverable',
+          '/deliverables',
+        )
+        await bindDispatchCommand(
+          'albatross-menu-deliverables-apply-template',
+          'albatross-menu-deliverables-apply-template',
+          '/deliverables',
+        )
       } catch {
         /* not running in tauri */
       }
@@ -108,11 +230,14 @@ export function ApfMenuEventBridge() {
 
     void mount()
     return () => {
+      cancelled = true
       unlistenImport?.()
       unlistenExport?.()
       unlistenNewProject?.()
       unlistenOpenSettings?.()
       unlistenDuplicateLiveAsDraft?.()
+      unlistenCommands.forEach((u) => u())
+      pendingUnlisten.forEach((u) => u())
       if (onBrowserDuplicateLiveAsDraft) {
         window.removeEventListener('albatross-menu-duplicate-live-as-draft', onBrowserDuplicateLiveAsDraft)
       }

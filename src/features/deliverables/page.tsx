@@ -154,6 +154,17 @@ export function DeliverablesPage() {
     },
   })
 
+  useEffect(() => {
+    const onAddDeliverable = () => setOpen(true)
+    const onApplyTemplate = () => setApplyTemplateOpen(true)
+    window.addEventListener('albatross-menu-deliverables-add-deliverable', onAddDeliverable)
+    window.addEventListener('albatross-menu-deliverables-apply-template', onApplyTemplate)
+    return () => {
+      window.removeEventListener('albatross-menu-deliverables-add-deliverable', onAddDeliverable)
+      window.removeEventListener('albatross-menu-deliverables-apply-template', onApplyTemplate)
+    }
+  }, [])
+
   if (!currentProductionId) {
     return (
       <div>
