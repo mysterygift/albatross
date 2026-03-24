@@ -67,6 +67,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -119,14 +120,41 @@ import {
 import { getFloatSummaryForProduction } from '@/lib/budget/floatSummary'
 import { listFloatsByProduction } from '@/lib/db/repositories/floats'
 import { listFloatExpenseLinksByProduction } from '@/lib/db/repositories/floatReconciliation'
+import { useSetLiveBudgetRevisionMutation, useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
+import {
+  listBudgetRevisionsByProduction,
+  type BudgetRevision,
+} from '@/lib/db/repositories/budgetRevisions'
+import {
+  CREATE_BUDGET_REVISION_VALUE,
+  getBudgetRevisionContextLabel,
+  getBudgetRevisionTriggerLabel,
+  isCreateBudgetRevisionSelection,
+} from '@/features/budget/revisionSelectorHelpers'
+import {
+  runCreateBudgetRevision,
+  type CreateBudgetRevisionMode,
+} from '@/features/budget/createBudgetRevisionActions'
+import { runLiveBudgetRevisionSwitch } from '@/features/budget/liveBudgetRevisionActions'
+import {
+  createBlankBudgetRevision,
+  createBudgetRevisionFromExisting,
+} from '@/lib/db/budgetRevisionService'
+import {
+  buildComparisonRows,
+  type ComparisonMetricRow,
+  computeRevisionSummaryMetrics,
+  resolveCompareRevisionDefaults,
+} from '@/features/budget/compareRevisions'
 
 const BUDGET_VIEW_MODE_KEY = 'budgetViewMode'
 const COST_REPORT_LAYOUT_MODE_KEY = 'costReportLayoutMode'
-type BudgetViewMode = 'budget' | 'cost_report' | 'actualisation' | 'floats'
+type BudgetViewMode = 'budget' | 'cost_report' | 'actualisation' | 'floats' | 'compare'
 type CostReportLayoutMode = 'chart' | 'groups'
+const EMPTY_REVISION_SELECT_VALUE = '__empty_revision_selection__'
 
 function tabParamToViewMode(tab: string | null): BudgetViewMode | null {
-  if (tab === 'budget' || tab === 'cost_report' || tab === 'actualisation' || tab === 'floats') {
+  if (tab === 'budget' || tab === 'cost_report' || tab === 'actualisation' || tab === 'floats' || tab === 'compare') {
     return tab
   }
   return null
@@ -138,6 +166,7 @@ function readStoredBudgetViewMode(): BudgetViewMode {
   if (stored === 'cost_report') return 'cost_report'
   if (stored === 'actualisation') return 'actualisation'
   if (stored === 'floats') return 'floats'
+  if (stored === 'compare') return 'compare'
   return 'budget'
 }
 
@@ -180,6 +209,11 @@ export function BudgetPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const budgetFloatsOutstandingUrl = searchParams.get('floats') === 'outstanding'
   const { currentProductionId, currentProduction } = useCurrentProduction()
+  const explicitRevisionId = searchParams.get('revisionId')
+  const { data: workingBudgetRevision, setSelectedRevisionId } = useWorkingBudgetRevision(currentProductionId, {
+    explicitRevisionId,
+  })
+  const revisionId = workingBudgetRevision?.id
   const { format, ensureRate, conversionBanner } = useCurrency()
   const { progress, updateProgress } = useFirstLaunchTutorial()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
@@ -200,6 +234,18 @@ export function BudgetPage() {
   const [productionTotalsModalOpen, setProductionTotalsModalOpen] = useState(false)
   const [productionTotalToEdit, setProductionTotalToEdit] = useState<ProductionTotalWithAccountIds | null>(null)
   const [productionTotalCreateOpen, setProductionTotalCreateOpen] = useState(false)
+  const [createRevisionOpen, setCreateRevisionOpen] = useState(false)
+  const [createRevisionName, setCreateRevisionName] = useState('')
+  const [createRevisionMode, setCreateRevisionMode] = useState<CreateBudgetRevisionMode>('blank')
+  const [createRevisionSourceId, setCreateRevisionSourceId] = useState<string | null>(null)
+  const [createRevisionNameError, setCreateRevisionNameError] = useState<string | null>(null)
+  const [createRevisionSourceError, setCreateRevisionSourceError] = useState<string | null>(null)
+  const [createRevisionSubmitError, setCreateRevisionSubmitError] = useState<string | null>(null)
+  const [liveConfirmOpen, setLiveConfirmOpen] = useState(false)
+  const [pendingLiveRevisionId, setPendingLiveRevisionId] = useState<string | null>(null)
+  const [liveToggleError, setLiveToggleError] = useState<string | null>(null)
+  const [baseCompareRevisionId, setBaseCompareRevisionId] = useState<string | null>(null)
+  const [targetCompareRevisionId, setTargetCompareRevisionId] = useState<string | null>(null)
   const [costReportLayoutMode, setCostReportLayoutMode] = useState<CostReportLayoutMode>(() => {
     if (typeof window === 'undefined') return 'chart'
     const stored = localStorage.getItem(COST_REPORT_LAYOUT_MODE_KEY)
@@ -243,7 +289,161 @@ export function BudgetPage() {
   }, [state?.examineExpenseId, location.pathname, navigate, searchParams])
 
   const queryClient = useQueryClient()
+  const setLiveRevisionMutation = useSetLiveBudgetRevisionMutation()
   const backfillRanForProduction = useRef<Set<string>>(new Set())
+  const revisionContextLabel = getBudgetRevisionContextLabel(workingBudgetRevision)
+
+  const { data: budgetRevisions = [], isLoading: budgetRevisionsLoading, error: budgetRevisionsError } = useQuery({
+    queryKey: ['budget-revisions', currentProductionId],
+    queryFn: () => listBudgetRevisionsByProduction(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
+  const liveRevisionId = useMemo(
+    () => budgetRevisions.find((rev) => rev.is_live)?.id ?? null,
+    [budgetRevisions]
+  )
+  const pendingLiveRevision = useMemo(
+    () => budgetRevisions.find((rev) => rev.id === pendingLiveRevisionId) ?? null,
+    [budgetRevisions, pendingLiveRevisionId]
+  )
+  const currentLiveRevision = useMemo(
+    () => budgetRevisions.find((rev) => rev.is_live) ?? null,
+    [budgetRevisions]
+  )
+
+  useEffect(() => {
+    const defaults = resolveCompareRevisionDefaults({
+      revisions: budgetRevisions,
+      liveRevisionId,
+      selectedRevisionId: revisionId,
+    })
+
+    setBaseCompareRevisionId((prev) => {
+      if (defaults.baseRevisionId == null) return null
+      if (prev && budgetRevisions.some((r) => r.id === prev)) return prev
+      return defaults.baseRevisionId
+    })
+    setTargetCompareRevisionId((prev) => {
+      if (defaults.compareRevisionId == null) return null
+      if (prev && budgetRevisions.some((r) => r.id === prev)) return prev
+      return defaults.compareRevisionId
+    })
+  }, [budgetRevisions, liveRevisionId, revisionId])
+
+  useEffect(() => {
+    if (!workingBudgetRevision || !currentProductionId) return
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (next.get('revisionId') === workingBudgetRevision.id) return prev
+      next.set('revisionId', workingBudgetRevision.id)
+      return next
+    }, { replace: true })
+  }, [currentProductionId, workingBudgetRevision, setSearchParams])
+
+  const handleRevisionChange = useCallback(
+    (nextValue: string) => {
+      if (!currentProductionId) return
+      if (isCreateBudgetRevisionSelection(nextValue)) {
+        setCreateRevisionOpen(true)
+        return
+      }
+      setSelectedRevisionId(nextValue)
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.set('revisionId', nextValue)
+        return next
+      }, { replace: true })
+    },
+    [createRevisionOpen, currentProductionId, setSelectedRevisionId, setSearchParams, workingBudgetRevision?.id]
+  )
+
+  useEffect(() => {
+    if (!createRevisionOpen) return
+    setCreateRevisionName('')
+    setCreateRevisionMode('blank')
+    setCreateRevisionSourceId(liveRevisionId ?? revisionId ?? budgetRevisions[0]?.id ?? null)
+    setCreateRevisionNameError(null)
+    setCreateRevisionSourceError(null)
+    setCreateRevisionSubmitError(null)
+  }, [createRevisionOpen])
+
+  useEffect(() => {
+    if (liveConfirmOpen) return
+    setPendingLiveRevisionId(null)
+    setLiveToggleError(null)
+  }, [liveConfirmOpen])
+
+  const createRevisionMutation = useMutation({
+    mutationFn: async () => {
+      const result = await runCreateBudgetRevision(
+        {
+          createBlankBudgetRevision,
+          createBudgetRevisionFromExisting,
+          setSelectedBudgetRevisionId: (productionId, nextRevisionId) => {
+            setSelectedRevisionId(nextRevisionId)
+            setSearchParams((prev) => {
+              const next = new URLSearchParams(prev)
+              next.set('revisionId', nextRevisionId)
+              return next
+            }, { replace: true })
+            queryClient.invalidateQueries({ queryKey: ['working-budget-revision', productionId] })
+          },
+          invalidateQueries: (queryKey) => queryClient.invalidateQueries({ queryKey }),
+        },
+        {
+          productionId: currentProductionId,
+          name: createRevisionName,
+          mode: createRevisionMode,
+          sourceRevisionId: createRevisionMode === 'copy' ? createRevisionSourceId : null,
+        }
+      )
+      if (!result.ok) {
+        setCreateRevisionNameError(result.errors?.name ?? null)
+        setCreateRevisionSourceError(result.errors?.sourceRevisionId ?? null)
+        setCreateRevisionSubmitError(result.message)
+        throw new Error(result.message)
+      }
+      return result.revision
+    },
+    onSuccess: () => {
+      setCreateRevisionOpen(false)
+    },
+  })
+
+  const openLiveConfirmation = useCallback(
+    (targetRevisionId: string) => {
+      const target = budgetRevisions.find((rev) => rev.id === targetRevisionId)
+      if (!target || target.is_live || setLiveRevisionMutation.isPending) return
+      setPendingLiveRevisionId(targetRevisionId)
+      setLiveToggleError(null)
+      setLiveConfirmOpen(true)
+    },
+    [budgetRevisions, setLiveRevisionMutation.isPending]
+  )
+
+  const confirmSetLiveRevision = useCallback(async () => {
+    const result = await runLiveBudgetRevisionSwitch(
+      {
+        setLiveBudgetRevision: ({ productionId, revisionId: nextRevisionId }) =>
+          setLiveRevisionMutation.mutateAsync({ productionId, revisionId: nextRevisionId }),
+      },
+      {
+        currentProductionId,
+        targetRevision: pendingLiveRevision,
+        isBusy: setLiveRevisionMutation.isPending,
+      }
+    )
+
+    if (!result.ok) {
+      if (!result.isNoop) setLiveToggleError(result.message)
+      return
+    }
+
+    // Keep selected revision unchanged here: switching "live / working budget" is distinct
+    // from switching the local revision being viewed in this selector.
+    setLiveConfirmOpen(false)
+  }, [currentProductionId, pendingLiveRevision, setLiveRevisionMutation])
 
   const { data: allowDetailsForProduction } = useQuery({
     queryKey: ['allow-expense-details', currentProductionId],
@@ -281,10 +481,10 @@ export function BudgetPage() {
     if (!currentProductionId || backfillRanForProduction.current.has(currentProductionId)) return
     backfillRanForProduction.current.add(currentProductionId)
     backfillAccountIdsFromLegacyCategories(currentProductionId).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId, revisionId] })
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, revisionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
     })
   }, [currentProductionId, queryClient])
 
@@ -308,8 +508,8 @@ export function BudgetPage() {
   })
 
   const { data: items = [] } = useQuery({
-    queryKey: ['budget-items', currentProductionId],
-    queryFn: () => listBudgetItemsByProduction(currentProductionId ?? ''),
+    queryKey: ['budget-items', currentProductionId, revisionId],
+    queryFn: () => listBudgetItemsByProduction(currentProductionId ?? '', { revisionId }),
     enabled: !!currentProductionId,
   })
 
@@ -319,6 +519,7 @@ export function BudgetPage() {
     enabled: !!currentProductionId,
   })
 
+
   const { data: examinedExpenseWithDetails, isLoading: examinedExpenseLoading } = useQuery({
     queryKey: ['expense-with-details', examinedExpenseId],
     queryFn: () => getExpenseWithDetails(examinedExpenseId!),
@@ -326,8 +527,8 @@ export function BudgetPage() {
   })
 
   const { data: linksForExaminedExpense = [] } = useQuery({
-    queryKey: ['budget-item-expense-links-for-expense', examinedExpenseId],
-    queryFn: () => listBudgetItemExpenseLinksForExpense(examinedExpenseId!),
+    queryKey: ['budget-item-expense-links-for-expense', examinedExpenseId, revisionId],
+    queryFn: () => listBudgetItemExpenseLinksForExpense(examinedExpenseId!, revisionId),
     enabled: examinedExpenseId != null,
   })
 
@@ -346,14 +547,14 @@ export function BudgetPage() {
   const crew = useMemo(() => people.filter((p) => p.is_cast === 0), [people])
 
   const { data: productionFloats = [] } = useQuery({
-    queryKey: ['floats', currentProductionId],
-    queryFn: () => listFloatsByProduction(currentProductionId ?? ''),
+    queryKey: ['floats', currentProductionId, revisionId],
+    queryFn: () => listFloatsByProduction(currentProductionId ?? '', revisionId),
     enabled: !!currentProductionId,
   })
 
   const { data: productionFloatExpenseLinks = [] } = useQuery({
-    queryKey: ['float-expense-links-by-production', currentProductionId],
-    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId ?? ''),
+    queryKey: ['float-expense-links-by-production', currentProductionId, revisionId],
+    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId ?? '', revisionId),
     enabled: !!currentProductionId,
   })
 
@@ -389,27 +590,93 @@ export function BudgetPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: baseCompareItems = [] } = useQuery({
+    queryKey: ['budget-compare-items', currentProductionId, baseCompareRevisionId],
+    queryFn: () =>
+      listBudgetItemsByProduction(currentProductionId ?? '', {
+        revisionId: baseCompareRevisionId!,
+      }),
+    enabled: !!currentProductionId && !!baseCompareRevisionId,
+  })
+
+  const { data: targetCompareItems = [] } = useQuery({
+    queryKey: ['budget-compare-items', currentProductionId, targetCompareRevisionId],
+    queryFn: () =>
+      listBudgetItemsByProduction(currentProductionId ?? '', {
+        revisionId: targetCompareRevisionId!,
+      }),
+    enabled: !!currentProductionId && !!targetCompareRevisionId,
+  })
+
+  const { data: baseCompareFringeRules = [] } = useQuery({
+    queryKey: ['budget-compare-fringe-rules', currentProductionId, baseCompareRevisionId],
+    queryFn: () => listFringeRules(currentProductionId ?? '', baseCompareRevisionId!),
+    enabled: !!currentProductionId && !!baseCompareRevisionId,
+  })
+
+  const { data: targetCompareFringeRules = [] } = useQuery({
+    queryKey: ['budget-compare-fringe-rules', currentProductionId, targetCompareRevisionId],
+    queryFn: () => listFringeRules(currentProductionId ?? '', targetCompareRevisionId!),
+    enabled: !!currentProductionId && !!targetCompareRevisionId,
+  })
+
+  const { data: baseCompareContingencyRules = [] } = useQuery({
+    queryKey: ['budget-compare-contingency-rules', currentProductionId, baseCompareRevisionId],
+    queryFn: () => listContingencyRules(currentProductionId ?? '', baseCompareRevisionId!),
+    enabled: !!currentProductionId && !!baseCompareRevisionId,
+  })
+
+  const { data: targetCompareContingencyRules = [] } = useQuery({
+    queryKey: ['budget-compare-contingency-rules', currentProductionId, targetCompareRevisionId],
+    queryFn: () => listContingencyRules(currentProductionId ?? '', targetCompareRevisionId!),
+    enabled: !!currentProductionId && !!targetCompareRevisionId,
+  })
+
+  const { data: baseCompareFloats = [] } = useQuery({
+    queryKey: ['budget-compare-floats', currentProductionId, baseCompareRevisionId],
+    queryFn: () => listFloatsByProduction(currentProductionId ?? '', baseCompareRevisionId!),
+    enabled: !!currentProductionId && !!baseCompareRevisionId,
+  })
+
+  const { data: targetCompareFloats = [] } = useQuery({
+    queryKey: ['budget-compare-floats', currentProductionId, targetCompareRevisionId],
+    queryFn: () => listFloatsByProduction(currentProductionId ?? '', targetCompareRevisionId!),
+    enabled: !!currentProductionId && !!targetCompareRevisionId,
+  })
+
+  const { data: baseCompareFloatLinks = [] } = useQuery({
+    queryKey: ['budget-compare-float-links', currentProductionId, baseCompareRevisionId],
+    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId ?? '', baseCompareRevisionId!),
+    enabled: !!currentProductionId && !!baseCompareRevisionId,
+  })
+
+  const { data: targetCompareFloatLinks = [] } = useQuery({
+    queryKey: ['budget-compare-float-links', currentProductionId, targetCompareRevisionId],
+    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId ?? '', targetCompareRevisionId!),
+    enabled: !!currentProductionId && !!targetCompareRevisionId,
+  })
+
   const { data: fringeRules = [] } = useQuery({
-    queryKey: ['fringe-rules', currentProductionId],
-    queryFn: () => listFringeRules(currentProductionId ?? ''),
+    queryKey: ['fringe-rules', currentProductionId, revisionId],
+    queryFn: () => listFringeRules(currentProductionId ?? '', revisionId),
     enabled: !!currentProductionId,
   })
 
   const { data: contingencyRules = [] } = useQuery({
-    queryKey: ['contingency-rules', currentProductionId],
-    queryFn: () => listContingencyRules(currentProductionId ?? ''),
+    queryKey: ['contingency-rules', currentProductionId, revisionId],
+    queryFn: () => listContingencyRules(currentProductionId ?? '', revisionId),
     enabled: !!currentProductionId,
   })
 
   const { data: productionTotals = [] } = useQuery({
-    queryKey: ['production-totals', currentProductionId],
-    queryFn: () => listProductionTotals(currentProductionId ?? ''),
+    queryKey: ['production-totals', currentProductionId, revisionId],
+    queryFn: () => listProductionTotals(currentProductionId ?? '', revisionId),
     enabled: !!currentProductionId,
   })
 
   const { data: costReportGroupsWithAccounts = [] } = useQuery({
-    queryKey: ['cost-report-groups-with-accounts', currentProductionId],
-    queryFn: () => listCostReportGroupsWithAccountIds(currentProductionId ?? ''),
+    queryKey: ['cost-report-groups-with-accounts', currentProductionId, revisionId],
+    queryFn: () => listCostReportGroupsWithAccountIds(currentProductionId ?? '', revisionId),
     enabled: !!currentProductionId,
   })
 
@@ -417,6 +684,7 @@ export function BudgetPage() {
     mutationFn: (data: z.infer<typeof itemSchema>) =>
       createBudgetItem({
         production_id: currentProductionId!,
+        revision_id: revisionId,
         account_id: data.account_id,
         category_id: null,
         description: data.description,
@@ -425,9 +693,9 @@ export function BudgetPage() {
         vendor: data.vendor ?? null,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!, revisionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!, revisionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
       setAddItemOpen(false)
     },
   })
@@ -436,6 +704,7 @@ export function BudgetPage() {
     mutationFn: (data: { account_id: string; description: string; estimated_cost: number }) =>
       createBudgetItem({
         production_id: currentProductionId!,
+        revision_id: revisionId,
         account_id: data.account_id,
         category_id: null,
         description: data.description,
@@ -444,9 +713,9 @@ export function BudgetPage() {
         vendor: null,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId!, revisionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!, revisionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
       setAddItemForAccountId(null)
     },
   })
@@ -456,8 +725,8 @@ export function BudgetPage() {
       updateExpenseAccount(expenseId, newAccountId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!) })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!, revisionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
       setRecodeToast('Expense recoded.')
       setTimeout(() => setRecodeToast(null), 3000)
     },
@@ -481,8 +750,8 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['expense-with-details', examinedExpenseId] })
     if (currentProductionId) {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, revisionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
       queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
     }
   }, [examinedExpenseId, currentProductionId, queryClient])
@@ -512,10 +781,10 @@ export function BudgetPage() {
       if (currentProductionId) {
         queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
         queryClient.invalidateQueries({ queryKey: ['expense-with-details', expenseId] })
-        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
-        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, revisionId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId, revisionId] })
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item'] })
-        queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
+        queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
       }
     },
   })
@@ -524,11 +793,12 @@ export function BudgetPage() {
     mutationFn: (data: { name: string; account_ids: string[] }) =>
       createProductionTotal({
         production_id: currentProductionId!,
+        revision_id: revisionId,
         name: data.name,
         account_ids: data.account_ids,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['production-totals', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['production-totals', currentProductionId!, revisionId] })
       setProductionTotalCreateOpen(false)
     },
   })
@@ -537,7 +807,7 @@ export function BudgetPage() {
     mutationFn: (data: { id: string; name: string; account_ids: string[] }) =>
       updateProductionTotal(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['production-totals', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['production-totals', currentProductionId!, revisionId] })
       setProductionTotalToEdit(null)
     },
   })
@@ -545,7 +815,7 @@ export function BudgetPage() {
   const deleteProductionTotalMutation = useMutation({
     mutationFn: (id: string) => deleteProductionTotal(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['production-totals', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['production-totals', currentProductionId!, revisionId] })
     },
   })
 
@@ -657,6 +927,68 @@ export function BudgetPage() {
     }
   }, [costReportGroupsWithAccounts, accountTree, accountTotals, accounts])
 
+  const baseCompareRevision = useMemo(
+    () => budgetRevisions.find((rev) => rev.id === baseCompareRevisionId) ?? null,
+    [budgetRevisions, baseCompareRevisionId]
+  )
+  const targetCompareRevision = useMemo(
+    () => budgetRevisions.find((rev) => rev.id === targetCompareRevisionId) ?? null,
+    [budgetRevisions, targetCompareRevisionId]
+  )
+
+  const baseCompareSummary = useMemo(
+    () =>
+      computeRevisionSummaryMetrics({
+        items: baseCompareItems,
+        expenses,
+        accounts,
+        fringeRules: baseCompareFringeRules,
+        contingencyRules: baseCompareContingencyRules,
+        floats: baseCompareFloats,
+        floatExpenseLinks: baseCompareFloatLinks,
+        people,
+      }),
+    [
+      accounts,
+      baseCompareContingencyRules,
+      baseCompareFloatLinks,
+      baseCompareFloats,
+      baseCompareFringeRules,
+      baseCompareItems,
+      expenses,
+      people,
+    ]
+  )
+
+  const targetCompareSummary = useMemo(
+    () =>
+      computeRevisionSummaryMetrics({
+        items: targetCompareItems,
+        expenses,
+        accounts,
+        fringeRules: targetCompareFringeRules,
+        contingencyRules: targetCompareContingencyRules,
+        floats: targetCompareFloats,
+        floatExpenseLinks: targetCompareFloatLinks,
+        people,
+      }),
+    [
+      accounts,
+      expenses,
+      people,
+      targetCompareContingencyRules,
+      targetCompareFloatLinks,
+      targetCompareFloats,
+      targetCompareFringeRules,
+      targetCompareItems,
+    ]
+  )
+
+  const compareRows = useMemo(
+    () => buildComparisonRows(baseCompareSummary, targetCompareSummary),
+    [baseCompareSummary, targetCompareSummary]
+  )
+
   const headerAccounts = useMemo(
     () => accounts.filter((a) => !a.is_postable && !a.archived_at),
     [accounts]
@@ -725,6 +1057,68 @@ export function BudgetPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Budget</h1>
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-2 py-1">
+            <span className="text-xs text-muted-foreground">Revision</span>
+            <Select
+              value={workingBudgetRevision?.id ?? EMPTY_REVISION_SELECT_VALUE}
+              onValueChange={handleRevisionChange}
+              disabled={budgetRevisionsLoading || !currentProductionId}
+            >
+              <SelectTrigger
+                className="h-8 w-[240px]"
+                aria-label="Budget revision selector"
+                data-testid="budget-revision-selector"
+              >
+                <SelectValue
+                  placeholder={getBudgetRevisionTriggerLabel({
+                    selectedRevision: workingBudgetRevision,
+                    revisions: budgetRevisions,
+                    isLoading: budgetRevisionsLoading,
+                  })}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={EMPTY_REVISION_SELECT_VALUE} disabled>
+                  Select revision
+                </SelectItem>
+                {budgetRevisions.length === 0 ? (
+                  <SelectItem value="__no_revisions__" disabled>
+                    No revisions found
+                  </SelectItem>
+                ) : (
+                  budgetRevisions.map((rev) => (
+                    <SelectItem key={rev.id} value={rev.id}>
+                      {rev.name} {rev.is_live ? '· Live / Working budget' : '· Draft'}
+                    </SelectItem>
+                  ))
+                )}
+                <SelectItem value={CREATE_BUDGET_REVISION_VALUE}>Create budget revision...</SelectItem>
+              </SelectContent>
+            </Select>
+            <label className="ml-1 inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs">
+              <input
+                type="radio"
+                checked={!!workingBudgetRevision?.is_live}
+                disabled={!revisionId || setLiveRevisionMutation.isPending}
+                onChange={() => {
+                  if (!revisionId) return
+                  if (!workingBudgetRevision?.is_live) openLiveConfirmation(revisionId)
+                }}
+                data-testid="budget-selected-revision-live-radio"
+              />
+              Set as live budget
+            </label>
+            <span
+              className={`rounded px-2 py-0.5 text-xs ${
+                workingBudgetRevision?.is_live
+                  ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-muted text-muted-foreground'
+              }`}
+              data-testid="budget-revision-context-label"
+            >
+              {revisionContextLabel}
+            </span>
+          </div>
           <Tabs value={viewMode} onValueChange={handleBudgetTabChange} className="w-auto">
             <TabsList className="h-9 border border-border bg-muted/30">
               <TabsTrigger value="budget" className="px-3 text-sm data-[state=active]:bg-background">
@@ -738,6 +1132,9 @@ export function BudgetPage() {
               </TabsTrigger>
               <TabsTrigger value="floats" className="px-3 text-sm data-[state=active]:bg-background">
                 Floats
+              </TabsTrigger>
+              <TabsTrigger value="compare" className="px-3 text-sm data-[state=active]:bg-background">
+                Compare
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -768,6 +1165,7 @@ export function BudgetPage() {
             onOpenChange={setLogSpendOpen}
             postableAccounts={postableAccounts}
             productionId={currentProductionId!}
+            revisionId={revisionId}
             productionCurrency={productionCurrency}
             format={format}
             people={people}
@@ -795,11 +1193,177 @@ export function BudgetPage() {
         </div>
       </div>
 
+      <Dialog open={createRevisionOpen} onOpenChange={setCreateRevisionOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create budget revision</DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              setCreateRevisionNameError(null)
+              setCreateRevisionSourceError(null)
+              setCreateRevisionSubmitError(null)
+              createRevisionMutation.mutate()
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="create-budget-revision-name">Revision name</Label>
+              <Input
+                id="create-budget-revision-name"
+                value={createRevisionName}
+                onChange={(event) => {
+                  setCreateRevisionName(event.target.value)
+                  if (createRevisionNameError) setCreateRevisionNameError(null)
+                }}
+                placeholder="e.g. Scenario B"
+                autoFocus
+                data-testid="create-budget-revision-name-input"
+              />
+              {createRevisionNameError && (
+                <p className="text-sm text-destructive" data-testid="create-budget-revision-name-error">
+                  {createRevisionNameError}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Creation mode</Label>
+              <div className="grid gap-2">
+                <label className="flex items-center gap-2 rounded-md border border-border p-2 text-sm">
+                  <input
+                    type="radio"
+                    name="create-revision-mode"
+                    value="blank"
+                    checked={createRevisionMode === 'blank'}
+                    onChange={() => {
+                      setCreateRevisionMode('blank')
+                      setCreateRevisionSourceError(null)
+                    }}
+                  />
+                  Start from scratch
+                </label>
+                <label className="flex items-center gap-2 rounded-md border border-border p-2 text-sm">
+                  <input
+                    type="radio"
+                    name="create-revision-mode"
+                    value="copy"
+                    checked={createRevisionMode === 'copy'}
+                    onChange={() => {
+                      setCreateRevisionMode('copy')
+                      if (!createRevisionSourceId) {
+                        setCreateRevisionSourceId(liveRevisionId ?? revisionId ?? budgetRevisions[0]?.id ?? null)
+                      }
+                    }}
+                  />
+                  Copy from existing revision
+                </label>
+              </div>
+            </div>
+
+            {createRevisionMode === 'copy' && (
+              <div className="space-y-2">
+                <Label htmlFor="create-budget-revision-source">Source revision</Label>
+                <Select
+                  value={createRevisionSourceId ?? ''}
+                  onValueChange={(value) => {
+                    setCreateRevisionSourceId(value)
+                    if (createRevisionSourceError) setCreateRevisionSourceError(null)
+                  }}
+                >
+                  <SelectTrigger id="create-budget-revision-source" data-testid="create-budget-revision-source-select">
+                    <SelectValue placeholder="Select revision to copy" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {budgetRevisions.map((rev) => (
+                      <SelectItem key={rev.id} value={rev.id}>
+                        {rev.name} {rev.is_live ? '· Live' : '· Draft'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {createRevisionSourceError && (
+                  <p className="text-sm text-destructive" data-testid="create-budget-revision-source-error">
+                    {createRevisionSourceError}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {createRevisionSubmitError && (
+              <p className="text-sm text-destructive" data-testid="create-budget-revision-submit-error">
+                {createRevisionSubmitError}
+              </p>
+            )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => setCreateRevisionOpen(false)}
+              disabled={createRevisionMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={createRevisionMutation.isPending}>
+              {createRevisionMutation.isPending ? 'Creating...' : 'Create revision'}
+            </Button>
+          </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={liveConfirmOpen} onOpenChange={setLiveConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Set this revision as the working budget?</DialogTitle>
+            <DialogDescription>
+              This changes the live budget revision used by the rest of Albatross.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p>
+              Current live revision:{' '}
+              <span className="font-medium">{currentLiveRevision?.name ?? 'None'}</span>
+            </p>
+            <p>
+              New live revision:{' '}
+              <span className="font-medium">{pendingLiveRevision?.name ?? 'Not selected'}</span>
+            </p>
+            <p className="text-muted-foreground">
+              Your selected revision for this page stays as-is unless you choose to switch it separately.
+            </p>
+            {liveToggleError && <p className="text-destructive">{liveToggleError}</p>}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => setLiveConfirmOpen(false)}
+              disabled={setLiveRevisionMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                void confirmSetLiveRevision()
+              }}
+              disabled={setLiveRevisionMutation.isPending || !pendingLiveRevision}
+            >
+              {setLiveRevisionMutation.isPending ? 'Updating...' : 'Set as working budget'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {viewMode === 'actualisation' ? (
         <ActualisationPage />
       ) : viewMode === 'floats' ? (
         <FloatsTab
           productionId={currentProductionId}
+          revisionId={revisionId}
           productionCurrency={productionCurrency}
           format={format}
           crew={crew}
@@ -809,6 +1373,21 @@ export function BudgetPage() {
           floatSummary={floatProductionSummary}
           productionFloats={productionFloats}
           activateActionableFilter={budgetFloatsOutstandingUrl}
+        />
+      ) : viewMode === 'compare' ? (
+        <CompareRevisionsView
+          revisions={budgetRevisions}
+          selectedRevisionId={revisionId ?? null}
+          baseRevisionId={baseCompareRevisionId}
+          compareRevisionId={targetCompareRevisionId}
+          onBaseRevisionChange={setBaseCompareRevisionId}
+          onCompareRevisionChange={setTargetCompareRevisionId}
+          baseRevision={baseCompareRevision}
+          compareRevision={targetCompareRevision}
+          rows={compareRows}
+          format={format}
+          productionCurrency={productionCurrency}
+          isLoading={budgetRevisionsLoading}
         />
       ) : viewMode === 'cost_report' ? (
         <>
@@ -1079,6 +1658,7 @@ export function BudgetPage() {
         <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
           <ManageDerivedCostsDialog
             productionId={currentProductionId!}
+            revisionId={revisionId}
             accounts={accounts}
             fringeRules={fringeRules}
             contingencyRules={contingencyRules}
@@ -1086,8 +1666,8 @@ export function BudgetPage() {
             productionCurrency={productionCurrency}
             onClose={() => setManageDerivedOpen(false)}
             invalidateDerived={() => {
-              queryClient.invalidateQueries({ queryKey: ['fringe-rules', currentProductionId!] })
-              queryClient.invalidateQueries({ queryKey: ['contingency-rules', currentProductionId!] })
+              queryClient.invalidateQueries({ queryKey: ['fringe-rules', currentProductionId!, revisionId] })
+              queryClient.invalidateQueries({ queryKey: ['contingency-rules', currentProductionId!, revisionId] })
             }}
           />
         </DialogContent>
@@ -1174,10 +1754,10 @@ export function BudgetPage() {
                   onClose={() => setExaminedLineItemId(null)}
                   onSaved={() => {
                     if (currentProductionId) {
-                      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
-                      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
-                      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId) })
-                      queryClient.invalidateQueries({ queryKey: ['floats', currentProductionId] })
+                      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId, revisionId] })
+                      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, revisionId] })
+                      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
+                      queryClient.invalidateQueries({ queryKey: ['floats', currentProductionId, revisionId] })
                     }
                     if (examinedLineItemId) {
                       queryClient.invalidateQueries({
@@ -1187,7 +1767,7 @@ export function BudgetPage() {
                         queryKey: ['floats-by-budget-item', examinedLineItemId],
                       })
                       queryClient.invalidateQueries({
-                        queryKey: ['float-expense-links-by-production', currentProductionId],
+                        queryKey: ['float-expense-links-by-production', currentProductionId, revisionId],
                       })
                     }
                   }}
@@ -1667,6 +2247,143 @@ type ProductionTotalAmount = {
   budgetTotal: number
   actualTotal: number
   variance: number
+}
+
+function compareRevisionMetaLabel(revision: BudgetRevision | null, selectedRevisionId: string | null): string {
+  if (!revision) return '—'
+  const labels: string[] = []
+  if (revision.is_live) labels.push('Live')
+  if (revision.id === selectedRevisionId) labels.push('Selected')
+  return labels.length ? labels.join(' · ') : 'Draft'
+}
+
+function CompareRevisionsView({
+  revisions,
+  selectedRevisionId,
+  baseRevisionId,
+  compareRevisionId,
+  onBaseRevisionChange,
+  onCompareRevisionChange,
+  baseRevision,
+  compareRevision,
+  rows,
+  format,
+  productionCurrency,
+  isLoading,
+}: {
+  revisions: BudgetRevision[]
+  selectedRevisionId: string | null
+  baseRevisionId: string | null
+  compareRevisionId: string | null
+  onBaseRevisionChange: (id: string) => void
+  onCompareRevisionChange: (id: string) => void
+  baseRevision: BudgetRevision | null
+  compareRevision: BudgetRevision | null
+  rows: ComparisonMetricRow[]
+  format: (amount: number, currency: string) => { formatted: string }
+  productionCurrency: string
+  isLoading: boolean
+}) {
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground">Loading revisions...</p>
+  }
+  if (revisions.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground rounded-md border border-dashed border-border bg-muted/20 p-4">
+        No revisions available yet. Create a budget revision to start comparing scenarios.
+      </p>
+    )
+  }
+  if (revisions.length === 1) {
+    return (
+      <p className="text-sm text-muted-foreground rounded-md border border-dashed border-border bg-muted/20 p-4">
+        Comparison needs at least two revisions. Create another revision, then return here to compare deltas.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Base revision</Label>
+          <Select value={baseRevisionId ?? undefined} onValueChange={onBaseRevisionChange}>
+            <SelectTrigger className="w-[260px]" data-testid="compare-base-selector">
+              <SelectValue placeholder="Select base revision" />
+            </SelectTrigger>
+            <SelectContent>
+              {revisions.map((rev) => (
+                <SelectItem key={rev.id} value={rev.id}>
+                  {rev.name} {rev.is_live ? '· Live' : '· Draft'}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{compareRevisionMetaLabel(baseRevision, selectedRevisionId)}</p>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Compare revision</Label>
+          <Select value={compareRevisionId ?? undefined} onValueChange={onCompareRevisionChange}>
+            <SelectTrigger className="w-[260px]" data-testid="compare-target-selector">
+              <SelectValue placeholder="Select compare revision" />
+            </SelectTrigger>
+            <SelectContent>
+              {revisions.map((rev) => (
+                <SelectItem key={rev.id} value={rev.id}>
+                  {rev.name} {rev.is_live ? '· Live' : '· Draft'}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{compareRevisionMetaLabel(compareRevision, selectedRevisionId)}</p>
+        </div>
+      </div>
+
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Metric</TableHead>
+              <TableHead className="text-right">Base</TableHead>
+              <TableHead className="text-right">Compare</TableHead>
+              <TableHead className="text-right">Difference</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.key}>
+                <TableCell>{row.label}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {format(row.base, productionCurrency).formatted}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {format(row.compare, productionCurrency).formatted}
+                </TableCell>
+                <TableCell
+                  className={`text-right tabular-nums font-medium ${
+                    row.delta > 0
+                      ? 'text-amber-700 dark:text-amber-400'
+                      : row.delta < 0
+                        ? 'text-mint-700 dark:text-mint-400'
+                        : 'text-muted-foreground'
+                  }`}
+                >
+                  {format(row.delta, productionCurrency).formatted}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {baseRevisionId === compareRevisionId && (
+        <p className="text-xs text-muted-foreground">
+          Comparing the same revision on both sides. All deltas should be zero.
+        </p>
+      )}
+    </div>
+  )
 }
 
 type GroupTotalRow = {
@@ -2652,6 +3369,7 @@ function BudgetItemForm({
 
 function ManageDerivedCostsDialog({
   productionId,
+  revisionId,
   accounts,
   fringeRules,
   contingencyRules,
@@ -2661,6 +3379,7 @@ function ManageDerivedCostsDialog({
   invalidateDerived,
 }: {
   productionId: string
+  revisionId?: string
   accounts: BudgetAccount[]
   fringeRules: FringeRuleWithScopes[]
   contingencyRules: ContingencyRuleWithScopes[]
@@ -2679,6 +3398,7 @@ function ManageDerivedCostsDialog({
     mutationFn: (data: DerivedRuleFormValues) =>
       createFringeRule({
         production_id: productionId,
+        revision_id: revisionId,
         name: data.name,
         rate: data.ratePercent / 100,
         base_kind: 'budget',
@@ -2719,6 +3439,7 @@ function ManageDerivedCostsDialog({
     mutationFn: (data: DerivedRuleFormValues) =>
       createContingencyRule({
         production_id: productionId,
+        revision_id: revisionId,
         name: data.name,
         rate: data.ratePercent / 100,
         base_kind: 'budget',

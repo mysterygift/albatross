@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { dashboardTutorialSteps } from '@/features/tutorial/sections/dashboardTutorial'
@@ -954,6 +955,8 @@ export function DashboardPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const { currentProduction, currentProductionId } = useCurrentProduction()
+  const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
+  const revisionId = workingBudgetRevision?.id
   const { format, ensureRate } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const wrapSuccess = (location.state as { wrapSuccess?: boolean } | null)?.wrapSuccess === true
@@ -995,8 +998,8 @@ export function DashboardPage() {
     isLoading: budgetHealthLoading,
     isError: budgetHealthError,
   } = useQuery({
-    queryKey: ['dashboard-budget-health', currentProductionId],
-    queryFn: () => getDashboardBudgetHealthData(currentProductionId!),
+    queryKey: ['dashboard-budget-health', currentProductionId, revisionId],
+    queryFn: () => getDashboardBudgetHealthData(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
 
@@ -1025,8 +1028,8 @@ export function DashboardPage() {
     isLoading: riskWatchLoading,
     isError: riskWatchError,
   } = useQuery({
-    queryKey: riskWatchQueryKey(currentProductionId ?? ''),
-    queryFn: () => getVendorFinanceRiskItems(currentProductionId!),
+    queryKey: riskWatchQueryKey(currentProductionId ?? '', revisionId),
+    queryFn: () => getVendorFinanceRiskItems(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
 
@@ -1035,8 +1038,8 @@ export function DashboardPage() {
     isLoading: dashFloatsLoading,
     isError: dashFloatsError,
   } = useQuery({
-    queryKey: ['floats', currentProductionId],
-    queryFn: () => listFloatsByProduction(currentProductionId!),
+    queryKey: ['floats', currentProductionId, revisionId],
+    queryFn: () => listFloatsByProduction(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
 
@@ -1045,8 +1048,8 @@ export function DashboardPage() {
     isLoading: dashFloatLinksLoading,
     isError: dashFloatLinksError,
   } = useQuery({
-    queryKey: ['float-expense-links-by-production', currentProductionId],
-    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId!),
+    queryKey: ['float-expense-links-by-production', currentProductionId, revisionId],
+    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
 

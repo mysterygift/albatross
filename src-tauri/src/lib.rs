@@ -5,6 +5,43 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuild
 use tauri::{Emitter, Manager};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+const MENU_ID_DUPLICATE_LIVE_AS_DRAFT: &str = "budget_duplicate_live_as_draft";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BudgetMenuItemSpec {
+    id: &'static str,
+    label: &'static str,
+    enabled: bool,
+    accelerator: Option<&'static str>,
+}
+
+#[derive(Clone)]
+struct BudgetMenuState {
+    duplicate_live_as_draft_item: tauri::menu::MenuItem<tauri::Wry>,
+}
+
+fn budget_menu_items_spec() -> Vec<BudgetMenuItemSpec> {
+    vec![BudgetMenuItemSpec {
+        id: MENU_ID_DUPLICATE_LIVE_AS_DRAFT,
+        label: "Duplicate live as draft",
+        enabled: false,
+        accelerator: None,
+    }]
+}
+
+#[tauri::command]
+fn set_budget_duplicate_live_as_draft_enabled(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<BudgetMenuState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let _ = app_handle;
+    state
+        .duplicate_live_as_draft_item
+        .set_enabled(enabled)
+        .map_err(|err| err.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -326,6 +363,24 @@ pub fn run() {
             sql: include_str!("../migrations/0053_float_expense_links.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 54,
+            description: "budget_revisions",
+            sql: include_str!("../migrations/0054_budget_revisions.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 55,
+            description: "cost_report_groups_revision_uniqueness",
+            sql: include_str!("../migrations/0055_cost_report_groups_revision_uniqueness.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 56,
+            description: "float_expense_links_revision_uniqueness",
+            sql: include_str!("../migrations/0056_float_expense_links_revision_uniqueness.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
@@ -353,6 +408,7 @@ pub fn run() {
             open_route_service::get_driving_travel_time_minutes,
             open_route_service::get_route_summary,
             open_route_service::geocode_location_to_lat_lng,
+            set_budget_duplicate_live_as_draft_enabled,
         ])
         .setup(|app| {
             let import_item = MenuItemBuilder::with_id("import_project", "Import Project...")
@@ -405,10 +461,22 @@ pub fn run() {
                 .item(&PredefinedMenuItem::select_all(app, None)?)
                 .build()?;
 
+            let budget_items = budget_menu_items_spec();
+            let duplicate_live_as_draft_item =
+                MenuItemBuilder::with_id(budget_items[0].id, budget_items[0].label)
+                    .enabled(budget_items[0].enabled)
+                    .build(app)?;
+            let budget_menu = SubmenuBuilder::new(app, "Budget")
+                .item(&duplicate_live_as_draft_item)
+                .build()?;
+
             let app_menu = MenuBuilder::new(app)
-                .items(&[&app_submenu, &file_menu, &edit_menu])
+                .items(&[&app_submenu, &file_menu, &edit_menu, &budget_menu])
                 .build()?;
             app.set_menu(app_menu)?;
+            app.manage(BudgetMenuState {
+                duplicate_live_as_draft_item: duplicate_live_as_draft_item.clone(),
+            });
 
             app.on_menu_event(move |app_handle: &tauri::AppHandle, event| match event.id().0.as_str() {
                 "import_project" => {
@@ -422,6 +490,9 @@ pub fn run() {
                 }
                 "app_settings" => {
                     let _ = app_handle.emit("albatross-menu-open-settings", ());
+                }
+                MENU_ID_DUPLICATE_LIVE_AS_DRAFT => {
+                    let _ = app_handle.emit("albatross-menu-duplicate-live-as-draft", ());
                 }
                 _ => {}
             });
@@ -440,4 +511,19 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{budget_menu_items_spec, MENU_ID_DUPLICATE_LIVE_AS_DRAFT};
+
+    #[test]
+    fn budget_menu_shell_contains_duplicate_live_as_draft_item() {
+        let items = budget_menu_items_spec();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, MENU_ID_DUPLICATE_LIVE_AS_DRAFT);
+        assert_eq!(items[0].label, "Duplicate live as draft");
+        assert!(!items[0].enabled);
+        assert_eq!(items[0].accelerator, None);
+    }
 }

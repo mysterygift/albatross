@@ -56,6 +56,7 @@ export type AllocateFloatDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   productionId: string
+  revisionId?: string
   budgetItems: BudgetItem[]
   accounts: BudgetAccount[]
   crew: Person[]
@@ -66,6 +67,7 @@ export function AllocateFloatDialog({
   open,
   onOpenChange,
   productionId,
+  revisionId,
   budgetItems,
   accounts,
   crew,
@@ -112,6 +114,7 @@ export function AllocateFloatDialog({
     mutationFn: (values: FormValues) =>
       createFloat({
         production_id: productionId,
+        revision_id: revisionId,
         budget_item_id: values.budget_item_id,
         person_id: values.person_id,
         amount: values.amount,
@@ -120,9 +123,9 @@ export function AllocateFloatDialog({
         notes: values.notes?.trim() ? values.notes.trim() : null,
       }),
     onSuccess: (_data, values) => {
-      queryClient.invalidateQueries({ queryKey: ['floats', productionId] })
+      queryClient.invalidateQueries({ queryKey: ['floats', productionId, revisionId] })
       queryClient.invalidateQueries({ queryKey: ['floats-by-budget-item', values.budget_item_id] })
-      queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', productionId] })
+      queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', productionId, revisionId] })
       onOpenChange(false)
       form.reset({
         budget_item_id: '',

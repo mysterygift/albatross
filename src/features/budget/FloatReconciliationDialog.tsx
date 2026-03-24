@@ -44,6 +44,7 @@ export type FloatReconciliationDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   productionId: string
+  revisionId?: string
   pettyCashFloat: PettyCashFloat | null
   crewMemberName: string
   format: (amount: number, currency: string) => { formatted: string }
@@ -55,6 +56,7 @@ export function FloatReconciliationDialog({
   open,
   onOpenChange,
   productionId,
+  revisionId,
   pettyCashFloat,
   crewMemberName,
   format,
@@ -73,13 +75,13 @@ export function FloatReconciliationDialog({
     enabled: open && !!productionId,
   })
   const { data: budgetLinks = [] } = useQuery({
-    queryKey: ['budget-item-expense-links', productionId],
-    queryFn: () => listBudgetItemExpenseLinksByProduction(productionId),
+    queryKey: ['budget-item-expense-links', productionId, revisionId],
+    queryFn: () => listBudgetItemExpenseLinksByProduction(productionId, revisionId),
     enabled: open && !!productionId,
   })
   const { data: floatLinks = [] } = useQuery({
-    queryKey: ['float-expense-links-by-production', productionId],
-    queryFn: () => listFloatExpenseLinksByProduction(productionId),
+    queryKey: ['float-expense-links-by-production', productionId, revisionId],
+    queryFn: () => listFloatExpenseLinksByProduction(productionId, revisionId),
     enabled: open && !!productionId,
   })
   const { data: accounts = [] } = useQuery({
@@ -175,12 +177,12 @@ export function FloatReconciliationDialog({
       setLinkIdToConfirmRemove(null)
       setRemoveLinkError(null)
       const removed = floatLinks.find((l) => l.id === linkId)
-      queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', productionId] })
+      queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', productionId, revisionId] })
       if (pettyCashFloat) {
         queryClient.invalidateQueries({ queryKey: ['float-expense-links', pettyCashFloat.id] })
       }
       if (removed) {
-        queryClient.invalidateQueries({ queryKey: ['float-expense-links-for-expense', removed.expense_id] })
+        queryClient.invalidateQueries({ queryKey: ['float-expense-links-for-expense', removed.expense_id, revisionId] })
       }
     },
     onError: (err: Error) => {
@@ -193,6 +195,7 @@ export function FloatReconciliationDialog({
     setSaveError(null)
     const variables = {
       productionId,
+      revisionId,
       floatId: pettyCashFloat.id,
       allocations: validation.payload.allocations,
     }
@@ -200,9 +203,11 @@ export function FloatReconciliationDialog({
       onSuccess: () => {
         const fid = variables.floatId
         queryClient.invalidateQueries({ queryKey: ['float-expense-links', fid] })
-        queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', variables.productionId] })
+        queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', variables.productionId, variables.revisionId] })
         for (const a of variables.allocations) {
-          queryClient.invalidateQueries({ queryKey: ['float-expense-links-for-expense', a.expenseId] })
+          queryClient.invalidateQueries({
+            queryKey: ['float-expense-links-for-expense', a.expenseId, variables.revisionId],
+          })
         }
         setSaveError(null)
         handleOpenChange(false)

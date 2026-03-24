@@ -1,6 +1,7 @@
 import { getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxPush } from '../outbox'
 import type { ContingencyRule, FringeRule } from '../types'
+import { resolveBudgetRevisionId } from './budgetRevisions'
 
 const FRINGE_TABLE = 'fringe_rules'
 const FRINGE_SCOPES_TABLE = 'fringe_rule_scopes'
@@ -14,6 +15,7 @@ function rowToFringeRule(r: Record<string, unknown>): FringeRule {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    budget_revision_id: (r.budget_revision_id as string | null) ?? null,
     name: r.name as string,
     rate: r.rate as number,
     base_kind: (r.base_kind as FringeRule['base_kind']) ?? 'budget',
@@ -29,6 +31,7 @@ function rowToContingencyRule(r: Record<string, unknown>): ContingencyRule {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    budget_revision_id: (r.budget_revision_id as string | null) ?? null,
     name: r.name as string,
     rate: r.rate as number,
     base_kind: (r.base_kind as ContingencyRule['base_kind']) ?? 'budget',
@@ -53,11 +56,15 @@ function validateRate(rate: number): void {
 
 // ─── Fringe rules ───────────────────────────────────────────────────────────
 
-export async function listFringeRules(productionId: string): Promise<FringeRuleWithScopes[]> {
+export async function listFringeRules(
+  productionId: string,
+  revisionId?: string | null
+): Promise<FringeRuleWithScopes[]> {
   const db = await getDb()
+  const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
   const rules = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${FRINGE_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY name`,
-    [productionId]
+    `SELECT * FROM ${FRINGE_TABLE} WHERE production_id = $1 AND budget_revision_id = $2 AND deleted_at IS NULL ORDER BY name`,
+    [productionId, budgetRevisionId]
   )
   if (rules.length === 0) return []
   const ruleIds = rules.map((r) => r.id as string)
@@ -81,6 +88,7 @@ export async function listFringeRules(productionId: string): Promise<FringeRuleW
 
 export async function createFringeRule(
   data: Pick<FringeRule, 'production_id' | 'name' | 'rate' | 'base_kind' | 'scope_mode'> & {
+    revision_id?: string | null
     scope_account_ids: string[]
   }
 ): Promise<FringeRuleWithScopes> {
@@ -88,12 +96,16 @@ export async function createFringeRule(
   if (data.scope_account_ids.length === 0) throw new Error('At least one scope account is required')
   const id = uuid()
   const ts = now()
+  const budgetRevisionId = await resolveBudgetRevisionId({
+    productionId: data.production_id,
+    revisionId: data.revision_id,
+  })
   await runInSerializedTransaction(async () => {
     const db = await getDb()
     await db.execute(
-      `INSERT INTO ${FRINGE_TABLE} (id, production_id, name, rate, base_kind, scope_mode, is_enabled, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)`,
-      [id, data.production_id, data.name, data.rate, data.base_kind ?? 'budget', data.scope_mode ?? 'include_subtrees', ts, ts]
+      `INSERT INTO ${FRINGE_TABLE} (id, production_id, budget_revision_id, name, rate, base_kind, scope_mode, is_enabled, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9)`,
+      [id, data.production_id, budgetRevisionId, data.name, data.rate, data.base_kind ?? 'budget', data.scope_mode ?? 'include_subtrees', ts, ts]
     )
     for (const accountId of data.scope_account_ids) {
       const scopeId = uuid()
@@ -183,11 +195,15 @@ export async function setFringeRuleEnabled(ruleId: string, enabled: boolean): Pr
 
 // ─── Contingency rules ───────────────────────────────────────────────────────
 
-export async function listContingencyRules(productionId: string): Promise<ContingencyRuleWithScopes[]> {
+export async function listContingencyRules(
+  productionId: string,
+  revisionId?: string | null
+): Promise<ContingencyRuleWithScopes[]> {
   const db = await getDb()
+  const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
   const rules = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${CONTINGENCY_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY name`,
-    [productionId]
+    `SELECT * FROM ${CONTINGENCY_TABLE} WHERE production_id = $1 AND budget_revision_id = $2 AND deleted_at IS NULL ORDER BY name`,
+    [productionId, budgetRevisionId]
   )
   if (rules.length === 0) return []
   const ruleIds = rules.map((r) => r.id as string)
@@ -211,6 +227,7 @@ export async function listContingencyRules(productionId: string): Promise<Contin
 
 export async function createContingencyRule(
   data: Pick<ContingencyRule, 'production_id' | 'name' | 'rate' | 'base_kind' | 'scope_mode'> & {
+    revision_id?: string | null
     scope_account_ids: string[]
   }
 ): Promise<ContingencyRuleWithScopes> {
@@ -218,12 +235,16 @@ export async function createContingencyRule(
   if (data.scope_account_ids.length === 0) throw new Error('At least one scope account is required')
   const id = uuid()
   const ts = now()
+  const budgetRevisionId = await resolveBudgetRevisionId({
+    productionId: data.production_id,
+    revisionId: data.revision_id,
+  })
   await runInSerializedTransaction(async () => {
     const db = await getDb()
     await db.execute(
-      `INSERT INTO ${CONTINGENCY_TABLE} (id, production_id, name, rate, base_kind, scope_mode, is_enabled, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)`,
-      [id, data.production_id, data.name, data.rate, data.base_kind ?? 'budget', data.scope_mode ?? 'include_subtrees', ts, ts]
+      `INSERT INTO ${CONTINGENCY_TABLE} (id, production_id, budget_revision_id, name, rate, base_kind, scope_mode, is_enabled, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9)`,
+      [id, data.production_id, budgetRevisionId, data.name, data.rate, data.base_kind ?? 'budget', data.scope_mode ?? 'include_subtrees', ts, ts]
     )
     for (const accountId of data.scope_account_ids) {
       const scopeId = uuid()

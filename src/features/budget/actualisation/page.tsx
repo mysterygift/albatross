@@ -24,6 +24,7 @@ import { getExpenseUnallocatedForFloatMatching, sumFloatMatchedForExpense } from
 import { listFloatExpenseLinksByExpense, listFloatExpenseLinksByProduction } from '@/lib/db/repositories/floatReconciliation'
 import { listFloatsByProduction } from '@/lib/db/repositories/floats'
 import { listPeopleByProduction } from '@/lib/db/repositories/person'
+import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import {
   filterLineItemsByClassification,
   filterExpensesByClassification,
@@ -141,6 +142,8 @@ export function ActualisationPage() {
   const { format } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const queryClient = useQueryClient()
+  const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
+  const revisionId = workingBudgetRevision?.id
 
   const [typeFilter, setTypeFilter] = useState<ClassificationFilter>('all')
   const [lineItemStatusFilter, setLineItemStatusFilter] = useState<'all' | BudgetItemReconciliationStatus>('all')
@@ -159,8 +162,8 @@ export function ActualisationPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const { data: items = [] } = useQuery({
-    queryKey: ['budget-items', currentProductionId],
-    queryFn: () => listBudgetItemsByProduction(currentProductionId!),
+    queryKey: ['budget-items', currentProductionId, revisionId],
+    queryFn: () => listBudgetItemsByProduction(currentProductionId!, { revisionId }),
     enabled: !!currentProductionId,
   })
   const { data: expenses = [] } = useQuery({
@@ -169,8 +172,8 @@ export function ActualisationPage() {
     enabled: !!currentProductionId,
   })
   const { data: links = [] } = useQuery({
-    queryKey: ['budget-item-expense-links', currentProductionId],
-    queryFn: () => listBudgetItemExpenseLinksByProduction(currentProductionId!),
+    queryKey: ['budget-item-expense-links', currentProductionId, revisionId],
+    queryFn: () => listBudgetItemExpenseLinksByProduction(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
   const { data: accounts = [] } = useQuery({
@@ -180,31 +183,31 @@ export function ActualisationPage() {
   })
 
   const { data: linksForSelectedItem = [] } = useQuery({
-    queryKey: ['budget-item-expense-links-for-item', selectedLineItemId],
-    queryFn: () => listBudgetItemExpenseLinksForBudgetItem(selectedLineItemId!),
+    queryKey: ['budget-item-expense-links-for-item', selectedLineItemId, revisionId],
+    queryFn: () => listBudgetItemExpenseLinksForBudgetItem(selectedLineItemId!, revisionId),
     enabled: !!selectedLineItemId,
   })
   const { data: linksForSelectedExpense = [] } = useQuery({
-    queryKey: ['budget-item-expense-links-for-expense', selectedExpenseId],
-    queryFn: () => listBudgetItemExpenseLinksForExpense(selectedExpenseId!),
+    queryKey: ['budget-item-expense-links-for-expense', selectedExpenseId, revisionId],
+    queryFn: () => listBudgetItemExpenseLinksForExpense(selectedExpenseId!, revisionId),
     enabled: !!selectedExpenseId,
   })
 
   const { data: floatLinksForSelectedExpense = [] } = useQuery({
-    queryKey: ['float-expense-links-for-expense', selectedExpenseId],
-    queryFn: () => listFloatExpenseLinksByExpense(selectedExpenseId!),
+    queryKey: ['float-expense-links-for-expense', selectedExpenseId, revisionId],
+    queryFn: () => listFloatExpenseLinksByExpense(selectedExpenseId!, revisionId),
     enabled: !!selectedExpenseId,
   })
 
   const { data: productionFloatExpenseLinks = [] } = useQuery({
-    queryKey: ['float-expense-links-by-production', currentProductionId],
-    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId!),
+    queryKey: ['float-expense-links-by-production', currentProductionId, revisionId],
+    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
 
   const { data: productionFloats = [] } = useQuery({
-    queryKey: ['floats', currentProductionId],
-    queryFn: () => listFloatsByProduction(currentProductionId!),
+    queryKey: ['floats', currentProductionId, revisionId],
+    queryFn: () => listFloatsByProduction(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
 
@@ -353,11 +356,11 @@ export function ActualisationPage() {
     return { canSave, payload }
   }, [selectedExpenseForModal, links, floatLinksForSelectedExpense, selectedAllocationItemIds, allocationAmounts])
 
-  function invalidateLinksForExpenseAndItem(productionId: string, expenseId: string, budgetItemId: string) {
-    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', productionId] })
-    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId] })
-    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item', budgetItemId] })
-    queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(productionId) })
+  function invalidateLinksForExpenseAndItem(productionId: string, budgetRevisionId: string | undefined, expenseId: string, budgetItemId: string) {
+    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', productionId, budgetRevisionId] })
+    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId, budgetRevisionId] })
+    queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item', budgetItemId, budgetRevisionId] })
+    queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(productionId, budgetRevisionId) })
   }
 
   useEffect(() => {
@@ -382,10 +385,10 @@ export function ActualisationPage() {
       setMatchSpendModalOpen(false)
       setMatchSpendSaveError(null)
       setSuccessMessage('Spend matched.')
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', variables.productionId] })
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', variables.expenseId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', variables.productionId, revisionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', variables.expenseId, revisionId] })
       variables.allocations.forEach((a) => {
-        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item', a.budgetItemId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item', a.budgetItemId, revisionId] })
       })
     },
     onError: (err: Error) => {
@@ -409,7 +412,7 @@ export function ActualisationPage() {
       setEditingLinkError(null)
       setSuccessMessage('Allocation updated.')
       if (currentProductionId && variables.expenseId && variables.budgetItemId) {
-        invalidateLinksForExpenseAndItem(currentProductionId, variables.expenseId, variables.budgetItemId)
+        invalidateLinksForExpenseAndItem(currentProductionId, revisionId, variables.expenseId, variables.budgetItemId)
       }
     },
     onError: (err: Error) => {
@@ -424,7 +427,7 @@ export function ActualisationPage() {
       setDeleteLinkError(null)
       setSuccessMessage('Match removed.')
       if (currentProductionId) {
-        invalidateLinksForExpenseAndItem(currentProductionId, variables.expenseId, variables.budgetItemId)
+        invalidateLinksForExpenseAndItem(currentProductionId, revisionId, variables.expenseId, variables.budgetItemId)
       }
     },
     onError: (err: Error) => {
@@ -438,6 +441,7 @@ export function ActualisationPage() {
     setMatchSpendSaveError(null)
     createLinksMutation.mutate({
       productionId: currentProductionId,
+      revisionId,
       expenseId: allocationValidation.payload.expenseId,
       allocations: allocationValidation.payload.allocations,
     })

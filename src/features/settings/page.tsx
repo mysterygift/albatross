@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
+import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import {
   listAccounts,
   createAccount,
@@ -129,6 +130,8 @@ function ApiCallTrackerPanel({ trackingOn }: { trackingOn: boolean }) {
 export function SettingsPage() {
   const navigate = useNavigate()
   const { currentProductionId, setCurrentProductionId, refetchProductions } = useCurrentProduction()
+  const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
+  const revisionId = workingBudgetRevision?.id
   const {
     displayCurrency,
     setDisplayCurrency,
@@ -230,8 +233,8 @@ export function SettingsPage() {
     },
   })
   const { data: costReportGroups = [] } = useQuery({
-    queryKey: ['cost-report-groups', currentProductionId],
-    queryFn: () => listCostReportGroups(currentProductionId ?? ''),
+    queryKey: ['cost-report-groups', currentProductionId, revisionId],
+    queryFn: () => listCostReportGroups(currentProductionId ?? '', revisionId),
     enabled: !!currentProductionId,
   })
 
@@ -257,13 +260,14 @@ export function SettingsPage() {
     mutationFn: (data: { name: string; code: string; accountIds: string[] }) =>
       createCostReportGroup({
         production_id: currentProductionId!,
+        revision_id: revisionId,
         name: data.name.trim(),
         code: data.code.trim() || null,
         accountIds: data.accountIds,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!, revisionId] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!, revisionId] })
       setAddGroupOpen(false)
     },
   })
@@ -275,8 +279,8 @@ export function SettingsPage() {
         setGroupAccountIds(editGroup!.id, data.accountIds),
       ]),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!, revisionId] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!, revisionId] })
       setEditGroup(null)
     },
   })
@@ -284,8 +288,8 @@ export function SettingsPage() {
   const deleteGroupMutation = useMutation({
     mutationFn: (groupId: string) => deleteCostReportGroup(groupId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!] })
-      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', currentProductionId!, revisionId] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', currentProductionId!, revisionId] })
     },
   })
 

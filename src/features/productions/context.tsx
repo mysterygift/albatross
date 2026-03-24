@@ -9,6 +9,9 @@ import type { Production } from '@/lib/db/types'
 type ProductionContextValue = {
   currentProductionId: string | null
   setCurrentProductionId: (id: string | null) => void
+  getSelectedBudgetRevisionId: (productionId: string | null | undefined) => string | null
+  setSelectedBudgetRevisionId: (productionId: string | null | undefined, revisionId: string | null) => void
+  clearSelectedBudgetRevisionId: (productionId: string | null | undefined) => void
   productions: Production[]
   currentProduction: Production | null
   refetchProductions: () => void
@@ -20,6 +23,7 @@ let settingsDefaultsEnsured = false
 
 export function ProductionProvider({ children }: { children: ReactNode }) {
   const [currentProductionId, setCurrentProductionId] = useState<string | null>(null)
+  const [selectedBudgetRevisionByProduction, setSelectedBudgetRevisionByProduction] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (settingsDefaultsEnsured) return
@@ -52,15 +56,60 @@ export function ProductionProvider({ children }: { children: ReactNode }) {
     setCurrentProductionId(id)
   }, [])
 
+  const getSelectedBudgetRevisionId = useCallback(
+    (productionId: string | null | undefined) => {
+      if (!productionId) return null
+      return selectedBudgetRevisionByProduction[productionId] ?? null
+    },
+    [selectedBudgetRevisionByProduction]
+  )
+
+  const setSelectedBudgetRevisionId = useCallback((productionId: string | null | undefined, revisionId: string | null) => {
+    if (!productionId) return
+    setSelectedBudgetRevisionByProduction((prev) => {
+      const existing = prev[productionId] ?? null
+      if (revisionId == null) {
+        if (existing == null) return prev
+        const next = { ...prev }
+        delete next[productionId]
+        return next
+      }
+      if (existing === revisionId) return prev
+      return { ...prev, [productionId]: revisionId }
+    })
+  }, [])
+
+  const clearSelectedBudgetRevisionId = useCallback((productionId: string | null | undefined) => {
+    if (!productionId) return
+    setSelectedBudgetRevisionByProduction((prev) => {
+      if (!(productionId in prev)) return prev
+      const next = { ...prev }
+      delete next[productionId]
+      return next
+    })
+  }, [])
+
   const value = useMemo<ProductionContextValue>(
     () => ({
       currentProductionId,
       setCurrentProductionId: setCurrent,
+      getSelectedBudgetRevisionId,
+      setSelectedBudgetRevisionId,
+      clearSelectedBudgetRevisionId,
       productions,
       currentProduction,
       refetchProductions,
     }),
-    [currentProductionId, setCurrent, productions, currentProduction, refetchProductions]
+    [
+      currentProductionId,
+      setCurrent,
+      getSelectedBudgetRevisionId,
+      setSelectedBudgetRevisionId,
+      clearSelectedBudgetRevisionId,
+      productions,
+      currentProduction,
+      refetchProductions,
+    ]
   )
 
   return (

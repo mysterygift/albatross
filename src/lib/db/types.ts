@@ -101,6 +101,7 @@ export type LineItemType = 'labour' | 'purchase' | 'rental' | 'allow' | 'deposit
 export type BudgetItem = {
   id: string
   production_id: string
+  budget_revision_id: string | null
   /** Legacy; may be null when row uses account_id (chart of accounts). */
   category_id: string | null
   /** Optional link to chart of accounts (budget_accounts.id). Leaf accounts only. */
@@ -134,6 +135,7 @@ export type BudgetItemWithDetails = {
 export type PettyCashFloat = {
   id: string
   production_id: string
+  budget_revision_id: string | null
   budget_item_id: string
   person_id: string
   amount: number
@@ -148,6 +150,7 @@ export type PettyCashFloat = {
 /** Reconciliation of an expense against a petty cash float (matched_amount only; no budget mutations). */
 export type FloatExpenseLink = {
   id: string
+  budget_revision_id: string | null
   float_id: string
   expense_id: string
   matched_amount: number
@@ -259,6 +262,7 @@ export type ExpenseTransactionDetails = {
 export type BudgetItemExpenseLink = {
   id: string
   production_id: string
+  budget_revision_id: string | null
   budget_item_id: string
   expense_id: string
   matched_amount: number
@@ -277,6 +281,7 @@ export type ExpenseReconciliationStatus = 'unallocated' | 'partial' | 'allocated
 export type FringeRule = {
   id: string
   production_id: string
+  budget_revision_id: string | null
   name: string
   rate: number
   base_kind: 'budget' | 'actual'
@@ -295,6 +300,7 @@ export type FringeRuleScope = {
 export type ContingencyRule = {
   id: string
   production_id: string
+  budget_revision_id: string | null
   name: string
   rate: number
   base_kind: 'budget' | 'actual'
@@ -313,6 +319,7 @@ export type ContingencyRuleScope = {
 export type CostReportGroup = {
   id: string
   production_id: string
+  budget_revision_id: string | null
   code: string | null
   name: string
   sort_order: number
@@ -328,6 +335,7 @@ export type CostReportGroupAccount = {
 export type ProductionTotal = {
   id: string
   production_id: string
+  budget_revision_id: string | null
   name: string
   sort_order: number
 } & SoftDeletable

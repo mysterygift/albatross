@@ -1,5 +1,6 @@
 import { getDb, uuid } from '../client'
 import type { PettyCashFloat } from '../types'
+import { resolveBudgetRevisionId } from './budgetRevisions'
 
 const TABLE = 'floats'
 
@@ -7,6 +8,7 @@ function rowToFloat(r: Record<string, unknown>): PettyCashFloat {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    budget_revision_id: (r.budget_revision_id as string | null) ?? null,
     budget_item_id: r.budget_item_id as string,
     person_id: r.person_id as string,
     amount: Number(r.amount),
@@ -21,6 +23,7 @@ function rowToFloat(r: Record<string, unknown>): PettyCashFloat {
 
 export type CreateFloatInput = {
   production_id: string
+  revision_id?: string | null
   budget_item_id: string
   person_id: string
   amount: number
@@ -33,12 +36,17 @@ export async function createFloat(input: CreateFloatInput): Promise<void> {
   const db = await getDb()
   const id = uuid()
   const ts = Date.now()
+  const budgetRevisionId = await resolveBudgetRevisionId({
+    productionId: input.production_id,
+    revisionId: input.revision_id,
+  })
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, budget_item_id, person_id, amount, currency, issued_date, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    `INSERT INTO ${TABLE} (id, production_id, budget_revision_id, budget_item_id, person_id, amount, currency, issued_date, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       id,
       input.production_id,
+      budgetRevisionId,
       input.budget_item_id,
       input.person_id,
       input.amount,
@@ -51,11 +59,15 @@ export async function createFloat(input: CreateFloatInput): Promise<void> {
   )
 }
 
-export async function listFloatsByProduction(productionId: string): Promise<PettyCashFloat[]> {
+export async function listFloatsByProduction(
+  productionId: string,
+  revisionId?: string | null
+): Promise<PettyCashFloat[]> {
   const db = await getDb()
+  const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY issued_date DESC, updated_at DESC`,
-    [productionId]
+    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND budget_revision_id = $2 AND deleted_at IS NULL ORDER BY issued_date DESC, updated_at DESC`,
+    [productionId, budgetRevisionId]
   )
   return rows.map(rowToFloat)
 }

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import { completeAndArchiveProduction } from '@/lib/db/repositories/production'
 import { useCurrency } from '@/hooks/useCurrency'
 import { listBudgetItemsByProduction, listExpensesByProduction } from '@/lib/db/repositories/budget'
@@ -147,6 +148,8 @@ export function WrapProductionPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { currentProduction, currentProductionId, setCurrentProductionId } = useCurrentProduction()
+  const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
+  const revisionId = workingBudgetRevision?.id
   const { format } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -160,8 +163,8 @@ export function WrapProductionPage() {
     setExpandedSections((s) => ({ ...s, [key]: !s[key] }))
 
   const { data: budgetItems = [] } = useQuery({
-    queryKey: ['budget-items', currentProductionId],
-    queryFn: () => listBudgetItemsByProduction(currentProductionId!),
+    queryKey: ['budget-items', currentProductionId, revisionId],
+    queryFn: () => listBudgetItemsByProduction(currentProductionId!, { revisionId }),
     enabled: !!currentProductionId,
   })
   const { data: expenses = [] } = useQuery({
@@ -170,8 +173,8 @@ export function WrapProductionPage() {
     enabled: !!currentProductionId,
   })
   const { data: links = [] } = useQuery({
-    queryKey: ['budget-item-expense-links', currentProductionId],
-    queryFn: () => listBudgetItemExpenseLinksByProduction(currentProductionId!),
+    queryKey: ['budget-item-expense-links', currentProductionId, revisionId],
+    queryFn: () => listBudgetItemExpenseLinksByProduction(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
   const { data: accounts = [] } = useQuery({
@@ -206,14 +209,14 @@ export function WrapProductionPage() {
   })
 
   const { data: wrapFloats = [] } = useQuery({
-    queryKey: ['floats', currentProductionId],
-    queryFn: () => listFloatsByProduction(currentProductionId!),
+    queryKey: ['floats', currentProductionId, revisionId],
+    queryFn: () => listFloatsByProduction(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
 
   const { data: wrapFloatExpenseLinks = [] } = useQuery({
-    queryKey: ['float-expense-links-by-production', currentProductionId],
-    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId!),
+    queryKey: ['float-expense-links-by-production', currentProductionId, revisionId],
+    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId!, revisionId),
     enabled: !!currentProductionId,
   })
 

@@ -8,6 +8,7 @@ import type { BudgetAccount, BudgetItem, Person, PettyCashFloat } from '@/lib/db
 
 export type FloatsTabProps = {
   productionId: string
+  revisionId?: string
   productionCurrency: string
   format: (amount: number, currency: string) => { formatted: string }
   crew: Person[]
@@ -33,6 +34,7 @@ function budgetLineLabelForRow(
 
 export function FloatsTab({
   productionId,
+  revisionId,
   productionCurrency,
   format,
   crew,
@@ -84,6 +86,7 @@ export function FloatsTab({
         open={allocateOpen}
         onOpenChange={setAllocateOpen}
         productionId={productionId}
+        revisionId={revisionId}
         budgetItems={budgetItems}
         accounts={accounts}
         crew={crew}
@@ -96,6 +99,7 @@ export function FloatsTab({
           if (!open) setReconcileTarget(null)
         }}
         productionId={productionId}
+        revisionId={revisionId}
         pettyCashFloat={reconcileTarget}
         crewMemberName={reconcileTarget ? personName(reconcileTarget.person_id) : ''}
         format={format}

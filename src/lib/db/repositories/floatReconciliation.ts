@@ -7,6 +7,7 @@
 
 import { executeBatch, getDb, runInSerializedTransaction, uuid } from '../client'
 import type { FloatExpenseLink } from '../types'
+import { resolveBudgetRevisionId } from './budgetRevisions'
 
 const TABLE = 'float_expense_links'
 
@@ -19,6 +20,7 @@ function sumBudgetMatchedForExpense(expenseId: string, rows: Record<string, unkn
 function rowToLink(r: Record<string, unknown>): FloatExpenseLink {
   return {
     id: r.id as string,
+    budget_revision_id: (r.budget_revision_id as string | null) ?? null,
     float_id: r.float_id as string,
     expense_id: r.expense_id as string,
     matched_amount: Number(r.matched_amount) || 0,
@@ -37,30 +39,46 @@ export async function listFloatExpenseLinksByFloat(floatId: string): Promise<Flo
   return rows.map(rowToLink)
 }
 
-export async function listFloatExpenseLinksByExpense(expenseId: string): Promise<FloatExpenseLink[]> {
+export async function listFloatExpenseLinksByExpense(
+  expenseId: string,
+  revisionId?: string | null
+): Promise<FloatExpenseLink[]> {
   const db = await getDb()
-  const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE expense_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
-    [expenseId]
-  )
+  const rows =
+    revisionId != null
+      ? await db.select<Record<string, unknown>[]>(
+          `SELECT * FROM ${TABLE}
+           WHERE expense_id = $1 AND budget_revision_id = $2 AND deleted_at IS NULL
+           ORDER BY created_at`,
+          [expenseId, revisionId]
+        )
+      : await db.select<Record<string, unknown>[]>(
+          `SELECT * FROM ${TABLE} WHERE expense_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
+          [expenseId]
+        )
   return rows.map(rowToLink)
 }
 
 /** All active float–expense links for a production (via floats). */
-export async function listFloatExpenseLinksByProduction(productionId: string): Promise<FloatExpenseLink[]> {
+export async function listFloatExpenseLinksByProduction(
+  productionId: string,
+  revisionId?: string | null
+): Promise<FloatExpenseLink[]> {
   const db = await getDb()
+  const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT l.* FROM ${TABLE} l
      INNER JOIN floats f ON f.id = l.float_id AND f.deleted_at IS NULL
-     WHERE f.production_id = $1 AND l.deleted_at IS NULL
+     WHERE f.production_id = $1 AND l.budget_revision_id = $2 AND l.deleted_at IS NULL
      ORDER BY l.created_at`,
-    [productionId]
+    [productionId, budgetRevisionId]
   )
   return rows.map(rowToLink)
 }
 
 export type CreateFloatExpenseLinksParams = {
   productionId: string
+  revisionId?: string | null
   floatId: string
   allocations: Array<{ expenseId: string; matchedAmount: number }>
 }
@@ -74,7 +92,7 @@ export type CreateFloatExpenseLinksParams = {
 export async function createFloatExpenseLinks(
   params: CreateFloatExpenseLinksParams
 ): Promise<FloatExpenseLink[]> {
-  const { productionId, floatId, allocations } = params
+  const { productionId, revisionId, floatId, allocations } = params
 
   if (allocations.length === 0) {
     throw new Error('At least one allocation is required')
@@ -144,13 +162,14 @@ export async function createFloatExpenseLinks(
     }
 
     const ts = Date.now()
+    const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
     const statements: Array<{ sql: string; bindValues: unknown[] }> = [
       { sql: 'BEGIN TRANSACTION', bindValues: [] },
     ]
     for (const a of allocations) {
       statements.push({
-        sql: `INSERT INTO ${TABLE} (id, float_id, expense_id, matched_amount, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
-        bindValues: [uuid(), floatId, a.expenseId, a.matchedAmount, ts, ts],
+        sql: `INSERT INTO ${TABLE} (id, budget_revision_id, float_id, expense_id, matched_amount, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        bindValues: [uuid(), budgetRevisionId, floatId, a.expenseId, a.matchedAmount, ts, ts],
       })
     }
     statements.push({ sql: 'COMMIT', bindValues: [] })
