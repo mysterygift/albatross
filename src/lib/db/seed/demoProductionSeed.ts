@@ -41,7 +41,7 @@ import {
 import { selectPrimaryCallSheetContacts } from '@/lib/call-sheets/primaryContacts'
 import { buildCallSheetStripFromStripboard } from '@/lib/call-sheets/scheduleStripRow'
 import { persistShootDayShootingBlocId } from '@/lib/db/shootingBlocAssociation'
-import type { CameraMovement, ShotSize } from '../types'
+import type { CameraMovement, ShotSize, StripType } from '../types'
 import { CAMERA_MOVEMENT_VALUES, SHOT_SIZE_VALUES } from '../types'
 import {
   DEMO_EPISODIC_SLUG,
@@ -65,6 +65,7 @@ import {
   makeDemoSeedIdSourceFromIDS,
 } from './demoSeedContext'
 import { getLastSeededAt, getSeedVersion, setSeedMeta } from './seedMeta'
+import { getOrCreateLiveBudgetRevisionIdForProduction } from '../repositories/budgetRevisions'
 
 const ATTACHMENTS = 'attachments'
 
@@ -1310,6 +1311,8 @@ async function runDemoContentSeed(
       )
     }
   }
+
+  await getOrCreateLiveBudgetRevisionIdForProduction(productionId)
 }
 
 function parseCallSheetMealTimesFromJson(raw: string | null | undefined): Array<{ name: string; time: string }> {
@@ -1429,7 +1432,7 @@ async function buildCallSheetDataForSeed(
     const locName = locRec ? ((locRec.name as string) ?? null) : null
     let row = buildCallSheetStripFromStripboard(
       {
-        strip_type: s.strip_type as string,
+        strip_type: s.strip_type as StripType,
         scene_id: sceneId,
         shot_id: shotId,
         title: (s.title as string) ?? null,
@@ -1445,7 +1448,7 @@ async function buildCallSheetDataForSeed(
     if (isEpisodicProduction) {
       const ep = enrichCallSheetStripEpisodeLabel({
         strip: {
-          strip_type: s.strip_type as string,
+          strip_type: s.strip_type as StripType,
           scene_id: sceneId,
           shot_id: shotId,
         },

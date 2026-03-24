@@ -4,14 +4,26 @@
  * Seeds: chart of accounts (budget_accounts), budget_items (account_id), expenses (account_id),
  * and production totals (Above the Line / Below the Line). No legacy budget_categories.
  * Resolves account IDs by code for maintainability.
+ *
+ * Mint Heist and North Shore episodic demos must use distinct budget_account / production_totals primary
+ * keys so `resetDemoData` (Mint seed then episodic) does not hit UNIQUE collisions on chart ids.
  */
 
-const P = 'a1000000-0000-4000-8000-0000'
+import { EPISODIC_DEMO_IDS } from './constants'
+
+const MINT_BUDGET_NUMERIC_BASE = 'a1000000-0000-4000-8000-0000' as const
+const EPISODIC_BUDGET_NUMERIC_BASE = 'a2000000-0000-4000-8000-0000' as const
+
+function budgetNumericBaseForDemoProduction(productionId: string): string {
+  return productionId === EPISODIC_DEMO_IDS.production ? EPISODIC_BUDGET_NUMERIC_BASE : MINT_BUDGET_NUMERIC_BASE
+}
 
 /** Deterministic account id for demo production from account code (e.g. '1100', '2406'). */
-export function demoAccountId(code: string): string {
+export function demoAccountId(code: string, productionId?: string): string {
+  const base =
+    productionId === undefined ? MINT_BUDGET_NUMERIC_BASE : budgetNumericBaseForDemoProduction(productionId)
   const digits = String(code).replace(/\D/g, '').padStart(6, '0')
-  return `${P}${digits}ac0000`
+  return `${base}${digits}ac0000`
 }
 
 /**
@@ -314,13 +326,13 @@ export const DEMO_EXPENSES: {
 ]
 
 /** Deterministic id for demo production total (Above the Line / Below the Line). */
-function demoProductionTotalId(index: number): string {
-  return `${P}pt${String(index).padStart(2, '0')}00000000`
+function demoProductionTotalId(index: number, idBase: string): string {
+  return `${idBase}pt${String(index).padStart(2, '0')}00000000`
 }
 
 /** Deterministic id for production_total_accounts mapping row. */
-function demoProductionTotalMappingId(totalIndex: number, accountCode: string): string {
-  return `${P}ma${String(totalIndex).padStart(2, '0')}${String(accountCode).padStart(4, '0')}0000`
+function demoProductionTotalMappingId(totalIndex: number, accountCode: string, idBase: string): string {
+  return `${idBase}ma${String(totalIndex).padStart(2, '0')}${String(accountCode).padStart(4, '0')}0000`
 }
 
 function isHeaderCode(code: string): boolean {
@@ -427,9 +439,10 @@ export async function seedDemoBudget(
   const TABLE_TOTALS = 'production_totals'
   const TABLE_TOTAL_ACCOUNTS = 'production_total_accounts'
 
+  const idBase = budgetNumericBaseForDemoProduction(pid)
   const byCode = new Map<string, string>()
   for (const { code } of DEMO_CHART_OF_ACCOUNTS) {
-    const id = demoAccountId(code)
+    const id = demoAccountId(code, pid)
     byCode.set(code, id)
   }
 
@@ -442,7 +455,7 @@ export async function seedDemoBudget(
     // 1) Insert budget_accounts: headers first (parent null), then children (parent_account_id set). xx00 = non-postable.
     for (let i = 0; i < DEMO_CHART_OF_ACCOUNTS.length; i++) {
       const { code, name } = DEMO_CHART_OF_ACCOUNTS[i]!
-      const id = demoAccountId(code)
+      const id = demoAccountId(code, pid)
       const parentCodeVal = parentCode(code)
       const parentId = parentCodeVal ? byCode.get(parentCodeVal) ?? null : null
       const isPostable = !isHeaderCode(code)
@@ -499,8 +512,8 @@ export async function seedDemoBudget(
     })
 
     // 4) Production totals: Above the Line (headers 1100–1500), Below the Line (headers 2100–3400).
-    const total1Id = demoProductionTotalId(1)
-    const total2Id = demoProductionTotalId(2)
+    const total1Id = demoProductionTotalId(1, idBase)
+    const total2Id = demoProductionTotalId(2, idBase)
     statements.push({
       sql: `INSERT INTO ${TABLE_TOTALS} (id, production_id, name, sort_order, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6), ($7, $8, $9, $10, $11, $12)`,
       bindValues: [total1Id, pid, 'Above the Line', 0, ts, ts, total2Id, pid, 'Below the Line', 1, ts, ts],
@@ -510,7 +523,7 @@ export async function seedDemoBudget(
       if (accountId)
         statements.push({
           sql: `INSERT INTO ${TABLE_TOTAL_ACCOUNTS} (id, production_total_id, account_id) VALUES ($1, $2, $3)`,
-          bindValues: [demoProductionTotalMappingId(1, code), total1Id, accountId],
+          bindValues: [demoProductionTotalMappingId(1, code, idBase), total1Id, accountId],
         })
     }
     for (const code of DEMO_BTL_HEADER_CODES) {
@@ -518,7 +531,7 @@ export async function seedDemoBudget(
       if (accountId)
         statements.push({
           sql: `INSERT INTO ${TABLE_TOTAL_ACCOUNTS} (id, production_total_id, account_id) VALUES ($1, $2, $3)`,
-          bindValues: [demoProductionTotalMappingId(2, code), total2Id, accountId],
+          bindValues: [demoProductionTotalMappingId(2, code, idBase), total2Id, accountId],
         })
     }
 

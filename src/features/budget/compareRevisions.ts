@@ -6,13 +6,12 @@ import {
 } from '@/lib/budget/calculations'
 import { getFloatSummaryForProduction } from '@/lib/budget/floatSummary'
 import type { BudgetRevision } from '@/lib/db/repositories/budgetRevisions'
+import type { ContingencyRuleWithScopes, FringeRuleWithScopes } from '@/lib/db/repositories/budgetDerived'
 import type {
   BudgetAccount,
   BudgetItem,
-  ContingencyRuleWithScopes,
   Expense,
   FloatExpenseLink,
-  FringeRuleWithScopes,
   Person,
   PettyCashFloat,
 } from '@/lib/db/types'

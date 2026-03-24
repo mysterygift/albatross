@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -198,7 +197,7 @@ vi.mock('@/lib/db/repositories/budgetRevisions', () => ({
 
 vi.mock('@/lib/db/budgetRevisionService', () => ({
   createBlankBudgetRevision: vi.fn(async ({ productionId, name }: { productionId: string; name: string }) => {
-    const created = {
+    const created: (typeof mockState.revisions)[number] = {
       id: `rev-${mockState.revisions.length + 1}`,
       production_id: productionId,
       name,
@@ -223,7 +222,7 @@ vi.mock('@/lib/db/budgetRevisionService', () => ({
       sourceRevisionId: string
       newRevisionName: string
     }) => {
-      const created = {
+      const created: (typeof mockState.revisions)[number] = {
         id: `rev-${mockState.revisions.length + 1}`,
         production_id: productionId,
         name: newRevisionName,
@@ -242,7 +241,7 @@ vi.mock('@/lib/db/budgetRevisionService', () => ({
   duplicateLiveBudgetRevisionAsDraft: vi.fn(async ({ productionId }: { productionId: string }) => {
     const live = mockState.revisions.find((rev) => rev.production_id === productionId && rev.is_live)
     if (!live) throw new Error('No live budget revision found')
-    const created = {
+    const created: (typeof mockState.revisions)[number] = {
       id: `rev-${mockState.revisions.length + 1}`,
       production_id: productionId,
       name: `${live.name} Draft`,

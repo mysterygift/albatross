@@ -313,6 +313,11 @@ export function BudgetPage() {
     () => budgetRevisions.find((rev) => rev.is_live)?.id ?? null,
     [budgetRevisions]
   )
+  /** Prefer explicit working/URL revision; fall back to live so list queries pass a concrete revisionId (fast path in resolveBudgetRevisionId). */
+  const stableRevisionId = revisionId ?? liveRevisionId
+  /** When only the live id comes from the revisions list, wait for that query; explicit working revision can load budget data earlier. */
+  const revisionScopedQueriesReady =
+    !!currentProductionId && stableRevisionId != null && (revisionId != null || !budgetRevisionsLoading)
   const pendingLiveRevision = useMemo(
     () => budgetRevisions.find((rev) => rev.id === pendingLiveRevisionId) ?? null,
     [budgetRevisions, pendingLiveRevisionId]
@@ -613,12 +618,12 @@ export function BudgetPage() {
     if (!currentProductionId || backfillRanForProduction.current.has(currentProductionId)) return
     backfillRanForProduction.current.add(currentProductionId)
     backfillAccountIdsFromLegacyCategories(currentProductionId).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId, revisionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
-      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, revisionId] })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['risk-watch', currentProductionId] })
     })
-  }, [currentProductionId, queryClient, revisionId])
+  }, [currentProductionId, queryClient])
 
   const { data: categories = [] } = useQuery({
     queryKey: ['budget-categories', currentProductionId],
@@ -640,9 +645,10 @@ export function BudgetPage() {
   })
 
   const { data: items = [] } = useQuery({
-    queryKey: ['budget-items', currentProductionId, revisionId],
-    queryFn: () => listBudgetItemsByProduction(currentProductionId ?? '', { revisionId }),
-    enabled: !!currentProductionId,
+    queryKey: ['budget-items', currentProductionId, stableRevisionId],
+    queryFn: () =>
+      listBudgetItemsByProduction(currentProductionId ?? '', { revisionId: stableRevisionId! }),
+    enabled: revisionScopedQueriesReady,
   })
 
   const { data: expenses = [] } = useQuery({
@@ -659,9 +665,10 @@ export function BudgetPage() {
   })
 
   const { data: linksForExaminedExpense = [] } = useQuery({
-    queryKey: ['budget-item-expense-links-for-expense', examinedExpenseId, revisionId],
-    queryFn: () => listBudgetItemExpenseLinksForExpense(examinedExpenseId!, revisionId),
-    enabled: examinedExpenseId != null,
+    queryKey: ['budget-item-expense-links-for-expense', examinedExpenseId, stableRevisionId],
+    queryFn: () =>
+      listBudgetItemExpenseLinksForExpense(examinedExpenseId!, stableRevisionId ?? undefined),
+    enabled: examinedExpenseId != null && revisionScopedQueriesReady,
   })
 
   const { data: examinedLineItemWithDetails, isLoading: examinedLineItemLoading } = useQuery({
@@ -679,15 +686,15 @@ export function BudgetPage() {
   const crew = useMemo(() => people.filter((p) => p.is_cast === 0), [people])
 
   const { data: productionFloats = [] } = useQuery({
-    queryKey: ['floats', currentProductionId, revisionId],
-    queryFn: () => listFloatsByProduction(currentProductionId ?? '', revisionId),
-    enabled: !!currentProductionId,
+    queryKey: ['floats', currentProductionId, stableRevisionId],
+    queryFn: () => listFloatsByProduction(currentProductionId ?? '', stableRevisionId!),
+    enabled: revisionScopedQueriesReady,
   })
 
   const { data: productionFloatExpenseLinks = [] } = useQuery({
-    queryKey: ['float-expense-links-by-production', currentProductionId, revisionId],
-    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId ?? '', revisionId),
-    enabled: !!currentProductionId,
+    queryKey: ['float-expense-links-by-production', currentProductionId, stableRevisionId],
+    queryFn: () => listFloatExpenseLinksByProduction(currentProductionId ?? '', stableRevisionId!),
+    enabled: revisionScopedQueriesReady,
   })
 
   const floatProductionSummary = useMemo(
@@ -789,27 +796,27 @@ export function BudgetPage() {
   })
 
   const { data: fringeRules = [] } = useQuery({
-    queryKey: ['fringe-rules', currentProductionId, revisionId],
-    queryFn: () => listFringeRules(currentProductionId ?? '', revisionId),
-    enabled: !!currentProductionId,
+    queryKey: ['fringe-rules', currentProductionId, stableRevisionId],
+    queryFn: () => listFringeRules(currentProductionId ?? '', stableRevisionId!),
+    enabled: revisionScopedQueriesReady,
   })
 
   const { data: contingencyRules = [] } = useQuery({
-    queryKey: ['contingency-rules', currentProductionId, revisionId],
-    queryFn: () => listContingencyRules(currentProductionId ?? '', revisionId),
-    enabled: !!currentProductionId,
+    queryKey: ['contingency-rules', currentProductionId, stableRevisionId],
+    queryFn: () => listContingencyRules(currentProductionId ?? '', stableRevisionId!),
+    enabled: revisionScopedQueriesReady,
   })
 
   const { data: productionTotals = [] } = useQuery({
-    queryKey: ['production-totals', currentProductionId, revisionId],
-    queryFn: () => listProductionTotals(currentProductionId ?? '', revisionId),
-    enabled: !!currentProductionId,
+    queryKey: ['production-totals', currentProductionId, stableRevisionId],
+    queryFn: () => listProductionTotals(currentProductionId ?? '', stableRevisionId!),
+    enabled: revisionScopedQueriesReady,
   })
 
   const { data: costReportGroupsWithAccounts = [] } = useQuery({
-    queryKey: ['cost-report-groups-with-accounts', currentProductionId, revisionId],
-    queryFn: () => listCostReportGroupsWithAccountIds(currentProductionId ?? '', revisionId),
-    enabled: !!currentProductionId,
+    queryKey: ['cost-report-groups-with-accounts', currentProductionId, stableRevisionId],
+    queryFn: () => listCostReportGroupsWithAccountIds(currentProductionId ?? '', stableRevisionId!),
+    enabled: revisionScopedQueriesReady,
   })
 
   const createItemMutation = useMutation({

@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createSqlJsTauriAdapter } from '@/test/apf/sqlJsTauriAdapter'
+import { sqlJsQueryExec } from '@/test/apf/sqlJsQueryExec'
 
 let dbAdapter: ReturnType<typeof createSqlJsTauriAdapter>
 
@@ -41,7 +42,7 @@ vi.mock('@/lib/db/client', async (importOriginal) => {
   }
 })
 
-import { createProduction, getProductionById, updateProduction } from '@/lib/db/repositories/production'
+import { createProduction, updateProduction } from '@/lib/db/repositories/production'
 import { enableEpisodicProduction } from '@/lib/db/episodicProductionService'
 import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
 import {
@@ -89,7 +90,7 @@ describe('episodic production foundation', () => {
     const db = await makeDb()
     const p = await createProduction({ name: 'Film', notes: null })
     expect(p.is_episodic).toBe(false)
-    const rows = db.exec(`SELECT is_episodic FROM productions WHERE id = '${p.id}'`)
+    const rows = sqlJsQueryExec(db, `SELECT is_episodic FROM productions WHERE id = '${p.id}'`)
     expect(rows[0]?.values[0]?.[0]).toBe(0)
   })
 
@@ -104,7 +105,7 @@ describe('episodic production foundation', () => {
     expect(eps).toHaveLength(1)
     expect(eps[0]!.name).toBe('Pilot')
     expect(eps[0]!.sort_order).toBe(0)
-    const n = db.exec(`SELECT COUNT(*) FROM episodes WHERE production_id = '${p.id}' AND deleted_at IS NULL`)
+    const n = sqlJsQueryExec(db, `SELECT COUNT(*) FROM episodes WHERE production_id = '${p.id}' AND deleted_at IS NULL`)
     expect(n[0]?.values[0]?.[0]).toBe(1)
   })
 
@@ -195,9 +196,9 @@ describe('episodic production foundation', () => {
     const db = new SQL.Database()
     applyAllMigrations(db)
     exec(db, `INSERT INTO productions (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ('leg', 'L', 'l', 'GBP', NULL, 't', 't')`)
-    const r = db.exec(`SELECT is_episodic FROM productions WHERE id = 'leg'`)
+    const r = sqlJsQueryExec(db, `SELECT is_episodic FROM productions WHERE id = 'leg'`)
     expect(r[0]?.values[0]?.[0]).toBe(0)
-    const ne = db.exec(`SELECT COUNT(*) FROM episodes WHERE production_id = 'leg'`)
+    const ne = sqlJsQueryExec(db, `SELECT COUNT(*) FROM episodes WHERE production_id = 'leg'`)
     expect(ne[0]?.values[0]?.[0]).toBe(0)
   })
 
@@ -215,11 +216,11 @@ describe('episodic production foundation', () => {
     )
     exec(db, `INSERT INTO music_tracks (id, production_id, title, created_at, updated_at) VALUES ('mt1', 'np', 'T', 't', 't')`)
     exec(db, `INSERT INTO deliverables (id, production_id, name, created_at, updated_at) VALUES ('del1', 'np', 'D', 't', 't')`)
-    const sEp = db.exec(`SELECT episode_id FROM scenes WHERE id = 'sc1'`)
+    const sEp = sqlJsQueryExec(db, `SELECT episode_id FROM scenes WHERE id = 'sc1'`)
     expect(sEp[0]?.values[0]?.[0] ?? null).toBeNull()
-    const mEp = db.exec(`SELECT episode_id FROM music_tracks WHERE id = 'mt1'`)
+    const mEp = sqlJsQueryExec(db, `SELECT episode_id FROM music_tracks WHERE id = 'mt1'`)
     expect(mEp[0]?.values[0]?.[0] ?? null).toBeNull()
-    const dEp = db.exec(`SELECT episode_id FROM deliverables WHERE id = 'del1'`)
+    const dEp = sqlJsQueryExec(db, `SELECT episode_id FROM deliverables WHERE id = 'del1'`)
     expect(dEp[0]?.values[0]?.[0] ?? null).toBeNull()
   })
 })

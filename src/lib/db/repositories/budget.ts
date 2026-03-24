@@ -440,13 +440,18 @@ export async function backfillAccountIdsFromLegacyCategories(productionId: strin
 
   const run = (async () => {
     const categories = await listBudgetCategoriesByProduction(productionId)
-    const fallbacks = await ensureLegacyFallbackAccounts(productionId)
-    const categoryIdToAccountId = new Map<string, string>()
+    const categoryIdToFallbackKey = new Map<string, 'atl' | 'btl' | 'post' | 'other'>()
     for (const c of categories) {
       const key = CATEGORY_CODE_TO_FALLBACK[c.code as keyof typeof CATEGORY_CODE_TO_FALLBACK]
-      if (key) categoryIdToAccountId.set(c.id, fallbacks[key])
+      if (key) categoryIdToFallbackKey.set(c.id, key)
     }
-    if (categoryIdToAccountId.size === 0) return { updatedItems: 0, updatedExpenses: 0 }
+    if (categoryIdToFallbackKey.size === 0) return { updatedItems: 0, updatedExpenses: 0 }
+
+    const fallbacks = await ensureLegacyFallbackAccounts(productionId)
+    const categoryIdToAccountId = new Map<string, string>()
+    for (const [catId, fk] of categoryIdToFallbackKey) {
+      categoryIdToAccountId.set(catId, fallbacks[fk])
+    }
 
     const ts = now()
     const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN TRANSACTION', bindValues: [] }]

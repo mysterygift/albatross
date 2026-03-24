@@ -40,6 +40,8 @@ export function StripItem({
   onRemove,
   onSendToBoneyard,
   onDeleteStrip,
+  scheduledCallCountOnDay = 0,
+  scheduledWrapCountOnDay = 0,
   disabled,
   className,
   isEpisodic,
@@ -56,8 +58,11 @@ export function StripItem({
   onRemove?: (strip: StripboardStrip) => void
   /** Scheduled SHOT/SCENE strips only: send to Boneyard (amber skull). */
   onSendToBoneyard?: (strip: StripboardStrip) => void
-  /** Scheduled MOVE/CALL/LUNCH/WRAP/NOTE strips: delete (grey trash). */
+  /** Scheduled MOVE/CALL/LUNCH/WRAP/NOTE strips: delete (grey trash). CALL/WRAP only when counts allow (see stripboard parent). */
   onDeleteStrip?: (strip: StripboardStrip) => void
+  /** For this shoot day column: total SCHEDULED Call / Wrap strips (multi-unit). Used to allow Call/Wrap trash only when not the sole strip of that type on the day. */
+  scheduledCallCountOnDay?: number
+  scheduledWrapCountOnDay?: number
   disabled?: boolean
   className?: string
   /** When true, show episode label from scene (shots inherit via scene). */
@@ -155,6 +160,8 @@ export function StripItem({
       onRemove={onRemove}
       onSendToBoneyard={onSendToBoneyard}
       onDeleteStrip={onDeleteStrip}
+      scheduledCallCountOnDay={scheduledCallCountOnDay}
+      scheduledWrapCountOnDay={scheduledWrapCountOnDay}
       label={label}
       className={className}
     />
@@ -172,6 +179,8 @@ function SortableStripInner({
   onRemove,
   onSendToBoneyard,
   onDeleteStrip,
+  scheduledCallCountOnDay = 0,
+  scheduledWrapCountOnDay = 0,
   label,
   className,
 }: {
@@ -183,12 +192,23 @@ function SortableStripInner({
   onRemove?: (strip: StripboardStrip) => void
   onSendToBoneyard?: (strip: StripboardStrip) => void
   onDeleteStrip?: (strip: StripboardStrip) => void
+  scheduledCallCountOnDay?: number
+  scheduledWrapCountOnDay?: number
   label: React.ReactNode
   className?: string
 }) {
   const isShotOrScene = strip.strip_type === 'SHOT' || strip.strip_type === 'SCENE'
   const showBoneyard = isShotOrScene && onSendToBoneyard
-  const showDelete = DELETABLE_NON_SHOT_STRIP_TYPES.includes(strip.strip_type as (typeof DELETABLE_NON_SHOT_STRIP_TYPES)[number]) && onDeleteStrip
+  const isCallWrap = strip.strip_type === 'CALL' || strip.strip_type === 'WRAP'
+  const canDeleteThisCallWrap =
+    isCallWrap &&
+    onDeleteStrip &&
+    ((strip.strip_type === 'CALL' && scheduledCallCountOnDay >= 2) ||
+      (strip.strip_type === 'WRAP' && scheduledWrapCountOnDay >= 2))
+  const showDelete =
+    onDeleteStrip &&
+    (DELETABLE_NON_SHOT_STRIP_TYPES.includes(strip.strip_type as (typeof DELETABLE_NON_SHOT_STRIP_TYPES)[number]) ||
+      canDeleteThisCallWrap)
   const [localMinutes, setLocalMinutes] = useState<string>(
     strip.estimated_minutes != null ? String(strip.estimated_minutes) : ''
   )
@@ -219,7 +239,6 @@ function SortableStripInner({
     (strip.strip_type === 'SHOT' || strip.strip_type === 'SCENE') &&
     onUpdateEstimatedMinutes &&
     !disabled
-  const isCallWrap = strip.strip_type === 'CALL' || strip.strip_type === 'WRAP'
   const showCallWrapTimeEditor = isCallWrap && onUpdateCallWrapTime && !disabled
 
   const commitEstMin = () => {

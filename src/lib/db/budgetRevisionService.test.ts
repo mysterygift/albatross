@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createSqlJsTauriAdapter, tauriSqlAndBindsForSqlJs } from '@/test/apf/sqlJsTauriAdapter'
+import { sqlJsQueryExec } from '@/test/apf/sqlJsQueryExec'
 
 let dbAdapter: ReturnType<typeof createSqlJsTauriAdapter>
 let uuidImpl: () => string
@@ -82,9 +83,9 @@ describe('budget revision creation flows', () => {
     expect(created.is_live).toBe(false)
     expect(created.created_from_revision_id).toBeNull()
 
-    const items = db.exec(`SELECT COUNT(*) FROM budget_items WHERE budget_revision_id = '${created.id}'`)
-    const floats = db.exec(`SELECT COUNT(*) FROM floats WHERE budget_revision_id = '${created.id}'`)
-    const links = db.exec(`SELECT COUNT(*) FROM budget_item_expense_links WHERE budget_revision_id = '${created.id}'`)
+    const items = sqlJsQueryExec(db, `SELECT COUNT(*) FROM budget_items WHERE budget_revision_id = '${created.id}'`)
+    const floats = sqlJsQueryExec(db, `SELECT COUNT(*) FROM floats WHERE budget_revision_id = '${created.id}'`)
+    const links = sqlJsQueryExec(db, `SELECT COUNT(*) FROM budget_item_expense_links WHERE budget_revision_id = '${created.id}'`)
     expect(items[0]!.values[0]![0]).toBe(0)
     expect(floats[0]!.values[0]![0]).toBe(0)
     expect(links[0]!.values[0]![0]).toBe(0)
@@ -164,14 +165,16 @@ describe('budget revision creation flows', () => {
     expect(cloned.created_from_revision_id).toBe('r1')
     expect(cloned.is_live).toBe(false)
 
-    const clonedItem = db.exec(`SELECT id FROM budget_items WHERE budget_revision_id = '${cloned.id}'`)[0]!.values[0]![0] as string
-    const clonedFloat = db.exec(`SELECT id, budget_item_id FROM floats WHERE budget_revision_id = '${cloned.id}'`)[0]!
+    const clonedItem = sqlJsQueryExec(db, `SELECT id FROM budget_items WHERE budget_revision_id = '${cloned.id}'`)[0]!.values[0]![0] as string
+    const clonedFloat = sqlJsQueryExec(db, `SELECT id, budget_item_id FROM floats WHERE budget_revision_id = '${cloned.id}'`)[0]!
     const clonedFloatId = clonedFloat.values[0]![0] as string
     const clonedFloatBudgetItemId = clonedFloat.values[0]![1] as string
-    const clonedBudgetLinkBudgetItemId = db.exec(
+    const clonedBudgetLinkBudgetItemId = sqlJsQueryExec(
+      db,
       `SELECT budget_item_id FROM budget_item_expense_links WHERE budget_revision_id = '${cloned.id}'`
     )[0]!.values[0]![0] as string
-    const clonedFloatLinkFloatId = db.exec(
+    const clonedFloatLinkFloatId = sqlJsQueryExec(
+      db,
       `SELECT float_id FROM float_expense_links WHERE budget_revision_id = '${cloned.id}'`
     )[0]!.values[0]![0] as string
 
@@ -181,8 +184,8 @@ describe('budget revision creation flows', () => {
     expect(clonedBudgetLinkBudgetItemId).toBe(clonedItem)
     expect(clonedFloatLinkFloatId).toBe(clonedFloatId)
 
-    const sourceItemCount = db.exec(`SELECT COUNT(*) FROM budget_items WHERE budget_revision_id = 'r1'`)[0]!.values[0]![0]
-    const targetItemCount = db.exec(`SELECT COUNT(*) FROM budget_items WHERE budget_revision_id = '${cloned.id}'`)[0]!.values[0]![0]
+    const sourceItemCount = sqlJsQueryExec(db, `SELECT COUNT(*) FROM budget_items WHERE budget_revision_id = 'r1'`)[0]!.values[0]![0]
+    const targetItemCount = sqlJsQueryExec(db, `SELECT COUNT(*) FROM budget_items WHERE budget_revision_id = '${cloned.id}'`)[0]!.values[0]![0]
     expect(sourceItemCount).toBe(1)
     expect(targetItemCount).toBe(1)
   })
@@ -236,7 +239,7 @@ describe('budget revision creation flows', () => {
       })
     ).rejects.toThrow()
 
-    const failedRevision = db.exec(`SELECT COUNT(*) FROM budget_revisions WHERE name = 'Will fail'`)[0]!.values[0]![0]
+    const failedRevision = sqlJsQueryExec(db, `SELECT COUNT(*) FROM budget_revisions WHERE name = 'Will fail'`)[0]!.values[0]![0]
     expect(failedRevision).toBe(0)
   })
 
@@ -259,7 +262,7 @@ describe('budget revision creation flows', () => {
     expect(duplicated.created_from_revision_id).toBe('r-live')
     expect(duplicated.name).toBe('Current budget Draft 2')
 
-    const sourceStillLive = db.exec(`SELECT is_live FROM budget_revisions WHERE id = 'r-live'`)[0]!.values[0]![0]
+    const sourceStillLive = sqlJsQueryExec(db, `SELECT is_live FROM budget_revisions WHERE id = 'r-live'`)[0]!.values[0]![0]
     expect(sourceStillLive).toBe(1)
   })
 

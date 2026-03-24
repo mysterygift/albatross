@@ -45,7 +45,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
@@ -63,13 +63,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import type { Production } from '@/lib/db/types'
-import { DEMO_EPISODIC_SLUG, DEMO_SLUG } from '@/lib/db/seed/constants'
 import { useCurrentProduction } from './context'
-
-function isReservedDemoProductionSlug(slug: string): boolean {
-  return slug === DEMO_SLUG || slug === DEMO_EPISODIC_SLUG
-}
-import { Controller } from 'react-hook-form'
 import { useApfActions } from '@/features/productions/useApfActions'
 
 const templateEnum = z.enum(['blank', 'demo', 'default'])
@@ -407,16 +401,14 @@ export function ProductionsPage() {
                 <Archive className="size-4" />
               </Button>
             )}
-            {!isReservedDemoProductionSlug(row.original.slug) && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setProductionToHardDelete(row.original)}
-                title="Delete permanently"
-              >
-                <Trash2 className="size-4 text-destructive" />
-              </Button>
-            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setProductionToHardDelete(row.original)}
+              title="Delete permanently"
+            >
+              <Trash2 className="size-4 text-destructive" />
+            </Button>
           </div>
         )
       },

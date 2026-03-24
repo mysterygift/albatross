@@ -534,18 +534,54 @@ export async function updateStripEstimatedMinutes(stripId: string, estimatedMinu
 
 /**
  * Soft-delete a single strip by id. Only affects one row.
- * Use for: moving a strip from the board to Boneyard (permanent discard) only.
- * For moving to Unscheduled, use moveStripToUnscheduled(stripId) instead.
+ * Stripboard trash and Boneyard permanent delete both use this.
+ * CALL/WRAP scheduled on a shoot day: allowed only if another SCHEDULED strip of the same type remains on that day; updates shoot_days via sync when applicable.
  */
 export async function deleteStrip(stripId: string): Promise<void> {
   const db = await getDb()
   const ts = now()
   const existing = await getStripByIdRaw(db, stripId)
   if (!existing) return
-  const isCallWrap = CALL_WRAP_TYPES.includes(existing.strip_type as StripType)
-  if (isCallWrap) {
-    throw new Error('CALL/WRAP strips cannot be deleted.')
+  const stripType = existing.strip_type as StripType
+  const isCallWrap = CALL_WRAP_TYPES.includes(stripType)
+  const status = (existing.strip_status as StripStatus) ?? 'SCHEDULED'
+  const shootDayId = (existing.shoot_day_id as string | null) ?? null
+
+  if (isCallWrap && status === 'SCHEDULED' && shootDayId) {
+    const countRows = await db.select<Record<string, unknown>[]>(
+      `SELECT COUNT(*) AS c FROM ${TABLE}
+       WHERE shoot_day_id = $1
+         AND strip_type = $2
+         AND strip_status = 'SCHEDULED'
+         AND deleted_at IS NULL`,
+      [shootDayId, stripType]
+    )
+    const count = Number(countRows[0]?.c ?? 0)
+    if (count <= 1) {
+      throw new Error(`Cannot delete the only ${stripType} strip for this shoot day.`)
+    }
+    await runInSerializedTransaction(async () => {
+      const conn = await getDb()
+      const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+        { sql: 'BEGIN', bindValues: [] },
+        {
+          sql: `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+          bindValues: [ts, ts, stripId],
+        },
+        outboxStatementForRow({
+          entity: TABLE,
+          entityId: stripId,
+          operation: 'delete',
+          payloadJson: null,
+        }),
+      ]
+      await syncShootDayCallWrapForMainUnit(conn, shootDayId, ts, statements)
+      statements.push({ sql: 'COMMIT', bindValues: [] })
+      await executeBatch(conn, statements)
+    })
+    return
   }
+
   const result = await db.execute(
     `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
     [ts, ts, stripId]

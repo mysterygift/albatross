@@ -30,7 +30,7 @@ describe('runLiveBudgetRevisionSwitch', () => {
       }
     )
     expect(result.ok).toBe(false)
-    expect(result.isNoop).toBe(true)
+    if (!result.ok) expect(result.isNoop).toBe(true)
   })
 
   it('requires active production', async () => {
@@ -62,7 +62,7 @@ describe('runLiveBudgetRevisionSwitch', () => {
       }
     )
     expect(result.ok).toBe(false)
-    expect(result.isNoop).toBe(true)
+    if (!result.ok) expect(result.isNoop).toBe(true)
     expect(setLive).not.toHaveBeenCalled()
   })
 

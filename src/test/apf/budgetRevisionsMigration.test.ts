@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { sqlJsQueryExec } from '@/test/apf/sqlJsQueryExec'
+
 function applyMigrationsUpTo(db: import('sql.js').Database, maxFileNameInclusive: string): void {
   const dir = join(process.cwd(), 'src-tauri/migrations')
   const files = readdirSync(dir)
@@ -48,7 +50,7 @@ describe('0054_budget_revisions migration', () => {
 
     db.exec(migrationSql('0054_budget_revisions.sql'))
 
-    const revisionRows = db.exec(`SELECT id, production_id, name, is_live FROM budget_revisions WHERE production_id = 'p1'`)
+    const revisionRows = sqlJsQueryExec(db, `SELECT id, production_id, name, is_live FROM budget_revisions WHERE production_id = 'p1'`)
     expect(revisionRows[0]?.values.length).toBe(1)
     expect(revisionRows[0]?.values[0]?.[2]).toBe('Current budget')
     expect(revisionRows[0]?.values[0]?.[3]).toBe(1)
@@ -65,7 +67,7 @@ describe('0054_budget_revisions migration', () => {
       ['contingency_rules', 'cr1'],
     ] as const
     for (const [table, id] of checks) {
-      const row = db.exec(`SELECT budget_revision_id FROM ${table} WHERE id = '${id}'`)
+      const row = sqlJsQueryExec(db, `SELECT budget_revision_id FROM ${table} WHERE id = '${id}'`)
       expect(String(row[0]!.values[0]![0])).toBe(revisionId)
     }
   })
@@ -104,8 +106,8 @@ describe('0054_budget_revisions migration', () => {
 
     db.exec(migrationSql('0054_budget_revisions.sql'))
 
-    const accountCount = db.exec(`SELECT COUNT(*) FROM budget_accounts WHERE production_id = 'p1'`)
-    const expenseCount = db.exec(`SELECT COUNT(*) FROM expenses WHERE production_id = 'p1'`)
+    const accountCount = sqlJsQueryExec(db, `SELECT COUNT(*) FROM budget_accounts WHERE production_id = 'p1'`)
+    const expenseCount = sqlJsQueryExec(db, `SELECT COUNT(*) FROM expenses WHERE production_id = 'p1'`)
     expect(accountCount[0]?.values[0]?.[0]).toBe(1)
     expect(expenseCount[0]?.values[0]?.[0]).toBe(1)
   })
@@ -132,12 +134,12 @@ describe('0054_budget_revisions migration', () => {
       VALUES ('fl1', 'r1', 'f1', 'e1', 5, 1, 1, NULL);
     `)
 
-    const orphanLinks = db.exec(`
+    const orphanLinks = sqlJsQueryExec(db, `
       SELECT COUNT(*) FROM float_expense_links l
       LEFT JOIN budget_revisions r ON r.id = l.budget_revision_id
       WHERE l.deleted_at IS NULL AND r.id IS NULL
     `)
-    const orphanItems = db.exec(`
+    const orphanItems = sqlJsQueryExec(db, `
       SELECT COUNT(*) FROM budget_items i
       LEFT JOIN budget_revisions r ON r.id = i.budget_revision_id
       WHERE i.deleted_at IS NULL AND r.id IS NULL

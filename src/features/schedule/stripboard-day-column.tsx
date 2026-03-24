@@ -60,6 +60,10 @@ export function StripboardDayColumn({
   shootingBlocLabel?: string
   episodeById?: Map<string, Episode>
 }) {
+  const allStripsOnDay = stripsByUnit.flatMap(({ strips }) => strips)
+  const scheduledCallCountOnDay = allStripsOnDay.filter((s) => s.strip_type === 'CALL').length
+  const scheduledWrapCountOnDay = allStripsOnDay.filter((s) => s.strip_type === 'WRAP').length
+
   return (
     <Card className="w-64 shrink-0 flex flex-col bg-card border-border overflow-hidden">
       <CardHeader className="py-3 px-4">
@@ -98,6 +102,8 @@ export function StripboardDayColumn({
             pageEighthsTarget={pageEighthsTarget}
             onSendToBoneyard={onSendToBoneyard}
             onDeleteStrip={onDeleteStrip}
+            scheduledCallCountOnDay={scheduledCallCountOnDay}
+            scheduledWrapCountOnDay={scheduledWrapCountOnDay}
             onToggleLock={onToggleLock}
             columnFilter={columnFilters?.[columnId(day.id, shootDayUnit.id)] ?? DEFAULT_COLUMN_FILTER}
             onColumnFilterChange={onColumnFilterChange ? (key, value) => onColumnFilterChange(columnId(day.id, shootDayUnit.id), key, value) : undefined}
@@ -130,6 +136,8 @@ function UnitColumn({
   pageEighthsTarget,
   onSendToBoneyard,
   onDeleteStrip,
+  scheduledCallCountOnDay,
+  scheduledWrapCountOnDay,
   onToggleLock,
   columnFilter,
   onColumnFilterChange,
@@ -150,6 +158,8 @@ function UnitColumn({
   pageEighthsTarget: number
   onSendToBoneyard: (strip: StripboardStrip) => void
   onDeleteStrip?: (strip: StripboardStrip) => void
+  scheduledCallCountOnDay: number
+  scheduledWrapCountOnDay: number
   onToggleLock?: (shootDayUnitId: string, isLocked: boolean) => void
   columnFilter: ColumnFilter
   onColumnFilterChange?: (key: keyof ColumnFilter, value: boolean) => void
@@ -328,6 +338,8 @@ function UnitColumn({
                 onUpdateCallWrapTime={onUpdateCallWrapTime}
                 onSendToBoneyard={onSendToBoneyard}
                 onDeleteStrip={onDeleteStrip}
+                scheduledCallCountOnDay={scheduledCallCountOnDay}
+                scheduledWrapCountOnDay={scheduledWrapCountOnDay}
                 disabled={isLocked}
                 className={filtersActive && strip.strip_type !== 'SHOT' ? 'opacity-60' : undefined}
                 isEpisodic={isEpisodic}

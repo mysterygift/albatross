@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event'
 
 import { ProductionsPage } from '@/features/productions/page'
 import { SettingsPage } from '@/features/settings/page'
+import type { Production } from '@/lib/db/types'
 
 const createFromTemplate = vi.hoisted(() => vi.fn())
 const listProductionsFn = vi.hoisted(() => vi.fn())
@@ -31,11 +32,7 @@ vi.mock('@/lib/db/episodicProductionService', () => ({
 
 const prodCtx = vi.hoisted(() => ({
   currentProductionId: null as string | null,
-  currentProduction: null as {
-    id: string
-    name: string
-    is_episodic: boolean
-  } | null,
+  currentProduction: null as Production | null,
   refetchProductions: vi.fn(),
   setCurrentProductionId: vi.fn(),
 }))

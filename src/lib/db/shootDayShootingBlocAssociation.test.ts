@@ -131,7 +131,7 @@ describe('shoot day ↔ shooting bloc association', () => {
 
   it('moveShootDayToDate updates shooting_bloc_id', async () => {
     await makeDb()
-    const { p, bloc } = await episodicProdWithBloc()
+    const { p } = await episodicProdWithBloc()
     const { shootDay } = await createShootDayWithDefaultMainUnit({
       productionId: p.id,
       shootDate: '2025-06-02',
