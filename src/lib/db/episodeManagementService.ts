@@ -3,12 +3,11 @@ import { getProductionById } from './repositories/production'
 import {
   archiveEpisodeForProduction,
   countActiveEpisodesByProduction,
-  countActiveReferencesToEpisode,
   createEpisode,
   getActiveEpisodeByIdForProduction,
   getEpisodeByIdForProductionIncludeArchived,
   getMaxActiveEpisodeSortOrder,
-  hardDeleteArchivedEpisodeForProduction,
+  deleteEpisodeAndClearReferencesForProduction,
   listEpisodesByProduction,
   listEpisodesForProductionManagement,
   reorderActiveEpisodes,
@@ -93,20 +92,19 @@ export async function getEpisodeHardDeleteEligibility(
   const ep = await getEpisodeByIdForProductionIncludeArchived(productionId, episodeId)
   if (!ep) return { allowed: false, reason: 'Episode not found' }
   if (ep.deleted_at == null) {
-    return { allowed: false, reason: 'Archive the episode before you can delete it permanently.' }
-  }
-  const refs = await countActiveReferencesToEpisode(episodeId)
-  if (refs.scenes > 0 || refs.musicTracks > 0 || refs.deliverables > 0) {
-    const parts: string[] = []
-    if (refs.scenes > 0) parts.push(`${refs.scenes} scene(s)`)
-    if (refs.musicTracks > 0) parts.push(`${refs.musicTracks} music track(s)`)
-    if (refs.deliverables > 0) parts.push(`${refs.deliverables} deliverable(s)`)
-    return { allowed: false, reason: `Still referenced by ${parts.join(', ')}.` }
+    const n = await countActiveEpisodesByProduction(productionId)
+    if (n <= 1) return { allowed: false, reason: 'Cannot delete the last active episode.' }
+    return { allowed: true }
   }
   return { allowed: true }
 }
 
-export async function hardDeleteArchivedEpisode(productionId: string, episodeId: string): Promise<void> {
+/** Permanently delete an episode; clears scene / music / deliverable `episode_id` pointers first. */
+export async function deleteEpisodeClearingReferences(productionId: string, episodeId: string): Promise<void> {
   await requireEpisodicProduction(productionId)
-  await hardDeleteArchivedEpisodeForProduction(productionId, episodeId)
+  await deleteEpisodeAndClearReferencesForProduction(productionId, episodeId)
+}
+
+export async function hardDeleteArchivedEpisode(productionId: string, episodeId: string): Promise<void> {
+  await deleteEpisodeClearingReferences(productionId, episodeId)
 }

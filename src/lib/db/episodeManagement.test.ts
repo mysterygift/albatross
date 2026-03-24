@@ -55,7 +55,7 @@ import {
   renameEpisode,
   reorderEpisodes,
 } from '@/lib/db/episodeManagementService'
-import { createScene } from '@/lib/db/repositories/schedule'
+import { createScene, getSceneById } from '@/lib/db/repositories/schedule'
 
 function applyAllMigrations(db: Database): void {
   const dir = join(process.cwd(), 'src-tauri/migrations')
@@ -178,7 +178,7 @@ describe('episode management service', () => {
     expect(all.some((e) => e.id === b.id)).toBe(false)
   })
 
-  it('hardDeleteArchivedEpisode fails when scenes still reference the episode', async () => {
+  it('hardDeleteArchivedEpisode clears scene episode_id then removes episode', async () => {
     await makeDb()
     const p = await createProduction(
       { name: 'S', notes: null },
@@ -187,17 +187,21 @@ describe('episode management service', () => {
     await appendEpisode(p.id, 'B')
     const list = await listEpisodesByProduction(p.id)
     const b = list.find((e) => e.name === 'B')!
-    await createScene({
+    const scene = await createScene({
       production_id: p.id,
       scene_number: '1',
       heading: null,
       episode_id: b.id,
     })
     await archiveEpisode(p.id, b.id)
-    await expect(hardDeleteArchivedEpisode(p.id, b.id)).rejects.toThrow(/scene/)
+    await hardDeleteArchivedEpisode(p.id, b.id)
+    const after = await getSceneById(scene.id)
+    expect(after?.episode_id).toBeNull()
+    const all = await listEpisodesForProductionManagement(p.id)
+    expect(all.some((e) => e.id === b.id)).toBe(false)
   })
 
-  it('getEpisodeHardDeleteEligibility rejects active episodes', async () => {
+  it('getEpisodeHardDeleteEligibility rejects delete when only one active episode', async () => {
     await makeDb()
     const p = await createProduction(
       { name: 'S', notes: null },
@@ -206,6 +210,19 @@ describe('episode management service', () => {
     const [e] = await listEpisodesByProduction(p.id)
     const el = await getEpisodeHardDeleteEligibility(p.id, e!.id)
     expect(el.allowed).toBe(false)
-    if (!el.allowed) expect(el.reason).toMatch(/Archive/)
+    if (!el.allowed) expect(el.reason).toMatch(/last active/)
+  })
+
+  it('getEpisodeHardDeleteEligibility allows delete for active episode when another active exists', async () => {
+    await makeDb()
+    const p = await createProduction(
+      { name: 'S', notes: null },
+      { skipBudgetSeed: true, episodicInitialEpisodeName: 'A' }
+    )
+    await appendEpisode(p.id, 'B')
+    const list = await listEpisodesByProduction(p.id)
+    const a = list.find((e) => e.name === 'A')!
+    const el = await getEpisodeHardDeleteEligibility(p.id, a.id)
+    expect(el).toEqual({ allowed: true })
   })
 })

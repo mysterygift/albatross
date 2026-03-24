@@ -16,6 +16,7 @@ const episodeSvc = vi.hoisted(() => ({
   renameEpisode: vi.fn(),
   reorderEpisodes: vi.fn(),
   archiveEpisode: vi.fn(),
+  deleteEpisodeClearingReferences: vi.fn(),
 }))
 
 vi.mock('@/lib/db/episodeManagementService', () => ({
@@ -24,6 +25,7 @@ vi.mock('@/lib/db/episodeManagementService', () => ({
   renameEpisode: episodeSvc.renameEpisode,
   reorderEpisodes: episodeSvc.reorderEpisodes,
   archiveEpisode: episodeSvc.archiveEpisode,
+  deleteEpisodeClearingReferences: episodeSvc.deleteEpisodeClearingReferences,
 }))
 
 const settingsVisibility = vi.hoisted(() => ({
@@ -163,6 +165,7 @@ describe('EpisodesSettingsSection', () => {
     episodeSvc.renameEpisode.mockImplementation(async () => baseEpisode({ id: 'a', name: 'Renamed', sort_order: 0 }))
     episodeSvc.reorderEpisodes.mockResolvedValue(undefined)
     episodeSvc.archiveEpisode.mockResolvedValue(undefined)
+    episodeSvc.deleteEpisodeClearingReferences.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -236,8 +239,7 @@ describe('EpisodesSettingsSection', () => {
     expect(archiveBtn.disabled).toBe(true)
   })
 
-  it('archive calls service when confirmed', async () => {
-    vi.stubGlobal('confirm', () => true)
+  it('archive calls service when confirmed in dialog', async () => {
     episodeSvc.loadEpisodesForSettings.mockResolvedValue([
       baseEpisode({ id: 'a', name: 'A', sort_order: 0 }),
       baseEpisode({ id: 'b', name: 'B', sort_order: 1 }),
@@ -247,8 +249,46 @@ describe('EpisodesSettingsSection', () => {
     await waitFor(() => screen.getAllByLabelText('Archive'))
     const archiveButtons = screen.getAllByLabelText('Archive')
     await user.click(archiveButtons[0]!)
+    await waitFor(() => expect(screen.getByLabelText('Confirm archive')).toBeTruthy())
+    await user.click(screen.getByLabelText('Confirm archive'))
     await waitFor(() => expect(episodeSvc.archiveEpisode).toHaveBeenCalledWith('prod-1', 'a'))
-    vi.unstubAllGlobals()
+  })
+
+  it('disables delete episode when only one active episode', async () => {
+    episodeSvc.loadEpisodesForSettings.mockResolvedValue([baseEpisode({ id: 'solo', name: 'Only', sort_order: 0 })])
+    render(wrap(<EpisodesSettingsSection productionId="prod-1" />))
+    await waitFor(() => expect(screen.getByText('Only')).toBeTruthy())
+    const deleteBtn = screen.getByLabelText('Delete episode') as HTMLButtonElement
+    expect(deleteBtn.disabled).toBe(true)
+  })
+
+  it('delete episode calls service when confirmed in dialog', async () => {
+    episodeSvc.loadEpisodesForSettings.mockResolvedValue([
+      baseEpisode({ id: 'a', name: 'A', sort_order: 0 }),
+      baseEpisode({ id: 'b', name: 'B', sort_order: 1 }),
+    ])
+    const user = userEvent.setup()
+    render(wrap(<EpisodesSettingsSection productionId="prod-1" />))
+    await waitFor(() => screen.getAllByLabelText('Delete episode'))
+    const deleteButtons = screen.getAllByLabelText('Delete episode')
+    await user.click(deleteButtons[0]!)
+    await waitFor(() => expect(screen.getByLabelText('Confirm delete episode')).toBeTruthy())
+    await user.click(screen.getByLabelText('Confirm delete episode'))
+    await waitFor(() =>
+      expect(episodeSvc.deleteEpisodeClearingReferences).toHaveBeenCalledWith('prod-1', 'a')
+    )
+  })
+
+  it('delete archived episode calls service when confirmed in dialog', async () => {
+    const user = userEvent.setup()
+    render(wrap(<EpisodesSettingsSection productionId="prod-1" />))
+    await waitFor(() => expect(screen.getByLabelText('Delete archived episode')).toBeTruthy())
+    await user.click(screen.getByLabelText('Delete archived episode'))
+    await waitFor(() => expect(screen.getByLabelText('Confirm delete episode')).toBeTruthy())
+    await user.click(screen.getByLabelText('Confirm delete episode'))
+    await waitFor(() =>
+      expect(episodeSvc.deleteEpisodeClearingReferences).toHaveBeenCalledWith('prod-1', 'b')
+    )
   })
 })
 

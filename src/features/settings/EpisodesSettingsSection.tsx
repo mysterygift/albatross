@@ -1,10 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import {
   appendEpisode,
   archiveEpisode,
-  getEpisodeHardDeleteEligibility,
-  hardDeleteArchivedEpisode,
+  deleteEpisodeClearingReferences,
   loadEpisodesForSettings,
   renameEpisode,
   reorderEpisodes,
@@ -14,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -32,6 +32,16 @@ import { Archive, ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from 'lucide-re
 
 type Props = { productionId: string }
 
+type ConfirmAction =
+  | null
+  | { type: 'archive'; episodeId: string; episodeName: string }
+  | {
+      type: 'delete'
+      episodeId: string
+      episodeName: string
+      isArchived: boolean
+    }
+
 export function EpisodesSettingsSection({ productionId }: Props) {
   const queryClient = useQueryClient()
   const qk = ['episodes-management', productionId] as const
@@ -48,6 +58,9 @@ export function EpisodesSettingsSection({ productionId }: Props) {
   const [editEpisode, setEditEpisode] = useState<Episode | null>(null)
   const [editName, setEditName] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
+
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
 
   const appendMutation = useMutation({
     mutationFn: (name: string) => appendEpisode(productionId, name),
@@ -82,42 +95,29 @@ export function EpisodesSettingsSection({ productionId }: Props) {
 
   const archiveMutation = useMutation({
     mutationFn: (id: string) => archiveEpisode(productionId, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk }),
-    onError: (err) => {
-      window.alert(err instanceof Error ? err.message : 'Could not archive episode')
-    },
-  })
-
-  const archivedIds = useMemo(
-    () => episodes.filter((e) => e.deleted_at != null).map((e) => e.id),
-    [episodes]
-  )
-  const archivedIdsKey = archivedIds.slice().sort().join(',')
-
-  const { data: hardDeleteEligibilityById = {} } = useQuery({
-    queryKey: ['episode-hard-delete-eligibility', productionId, archivedIdsKey],
-    queryFn: async () => {
-      const entries = await Promise.all(
-        archivedIds.map(async (id) => {
-          const el = await getEpisodeHardDeleteEligibility(productionId, id)
-          return [id, el] as const
-        })
-      )
-      return Object.fromEntries(entries)
-    },
-    enabled: archivedIds.length > 0,
-  })
-
-  const hardDeleteMutation = useMutation({
-    mutationFn: (id: string) => hardDeleteArchivedEpisode(productionId, id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk })
-      queryClient.invalidateQueries({ queryKey: ['episode-hard-delete-eligibility', productionId] })
-      queryClient.invalidateQueries({ queryKey: ['episodes', productionId] })
-      queryClient.invalidateQueries({ queryKey: ['episodes-management', productionId] })
+      setConfirmAction(null)
     },
     onError: (err) => {
-      window.alert(err instanceof Error ? err.message : 'Could not delete episode')
+      setConfirmError(err instanceof Error ? err.message : 'Could not archive episode')
+    },
+  })
+
+  const deleteEpisodeMutation = useMutation({
+    mutationFn: (id: string) => deleteEpisodeClearingReferences(productionId, id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk })
+      void queryClient.invalidateQueries({ queryKey: ['episodes', productionId] })
+      void queryClient.invalidateQueries({ queryKey: ['episodes-management', productionId] })
+      void queryClient.invalidateQueries({ queryKey: ['scenes', productionId] })
+      void queryClient.invalidateQueries({ queryKey: ['stripboard', productionId] })
+      void queryClient.invalidateQueries({ queryKey: ['music-tracks', productionId] })
+      void queryClient.invalidateQueries({ queryKey: ['deliverables', productionId] })
+      setConfirmAction(null)
+    },
+    onError: (err) => {
+      setConfirmError(err instanceof Error ? err.message : 'Could not delete episode')
     },
   })
 
@@ -167,31 +167,40 @@ export function EpisodesSettingsSection({ productionId }: Props) {
     renameMutation.mutate({ id: editEpisode.id, name: trimmed })
   }
 
-  const confirmArchive = (ep: Episode) => {
-    if (
-      !window.confirm(
-        `Archive "${ep.name}"? Archived episodes stay on file but won’t appear in active lists.`
-      )
-    ) {
-      return
-    }
-    archiveMutation.mutate(ep.id)
+  const openArchiveConfirm = (ep: Episode) => {
+    setConfirmError(null)
+    setConfirmAction({ type: 'archive', episodeId: ep.id, episodeName: ep.name })
   }
 
-  const confirmHardDelete = (ep: Episode) => {
-    const el = hardDeleteEligibilityById[ep.id]
-    if (el && !el.allowed) {
-      window.alert(el.reason)
-      return
-    }
-    if (
-      !window.confirm(
-        `Permanently delete "${ep.name}"? This cannot be undone. Only use when the episode has no scenes, music tracks, or deliverables.`
-      )
-    ) {
-      return
-    }
-    hardDeleteMutation.mutate(ep.id)
+  const openDeleteConfirm = (ep: Episode, isArchived: boolean) => {
+    if (!isArchived && activeInOrder.length <= 1) return
+    setConfirmError(null)
+    setConfirmAction({
+      type: 'delete',
+      episodeId: ep.id,
+      episodeName: ep.name,
+      isArchived,
+    })
+  }
+
+  const confirmPending = archiveMutation.isPending || deleteEpisodeMutation.isPending
+
+  const closeConfirm = () => {
+    if (confirmPending) return
+    setConfirmAction(null)
+    setConfirmError(null)
+  }
+
+  const submitArchiveConfirm = () => {
+    if (confirmAction?.type !== 'archive') return
+    setConfirmError(null)
+    archiveMutation.mutate(confirmAction.episodeId)
+  }
+
+  const submitDeleteConfirm = () => {
+    if (confirmAction?.type !== 'delete') return
+    setConfirmError(null)
+    deleteEpisodeMutation.mutate(confirmAction.episodeId)
   }
 
   return (
@@ -257,30 +266,18 @@ export function EpisodesSettingsSection({ productionId }: Props) {
                       <TableCell className="text-right">
                         {isArchived && (
                           <div className="flex justify-end gap-0.5">
-                            {(() => {
-                              const el = hardDeleteEligibilityById[ep.id]
-                              const allowed = el?.allowed === true
-                              const title =
-                                el && !el.allowed
-                                  ? el.reason
-                                  : allowed
-                                    ? 'Delete this archived episode permanently'
-                                    : 'Checking whether delete is allowed…'
-                              return (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-destructive hover:text-destructive"
-                                  disabled={hardDeleteMutation.isPending || (el != null && !allowed)}
-                                  onClick={() => confirmHardDelete(ep)}
-                                  aria-label="Delete permanently"
-                                  title={title}
-                                >
-                                  <Trash2 className="size-4" />
-                                </Button>
-                              )
-                            })()}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              disabled={deleteEpisodeMutation.isPending}
+                              onClick={() => openDeleteConfirm(ep, true)}
+                              aria-label="Delete archived episode"
+                              title="Delete this archived episode permanently"
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
                           </div>
                         )}
                         {!isArchived && (
@@ -328,7 +325,7 @@ export function EpisodesSettingsSection({ productionId }: Props) {
                               disabled={
                                 archiveMutation.isPending || activeInOrder.length <= 1
                               }
-                              onClick={() => confirmArchive(ep)}
+                              onClick={() => openArchiveConfirm(ep)}
                               aria-label="Archive"
                               title={
                                 activeInOrder.length <= 1
@@ -337,6 +334,24 @@ export function EpisodesSettingsSection({ productionId }: Props) {
                               }
                             >
                               <Archive className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              disabled={
+                                deleteEpisodeMutation.isPending || activeInOrder.length <= 1
+                              }
+                              onClick={() => openDeleteConfirm(ep, false)}
+                              aria-label="Delete episode"
+                              title={
+                                activeInOrder.length <= 1
+                                  ? 'Cannot delete the last active episode'
+                                  : 'Delete episode and unassign linked scenes, tracks, and deliverables'
+                              }
+                            >
+                              <Trash2 className="size-4" />
                             </Button>
                           </div>
                         )}
@@ -349,6 +364,78 @@ export function EpisodesSettingsSection({ productionId }: Props) {
           </Table>
         </div>
       )}
+
+      <Dialog
+        open={confirmAction != null}
+        onOpenChange={(open) => {
+          if (!open) closeConfirm()
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-md"
+          showCloseButton={!confirmPending}
+          onPointerDownOutside={(e) => {
+            if (confirmPending) e.preventDefault()
+          }}
+          onEscapeKeyDown={(e) => {
+            if (confirmPending) e.preventDefault()
+          }}
+        >
+          {confirmAction?.type === 'archive' ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Archive &quot;{confirmAction.episodeName}&quot;?</DialogTitle>
+                <DialogDescription>
+                  Archived episodes stay on file but won&apos;t appear in active lists. You can permanently delete
+                  them later from this table.
+                </DialogDescription>
+              </DialogHeader>
+              {confirmError && <p className="text-destructive text-sm">{confirmError}</p>}
+              <DialogFooter className="gap-2">
+                <Button type="button" variant="outline" onClick={closeConfirm} disabled={confirmPending}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={submitArchiveConfirm}
+                  disabled={confirmPending}
+                  aria-label="Confirm archive"
+                >
+                  {archiveMutation.isPending ? 'Archiving…' : 'Archive'}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : confirmAction?.type === 'delete' ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {confirmAction.isArchived ? 'Delete archived episode?' : 'Delete episode?'}
+                </DialogTitle>
+                <DialogDescription>
+                  {confirmAction.isArchived
+                    ? `Permanently remove "${confirmAction.episodeName}" from this production. This cannot be undone.`
+                    : `Remove "${confirmAction.episodeName}" from this production. Scenes, music tracks, and deliverables assigned to this episode will have no episode until you assign them again. This cannot be undone.`}
+                </DialogDescription>
+              </DialogHeader>
+              {confirmError && <p className="text-destructive text-sm">{confirmError}</p>}
+              <DialogFooter className="gap-2">
+                <Button type="button" variant="outline" onClick={closeConfirm} disabled={confirmPending}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={submitDeleteConfirm}
+                  disabled={confirmPending}
+                  aria-label="Confirm delete episode"
+                >
+                  {deleteEpisodeMutation.isPending ? 'Deleting…' : 'Delete'}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={addOpen}

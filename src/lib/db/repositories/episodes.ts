@@ -1,5 +1,10 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
-import { outboxPush, outboxStatementForRow } from '../outbox'
+import {
+  outboxPush,
+  outboxStatementForRow,
+  outboxStatementForRows,
+  type OutboxRow,
+} from '../outbox'
 import type { Episode } from '../types'
 
 const TABLE = 'episodes'
@@ -192,32 +197,109 @@ export async function countActiveReferencesToEpisode(episodeId: string): Promise
 }
 
 /**
- * Permanently remove an **archived** episode row. Caller must ensure the episode is archived and unused.
- * Pushes outbox delete for sync.
+ * Permanently delete an episode (active or archived). Clears `episode_id` on scenes, music_tracks,
+ * and deliverables for this production that referenced it so rows can be reassigned in the UI.
+ * Active episodes: requires at least one other active episode. One transaction + outbox per touched row.
  */
-export async function hardDeleteArchivedEpisodeForProduction(productionId: string, episodeId: string): Promise<void> {
-  const db = await getDb()
-  const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT id, deleted_at FROM ${TABLE} WHERE id = $1 AND production_id = $2`,
-    [episodeId, productionId]
-  )
-  if (rows.length === 0) throw new Error('Episode not found')
-  const deletedAt = rows[0]!.deleted_at as string | null
-  if (deletedAt == null || (typeof deletedAt === 'string' && deletedAt.trim() === '')) {
-    throw new Error('Only archived episodes can be permanently deleted.')
-  }
+export async function deleteEpisodeAndClearReferencesForProduction(
+  productionId: string,
+  episodeId: string
+): Promise<void> {
+  await runInSerializedTransaction(async () => {
+    const conn = await getDb()
+    const ts = now()
 
-  const refs = await countActiveReferencesToEpisode(episodeId)
-  if (refs.scenes > 0 || refs.musicTracks > 0 || refs.deliverables > 0) {
-    const parts: string[] = []
-    if (refs.scenes > 0) parts.push(`${refs.scenes} scene(s)`)
-    if (refs.musicTracks > 0) parts.push(`${refs.musicTracks} music track(s)`)
-    if (refs.deliverables > 0) parts.push(`${refs.deliverables} deliverable(s)`)
-    throw new Error(`Cannot permanently delete episode: remove or reassign ${parts.join(', ')} first.`)
-  }
+    const epMeta = await conn.select<{ deleted_at: string | null }[]>(
+      `SELECT deleted_at FROM ${TABLE} WHERE id = $1 AND production_id = $2`,
+      [episodeId, productionId]
+    )
+    if (epMeta.length === 0) throw new Error('Episode not found')
 
-  await db.execute(`DELETE FROM ${TABLE} WHERE id = $1 AND production_id = $2`, [episodeId, productionId])
-  await outboxPush(TABLE, episodeId, 'delete', null)
+    const deletedAt = epMeta[0]!.deleted_at
+    const isActive = deletedAt == null || (typeof deletedAt === 'string' && deletedAt.trim() === '')
+    if (isActive) {
+      const [cnt] = await conn.select<{ n: number }[]>(
+        `SELECT COUNT(*) AS n FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL`,
+        [productionId]
+      )
+      if (Number(cnt?.n ?? 0) <= 1) throw new Error('Cannot delete the last active episode.')
+    }
+
+    const scenes = await conn.select<{ id: string }[]>(
+      `SELECT id FROM ${SCENES_TABLE} WHERE production_id = $1 AND episode_id = $2 AND deleted_at IS NULL`,
+      [productionId, episodeId]
+    )
+    const tracks = await conn.select<{ id: string }[]>(
+      `SELECT id FROM ${MUSIC_TRACKS_TABLE} WHERE production_id = $1 AND episode_id = $2 AND deleted_at IS NULL`,
+      [productionId, episodeId]
+    )
+    const deliverables = await conn.select<{ id: string }[]>(
+      `SELECT id FROM ${DELIVERABLES_TABLE} WHERE production_id = $1 AND episode_id = $2 AND deleted_at IS NULL`,
+      [productionId, episodeId]
+    )
+
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN', bindValues: [] }]
+
+    statements.push({
+      sql: `UPDATE ${SCENES_TABLE} SET episode_id = NULL, updated_at = $1 WHERE production_id = $2 AND episode_id = $3 AND deleted_at IS NULL`,
+      bindValues: [ts, productionId, episodeId],
+    })
+    statements.push({
+      sql: `UPDATE ${MUSIC_TRACKS_TABLE} SET episode_id = NULL, updated_at = $1 WHERE production_id = $2 AND episode_id = $3 AND deleted_at IS NULL`,
+      bindValues: [ts, productionId, episodeId],
+    })
+    statements.push({
+      sql: `UPDATE ${DELIVERABLES_TABLE} SET episode_id = NULL, updated_at = $1 WHERE production_id = $2 AND episode_id = $3 AND deleted_at IS NULL`,
+      bindValues: [ts, productionId, episodeId],
+    })
+
+    const sceneOutbox: OutboxRow[] = scenes.map((r) => ({
+      entity: SCENES_TABLE,
+      entityId: r.id,
+      operation: 'update',
+      payloadJson: JSON.stringify({ episode_id: null, updated_at: ts }),
+    }))
+    const trackOutbox: OutboxRow[] = tracks.map((r) => ({
+      entity: MUSIC_TRACKS_TABLE,
+      entityId: r.id,
+      operation: 'update',
+      payloadJson: JSON.stringify({ episode_id: null, updated_at: ts }),
+    }))
+    const delOutbox: OutboxRow[] = deliverables.map((r) => ({
+      entity: DELIVERABLES_TABLE,
+      entityId: r.id,
+      operation: 'update',
+      payloadJson: JSON.stringify({ episode_id: null, updated_at: ts }),
+    }))
+
+    for (const batch of [sceneOutbox, trackOutbox, delOutbox]) {
+      const o = outboxStatementForRows(batch)
+      if (o) statements.push(o)
+    }
+
+    statements.push({
+      sql: `DELETE FROM ${TABLE} WHERE id = $1 AND production_id = $2`,
+      bindValues: [episodeId, productionId],
+    })
+    statements.push(
+      outboxStatementForRow({
+        entity: TABLE,
+        entityId: episodeId,
+        operation: 'delete',
+        payloadJson: null,
+      })
+    )
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+    await executeBatch(conn, statements)
+  })
+}
+
+/** @deprecated Prefer {@link deleteEpisodeAndClearReferencesForProduction}; kept for call sites. */
+export async function hardDeleteArchivedEpisodeForProduction(
+  productionId: string,
+  episodeId: string
+): Promise<void> {
+  await deleteEpisodeAndClearReferencesForProduction(productionId, episodeId)
 }
 
 /** Soft-archive: set `deleted_at` (episode lifecycle, not hard delete). */
