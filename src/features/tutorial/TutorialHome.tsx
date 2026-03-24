@@ -55,7 +55,12 @@ export function TutorialHome({
 }: TutorialHomeProps) {
   const navigate = useNavigate()
   const [isSectionNavBusy, setIsSectionNavBusy] = useState(false)
+  const [currentPage, setCurrentPage] = useState<1 | 2>(1)
   const sectionInteractDisabled = isPreparingDemo || isSectionNavBusy
+  const sectionsForPage = useMemo(
+    () => TUTORIAL_SECTIONS.filter((section) => section.page === currentPage),
+    [currentPage]
+  )
 
   const allComplete = useMemo(() => {
     if (!progress) return false
@@ -117,9 +122,35 @@ export function TutorialHome({
             <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
               {allComplete
                 ? `You’ve now seen the main operational areas. Keep using the demo production to experiment safely, or continue into normal day-to-day work.`
-                : `We’ve loaded a demo production so you can explore schedules, budgets, crew, cast, and equipment safely without touching real projects. Use this hub to dip into key areas at your own pace.`}
+                : `We’ve loaded a demo production so you can explore schedules, budgets (including floats and revisions), crew, cast, and equipment safely without touching real projects. Use this hub to dip into key areas at your own pace.`}
             </DialogDescription>
           </DialogHeader>
+
+          <div className="mt-4 flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">Page {currentPage} of 2</span>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="text-xs"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(1)}
+              >
+                Page 1
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="text-xs"
+                disabled={currentPage === 2}
+                onClick={() => setCurrentPage(2)}
+              >
+                Page 2
+              </Button>
+            </div>
+          </div>
 
           {tutorialHubError && (
             <div
@@ -199,7 +230,7 @@ export function TutorialHome({
           )}
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {TUTORIAL_SECTIONS.map((section) => {
+            {sectionsForPage.map((section) => {
               const state: TutorialSectionState =
                 progress?.sections[section.id] ?? ('not_started' as TutorialSectionState)
               const label = getSectionLabel(state)

@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
+import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
+import { deliverablesTutorialSteps } from '@/features/tutorial/sections/deliverablesTutorial'
 import {
   listDeliverablesByProduction,
   createDeliverable,
@@ -86,6 +89,7 @@ function statusLabel(status: string): string {
 
 export function DeliverablesPage() {
   const { currentProductionId } = useCurrentProduction()
+  const { progress, updateProgress } = useFirstLaunchTutorial()
   const [open, setOpen] = useState(false)
   const [applyTemplateOpen, setApplyTemplateOpen] = useState(false)
   const [applyTemplateId, setApplyTemplateId] = useState<string>('')
@@ -95,7 +99,14 @@ export function DeliverablesPage() {
   const [name, setName] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [recipient, setRecipient] = useState('')
+  const [tutorialOpen, setTutorialOpen] = useState(false)
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (progress?.currentSection === 'deliverables') {
+      setTutorialOpen(true)
+    }
+  }, [progress?.currentSection])
 
   const { data: deliverableTemplates = [] } = useQuery({
     queryKey: ['deliverable-templates'],
@@ -337,6 +348,41 @@ export function DeliverablesPage() {
           onClose={() => setSpecDeliverableId(null)}
         />
       )}
+      <SectionTutorialPanel
+        open={tutorialOpen}
+        onOpenChange={(open) => {
+          setTutorialOpen(open)
+          if (!open) {
+            updateProgress((prev) => ({
+              ...prev,
+              currentSection: prev.currentSection === 'deliverables' ? null : prev.currentSection,
+              sections: {
+                ...prev.sections,
+                deliverables:
+                  prev.sections.deliverables === 'not_started'
+                    ? 'in_progress'
+                    : prev.sections.deliverables,
+              },
+            }))
+          }
+        }}
+        sectionId="deliverables"
+        sectionTitle="Deliverables"
+        steps={deliverablesTutorialSteps}
+        progress={progress}
+        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
+        onCompleteSection={() => {
+          setTutorialOpen(false)
+          updateProgress((prev) => ({
+            ...prev,
+            currentSection: prev.currentSection === 'deliverables' ? null : prev.currentSection,
+            sections: {
+              ...prev.sections,
+              deliverables: 'complete',
+            },
+          }))
+        }}
+      />
     </div>
   )
 }

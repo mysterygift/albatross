@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
+import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
+import { locationsTutorialSteps } from '@/features/tutorial/sections/locationsTutorial'
 import { useCurrency } from '@/hooks/useCurrency'
 import {
   listLocationsByProduction,
@@ -73,12 +76,20 @@ type LocationForm = z.infer<typeof locationSchema>
 
 export function LocationsPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
+  const { progress, updateProgress } = useFirstLaunchTutorial()
   const { format } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [tutorialOpen, setTutorialOpen] = useState(false)
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (progress?.currentSection === 'locations') {
+      setTutorialOpen(true)
+    }
+  }, [progress?.currentSection])
 
   const { data: locations = [] } = useQuery({
     queryKey: ['locations', currentProductionId],
@@ -220,6 +231,39 @@ export function LocationsPage() {
           </DialogContent>
         </Dialog>
       )}
+      <SectionTutorialPanel
+        open={tutorialOpen}
+        onOpenChange={(open) => {
+          setTutorialOpen(open)
+          if (!open) {
+            updateProgress((prev) => ({
+              ...prev,
+              currentSection: prev.currentSection === 'locations' ? null : prev.currentSection,
+              sections: {
+                ...prev.sections,
+                locations:
+                  prev.sections.locations === 'not_started' ? 'in_progress' : prev.sections.locations,
+              },
+            }))
+          }
+        }}
+        sectionId="locations"
+        sectionTitle="Locations"
+        steps={locationsTutorialSteps}
+        progress={progress}
+        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
+        onCompleteSection={() => {
+          setTutorialOpen(false)
+          updateProgress((prev) => ({
+            ...prev,
+            currentSection: prev.currentSection === 'locations' ? null : prev.currentSection,
+            sections: {
+              ...prev.sections,
+              locations: 'complete',
+            },
+          }))
+        }}
+      />
     </div>
   )
 }

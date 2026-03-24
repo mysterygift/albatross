@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
+import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
+import { musicArchiveTutorialSteps } from '@/features/tutorial/sections/musicArchiveTutorial'
 import {
   listMusicTracksByProduction,
   createMusicTrack,
@@ -31,11 +34,19 @@ import { Plus } from 'lucide-react'
 
 export function MusicClearancePage() {
   const { currentProductionId } = useCurrentProduction()
+  const { progress, updateProgress } = useFirstLaunchTutorial()
   const [addTrackOpen, setAddTrackOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
   const [publisher, setPublisher] = useState('')
+  const [tutorialOpen, setTutorialOpen] = useState(false)
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (progress?.currentSection === 'music_archive') {
+      setTutorialOpen(true)
+    }
+  }, [progress?.currentSection])
 
   const { data: production } = useQuery({
     queryKey: ['production', currentProductionId],
@@ -116,15 +127,15 @@ export function MusicClearancePage() {
               <DialogHeader><DialogTitle>New music track</DialogTitle></DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label>Title</Label>
+                  <Label className="py-2">Title</Label>
                   <Input value={title} onChange={(e) => setTitle(e.target.value)} />
                 </div>
                 <div>
-                  <Label>Artist</Label>
+                  <Label className="py-2">Artist</Label>
                   <Input value={artist} onChange={(e) => setArtist(e.target.value)} />
                 </div>
                 <div>
-                  <Label>Publisher / Label</Label>
+                  <Label className="py-2">Publisher / Label</Label>
                   <Input value={publisher} onChange={(e) => setPublisher(e.target.value)} />
                 </div>
               </div>
@@ -159,6 +170,41 @@ export function MusicClearancePage() {
       {tracks.length === 0 && (
         <p className="text-muted-foreground">Add music tracks to build a cue sheet.</p>
       )}
+      <SectionTutorialPanel
+        open={tutorialOpen}
+        onOpenChange={(open) => {
+          setTutorialOpen(open)
+          if (!open) {
+            updateProgress((prev) => ({
+              ...prev,
+              currentSection: prev.currentSection === 'music_archive' ? null : prev.currentSection,
+              sections: {
+                ...prev.sections,
+                music_archive:
+                  prev.sections.music_archive === 'not_started'
+                    ? 'in_progress'
+                    : prev.sections.music_archive,
+              },
+            }))
+          }
+        }}
+        sectionId="music_archive"
+        sectionTitle="Music & Archive"
+        steps={musicArchiveTutorialSteps}
+        progress={progress}
+        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
+        onCompleteSection={() => {
+          setTutorialOpen(false)
+          updateProgress((prev) => ({
+            ...prev,
+            currentSection: prev.currentSection === 'music_archive' ? null : prev.currentSection,
+            sections: {
+              ...prev.sections,
+              music_archive: 'complete',
+            },
+          }))
+        }}
+      />
     </div>
   )
 }
