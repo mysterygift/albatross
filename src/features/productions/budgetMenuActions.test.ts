@@ -37,6 +37,7 @@ describe('runDuplicateLiveAsDraftFromMenu', () => {
       production_id: 'p1',
       created_from_revision_id: 'live-1',
       is_live: false,
+      approval: 'unapproved',
       created_at: 't',
       updated_at: 't',
       deleted_at: null,

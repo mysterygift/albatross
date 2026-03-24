@@ -15,12 +15,16 @@ function trimRequiredName(name: string): string {
 }
 
 function rowToRevision(r: Record<string, unknown>): BudgetRevision {
+  const approvalRaw = String(r.approval ?? 'unapproved').toLowerCase()
+  const approval: BudgetRevision['approval'] =
+    approvalRaw === 'pending' || approvalRaw === 'approved' ? approvalRaw : 'unapproved'
   return {
     id: r.id as string,
     production_id: r.production_id as string,
     name: r.name as string,
     created_from_revision_id: (r.created_from_revision_id as string | null) ?? null,
     is_live: Boolean(r.is_live),
+    approval,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: (r.deleted_at as string | null) ?? null,
@@ -75,8 +79,8 @@ export async function createBlankBudgetRevision(params: {
   const name = trimRequiredName(params.name)
   const id = uuid()
   await db.execute(
-    `INSERT INTO budget_revisions (id, production_id, name, created_from_revision_id, is_live, created_at, updated_at, deleted_at)
-     VALUES ($1, $2, $3, NULL, 0, $4, $5, NULL)`,
+    `INSERT INTO budget_revisions (id, production_id, name, created_from_revision_id, is_live, approval, created_at, updated_at, deleted_at)
+     VALUES ($1, $2, $3, NULL, 0, 'unapproved', $4, $5, NULL)`,
     [id, params.productionId, name, ts, ts]
   )
   const createdRows = await db.select<Record<string, unknown>[]>(`SELECT * FROM budget_revisions WHERE id = $1`, [id])
@@ -200,8 +204,8 @@ export async function createBudgetRevisionFromExisting(params: {
     const statements: Stmt[] = [
       { sql: 'BEGIN TRANSACTION', bindValues: [] },
       {
-        sql: `INSERT INTO budget_revisions (id, production_id, name, created_from_revision_id, is_live, created_at, updated_at, deleted_at)
-              VALUES ($1, $2, $3, $4, 0, $5, $6, NULL)`,
+        sql: `INSERT INTO budget_revisions (id, production_id, name, created_from_revision_id, is_live, approval, created_at, updated_at, deleted_at)
+              VALUES ($1, $2, $3, $4, 0, 'unapproved', $5, $6, NULL)`,
         bindValues: [
           targetRevisionId,
           params.productionId,

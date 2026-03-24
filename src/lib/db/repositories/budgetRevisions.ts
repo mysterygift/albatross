@@ -2,6 +2,7 @@ import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../c
 import type { SoftDeletable } from '../types'
 
 const TABLE = 'budget_revisions'
+let ensuredApprovalColumn = false
 
 export type BudgetRevision = {
   id: string
@@ -9,15 +10,20 @@ export type BudgetRevision = {
   name: string
   created_from_revision_id: string | null
   is_live: boolean
+  approval: 'unapproved' | 'pending' | 'approved'
 } & SoftDeletable
 
 function rowToBudgetRevision(r: Record<string, unknown>): BudgetRevision {
+  const approvalRaw = String(r.approval ?? 'unapproved').toLowerCase()
+  const approval: BudgetRevision['approval'] =
+    approvalRaw === 'pending' || approvalRaw === 'approved' ? approvalRaw : 'unapproved'
   return {
     id: r.id as string,
     production_id: r.production_id as string,
     name: r.name as string,
     created_from_revision_id: (r.created_from_revision_id as string | null) ?? null,
     is_live: Boolean(r.is_live),
+    approval,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: (r.deleted_at as string | null) ?? null,
@@ -188,8 +194,8 @@ export async function getOrCreateLiveBudgetRevisionIdForProduction(
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, name, created_from_revision_id, is_live, created_at, updated_at, deleted_at)
-     VALUES ($1, $2, $3, NULL, 1, $4, $5, NULL)`,
+    `INSERT INTO ${TABLE} (id, production_id, name, created_from_revision_id, is_live, approval, created_at, updated_at, deleted_at)
+     VALUES ($1, $2, $3, NULL, 1, 'unapproved', $4, $5, NULL)`,
     [id, productionId, 'Current budget', ts, ts]
   )
   await backfillNullRevisionIdsForProduction(productionId, id)
@@ -241,4 +247,86 @@ export async function setLiveBudgetRevisionForProduction(params: {
       { sql: 'COMMIT', bindValues: [] },
     ])
   })
+}
+
+export async function renameBudgetRevisionForProduction(params: {
+  productionId: string
+  revisionId: string
+  name: string
+}): Promise<void> {
+  const trimmedName = params.name.trim()
+  if (!trimmedName) throw new Error('Revision name is required')
+  const existing = await getBudgetRevisionByIdForProduction(params.productionId, params.revisionId)
+  if (!existing) throw new Error('Revision not found for production')
+
+  const db = await getDb()
+  const ts = now()
+  await db.execute(
+    `UPDATE ${TABLE}
+     SET name = $3, updated_at = $4
+     WHERE production_id = $1 AND id = $2 AND deleted_at IS NULL`,
+    [params.productionId, params.revisionId, trimmedName, ts]
+  )
+}
+
+export async function setBudgetRevisionApprovalForProduction(params: {
+  productionId: string
+  revisionId: string
+  approval: BudgetRevision['approval']
+}): Promise<void> {
+  if (!['unapproved', 'pending', 'approved'].includes(params.approval)) {
+    throw new Error('Invalid budget revision approval status')
+  }
+  try {
+    const existing = await getBudgetRevisionByIdForProduction(params.productionId, params.revisionId)
+    if (!existing) throw new Error('Revision not found for production')
+
+    const db = await getDb()
+    const ts = now()
+    try {
+      await db.execute(
+        `UPDATE ${TABLE}
+         SET approval = $3, updated_at = $4
+         WHERE production_id = $1 AND id = $2 AND deleted_at IS NULL`,
+        [params.productionId, params.revisionId, params.approval, ts]
+      )
+    } catch (updateError) {
+      const updateMessage = updateError instanceof Error ? updateError.message : String(updateError)
+      if (!ensuredApprovalColumn && updateMessage.includes('no such column: approval')) {
+        await db.execute(
+          `ALTER TABLE ${TABLE}
+           ADD COLUMN approval TEXT NOT NULL DEFAULT 'unapproved' CHECK (approval IN ('unapproved', 'pending', 'approved'))`
+        )
+        ensuredApprovalColumn = true
+        await db.execute(
+          `UPDATE ${TABLE}
+           SET approval = $3, updated_at = $4
+           WHERE production_id = $1 AND id = $2 AND deleted_at IS NULL`,
+          [params.productionId, params.revisionId, params.approval, ts]
+        )
+      } else {
+        throw updateError
+      }
+    }
+  } catch (error) {
+    throw error
+  }
+}
+
+export async function deleteBudgetRevisionForProduction(params: {
+  productionId: string
+  revisionId: string
+}): Promise<void> {
+  const existing = await getBudgetRevisionByIdForProduction(params.productionId, params.revisionId)
+  if (!existing) throw new Error('Revision not found for production')
+  if (existing.is_live) throw new Error('Live budget revision cannot be deleted')
+
+  const db = await getDb()
+  const ts = now()
+  await db.execute(
+    `UPDATE ${TABLE}
+     SET deleted_at = $3, updated_at = $3
+     WHERE production_id = $1 AND id = $2 AND deleted_at IS NULL`,
+    [params.productionId, params.revisionId, ts]
+  )
 }

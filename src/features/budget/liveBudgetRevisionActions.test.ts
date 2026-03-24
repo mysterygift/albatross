@@ -9,6 +9,7 @@ function makeRevision(overrides: Partial<BudgetRevision>): BudgetRevision {
     name: 'Current budget',
     created_from_revision_id: null,
     is_live: false,
+    approval: 'unapproved',
     created_at: 't',
     updated_at: 't',
     deleted_at: null,

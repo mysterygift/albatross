@@ -123,6 +123,9 @@ import { listFloatExpenseLinksByProduction } from '@/lib/db/repositories/floatRe
 import { useSetLiveBudgetRevisionMutation, useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import {
   listBudgetRevisionsByProduction,
+  deleteBudgetRevisionForProduction,
+  renameBudgetRevisionForProduction,
+  setBudgetRevisionApprovalForProduction,
   type BudgetRevision,
 } from '@/lib/db/repositories/budgetRevisions'
 import {
@@ -244,6 +247,11 @@ export function BudgetPage() {
   const [liveConfirmOpen, setLiveConfirmOpen] = useState(false)
   const [pendingLiveRevisionId, setPendingLiveRevisionId] = useState<string | null>(null)
   const [liveToggleError, setLiveToggleError] = useState<string | null>(null)
+  const [manageRevisionsOpen, setManageRevisionsOpen] = useState(false)
+  const [revisionDraftNames, setRevisionDraftNames] = useState<Record<string, string>>({})
+  const [renameRevisionError, setRenameRevisionError] = useState<string | null>(null)
+  const [manageRevisionError, setManageRevisionError] = useState<string | null>(null)
+  const [deleteConfirmRevisionId, setDeleteConfirmRevisionId] = useState<string | null>(null)
   const [baseCompareRevisionId, setBaseCompareRevisionId] = useState<string | null>(null)
   const [targetCompareRevisionId, setTargetCompareRevisionId] = useState<string | null>(null)
   const [costReportLayoutMode, setCostReportLayoutMode] = useState<CostReportLayoutMode>(() => {
@@ -293,7 +301,7 @@ export function BudgetPage() {
   const backfillRanForProduction = useRef<Set<string>>(new Set())
   const revisionContextLabel = getBudgetRevisionContextLabel(workingBudgetRevision)
 
-  const { data: budgetRevisions = [], isLoading: budgetRevisionsLoading, error: budgetRevisionsError } = useQuery({
+  const { data: budgetRevisions = [], isLoading: budgetRevisionsLoading } = useQuery({
     queryKey: ['budget-revisions', currentProductionId],
     queryFn: () => listBudgetRevisionsByProduction(currentProductionId!),
     enabled: !!currentProductionId,
@@ -310,6 +318,10 @@ export function BudgetPage() {
   const currentLiveRevision = useMemo(
     () => budgetRevisions.find((rev) => rev.is_live) ?? null,
     [budgetRevisions]
+  )
+  const deleteConfirmRevision = useMemo(
+    () => budgetRevisions.find((rev) => rev.id === deleteConfirmRevisionId) ?? null,
+    [budgetRevisions, deleteConfirmRevisionId]
   )
 
   useEffect(() => {
@@ -373,6 +385,21 @@ export function BudgetPage() {
     setPendingLiveRevisionId(null)
     setLiveToggleError(null)
   }, [liveConfirmOpen])
+
+  useEffect(() => {
+    if (!manageRevisionsOpen) {
+      setRenameRevisionError(null)
+      setManageRevisionError(null)
+      setDeleteConfirmRevisionId(null)
+      return
+    }
+    const nextDrafts = Object.fromEntries(
+      budgetRevisions.map((revision) => [revision.id, revision.name] as const)
+    )
+    setRevisionDraftNames(nextDrafts)
+    setRenameRevisionError(null)
+    setManageRevisionError(null)
+  }, [manageRevisionsOpen, budgetRevisions])
 
   const createRevisionMutation = useMutation({
     mutationFn: async () => {
@@ -444,6 +471,99 @@ export function BudgetPage() {
     // from switching the local revision being viewed in this selector.
     setLiveConfirmOpen(false)
   }, [currentProductionId, pendingLiveRevision, setLiveRevisionMutation])
+
+  const invalidateBudgetRevisionQueries = useCallback(
+    (productionId: string, nextRevisionId?: string | null) => {
+      const resolvedRevisionId = nextRevisionId ?? revisionId
+      queryClient.invalidateQueries({ queryKey: ['budget-revisions', productionId] })
+      queryClient.invalidateQueries({ queryKey: ['working-budget-revision', productionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-items', productionId, resolvedRevisionId] })
+      queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', productionId, resolvedRevisionId] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups', productionId] })
+      queryClient.invalidateQueries({ queryKey: ['cost-report-groups-with-accounts', productionId] })
+      queryClient.invalidateQueries({ queryKey: ['production-totals', productionId, resolvedRevisionId] })
+      queryClient.invalidateQueries({ queryKey: ['fringe-rules', productionId, resolvedRevisionId] })
+      queryClient.invalidateQueries({ queryKey: ['contingency-rules', productionId, resolvedRevisionId] })
+      queryClient.invalidateQueries({ queryKey: ['floats', productionId, resolvedRevisionId] })
+      queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', productionId, resolvedRevisionId] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-budget-health', productionId] })
+      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(productionId, resolvedRevisionId) })
+    },
+    [queryClient, revisionId]
+  )
+
+  const renameRevisionMutation = useMutation({
+    mutationFn: async (params: { revisionId: string; name: string }) => {
+      if (!currentProductionId) throw new Error('Select a production before renaming a revision.')
+      await renameBudgetRevisionForProduction({
+        productionId: currentProductionId,
+        revisionId: params.revisionId,
+        name: params.name,
+      })
+    },
+    onSuccess: async () => {
+      if (!currentProductionId) return
+      await invalidateBudgetRevisionQueries(currentProductionId)
+      setRenameRevisionError(null)
+    },
+    onError: (error) => {
+      setRenameRevisionError(error instanceof Error ? error.message : 'Unable to rename revision.')
+    },
+  })
+
+  const setApprovalMutation = useMutation({
+    mutationFn: async (params: { revisionId: string; approval: BudgetRevision['approval'] }) => {
+      if (!currentProductionId) throw new Error('Select a production before updating revision approval.')
+      await setBudgetRevisionApprovalForProduction({
+        productionId: currentProductionId,
+        revisionId: params.revisionId,
+        approval: params.approval,
+      })
+    },
+    onSuccess: async () => {
+      if (!currentProductionId) return
+      await invalidateBudgetRevisionQueries(currentProductionId)
+      setManageRevisionError(null)
+    },
+    onError: (error) => {
+      setManageRevisionError(error instanceof Error ? error.message : 'Unable to update revision approval.')
+    },
+  })
+
+  const deleteRevisionMutation = useMutation({
+    mutationFn: async (revisionToDelete: BudgetRevision) => {
+      if (!currentProductionId) throw new Error('Select a production before deleting a revision.')
+      await deleteBudgetRevisionForProduction({
+        productionId: currentProductionId,
+        revisionId: revisionToDelete.id,
+      })
+      return revisionToDelete
+    },
+    onSuccess: async (deletedRevision) => {
+      if (!currentProductionId) return
+      if (revisionId && revisionId === deletedRevision.id) {
+        const nextRevisionId =
+          budgetRevisions.find((revision) => revision.is_live && revision.id !== deletedRevision.id)?.id ?? null
+        if (nextRevisionId) {
+          setSelectedRevisionId(nextRevisionId)
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev)
+              next.set('revisionId', nextRevisionId)
+              return next
+            },
+            { replace: true }
+          )
+        }
+      }
+      await invalidateBudgetRevisionQueries(currentProductionId)
+      setDeleteConfirmRevisionId(null)
+      setManageRevisionError(null)
+    },
+    onError: (error) => {
+      setManageRevisionError(error instanceof Error ? error.message : 'Unable to delete revision.')
+    },
+  })
 
   const { data: allowDetailsForProduction } = useQuery({
     queryKey: ['allow-expense-details', currentProductionId],
@@ -1142,6 +1262,15 @@ export function BudgetPage() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setManageRevisionsOpen(true)}
+              className="border-border bg-background no-print"
+            >
+              <SlidersHorizontal className="mr-2 size-4" />
+              Manage revisions
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setManageDerivedOpen(true)}
               className="border-border bg-background no-print"
             >
@@ -1353,6 +1482,167 @@ export function BudgetPage() {
               disabled={setLiveRevisionMutation.isPending || !pendingLiveRevision}
             >
               {setLiveRevisionMutation.isPending ? 'Updating...' : 'Set as working budget'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={manageRevisionsOpen} onOpenChange={setManageRevisionsOpen}>
+        <DialogContent className="w-[min(98vw,800px)] max-w-[800px] sm:max-w-[800px]">
+          <DialogHeader>
+            <DialogTitle>Manage Revisions</DialogTitle>
+            <DialogDescription>
+              Rename revisions, change approval status, and delete non-live revisions.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {renameRevisionError && <p className="text-sm text-destructive">{renameRevisionError}</p>}
+            {manageRevisionError && <p className="text-sm text-destructive">{manageRevisionError}</p>}
+            <div className="max-h-[55vh] overflow-auto rounded-md border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Revision</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Approval</TableHead>
+                    <TableHead className="w-[260px] text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {budgetRevisions.map((revision) => {
+                    const isMutatingRow =
+                      renameRevisionMutation.isPending ||
+                      setApprovalMutation.isPending ||
+                      deleteRevisionMutation.isPending
+                    return (
+                      <TableRow key={revision.id}>
+                        <TableCell>
+                          <Input
+                            value={revisionDraftNames[revision.id] ?? revision.name}
+                            onChange={(event) => {
+                              setRevisionDraftNames((prev) => ({
+                                ...prev,
+                                [revision.id]: event.target.value,
+                              }))
+                              if (renameRevisionError) setRenameRevisionError(null)
+                            }}
+                            aria-label={`Revision name ${revision.name}`}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <span className={revision.is_live ? 'text-emerald-600 dark:text-emerald-300' : 'text-muted-foreground'}>
+                            {revision.is_live ? 'Live budget' : 'Draft'}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={revision.approval}
+                            onValueChange={(value) => {
+                              setManageRevisionError(null)
+                              setApprovalMutation.mutate({
+                                revisionId: revision.id,
+                                approval: value as BudgetRevision['approval'],
+                              })
+                            }}
+                            disabled={isMutatingRow}
+                          >
+                            <SelectTrigger aria-label={`Approval status ${revision.name}`} className="w-[170px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unapproved">Unapproved</SelectItem>
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="approved">Approved</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={isMutatingRow}
+                              onClick={() => {
+                                setRenameRevisionError(null)
+                                renameRevisionMutation.mutate({
+                                  revisionId: revision.id,
+                                  name: revisionDraftNames[revision.id] ?? revision.name,
+                                })
+                              }}
+                            >
+                              Save name
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              disabled={isMutatingRow || revision.is_live}
+                              onClick={() => {
+                                setManageRevisionError(null)
+                                setDeleteConfirmRevisionId(revision.id)
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                          {revision.is_live && (
+                            <p className="mt-1 text-xs text-muted-foreground">Live budget revision cannot be deleted.</p>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => setManageRevisionsOpen(false)}
+              disabled={
+                renameRevisionMutation.isPending || setApprovalMutation.isPending || deleteRevisionMutation.isPending
+              }
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!deleteConfirmRevision}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirmRevisionId(null)
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete revision?</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{deleteConfirmRevision?.name ?? 'this revision'}"? This cannot be
+              recovered once deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteConfirmRevisionId(null)}
+              disabled={deleteRevisionMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!deleteConfirmRevision || deleteRevisionMutation.isPending}
+              onClick={() => {
+                if (!deleteConfirmRevision) return
+                deleteRevisionMutation.mutate(deleteConfirmRevision)
+              }}
+            >
+              {deleteRevisionMutation.isPending ? 'Deleting...' : 'Delete revision'}
             </Button>
           </DialogFooter>
         </DialogContent>

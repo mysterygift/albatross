@@ -21,6 +21,9 @@ import {
   resolveSelectedBudgetRevision,
   resolveBudgetRevisionId,
   setLiveBudgetRevisionForProduction,
+  renameBudgetRevisionForProduction,
+  setBudgetRevisionApprovalForProduction,
+  deleteBudgetRevisionForProduction,
 } from '@/lib/db/repositories/budgetRevisions'
 
 describe('budgetRevisions repository', () => {
@@ -241,5 +244,84 @@ describe('budgetRevisions repository', () => {
     await expect(
       setLiveBudgetRevisionForProduction({ productionId: 'p1', revisionId: 'missing' })
     ).rejects.toThrow(/Revision not found/)
+  })
+
+  it('renames a revision in the same production', async () => {
+    const select = vi.fn().mockResolvedValue([
+      {
+        id: 'draft-2',
+        production_id: 'p1',
+        name: 'Draft',
+        created_from_revision_id: 'live-1',
+        is_live: 0,
+        approval: 'unapproved',
+        created_at: 't',
+        updated_at: 't',
+        deleted_at: null,
+      },
+    ])
+    const execute = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(getDb).mockResolvedValue({ select, execute } as never)
+
+    await renameBudgetRevisionForProduction({ productionId: 'p1', revisionId: 'draft-2', name: 'Scenario B' })
+    expect(execute).toHaveBeenCalledWith(expect.stringContaining('SET name = $3'), [
+      'p1',
+      'draft-2',
+      'Scenario B',
+      '2026-01-01T00:00:00.000Z',
+    ])
+  })
+
+  it('updates approval for a revision in the same production', async () => {
+    const select = vi.fn().mockResolvedValue([
+      {
+        id: 'draft-2',
+        production_id: 'p1',
+        name: 'Draft',
+        created_from_revision_id: 'live-1',
+        is_live: 0,
+        approval: 'unapproved',
+        created_at: 't',
+        updated_at: 't',
+        deleted_at: null,
+      },
+    ])
+    const execute = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(getDb).mockResolvedValue({ select, execute } as never)
+
+    await setBudgetRevisionApprovalForProduction({
+      productionId: 'p1',
+      revisionId: 'draft-2',
+      approval: 'pending',
+    })
+    expect(execute).toHaveBeenCalledWith(expect.stringContaining('SET approval = $3'), [
+      'p1',
+      'draft-2',
+      'pending',
+      '2026-01-01T00:00:00.000Z',
+    ])
+  })
+
+  it('blocks deleting the live revision', async () => {
+    const select = vi.fn().mockResolvedValue([
+      {
+        id: 'live-1',
+        production_id: 'p1',
+        name: 'Current budget',
+        created_from_revision_id: null,
+        is_live: 1,
+        approval: 'approved',
+        created_at: 't',
+        updated_at: 't',
+        deleted_at: null,
+      },
+    ])
+    const execute = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(getDb).mockResolvedValue({ select, execute } as never)
+
+    await expect(
+      deleteBudgetRevisionForProduction({ productionId: 'p1', revisionId: 'live-1' })
+    ).rejects.toThrow(/cannot be deleted/)
+    expect(execute).not.toHaveBeenCalled()
   })
 })

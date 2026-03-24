@@ -22,6 +22,7 @@ const mockState = vi.hoisted(() => {
       name: string
       created_from_revision_id: string | null
       is_live: boolean
+      approval: 'unapproved' | 'pending' | 'approved'
       created_at: string
       updated_at: string
       deleted_at: string | null
@@ -164,6 +165,35 @@ vi.mock('@/hooks/useWorkingBudgetRevision', async () => {
 
 vi.mock('@/lib/db/repositories/budgetRevisions', () => ({
   listBudgetRevisionsByProduction: vi.fn(async () => [...mockState.revisions]),
+  renameBudgetRevisionForProduction: vi.fn(
+    async ({ revisionId, name }: { productionId: string; revisionId: string; name: string }) => {
+      mockState.revisions = mockState.revisions.map((revision) =>
+        revision.id === revisionId ? { ...revision, name, updated_at: 't2' } : revision
+      )
+      mockState.notify()
+    }
+  ),
+  setBudgetRevisionApprovalForProduction: vi.fn(
+    async ({
+      revisionId,
+      approval,
+    }: {
+      productionId: string
+      revisionId: string
+      approval: 'unapproved' | 'pending' | 'approved'
+    }) => {
+      mockState.revisions = mockState.revisions.map((revision) =>
+        revision.id === revisionId ? { ...revision, approval, updated_at: 't2' } : revision
+      )
+      mockState.notify()
+    }
+  ),
+  deleteBudgetRevisionForProduction: vi.fn(
+    async ({ revisionId }: { productionId: string; revisionId: string }) => {
+      mockState.revisions = mockState.revisions.filter((revision) => revision.id !== revisionId)
+      mockState.notify()
+    }
+  ),
 }))
 
 vi.mock('@/lib/db/budgetRevisionService', () => ({
@@ -174,6 +204,7 @@ vi.mock('@/lib/db/budgetRevisionService', () => ({
       name,
       created_from_revision_id: null,
       is_live: false,
+      approval: 'unapproved',
       created_at: 't',
       updated_at: 't',
       deleted_at: null,
@@ -198,6 +229,7 @@ vi.mock('@/lib/db/budgetRevisionService', () => ({
         name: newRevisionName,
         created_from_revision_id: sourceRevisionId,
         is_live: false,
+        approval: 'unapproved',
         created_at: 't',
         updated_at: 't',
         deleted_at: null,
@@ -216,6 +248,7 @@ vi.mock('@/lib/db/budgetRevisionService', () => ({
       name: `${live.name} Draft`,
       created_from_revision_id: live.id,
       is_live: false,
+      approval: 'unapproved',
       created_at: 't',
       updated_at: 't',
       deleted_at: null,
@@ -326,6 +359,7 @@ describe('Budget versioning integration flows', () => {
         name: 'Current budget',
         created_from_revision_id: null,
         is_live: true,
+        approval: 'approved',
         created_at: 't',
         updated_at: 't',
         deleted_at: null,
@@ -336,6 +370,7 @@ describe('Budget versioning integration flows', () => {
         name: 'Scenario A',
         created_from_revision_id: 'live-1',
         is_live: false,
+        approval: 'pending',
         created_at: 't',
         updated_at: 't',
         deleted_at: null,
@@ -363,7 +398,7 @@ describe('Budget versioning integration flows', () => {
 
     await user.click(screen.getByText('Copy from existing revision'))
     expect(screen.getByText('Source revision')).toBeTruthy()
-    await user.click(screen.getByText(/Current budget · Live/))
+    await user.click(screen.getAllByText(/Current budget .*Live/)[1]!)
     await user.type(screen.getByLabelText('Revision name'), 'Scenario B')
     await user.click(screen.getByText('Create revision'))
 
@@ -382,8 +417,8 @@ describe('Budget versioning integration flows', () => {
     mockState.selectedRevisionIdByProduction['prod-1'] = 'draft-1'
     mockState.notify()
 
-    await screen.findByTestId('budget-revision-live-toggle-draft-1')
-    await user.click(screen.getByTestId('budget-revision-live-toggle-draft-1'))
+    await screen.findByTestId('budget-selected-revision-live-radio')
+    await user.click(screen.getByTestId('budget-selected-revision-live-radio'))
     expect(screen.getByText('Set this revision as the working budget?')).toBeTruthy()
     await user.click(screen.getByText('Set as working budget'))
 
@@ -396,8 +431,6 @@ describe('Budget versioning integration flows', () => {
 
   it('duplicates the live revision via menu event and selects new draft while preserving live', async () => {
     renderBudgetWorkspace()
-    mockState.selectedRevisionIdByProduction['prod-1'] = 'draft-1'
-    mockState.notify()
 
     await screen.findByText('Create budget revision...')
     window.dispatchEvent(new Event('albatross-menu-duplicate-live-as-draft'))
@@ -412,14 +445,48 @@ describe('Budget versioning integration flows', () => {
     })
   })
 
+  it('renames a revision from Manage Revisions modal', async () => {
+    const user = userEvent.setup()
+    renderBudgetWorkspace()
+
+    await screen.findByText('Manage revisions')
+    await user.click(screen.getByText('Manage revisions'))
+    expect(screen.getByText('Manage Revisions')).toBeTruthy()
+
+    await user.clear(screen.getByLabelText('Revision name Scenario A'))
+    await user.type(screen.getByLabelText('Revision name Scenario A'), 'Scenario Renamed')
+    await user.click(screen.getAllByText('Save name')[1]!)
+
+    await waitFor(() => {
+      expect(mockState.revisions.find((revision) => revision.id === 'draft-1')?.name).toBe('Scenario Renamed')
+    })
+  })
+
+  it('deletes a draft revision with confirmation from Manage Revisions modal', async () => {
+    const user = userEvent.setup()
+    renderBudgetWorkspace()
+    mockState.selectedRevisionIdByProduction['prod-1'] = 'draft-1'
+    mockState.notify()
+
+    await screen.findByText('Manage revisions')
+    await user.click(screen.getByText('Manage revisions'))
+    await user.click(screen.getAllByText('Delete')[1]!)
+    expect(screen.getByText('Delete revision?')).toBeTruthy()
+    await user.click(screen.getByText('Delete revision'))
+
+    await waitFor(() => {
+      expect(mockState.revisions.some((revision) => revision.id === 'draft-1')).toBe(false)
+    })
+  })
+
   it('keeps compare selections isolated from normal workspace selected revision', async () => {
     const user = userEvent.setup()
     renderBudgetWorkspace('/budget?tab=compare')
 
     await screen.findByText('Create budget revision...')
     await user.click(screen.getByText('Compare'))
-    await user.click(screen.getAllByText('Scenario A')[0]!)
-    await user.click(screen.getAllByText('Current budget')[0]!)
+    await user.click(screen.getAllByText(/Scenario A/)[0]!)
+    await user.click(screen.getAllByText(/Current budget/)[0]!)
 
     await waitFor(() => {
       expect(mockState.selectedRevisionIdByProduction['prod-1']).toBe('live-1')
