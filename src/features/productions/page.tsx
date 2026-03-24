@@ -10,12 +10,6 @@ import {
   unarchiveProduction,
   findExistingDemoTemplateProduction,
 } from '@/lib/db/repositories/production'
-import { pickApfFileForImport, pickApfSavePath } from '@/lib/files'
-import {
-  exportProductionAsApf,
-  userMessageForExportFailure,
-  userMessageForImportFailure,
-} from '@/lib/importExport'
 import { createProductionFromTemplate } from '@/lib/db/createProductionFromTemplate'
 import {
   useReactTable,
@@ -68,9 +62,9 @@ import {
   Loader2,
 } from 'lucide-react'
 import type { Production } from '@/lib/db/types'
-import { runApfImportWithUiFollowUp } from '@/features/productions/apfImportFlow'
 import { useCurrentProduction } from './context'
 import { Controller } from 'react-hook-form'
+import { useApfActions } from '@/features/productions/useApfActions'
 
 const templateEnum = z.enum(['blank', 'demo', 'default'])
 const productionSchema = z.object({
@@ -142,10 +136,15 @@ export function ProductionsPage() {
       return false
     }
   })
-  const [apfBusy, setApfBusy] = useState<'export' | 'import' | null>(null)
   const queryClient = useQueryClient()
   const { currentProductionId, currentProduction, setCurrentProductionId, refetchProductions } =
     useCurrentProduction()
+  const { apfBusy, handleImportApf, handleExportApf } = useApfActions({
+    onMessage: (msg) => {
+      setActionToast({ type: msg.type, message: msg.message })
+      setTimeout(() => setActionToast(null), msg.timeoutMs)
+    },
+  })
   const { data: productions = [] } = useQuery({
     queryKey: ['productions', { includeArchived: showArchived }],
     queryFn: () => listProductions({ includeArchived: showArchived }),
@@ -161,64 +160,17 @@ export function ProductionsPage() {
     }
   }
 
-  async function handleExportApf() {
-    if (!currentProduction || apfBusy) return
-    setApfBusy('export')
-    try {
-      const path = await pickApfSavePath(currentProduction.name)
-      if (path == null) return
-      await exportProductionAsApf(currentProduction.id, path)
-      const baseName = path.split(/[/\\]/).pop() ?? 'file.apf'
-      setActionToast({ type: 'success', message: `Project exported as “${baseName}”.` })
-      setTimeout(() => setActionToast(null), 5000)
-    } catch (e) {
-      setActionToast({ type: 'error', message: userMessageForExportFailure(e) })
-      setTimeout(() => setActionToast(null), 6000)
-    } finally {
-      setApfBusy(null)
-    }
-  }
-
-  async function handleImportApf() {
-    if (apfBusy) return
-    setApfBusy('import')
-    try {
-      const path = await pickApfFileForImport()
-      if (path == null) return
-      const outcome = await runApfImportWithUiFollowUp(path, {
-        queryClient,
-        refetchProductions,
-        setCurrentProductionId,
-        persistShowArchived: (value) => {
-          try {
-            localStorage.setItem('showArchivedProductions', String(value))
-          } catch {
-            /* ignore */
-          }
-        },
-      })
-      if (outcome.kind === 'error') {
-        setActionToast({ type: 'error', message: outcome.message })
-        setTimeout(() => setActionToast(null), 6000)
-        return
-      }
-      if (outcome.revealArchivedInList) {
-        setShowArchived(true)
-      }
-      setActionToast({ type: 'success', message: outcome.message })
-      setTimeout(() => setActionToast(null), 8000)
-    } catch (e) {
-      setActionToast({ type: 'error', message: userMessageForImportFailure(e) })
-      setTimeout(() => setActionToast(null), 6000)
-    } finally {
-      setApfBusy(null)
-    }
-  }
-
   useEffect(() => {
     const onRevealArchived = () => setShowArchived(true)
     window.addEventListener('albatross-reveal-archived-productions', onRevealArchived)
     return () => window.removeEventListener('albatross-reveal-archived-productions', onRevealArchived)
+  }, [])
+
+  useEffect(() => {
+    const onOpenNewProjectDialog = () => setOpen(true)
+    window.addEventListener('albatross-open-new-production-dialog', onOpenNewProjectDialog)
+    return () =>
+      window.removeEventListener('albatross-open-new-production-dialog', onOpenNewProjectDialog)
   }, [])
 
   const createMutation = useMutation({

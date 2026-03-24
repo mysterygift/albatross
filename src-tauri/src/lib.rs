@@ -1,7 +1,8 @@
 mod apf_desktop;
 mod open_route_service;
 
-use tauri::Manager;
+use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::{Emitter, Manager};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -354,6 +355,77 @@ pub fn run() {
             open_route_service::geocode_location_to_lat_lng,
         ])
         .setup(|app| {
+            let import_item = MenuItemBuilder::with_id("import_project", "Import Project...")
+                .accelerator("CmdOrCtrl+O")
+                .build(app)?;
+            let export_item = MenuItemBuilder::with_id("export_project", "Export Project...")
+                .accelerator("CmdOrCtrl+Shift+E")
+                .build(app)?;
+            let new_project_item = MenuItemBuilder::with_id("new_project", "New Project...")
+                .accelerator("CmdOrCtrl+N")
+                .build(app)?;
+            let app_settings_item = MenuItemBuilder::with_id("app_settings", "Settings...")
+                .accelerator("CmdOrCtrl+,")
+                .build(app)?;
+            let no_recent_item = MenuItemBuilder::with_id("no_recent_projects", "No Recent Projects")
+                .enabled(false)
+                .build(app)?;
+
+            let open_recent_menu = SubmenuBuilder::new(app, "Open Recent")
+                .item(&no_recent_item)
+                .build()?;
+
+            let app_submenu = SubmenuBuilder::new(app, "Albatross")
+                .item(&PredefinedMenuItem::about(app, None, None)?)
+                .item(&app_settings_item)
+                .separator()
+                .item(&PredefinedMenuItem::services(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::hide(app, None)?)
+                .item(&PredefinedMenuItem::hide_others(app, None)?)
+                .item(&PredefinedMenuItem::show_all(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::quit(app, None)?)
+                .build()?;
+
+            let file_menu = SubmenuBuilder::new(app, "File")
+                .item(&new_project_item)
+                .separator()
+                .item(&import_item)
+                .item(&export_item)
+                .separator()
+                .item(&open_recent_menu)
+                .build()?;
+
+            let edit_menu = SubmenuBuilder::new(app, "Edit")
+                .item(&PredefinedMenuItem::cut(app, None)?)
+                .item(&PredefinedMenuItem::copy(app, None)?)
+                .item(&PredefinedMenuItem::paste(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::select_all(app, None)?)
+                .build()?;
+
+            let app_menu = MenuBuilder::new(app)
+                .items(&[&app_submenu, &file_menu, &edit_menu])
+                .build()?;
+            app.set_menu(app_menu)?;
+
+            app.on_menu_event(move |app_handle: &tauri::AppHandle, event| match event.id().0.as_str() {
+                "import_project" => {
+                    let _ = app_handle.emit("albatross-menu-import-project", ());
+                }
+                "export_project" => {
+                    let _ = app_handle.emit("albatross-menu-export-project", ());
+                }
+                "new_project" => {
+                    let _ = app_handle.emit("albatross-menu-new-project", ());
+                }
+                "app_settings" => {
+                    let _ = app_handle.emit("albatross-menu-open-settings", ());
+                }
+                _ => {}
+            });
+
             let cold = apf_desktop::collect_apf_paths_from_os_args(std::env::args_os().skip(1));
             app.manage(apf_desktop::ApfOpenQueue(std::sync::Mutex::new(cold)));
 

@@ -13,6 +13,7 @@ import { TUTORIAL_SECTION_IDS } from '@/features/tutorial/tutorialSections'
 import { TutorialEntryModal } from '@/features/tutorial/TutorialEntryModal'
 import { ensureAndOpenDemoProductionForTutorial } from '@/features/tutorial/ensureAndOpenDemoProductionForTutorial'
 import { ApfDesktopOpenBridge } from '@/features/productions/ApfDesktopOpenBridge'
+import { ApfMenuEventBridge } from '@/features/productions/ApfMenuEventBridge'
 import { useCurrentProduction } from '@/features/productions/context'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
 
@@ -166,6 +167,7 @@ export function AppLayout() {
   return (
     <SidebarProvider>
       <ApfDesktopOpenBridge />
+      <ApfMenuEventBridge />
       <AppSidebar />
       <SidebarInset>
         <TopBar onOpenTutorial={handleOpenTutorialFromHelp} />
