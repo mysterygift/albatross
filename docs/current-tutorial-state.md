@@ -29,7 +29,7 @@ Only **one** of the entry modal and Tutorial Home is visible at any time; they n
 | `src/features/tutorial/ensureAndOpenDemoProductionForTutorial.ts` | Async helper: ensures demo production exists (via `ensureDemoData()`), then sets it as current production via optional callback. Used from layout’s `prepareDemoForTutorialHub` (Start Tutorial, reset → hub, section navigation, Open demo production). |
 | `src/features/tutorial/tutorialSections.ts` | Defines `TUTORIAL_SECTION_IDS` and `TUTORIAL_SECTIONS` (id, title, description, route, icon). Single source of truth for section list and routes. |
 | `src/features/tutorial/SectionTutorialPanel.tsx` | Per-section multi-step panel (steps, next/back, complete / continue later). Used on each section page (dashboard, schedule, budget, crew, cast, equipment). |
-| `src/features/tutorial/sections/*.ts` | Step content for each section (e.g. `dashboardTutorial.ts`, `budgetTutorial.ts`). Export arrays of `TutorialStep` (id, title, body). |
+| `src/features/tutorial/sections/*.ts` | Step content for each section (e.g. `dashboardTutorial.ts`, `scheduleTutorial.ts`, `budgetTutorial.ts`). Export arrays of `TutorialStep` (id, title, body). `scheduleTutorial.ts` includes an **Episodic vs single story** step describing episodes, shooting blocs, and stripboard/calendar filters. |
 | `src/components/top-bar.tsx` | Renders the help (tutorial) button; calls `onOpenTutorial` (from layout) so clicking opens Tutorial Home. |
 | `src/lib/db/repositories/settings.ts` | `FIRST_LAUNCH_TUTORIAL_SEEN_KEY`, `getFirstLaunchTutorialSeen()`, `setFirstLaunchTutorialSeen()`. Legacy boolean kept in sync when progress is dismissed or all complete. |
 

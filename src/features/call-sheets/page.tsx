@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
@@ -28,6 +28,14 @@ import {
   getDefaultCrewHierarchyConfig,
 } from '@/lib/people/crewHierarchyResolver'
 import { getProductionById } from '@/lib/db/repositories/production'
+import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
+import { listShootingBlocsByProduction } from '@/lib/db/repositories/shootingBlocs'
+import { getSetting, setSetting } from '@/lib/db/repositories/settings'
+import {
+  callSheetIncludeEpisodesSettingKey,
+  enrichCallSheetStripEpisodeLabel,
+  shootingBlocMastheadLabelForCallSheet,
+} from '@/lib/call-sheets/callSheetEpisodic'
 import { generateCallSheetPdf, parseCallSheetWeatherJson } from '@/lib/pdf/callSheet'
 import type { CallSheetData } from '@/lib/pdf/callSheet'
 import { selectPrimaryCallSheetContacts } from '@/lib/call-sheets/primaryContacts'
@@ -61,6 +69,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Checkbox } from '@/components/ui/checkbox'
 import { CallSheetDistributionDialog, type CallSheetRecipient } from '@/features/call-sheets/CallSheetDistributionDialog'
 import { exportDistributedCallSheets } from '@/features/call-sheets/exportDistributedCallSheets'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -74,6 +83,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 const defaultCrewHierarchy = getDefaultCrewHierarchyConfig()
 
 export function CallSheetsPage() {
+  const queryClient = useQueryClient()
   const { currentProductionId } = useCurrentProduction()
   const { progress, updateProgress } = useFirstLaunchTutorial()
   const [shootDayId, setShootDayId] = useState<string | null>(null)
@@ -105,6 +115,41 @@ export function CallSheetsPage() {
     queryKey: ['production', currentProductionId],
     queryFn: () => getProductionById(currentProductionId!),
     enabled: !!currentProductionId,
+  })
+
+  const { data: episodesForProduction = [] } = useQuery({
+    queryKey: ['episodes-callsheet', currentProductionId],
+    queryFn: () => listEpisodesByProduction(currentProductionId!),
+    enabled: !!currentProductionId && production?.is_episodic === true,
+  })
+
+  const { data: shootingBlocsForProduction = [] } = useQuery({
+    queryKey: ['shooting-blocs-callsheet', currentProductionId],
+    queryFn: () => listShootingBlocsByProduction(currentProductionId!),
+    enabled: !!currentProductionId && production?.is_episodic === true,
+  })
+
+  const includeEpisodesSettingKey =
+    currentProductionId != null ? callSheetIncludeEpisodesSettingKey(currentProductionId) : null
+
+  const { data: includeEpisodesRaw = null } = useQuery({
+    queryKey: ['call-sheet-include-episodes', includeEpisodesSettingKey],
+    queryFn: () => getSetting(includeEpisodesSettingKey!),
+    enabled: !!includeEpisodesSettingKey && production?.is_episodic === true,
+  })
+
+  const includeEpisodesPersisted = includeEpisodesRaw === 'true'
+
+  const persistIncludeEpisodesMutation = useMutation({
+    mutationFn: async (checked: boolean) => {
+      if (!includeEpisodesSettingKey) return
+      await setSetting(includeEpisodesSettingKey, checked ? 'true' : 'false')
+    },
+    onSuccess: () => {
+      if (includeEpisodesSettingKey) {
+        void queryClient.invalidateQueries({ queryKey: ['call-sheet-include-episodes', includeEpisodesSettingKey] })
+      }
+    },
   })
 
   const { data: shootDays = [] } = useQuery({
@@ -380,6 +425,17 @@ export function CallSheetsPage() {
     const dayUnit = dayUnits.find((u) => u.id === shootDayUnitId)
     const unit = dayUnit ? units.find((u) => u.id === dayUnit.unit_id) : null
     const unitName = unit?.name ?? 'Main Unit'
+    const isEpisodic = production.is_episodic === true
+    const includeEpisodesInSchedule = isEpisodic && includeEpisodesPersisted
+    const blocsById = new Map(shootingBlocsForProduction.map((b) => [b.id, b]))
+    const episodeById = new Map(episodesForProduction.map((e) => [e.id, e]))
+    const shotById = new Map(shots.map((h) => [h.id, h]))
+    const sceneById = new Map(scenes.map((sc) => [sc.id, sc]))
+    const shootingBlocMastheadLabel = shootingBlocMastheadLabelForCallSheet({
+      isEpisodicProduction: isEpisodic,
+      shootingBlocId: shootDay.shooting_bloc_id ?? null,
+      blocsById,
+    })
     const scheduleCtx: BuildScheduleStripContext = {
       castBySceneId: castBySceneMerged,
       castByShotId: castByShotMerged,
@@ -394,7 +450,16 @@ export function CallSheetsPage() {
           ? (locations.find((l) => l.id === scene.location_id)?.name ?? null)
           : null
       const castIds = castPersonIdsForStrip(s, shot?.scene_id ?? null, scheduleCtx)
-      return buildCallSheetStripFromStripboard(s, scene, shot, locName, locState, castIds, cast)
+      const row = buildCallSheetStripFromStripboard(s, scene, shot, locName, locState, castIds, cast)
+      if (!includeEpisodesInSchedule) return row
+      const ep = enrichCallSheetStripEpisodeLabel({
+        strip: s,
+        shotById,
+        sceneById,
+        episodeById,
+        includeEpisodes: true,
+      })
+      return { ...row, ...ep }
     })
     /** Only rows from `shoot_days.meal_times_json`; no fabricated defaults. */
     const mealTimes = mealTimesFromDay
@@ -413,6 +478,9 @@ export function CallSheetsPage() {
       manualFallbackFilled && !typedWeatherFallback ? (shootDay.weather_manual ?? null) : null
     return {
       productionName: production.name,
+      isEpisodicProduction: isEpisodic,
+      includeEpisodesInSchedule,
+      shootingBlocMastheadLabel,
       shootDate: shootDay.shoot_date,
       unitName,
       dayNumber: shootDay.day_number ?? null,
@@ -456,6 +524,8 @@ export function CallSheetsPage() {
         castBySceneId: castBySceneMerged,
         castByShotId: castByShotMerged,
         castPeople: cast,
+        includeEpisodesInSchedule,
+        episodeById: includeEpisodesInSchedule ? episodeById : undefined,
       }),
       /* `CallSheetData.radioChannels` / `transportRows` are supported by the PDF when set; this
        * route does not populate them from the DB/UI yet — leave unset so those sections stay omitted. */
@@ -470,6 +540,9 @@ export function CallSheetsPage() {
     scenes,
     shots,
     locations,
+    episodesForProduction,
+    shootingBlocsForProduction,
+    includeEpisodesPersisted,
     castBySceneMerged,
     castByShotMerged,
     cast,
@@ -675,6 +748,27 @@ export function CallSheetsPage() {
                 </SelectContent>
               </Select>
             </div>
+            {production?.is_episodic && (
+              <div className="space-y-2 rounded-md border border-border p-3 bg-muted/30">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="call-sheet-include-episodes"
+                    checked={includeEpisodesPersisted}
+                    onCheckedChange={(v) => persistIncludeEpisodesMutation.mutate(v === true)}
+                    disabled={persistIncludeEpisodesMutation.isPending}
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="call-sheet-include-episodes" className="font-medium cursor-pointer">
+                      Include episodes
+                    </Label>
+                    <p className="text-muted-foreground text-xs">
+                      Adds an EP column (episode identity per row) to the shooting schedule on the PDF.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Weather (manual fallback)</Label>
               <Input

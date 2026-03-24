@@ -20,6 +20,10 @@ import {
 } from '@/lib/db/repositories/shot-cast'
 import { listCast } from '@/lib/db/repositories/person'
 import {
+  listEpisodesByProduction,
+  getEpisodeByIdForProductionIncludeArchived,
+} from '@/lib/db/repositories/episodes'
+import {
   listEquipmentTermsByProductionAndType,
   upsertEquipmentTerm,
 } from '@/lib/db/repositories/equipment-terms'
@@ -226,7 +230,8 @@ function messageForUpdateShotError(error: unknown): string {
 
 export function ShotListPage() {
   const queryClient = useQueryClient()
-  const { currentProductionId } = useCurrentProduction()
+  const { currentProductionId, currentProduction } = useCurrentProduction()
+  const isEpisodicProduction = currentProduction?.is_episodic === true
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [editingCell, setEditingCell] = useState<{ shotId: string; field: EditableField } | null>(null)
@@ -242,6 +247,7 @@ export function ShotListPage() {
   const [newSceneIntExt, setNewSceneIntExt] = useState<Scene['int_ext'] | null>(null)
   const [newSceneDayNight, setNewSceneDayNight] = useState<Scene['day_night'] | null>(null)
   const [newSceneLocationId, setNewSceneLocationId] = useState<string | null>(null)
+  const [newSceneEpisodeId, setNewSceneEpisodeId] = useState('')
   const [editSceneOpen, setEditSceneOpen] = useState(false)
   const [editSceneError, setEditSceneError] = useState<string | null>(null)
   const [editSceneNumber, setEditSceneNumber] = useState('')
@@ -250,6 +256,7 @@ export function ShotListPage() {
   const [editSceneIntExt, setEditSceneIntExt] = useState<Scene['int_ext'] | null>(null)
   const [editSceneDayNight, setEditSceneDayNight] = useState<Scene['day_night'] | null>(null)
   const [editSceneLocationId, setEditSceneLocationId] = useState<string | null>(null)
+  const [editSceneEpisodeId, setEditSceneEpisodeId] = useState('')
   const [addShotOpen, setAddShotOpen] = useState(false)
   const [addShotForm, setAddShotForm] = useState<AddShotModalForm>(() => createEmptyAddShotForm())
   const [addShotError, setAddShotError] = useState<string | null>(null)
@@ -338,6 +345,24 @@ export function ShotListPage() {
     queryKey: ['locations', currentProductionId],
     queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
     enabled: !!currentProductionId,
+  })
+
+  const { data: activeEpisodes = [] } = useQuery({
+    queryKey: ['episodes', currentProductionId],
+    queryFn: () => listEpisodesByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId && isEpisodicProduction,
+  })
+
+  const { data: editArchivedEpisode } = useQuery({
+    queryKey: ['episode-include-archived', currentProductionId, editSceneEpisodeId],
+    queryFn: () =>
+      getEpisodeByIdForProductionIncludeArchived(currentProductionId!, editSceneEpisodeId),
+    enabled:
+      !!currentProductionId &&
+      isEpisodicProduction &&
+      editSceneOpen &&
+      editSceneEpisodeId.length > 0 &&
+      !activeEpisodes.some((e) => e.id === editSceneEpisodeId),
   })
 
   const { data: sceneCastList = [] } = useQuery({
@@ -433,6 +458,9 @@ export function ShotListPage() {
       if (!sceneNumber) {
         throw new Error('Scene number is required')
       }
+      if (isEpisodicProduction && !newSceneEpisodeId.trim()) {
+        throw new Error('Episode is required')
+      }
       setCreateSceneError(null)
       const scene = await createScene({
         production_id: currentProductionId,
@@ -442,6 +470,7 @@ export function ShotListPage() {
         int_ext: newSceneIntExt ?? null,
         day_night: newSceneDayNight ?? null,
         location_id: newSceneLocationId ?? null,
+        ...(isEpisodicProduction ? { episode_id: newSceneEpisodeId.trim() } : {}),
       })
       return scene
     },
@@ -454,6 +483,7 @@ export function ShotListPage() {
       setNewSceneIntExt(null)
       setNewSceneDayNight(null)
       setNewSceneLocationId(null)
+      setNewSceneEpisodeId('')
       queryClient.invalidateQueries({ queryKey: ['scenes', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['scenes'] })
       setSelectedSceneId(scene.id)
@@ -468,6 +498,14 @@ export function ShotListPage() {
         setCreateSceneError('Scene number is required.')
       } else if (message === 'No production selected') {
         setCreateSceneError('Select a production before creating scenes.')
+      } else if (message === 'Episode is required') {
+        setCreateSceneError('Choose an episode for this scene.')
+      } else if (
+        message.includes('Episodic productions require an episode') ||
+        message.includes('Episode not found or archived') ||
+        message.includes('Episode cannot be set for non-episodic')
+      ) {
+        setCreateSceneError(message)
       } else {
         setCreateSceneError('Could not create scene. Please try again.')
       }
@@ -483,14 +521,18 @@ export function ShotListPage() {
       if (!sceneNumber) {
         throw new Error('Scene number is required')
       }
+      if (isEpisodicProduction && !editSceneEpisodeId.trim()) {
+        throw new Error('Episode is required')
+      }
       setEditSceneError(null)
       const scene = await updateScene(selectedSceneId, {
         scene_number: sceneNumber,
-        heading: editSceneHeading.trim() || null,
-        title: editSceneTitle.trim() || null,
+      heading: editSceneHeading.trim() || null,
+      title: editSceneTitle.trim() || null,
         int_ext: editSceneIntExt ?? null,
         day_night: editSceneDayNight ?? null,
         location_id: editSceneLocationId ?? null,
+        ...(isEpisodicProduction ? { episode_id: editSceneEpisodeId.trim() } : {}),
       })
       return scene
     },
@@ -509,6 +551,14 @@ export function ShotListPage() {
         setEditSceneError('Scene number is required.')
       } else if (message === 'No scene selected') {
         setEditSceneError('No scene selected.')
+      } else if (message === 'Episode is required') {
+        setEditSceneError('Choose an episode for this scene.')
+      } else if (
+        message.includes('Episodic scenes must stay assigned') ||
+        message.includes('Episode not found or archived') ||
+        message.includes('Episode cannot be set for non-episodic')
+      ) {
+        setEditSceneError(message)
       } else {
         setEditSceneError('Could not update scene. Please try again.')
       }
@@ -614,6 +664,18 @@ export function ShotListPage() {
   const selectedScene = scenes.find((s) => s.id === selectedSceneId)
   const getLocationName = (locationId: string | null) =>
     locationId ? locations.find((l) => l.id === locationId)?.name ?? null : null
+
+  const editEpisodeSelectOptions = useMemo(() => {
+    const opts: { id: string; label: string }[] = []
+    const arc = editArchivedEpisode
+    if (arc?.deleted_at && arc.id === editSceneEpisodeId) {
+      opts.push({ id: arc.id, label: `${arc.name} (archived)` })
+    }
+    for (const e of activeEpisodes) {
+      if (!opts.some((o) => o.id === e.id)) opts.push({ id: e.id, label: e.name })
+    }
+    return opts
+  }, [activeEpisodes, editArchivedEpisode, editSceneEpisodeId])
 
   const commitEdit = (shotId: string, field: EditableField, value: string | number | null) => {
     setSaveError(null)
@@ -766,6 +828,7 @@ export function ShotListPage() {
             className="h-9 border-zinc-600 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
             onClick={() => {
               setCreateSceneError(null)
+              setNewSceneEpisodeId('')
               setCreateSceneOpen(true)
             }}
             disabled={!currentProductionId}
@@ -785,6 +848,7 @@ export function ShotListPage() {
                 setEditSceneIntExt(selectedScene.int_ext ?? null)
                 setEditSceneDayNight(selectedScene.day_night ?? null)
                 setEditSceneLocationId(selectedScene.location_id ?? null)
+                setEditSceneEpisodeId(selectedScene.episode_id ?? '')
                 setEditSceneError(null)
                 setEditSceneOpen(true)
               }}
@@ -1080,6 +1144,35 @@ export function ShotListPage() {
                 disabled={createSceneMutation.isPending}
               />
             </div>
+            {isEpisodicProduction && (
+              <div>
+                <Label className="text-sm text-zinc-200">
+                  Episode<span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={newSceneEpisodeId.trim() ? newSceneEpisodeId : SELECT_NONE}
+                  onValueChange={(v) => setNewSceneEpisodeId(v === SELECT_NONE ? '' : v)}
+                  disabled={createSceneMutation.isPending || activeEpisodes.length === 0}
+                >
+                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                    <SelectValue placeholder="Select episode" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                    <SelectItem value={SELECT_NONE}>Select episode…</SelectItem>
+                    {activeEpisodes.map((ep) => (
+                      <SelectItem key={ep.id} value={ep.id}>
+                        {ep.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {activeEpisodes.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-400">
+                    Add an episode in Settings before creating scenes.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-sm text-zinc-200">INT / EXT</Label>
@@ -1160,7 +1253,10 @@ export function ShotListPage() {
               type="button"
               className="bg-emerald-600 hover:bg-emerald-700"
               onClick={() => createSceneMutation.mutate()}
-              disabled={createSceneMutation.isPending}
+              disabled={
+                createSceneMutation.isPending ||
+                (isEpisodicProduction && (!newSceneEpisodeId.trim() || activeEpisodes.length === 0))
+              }
             >
               {createSceneMutation.isPending ? 'Creating…' : 'Create scene'}
             </Button>
@@ -1223,6 +1319,35 @@ export function ShotListPage() {
                 disabled={updateSceneMutation.isPending}
               />
             </div>
+            {isEpisodicProduction && (
+              <div>
+                <Label className="text-sm text-zinc-200">
+                  Episode<span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={editSceneEpisodeId.trim() ? editSceneEpisodeId : SELECT_NONE}
+                  onValueChange={(v) => setEditSceneEpisodeId(v === SELECT_NONE ? '' : v)}
+                  disabled={updateSceneMutation.isPending || editEpisodeSelectOptions.length === 0}
+                >
+                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                    <SelectValue placeholder="Select episode" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                    <SelectItem value={SELECT_NONE}>Select episode…</SelectItem>
+                    {editEpisodeSelectOptions.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {editEpisodeSelectOptions.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-400">
+                    Add an episode in Settings before assigning scenes.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-sm text-zinc-200">INT / EXT</Label>
@@ -1303,7 +1428,10 @@ export function ShotListPage() {
               type="button"
               className="bg-emerald-600 hover:bg-emerald-700"
               onClick={() => updateSceneMutation.mutate()}
-              disabled={updateSceneMutation.isPending}
+              disabled={
+                updateSceneMutation.isPending ||
+                (isEpisodicProduction && (!editSceneEpisodeId.trim() || editEpisodeSelectOptions.length === 0))
+              }
             >
               {updateSceneMutation.isPending ? 'Updating…' : 'Save'}
             </Button>

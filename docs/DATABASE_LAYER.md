@@ -12,9 +12,10 @@ This document explains how Albatross interacts with SQLite via the Tauri SQL plu
 
 ## 2. What the client already does
 
-- **Write queue:** Only one write (INSERT/UPDATE/DELETE/REPLACE) runs at a time via an internal promise queue. Writes are serialized at the JS layer.
+- **Execute serialization:** Wrapped `db.execute()` calls run through a **re-entrant global tail queue** so the Tauri SQL pool does not perform conflicting writes on different connections; nested `runInSerializedTransaction` / inner `execute` runs inline when already inside a holder. (Legacy “write queue” wording referred to the same problem space; see `runSerializedExecute` in `src/lib/db/client.ts`.)
 - **Retry:** Execute and select retry on SQLITE_BUSY up to 3 times with backoff.
 - **WAL + busy_timeout:** PRAGMA journal_mode = WAL, busy_timeout = 8s, foreign_keys ON (see `src/lib/db/client.ts`).
+- **Nested `runInSerializedTransaction`:** If a callback awaits another `runInSerializedTransaction`, the inner call runs **re-entrantly** (same write-queue slot). Re-queueing would **deadlock**: the outer task holds the queue until the inner promise settles, but the inner task would be scheduled *after* the outer task. Symptom: UI freeze or eventual SQLITE_BUSY. Regression test: `src/lib/db/clientSerializedTransaction.test.ts`.
 
 **Important:** Serializing writes does **not** fix multi-statement transactions, because each `execute()` inside one logical transaction can still run on a different connection. The fix is to make the **whole** transaction a **single** `execute()`.
 

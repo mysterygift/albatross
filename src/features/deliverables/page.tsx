@@ -14,6 +14,11 @@ import {
   upsertTechnicalSpec,
 } from '@/lib/db/repositories/deliverable'
 import {
+  listEpisodesByProduction,
+  listEpisodesForProductionManagement,
+  getEpisodeByIdForProductionIncludeArchived,
+} from '@/lib/db/repositories/episodes'
+import {
   listDeliverableTemplates,
   applyDeliverableTemplateToProduction,
 } from '@/lib/db/repositories/deliverableTemplates'
@@ -40,7 +45,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Plus, Pencil, Settings, LayoutTemplate } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { cn } from '@/lib/utils'
-import type { Deliverable as DeliverableType, TechnicalSpec } from '@/lib/db/types'
+import type { Deliverable as DeliverableType, Episode, TechnicalSpec } from '@/lib/db/types'
 import {
   Sheet,
   SheetContent,
@@ -88,8 +93,25 @@ function statusLabel(status: string): string {
   return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+function deliverableScopeTableText(
+  d: DeliverableType,
+  isEpisodicProd: boolean,
+  meta: Map<string, { name: string; archived: boolean }>
+): { text: string; archived: boolean } | null {
+  if (!isEpisodicProd) return null
+  if (d.episode_id == null || d.episode_id.trim() === '') {
+    return { text: 'Project-wide', archived: false }
+  }
+  const m = meta.get(d.episode_id)
+  if (!m) return { text: 'Unknown episode', archived: false }
+  return { text: m.name, archived: m.archived }
+}
+
+type ScopeMode = 'project_wide' | 'episode'
+
 export function DeliverablesPage() {
-  const { currentProductionId } = useCurrentProduction()
+  const { currentProductionId, currentProduction } = useCurrentProduction()
+  const isEpisodic = Boolean(currentProduction?.is_episodic)
   const { progress, updateProgress } = useFirstLaunchTutorial()
   const [open, setOpen] = useState(false)
   const [applyTemplateOpen, setApplyTemplateOpen] = useState(false)
@@ -100,8 +122,23 @@ export function DeliverablesPage() {
   const [name, setName] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [recipient, setRecipient] = useState('')
+  const [createScopeMode, setCreateScopeMode] = useState<ScopeMode>('project_wide')
+  const [createEpisodeId, setCreateEpisodeId] = useState('')
+  const [applyTemplateScopeMode, setApplyTemplateScopeMode] = useState<ScopeMode>('project_wide')
+  const [applyTemplateEpisodeId, setApplyTemplateEpisodeId] = useState('')
+  const [listFilter, setListFilter] = useState<string>('all')
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (!isEpisodic) {
+      setListFilter('all')
+    }
+  }, [isEpisodic])
+
+  useEffect(() => {
+    setListFilter('all')
+  }, [currentProductionId])
 
   useEffect(() => {
     if (progress?.currentSection === 'deliverables') {
@@ -114,9 +151,39 @@ export function DeliverablesPage() {
     queryFn: () => listDeliverableTemplates(),
   })
 
+  const { data: activeEpisodes = [] } = useQuery({
+    queryKey: ['episodes', currentProductionId],
+    queryFn: () => listEpisodesByProduction(currentProductionId!),
+    enabled: !!currentProductionId && isEpisodic,
+  })
+
+  const { data: episodesForLabels = [] } = useQuery({
+    queryKey: ['episodes-management', currentProductionId],
+    queryFn: () => listEpisodesForProductionManagement(currentProductionId!),
+    enabled: !!currentProductionId && isEpisodic,
+  })
+
+  const episodeMetaById = useMemo(() => {
+    const m = new Map<string, { name: string; archived: boolean }>()
+    for (const e of episodesForLabels) {
+      m.set(e.id, { name: e.name, archived: e.deleted_at != null })
+    }
+    return m
+  }, [episodesForLabels])
+
+  const listOptions = useMemo(() => {
+    if (!isEpisodic) return undefined
+    if (listFilter === 'all') return { filter: 'all' as const }
+    if (listFilter === 'project_wide') return { filter: 'project_wide' as const }
+    if (listFilter.startsWith('episode:')) {
+      return { filter: 'episode' as const, episodeId: listFilter.slice('episode:'.length) }
+    }
+    return { filter: 'all' as const }
+  }, [isEpisodic, listFilter])
+
   const { data: deliverables = [] } = useQuery({
-    queryKey: ['deliverables', currentProductionId],
-    queryFn: () => listDeliverablesByProduction(currentProductionId ?? ''),
+    queryKey: ['deliverables', currentProductionId, listOptions],
+    queryFn: () => listDeliverablesByProduction(currentProductionId ?? '', listOptions),
     enabled: !!currentProductionId,
   })
 
@@ -139,6 +206,8 @@ export function DeliverablesPage() {
         name,
         due_date: dueDate || null,
         recipient: recipient.trim() || null,
+        episode_id:
+          isEpisodic && createScopeMode === 'episode' ? createEpisodeId.trim() || null : null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['deliverables'] })
@@ -147,6 +216,8 @@ export function DeliverablesPage() {
       setName('')
       setDueDate('')
       setRecipient('')
+      setCreateScopeMode('project_wide')
+      setCreateEpisodeId('')
     },
   })
 
@@ -156,6 +227,10 @@ export function DeliverablesPage() {
         productionId: currentProductionId!,
         templateId: applyTemplateId,
         anchorDate: applyAnchorDate.trim() || null,
+        episodeId:
+          isEpisodic && applyTemplateScopeMode === 'episode'
+            ? applyTemplateEpisodeId.trim() || null
+            : null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['deliverables'] })
@@ -163,6 +238,8 @@ export function DeliverablesPage() {
       setApplyTemplateOpen(false)
       setApplyTemplateId('')
       setApplyAnchorDate('')
+      setApplyTemplateScopeMode('project_wide')
+      setApplyTemplateEpisodeId('')
     },
   })
 
@@ -199,7 +276,16 @@ export function DeliverablesPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Deliverables</h1>
         <div className="flex items-center gap-2">
-          <Dialog open={applyTemplateOpen} onOpenChange={setApplyTemplateOpen}>
+          <Dialog
+            open={applyTemplateOpen}
+            onOpenChange={(o) => {
+              setApplyTemplateOpen(o)
+              if (!o) {
+                setApplyTemplateScopeMode('project_wide')
+                setApplyTemplateEpisodeId('')
+              }
+            }}
+          >
             <Button variant="outline" onClick={() => setApplyTemplateOpen(true)}>
               <LayoutTemplate className="mr-2 size-4" />Apply template
             </Button>
@@ -235,19 +321,76 @@ export function DeliverablesPage() {
                     If set, each deliverable due date is anchor date + its offset (days). Leave empty for no due dates.
                   </p>
                 </div>
+                {isEpisodic && (
+                  <div className="space-y-3 rounded-md border border-border bg-muted/15 p-3">
+                    <div className="space-y-1.5">
+                      <Label>Scope</Label>
+                      <Select
+                        value={applyTemplateScopeMode}
+                        onValueChange={(v) => {
+                          setApplyTemplateScopeMode(v as ScopeMode)
+                          if (v === 'project_wide') setApplyTemplateEpisodeId('')
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="project_wide">Project-wide</SelectItem>
+                          <SelectItem value="episode">Specific episode</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {applyTemplateScopeMode === 'episode' && (
+                      <div className="space-y-1.5">
+                        <Label>Episode</Label>
+                        <Select value={applyTemplateEpisodeId} onValueChange={setApplyTemplateEpisodeId}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Choose episode" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {activeEpisodes.map((e) => (
+                              <SelectItem key={e.id} value={e.id}>
+                                {e.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setApplyTemplateOpen(false)}>Cancel</Button>
                 <Button
                   onClick={() => applyTemplateMutation.mutate()}
-                  disabled={!applyTemplateId || applyTemplateMutation.isPending}
+                  disabled={
+                    !applyTemplateId ||
+                    applyTemplateMutation.isPending ||
+                    (isEpisodic &&
+                      applyTemplateScopeMode === 'episode' &&
+                      applyTemplateEpisodeId.trim() === '')
+                  }
                 >
                   Apply
                 </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog
+            open={open}
+            onOpenChange={(o) => {
+              setOpen(o)
+              if (!o) {
+                setName('')
+                setDueDate('')
+                setRecipient('')
+                setCreateScopeMode('project_wide')
+                setCreateEpisodeId('')
+              }
+            }}
+          >
             <DialogTrigger asChild>
               <Button><Plus className="mr-2 size-4" />Add deliverable</Button>
             </DialogTrigger>
@@ -258,6 +401,45 @@ export function DeliverablesPage() {
                 <Label>Name</Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Picture Master" />
               </div>
+              {isEpisodic && (
+                <div className="space-y-3 rounded-md border border-border bg-muted/15 p-3">
+                  <div className="space-y-1.5">
+                    <Label>Scope</Label>
+                    <Select
+                      value={createScopeMode}
+                      onValueChange={(v) => {
+                        setCreateScopeMode(v as ScopeMode)
+                        if (v === 'project_wide') setCreateEpisodeId('')
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="project_wide">Project-wide</SelectItem>
+                        <SelectItem value="episode">Specific episode</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {createScopeMode === 'episode' && (
+                    <div className="space-y-1.5">
+                      <Label>Episode</Label>
+                      <Select value={createEpisodeId} onValueChange={setCreateEpisodeId}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Choose episode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {activeEpisodes.map((e) => (
+                            <SelectItem key={e.id} value={e.id}>
+                              {e.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              )}
               <div>
                 <Label>Recipient (optional)</Label>
                 <Input value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="Who this is sent to" />
@@ -269,17 +451,54 @@ export function DeliverablesPage() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button onClick={() => createMutation.mutate()} disabled={!name.trim() || createMutation.isPending}>Add</Button>
+              <Button
+                onClick={() => createMutation.mutate()}
+                disabled={
+                  !name.trim() ||
+                  createMutation.isPending ||
+                  (isEpisodic &&
+                    createScopeMode === 'episode' &&
+                    createEpisodeId.trim() === '')
+                }
+              >
+                Add
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
         </div>
       </div>
+      {isEpisodic && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Label className="text-muted-foreground shrink-0 text-xs font-medium uppercase tracking-wide">
+            Show
+          </Label>
+          <Select value={listFilter} onValueChange={setListFilter}>
+            <SelectTrigger className="w-[min(100%,280px)]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All deliverables</SelectItem>
+              <SelectItem value="project_wide">Project-wide</SelectItem>
+              {activeEpisodes.map((e) => (
+                <SelectItem key={e.id} value={`episode:${e.id}`}>
+                  {e.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="rounded-lg border border-border bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="border-border">
               <TableHead className="text-muted-foreground text-xs font-medium">Name</TableHead>
+              {isEpisodic && (
+                <TableHead className="text-muted-foreground text-xs font-medium max-w-[120px]">
+                  Scope
+                </TableHead>
+              )}
               <TableHead className="text-muted-foreground text-xs font-medium">Recipient</TableHead>
               <TableHead className="text-muted-foreground text-xs font-medium whitespace-nowrap">Due date</TableHead>
               <TableHead className="text-muted-foreground text-xs font-medium">Status</TableHead>
@@ -292,16 +511,42 @@ export function DeliverablesPage() {
           <TableBody>
             {deliverables.length === 0 ? (
               <TableRow className="border-border hover:bg-transparent">
-                <TableCell colSpan={8} className="text-muted-foreground py-12 text-center text-sm">
+                <TableCell
+                  colSpan={isEpisodic ? 9 : 8}
+                  className="text-muted-foreground py-12 text-center text-sm"
+                >
                   No deliverables yet. Add one or apply a template to get started.
                 </TableCell>
               </TableRow>
             ) : (
               deliverables.map((d) => {
                 const spec = specByDeliverableId.get(d.id)
+                const scopeDisp = deliverableScopeTableText(d, isEpisodic, episodeMetaById)
                 return (
                   <TableRow key={d.id} className="border-border">
                     <TableCell className="max-w-[160px] truncate font-medium" title={d.name}>{cell(d.name)}</TableCell>
+                    {isEpisodic && (
+                      <TableCell className="max-w-[120px] text-sm">
+                        {scopeDisp ? (
+                          <span
+                            className={cn(
+                              'inline-flex max-w-full flex-col gap-0.5',
+                              scopeDisp.archived && 'text-muted-foreground'
+                            )}
+                            title={scopeDisp.text}
+                          >
+                            <span className="truncate font-medium">{scopeDisp.text}</span>
+                            {scopeDisp.archived && (
+                              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                Archived
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          EMPTY
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell className="max-w-[120px] truncate text-sm text-muted-foreground" title={d.recipient ?? undefined}>{cell(d.recipient)}</TableCell>
                     <TableCell className="whitespace-nowrap text-sm">{cell(d.due_date)}</TableCell>
                     <TableCell className="text-sm">
@@ -357,6 +602,8 @@ export function DeliverablesPage() {
       {editDeliverable && (
         <DeliverableEditSheet
           deliverable={editDeliverable}
+          isEpisodic={isEpisodic}
+          activeEpisodes={activeEpisodes}
           onClose={() => setEditDeliverable(null)}
           onSaved={() => setEditDeliverable(null)}
         />
@@ -410,10 +657,14 @@ const DELIVERABLE_ENTITY_TYPE = 'deliverable'
 
 function DeliverableEditSheet({
   deliverable,
+  isEpisodic,
+  activeEpisodes,
   onClose,
   onSaved,
 }: {
   deliverable: DeliverableType
+  isEpisodic: boolean
+  activeEpisodes: Episode[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -424,6 +675,12 @@ function DeliverableEditSheet({
   const [deliveryMethod, setDeliveryMethod] = useState(deliverable.delivery_method ?? '')
   const [deliveredBy, setDeliveredBy] = useState(deliverable.delivered_by ?? '')
   const [deliveredAt, setDeliveredAt] = useState(deliverable.delivered_at ?? '')
+  const [scopeMode, setScopeMode] = useState<ScopeMode>(() =>
+    deliverable.episode_id != null && deliverable.episode_id.trim() !== '' ? 'episode' : 'project_wide'
+  )
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState(() =>
+    deliverable.episode_id?.trim() ?? ''
+  )
   const [status, setStatus] = useState(() => {
     const s = deliverable.status
     if (s === 'pending') return 'not_started'
@@ -434,6 +691,26 @@ function DeliverableEditSheet({
   const [openingFilePath, setOpeningFilePath] = useState<string | null>(null)
   const [openAttachmentError, setOpenAttachmentError] = useState<string | null>(null)
 
+  const { data: linkedEpisode } = useQuery({
+    queryKey: ['episode-include-archived', deliverable.production_id, deliverable.episode_id],
+    queryFn: () =>
+      deliverable.episode_id
+        ? getEpisodeByIdForProductionIncludeArchived(deliverable.production_id, deliverable.episode_id)
+        : Promise.resolve(null),
+    enabled: isEpisodic && Boolean(deliverable.episode_id?.trim()),
+  })
+
+  const episodeSelectOptions = useMemo(() => {
+    const byId = new Map<string, Episode>()
+    for (const e of activeEpisodes) byId.set(e.id, e)
+    if (linkedEpisode && !byId.has(linkedEpisode.id)) {
+      byId.set(linkedEpisode.id, linkedEpisode)
+    }
+    return Array.from(byId.values()).sort(
+      (a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id)
+    )
+  }, [activeEpisodes, linkedEpisode])
+
   useEffect(() => {
     setName(deliverable.name)
     setDueDate(deliverable.due_date ?? '')
@@ -443,6 +720,9 @@ function DeliverableEditSheet({
     setDeliveredAt(deliverable.delivered_at ?? '')
     setStatus(deliverable.status === 'pending' ? 'not_started' : deliverable.status === 'done' ? 'delivered' : deliverable.status)
     setApprovalStatus(deliverable.approval_status ?? 'pending')
+    const hasEp = deliverable.episode_id != null && deliverable.episode_id.trim() !== ''
+    setScopeMode(hasEp ? 'episode' : 'project_wide')
+    setSelectedEpisodeId(deliverable.episode_id?.trim() ?? '')
   }, [deliverable])
 
   const { data: attachments = [] } = useQuery({
@@ -500,6 +780,12 @@ function DeliverableEditSheet({
         delivered_at: deliveredAt.trim() || null,
         status,
         approval_status: approvalStatus,
+        ...(isEpisodic
+          ? {
+              episode_id:
+                scopeMode === 'project_wide' ? null : selectedEpisodeId.trim() || null,
+            }
+          : {}),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['deliverables'] })
@@ -515,6 +801,19 @@ function DeliverableEditSheet({
       <SheetContent side="right" className="flex flex-col sm:max-w-md">
         <SheetHeader className="shrink-0 border-b border-border pb-4">
           <SheetTitle className="text-lg">Edit deliverable</SheetTitle>
+          {isEpisodic && (
+            <p className="text-muted-foreground pt-1 text-sm font-normal">
+              Scope:{' '}
+              {scopeMode === 'project_wide'
+                ? 'Project-wide'
+                : episodeSelectOptions.find((e) => e.id === selectedEpisodeId)?.name.trim() ||
+                  (selectedEpisodeId ? 'Episode' : '—')}
+              {scopeMode === 'episode' &&
+                episodeSelectOptions.find((e) => e.id === selectedEpisodeId)?.deleted_at != null && (
+                  <span className="text-muted-foreground"> (archived episode)</span>
+                )}
+            </p>
+          )}
         </SheetHeader>
         <div className="flex-1 overflow-y-auto px-5 py-4">
           <div className="space-y-6">
@@ -530,6 +829,46 @@ function DeliverableEditSheet({
                   <Label>Due date</Label>
                   <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
                 </div>
+                {isEpisodic && (
+                  <div className="space-y-3 rounded-md border border-border bg-muted/15 p-3">
+                    <div className="space-y-1.5">
+                      <Label>Scope</Label>
+                      <Select
+                        value={scopeMode}
+                        onValueChange={(v) => {
+                          setScopeMode(v as ScopeMode)
+                          if (v === 'project_wide') setSelectedEpisodeId('')
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="project_wide">Project-wide</SelectItem>
+                          <SelectItem value="episode">Specific episode</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {scopeMode === 'episode' && (
+                      <div className="space-y-1.5">
+                        <Label>Episode</Label>
+                        <Select value={selectedEpisodeId} onValueChange={setSelectedEpisodeId}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Choose episode" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {episodeSelectOptions.map((e) => (
+                              <SelectItem key={e.id} value={e.id}>
+                                {e.name}
+                                {e.deleted_at ? ' (archived)' : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -671,7 +1010,16 @@ function DeliverableEditSheet({
         </div>
         <SheetFooter className="shrink-0 gap-2 border-t border-border pt-4">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => saveMutation.mutate()} disabled={!name.trim() || saveMutation.isPending}>Save</Button>
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={
+              !name.trim() ||
+              saveMutation.isPending ||
+              (isEpisodic && scopeMode === 'episode' && selectedEpisodeId.trim() === '')
+            }
+          >
+            Save
+          </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>

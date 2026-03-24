@@ -207,7 +207,7 @@ Implemented in TypeScript. **Import** still needs a zip reader in a later phase;
 ### 11.2 Data loading
 
 - All tables in the Phase 1 **INCLUDE** set are loaded via `loadApfV1ProductionTables` with:
-  - `deleted_at IS NULL` where the column exists.
+  - `deleted_at IS NULL` where the column exists, **except** **`episodes`** and **`shooting_blocs`**: all rows for the production are exported (including soft-deleted) so `episode_id` and `shooting_bloc_id` references stay closed in JSON (see audit §4.1).
   - Joins to non-deleted parents for child tables without their own tombstone (per audit §4.1).
 - **`checklist_items`:** the SQL table no longer exists after migration 0024; the exporter emits **`tables.checklist_items` as `[]`** while **`production_tasks`** carries the task graph (see §5.5).
 - **Cue sheets / call sheets / script documents** omit rows whose linked `documents` row is missing or soft-deleted (avoids dangling `document_id` / `generated_document_id` in the package).
@@ -374,6 +374,7 @@ Verified behaviours:
 3. **Atomicity after DB failure:** forced failure on `COMMIT`; `ROLLBACK` leaves **zero** `productions` rows for that id; the extracted attachment file is **removed** (asserted by path).
 4. **Missing bundled bytes (spec-locked degraded import):** archive has a `documents` row but **no** zip entry; import **succeeds** with warnings, row is present in SQLite, canonical `file_path` set, **no** file on disk.
 5. **Preflight duplicate id:** second import of the same package while production exists → **`ApfImportConflictError`** (`production_id`); row count stays **1**.
+6. **Episodic round-trip:** production with `is_episodic = 1`, archived episode still referenced by a scene, `shoot_day` with `shooting_bloc_id` → export → wipe → import preserves episode tombstones, `scenes.episode_id`, and `shoot_days.shooting_bloc_id`.
 
 ### 16.3 Guarantees vs. limits
 
@@ -398,3 +399,4 @@ Verified behaviours:
 | 2026-03-22 | Phase 6: Tauri file association + argv / single-instance + UI bridge + doc §15. |
 | 2026-03-22 | Phase 7: Vitest suite + fixtures + import/export hardening tests + doc §16. |
 | 2026-03-22 | Phase 7B: sql.js E2E export/import, tombstone loader proof, stronger rollback + missing-bytes policy locked; export fix for removed `checklist_items` table; doc §16 revision. |
+| 2026-03-24 | Episodic export closure (`episodes` / `shooting_blocs`), import preflight for `shooting_bloc_id`, §11.2 / §16.2 notes; audit §2–§4 updates. |

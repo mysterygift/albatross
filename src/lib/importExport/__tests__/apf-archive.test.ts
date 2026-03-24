@@ -81,7 +81,7 @@ describe('parseApfArchiveBytes', () => {
     const bytes = buildMinimalProductionZip()
     expect(isLikelyZipPayload(bytes)).toBe(true)
     const { normalized } = parseApfArchiveBytes(bytes)
-    expect(normalized.data.formatVersion).toBe(1)
+    expect(normalized.data.formatVersion).toBe(2)
   })
 
   it('rejects non-zip content even if caller named it .apf', () => {

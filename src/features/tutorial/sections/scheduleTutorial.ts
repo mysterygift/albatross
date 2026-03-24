@@ -8,6 +8,19 @@ export const scheduleTutorialSteps: TutorialStep[] = [
       'The Schedule is where you review the production timeline and shoot structure.',
       '',
       'Use it to see how shoot days, scenes, and work are laid out across the life of the production.',
+      '',
+      'Episodic projects: If the current production was created as episodic, the calendar and stripboard can filter by shooting bloc (a dated block of photography) and show episode context on strips from each scene’s episode assignment.',
+    ].join('\n'),
+  },
+  {
+    id: 'episodic',
+    title: 'Episodic vs single story',
+    body: [
+      'Single-story productions behave as before: every scene belongs to one continuous story.',
+      '',
+      'Episodic productions add episodes (managed in Settings) and optional shooting blocs (named date ranges). Each scene is assigned to an episode when you create or edit it in Shot Lists. Shoot days pick up a bloc from those dates (or stay “outside blocs” until you adjust bloc ranges in Settings).',
+      '',
+      'On the stripboard, day headers can show the bloc label; shot and scene strips can show a small episode badge. Use the bloc filter to focus one block of photography or only days not tied to a bloc.',
     ].join('\n'),
   },
   {
@@ -17,6 +30,8 @@ export const scheduleTutorialSteps: TutorialStep[] = [
       'The demo production includes seeded shoot days and activity so you can explore safely.',
       '',
       'Scroll the calendar to see how work is distributed across days, and open a day to review its call, runtime, and location details.',
+      '',
+      'On episodic demos, try the shooting-bloc filter on the calendar and stripboard to see how days line up with blocks.',
     ].join('\n'),
   },
   {

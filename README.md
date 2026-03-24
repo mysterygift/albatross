@@ -101,6 +101,13 @@ A **deterministic demo production** can be created for instant realistic data (b
 
 Seed metadata (last run time, version) is stored in the **`seed_meta`** table and shown in the Developer tools section.
 
+### Episodic (series) productions
+
+- **Create:** On **Productions → New production**, enable **Episodic series** if the project has multiple episodes (TV, anthology, etc.). That choice **cannot be reversed** for that production.
+- **Model:** Episodic productions have **episodes** (names/order in **Settings**), **shooting blocs** (named date ranges, also in **Settings**), **`scene → episode`** assignment in **Shot Lists**, and **`shoot day → shooting bloc`** association derived from each day’s date vs bloc ranges.
+- **Schedule:** **Calendar** and **Stripboard** support **bloc filters** and show **episode** context on strips where relevant. See **[docs/schedule.md](docs/schedule.md)** (§ Episodic productions).
+- **Elsewhere:** **Deliverables** and **music clearance** rows can carry an optional **episode** link on episodic shows. **Import/export** (APF v1) includes episodes, blocs, and FK closure; see **[docs/project-import-export-format-v1.md](docs/project-import-export-format-v1.md)**.
+
 ### Call sheet PDFs
 
 Generated call sheets are saved under **`attachments/`** in the app data directory (e.g. `call-sheet-2025-02-11-main.pdf`). A row is created in the **documents** table with `entity_type: 'call_sheet'` and `entity_id` set to the shoot day id; `file_path` stores the relative path. Open from **Documents** or use **Save & Open** to open in the OS default viewer.

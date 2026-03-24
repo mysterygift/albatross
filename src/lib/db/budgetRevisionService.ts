@@ -14,7 +14,10 @@ function trimRequiredName(name: string): string {
   return n
 }
 
-function rowToRevision(r: Record<string, unknown>): BudgetRevision {
+function rowToRevision(r: Record<string, unknown> | undefined): BudgetRevision {
+  if (!r || typeof r !== 'object') {
+    throw new Error('Invalid budget revision row')
+  }
   const approvalRaw = String(r.approval ?? 'unapproved').toLowerCase()
   const approval: BudgetRevision['approval'] =
     approvalRaw === 'pending' || approvalRaw === 'approved' ? approvalRaw : 'unapproved'
@@ -74,17 +77,26 @@ export async function createBlankBudgetRevision(params: {
   productionId: string
   name: string
 }): Promise<BudgetRevision> {
-  const db = await getDb()
   const ts = now()
   const name = trimRequiredName(params.name)
   const id = uuid()
-  await db.execute(
-    `INSERT INTO budget_revisions (id, production_id, name, created_from_revision_id, is_live, approval, created_at, updated_at, deleted_at)
-     VALUES ($1, $2, $3, NULL, 0, 'unapproved', $4, $5, NULL)`,
-    [id, params.productionId, name, ts, ts]
-  )
-  const createdRows = await db.select<Record<string, unknown>[]>(`SELECT * FROM budget_revisions WHERE id = $1`, [id])
-  return rowToRevision(createdRows[0]!)
+  return runInSerializedTransaction(async () => {
+    const db = await getDb()
+    await db.execute(
+      `INSERT INTO budget_revisions (id, production_id, name, created_from_revision_id, is_live, approval, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, $3, NULL, 0, 'unapproved', $4, $5, NULL)`,
+      [id, params.productionId, name, ts, ts]
+    )
+    const createdRows = await db.select<Record<string, unknown>[]>(
+      `SELECT * FROM budget_revisions WHERE id = $1 AND production_id = $2 AND deleted_at IS NULL`,
+      [id, params.productionId]
+    )
+    const row = createdRows[0]
+    if (!row) {
+      throw new Error('Created budget revision could not be read back; try again.')
+    }
+    return rowToRevision(row)
+  })
 }
 
 export async function createBudgetRevisionFromExisting(params: {
@@ -432,7 +444,7 @@ export async function createBudgetRevisionFromExisting(params: {
     `SELECT * FROM budget_revisions WHERE id = $1 LIMIT 1`,
     [targetRevisionId]
   )
-  return rowToRevision(createdRows[0]!)
+  return rowToRevision(createdRows[0])
 }
 
 export async function duplicateLiveBudgetRevisionAsDraft(params: {

@@ -57,4 +57,152 @@ export async function preflightApfImportDb(params: {
       )
     }
   }
+
+  const isEpisodic =
+    prod.is_episodic !== undefined && prod.is_episodic !== null && Number(prod.is_episodic) === 1
+  const scenesRows = data.tables.scenes
+  const episodeRows = data.tables.episodes
+
+  const episodeIdsForProduction = new Set<string>()
+  for (let i = 0; i < episodeRows.length; i++) {
+    const er = episodeRows[i]!
+    if (String(er.production_id) !== productionId) {
+      throw new ApfImportPreflightError(
+        `episodes[${i}] production_id must match imported production (${productionId}).`
+      )
+    }
+    episodeIdsForProduction.add(String(er.id))
+  }
+
+  const shootingBlocRows = data.tables.shooting_blocs
+  const shootingBlocIdsForProduction = new Set<string>()
+  for (let i = 0; i < shootingBlocRows.length; i++) {
+    const br = shootingBlocRows[i]!
+    if (String(br.production_id) !== productionId) {
+      throw new ApfImportPreflightError(
+        `shooting_blocs[${i}] production_id must match imported production (${productionId}).`
+      )
+    }
+    shootingBlocIdsForProduction.add(String(br.id))
+  }
+
+  const shootDayRows = data.tables.shoot_days
+  for (let i = 0; i < shootDayRows.length; i++) {
+    const sd = shootDayRows[i]!
+    const rawBloc = sd.shooting_bloc_id
+    const blocId =
+      rawBloc == null
+        ? ''
+        : typeof rawBloc === 'string'
+          ? rawBloc.trim()
+          : String(rawBloc).trim()
+    if (!blocId) continue
+    if (!shootingBlocIdsForProduction.has(blocId)) {
+      throw new ApfImportPreflightError(
+        `shoot_days[${i}] shooting_bloc_id "${blocId}" is not in tables.shooting_blocs for this production.`
+      )
+    }
+  }
+
+  if (isEpisodic) {
+    for (let i = 0; i < scenesRows.length; i++) {
+      const sc = scenesRows[i]!
+      const raw = sc.episode_id
+      const eid =
+        typeof raw === 'string'
+          ? raw.trim()
+          : raw != null
+            ? String(raw).trim()
+            : ''
+      if (!eid) {
+        throw new ApfImportPreflightError(
+          `Episodic import requires episode_id on every scene (missing on scenes[${i}]). Export from a current Albatross build or fix the package.`
+        )
+      }
+      if (!episodeIdsForProduction.has(eid)) {
+        throw new ApfImportPreflightError(
+          `scenes[${i}] episode_id "${eid}" is not in tables.episodes for this production.`
+        )
+      }
+    }
+  } else {
+    for (let i = 0; i < scenesRows.length; i++) {
+      const sc = scenesRows[i]!
+      const raw = sc.episode_id
+      const hasEpisode =
+        raw != null &&
+        (typeof raw === 'string' ? raw.trim() !== '' : String(raw).trim() !== '')
+      if (hasEpisode) {
+        throw new ApfImportPreflightError(
+          `Non-episodic import cannot set episode_id on scenes (scenes[${i}]). Remove episode_id or use an episodic production export.`
+        )
+      }
+    }
+  }
+
+  const musicTrackRows = data.tables.music_tracks
+  if (isEpisodic) {
+    for (let i = 0; i < musicTrackRows.length; i++) {
+      const tr = musicTrackRows[i]!
+      const raw = tr.episode_id
+      const eid =
+        typeof raw === 'string'
+          ? raw.trim()
+          : raw != null
+            ? String(raw).trim()
+            : ''
+      if (!eid) continue
+      if (!episodeIdsForProduction.has(eid)) {
+        throw new ApfImportPreflightError(
+          `music_tracks[${i}] episode_id "${eid}" is not in tables.episodes for this production.`
+        )
+      }
+    }
+  } else {
+    for (let i = 0; i < musicTrackRows.length; i++) {
+      const tr = musicTrackRows[i]!
+      const raw = tr.episode_id
+      const hasEpisode =
+        raw != null &&
+        (typeof raw === 'string' ? raw.trim() !== '' : String(raw).trim() !== '')
+      if (hasEpisode) {
+        throw new ApfImportPreflightError(
+          `Non-episodic import cannot set episode_id on music tracks (music_tracks[${i}]). Remove episode_id or use an episodic production export.`
+        )
+      }
+    }
+  }
+
+  const deliverablesRows = data.tables.deliverables
+  if (isEpisodic) {
+    for (let i = 0; i < deliverablesRows.length; i++) {
+      const row = deliverablesRows[i]!
+      const raw = row.episode_id
+      const eid =
+        typeof raw === 'string'
+          ? raw.trim()
+          : raw != null
+            ? String(raw).trim()
+            : ''
+      if (!eid) continue
+      if (!episodeIdsForProduction.has(eid)) {
+        throw new ApfImportPreflightError(
+          `deliverables[${i}] episode_id "${eid}" is not in tables.episodes for this production.`
+        )
+      }
+    }
+  } else {
+    for (let i = 0; i < deliverablesRows.length; i++) {
+      const row = deliverablesRows[i]!
+      const raw = row.episode_id
+      const hasEpisode =
+        raw != null &&
+        (typeof raw === 'string' ? raw.trim() !== '' : String(raw).trim() !== '')
+      if (hasEpisode) {
+        throw new ApfImportPreflightError(
+          `Non-episodic import cannot set episode_id on deliverables (deliverables[${i}]). Remove episode_id or use an episodic production export.`
+        )
+      }
+    }
+  }
 }

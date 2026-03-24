@@ -80,6 +80,11 @@ vi.mock('@tauri-apps/plugin-fs', async () => {
 const PROD_ID = 'aaaaaaaa-e2e1-4e21-8f01-a1e2e2e2e201'
 const UNIT_ID = 'bbbbbbbb-e2e1-4e21-8f01-a1e2e2e2e201'
 const DOC_ID = 'cccccccc-e2e1-4e21-8f01-a1e2e2e2e201'
+const EP_E2E_ACTIVE = 'aaaaaaaa-e2e1-4e21-8f02-a1e2e2e2e201'
+const EP_E2E_ARCH = 'aaaaaaaa-e2e1-4e21-8f03-a1e2e2e2e201'
+const E2E_SCENE_ID = 'aaaaaaaa-e2e1-4e21-8f04-a1e2e2e2e201'
+const E2E_BLOC_ID = 'aaaaaaaa-e2e1-4e21-8f05-a1e2e2e2e201'
+const E2E_DAY_ID = 'aaaaaaaa-e2e1-4e21-8f06-a1e2e2e2e201'
 const ACTIVE_PERSON_ID = 'dddddddd-e2e1-4e21-8f01-a1e2e2e2e201'
 const DELETED_PERSON_ID = 'eeeeeeee-e2e1-4e21-8f01-a1e2e2e2e201'
 const TS = '2025-06-01T12:00:00.000Z'
@@ -197,6 +202,77 @@ describe('apf E2E (sql.js + real FS)', () => {
     expect(existsSync(join(apfNodeFsTestContext.appDataRoot, fp))).toBe(true)
     const disk = await readFile(join(apfNodeFsTestContext.appDataRoot, fp))
     expect(Buffer.from(disk).toString()).toBe('%PDF-1.4 e2e fixture')
+  })
+
+  it('exports and imports episodic rows: archived episode, scene episode_id, shoot_day shooting_bloc_id', async () => {
+    const adapter = sqlJsApfE2eContext.adapter!
+    await adapter.execute(
+      `INSERT INTO productions (id, name, notes, created_at, updated_at, deleted_at, slug, currency_code, archived_at, wrapped_at, created_from_template, is_episodic)
+       VALUES ($1, $2, NULL, $3, $4, NULL, $5, 'GBP', NULL, NULL, NULL, 1)`,
+      [PROD_ID, 'Episodic E2E', TS, TS, 'episodic-e2e']
+    )
+    await adapter.execute(
+      `INSERT INTO episodes (id, production_id, name, sort_order, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, 'Active Ep', 0, $3, $3, NULL)`,
+      [EP_E2E_ACTIVE, PROD_ID, TS]
+    )
+    await adapter.execute(
+      `INSERT INTO episodes (id, production_id, name, sort_order, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, 'Archived Ep', 1, $3, $3, $4)`,
+      [EP_E2E_ARCH, PROD_ID, TS, TS]
+    )
+    await adapter.execute(
+      `INSERT INTO shooting_blocs (id, production_id, name, start_date, end_date, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, 'Bloc 1', '2025-01-01', '2025-01-31', $3, $3, NULL)`,
+      [E2E_BLOC_ID, PROD_ID, TS]
+    )
+    await adapter.execute(
+      `INSERT INTO scenes (id, production_id, scene_number, heading, description, title, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, '1', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, $3, $4, $4, NULL)`,
+      [E2E_SCENE_ID, PROD_ID, EP_E2E_ARCH, TS]
+    )
+    await adapter.execute(
+      `INSERT INTO shoot_days (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, shooting_bloc_id, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, '2025-01-15', NULL, NULL, NULL, NULL, $3, $4, $4, NULL)`,
+      [E2E_DAY_ID, PROD_ID, E2E_BLOC_ID, TS]
+    )
+
+    const loadedBefore = await loadApfV1ProductionTables(PROD_ID)
+    expect(loadedBefore.episodes.map((e) => String(e.id)).sort()).toEqual(
+      [EP_E2E_ACTIVE, EP_E2E_ARCH].sort()
+    )
+    expect(loadedBefore.episodes.find((e) => String(e.id) === EP_E2E_ARCH)?.deleted_at).toBe(TS)
+
+    await exportProductionAsApf(PROD_ID, apfPath)
+    clearUserData()
+    await rm(join(apfNodeFsTestContext.appDataRoot, 'attachments'), { recursive: true, force: true })
+
+    const imp = await importProductionFromApf(apfPath)
+    expect(imp.ok).toBe(true)
+    if (!imp.ok) throw imp.error
+
+    const eps = await adapter.select<Record<string, unknown>[]>(
+      `SELECT id, deleted_at FROM episodes WHERE production_id = $1 ORDER BY sort_order ASC`,
+      [PROD_ID]
+    )
+    expect(eps).toHaveLength(2)
+    const arch = eps.find((r) => String(r.id) === EP_E2E_ARCH)
+    expect(arch).toBeDefined()
+    expect(String(arch!.deleted_at)).toBe(TS)
+
+    const sc = await adapter.select<Record<string, unknown>[]>(
+      `SELECT episode_id FROM scenes WHERE id = $1`,
+      [E2E_SCENE_ID]
+    )
+    expect(sc).toHaveLength(1)
+    expect(String(sc[0]!.episode_id)).toBe(EP_E2E_ARCH)
+
+    const sd = await adapter.select<Record<string, unknown>[]>(
+      `SELECT shooting_bloc_id FROM shoot_days WHERE id = $1`,
+      [E2E_DAY_ID]
+    )
+    expect(sd).toHaveLength(1)
+    expect(String(sd[0]!.shooting_bloc_id)).toBe(E2E_BLOC_ID)
   })
 
   it('loadApfV1ProductionTables omits soft-deleted people but keeps active rows', async () => {

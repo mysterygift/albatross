@@ -2,6 +2,7 @@ import { BaseDirectory, remove } from '@tauri-apps/plugin-fs'
 import { getDb, now, uuid, runInSerializedTransaction, executeBatch } from '../client'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { Production } from '../types'
+import { episodeInsertStatement, episodeOutboxCreate } from './episodes'
 import { seedDefaultBudgetCategories } from './budget'
 import { listAccounts, seedDefaultBudgetAccounts } from './budgetAccounts'
 import { createContingencyRule } from './budgetDerived'
@@ -23,12 +24,16 @@ export function slugify(name: string): string {
 }
 
 function rowToProduction(r: Record<string, unknown>): Production {
+  const isEpisodicCol = r.is_episodic
+  const is_episodic =
+    isEpisodicCol === undefined || isEpisodicCol === null ? false : Number(isEpisodicCol) === 1
   return {
     id: r.id as string,
     name: r.name as string,
     slug: (r.slug as string) ?? `prod-${r.id as string}`,
     currency_code: (r.currency_code as string) ?? 'GBP',
     notes: r.notes as string | null,
+    is_episodic,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
@@ -208,6 +213,10 @@ export async function reserveSlugAndInsertProduction(
 export type CreateProductionOptions = {
   /** When true, skip default budget categories, accounts, and contingency. Used by Default template which seeds its own chart. */
   skipBudgetSeed?: boolean
+  /**
+   * When non-empty after trim, inserts production with `is_episodic = 1` and first episode in one transaction.
+   */
+  episodicInitialEpisodeName?: string
 }
 
 export async function createProduction(
@@ -215,10 +224,85 @@ export async function createProduction(
   options?: CreateProductionOptions
 ): Promise<Production> {
   const db = await getDb()
-  const id = uuid()
   const ts = now()
   const currencyCode = (data as { currency_code?: string }).currency_code ?? 'GBP'
   const skipBudgetSeed = options?.skipBudgetSeed === true
+  const rawEpisodic = options?.episodicInitialEpisodeName
+  const episodicName = rawEpisodic !== undefined ? rawEpisodic.trim() : ''
+  const asEpisodic = rawEpisodic !== undefined && episodicName.length > 0
+
+  if (rawEpisodic !== undefined && episodicName.length === 0) {
+    throw new Error('Episodic production requires a non-empty first episode name')
+  }
+
+  if (asEpisodic) {
+    const id = uuid()
+    const episodeId = uuid()
+    const slug = await withSlugLock(async () => ensureUniqueSlug(slugify(data.name)))
+    await runInSerializedTransaction(async () => {
+      const batchDb = await getDb()
+      const epStmt = episodeInsertStatement({
+        id: episodeId,
+        production_id: id,
+        name: episodicName,
+        sort_order: 0,
+        ts,
+      })
+      await executeBatch(batchDb, [
+        { sql: 'BEGIN', bindValues: [] },
+        {
+          sql: `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 1, $6, $7)`,
+          bindValues: [id, data.name, slug, currencyCode, data.notes ?? null, ts, ts],
+        },
+        epStmt,
+        outboxStatementForRow({
+          entity: TABLE,
+          entityId: id,
+          operation: 'create',
+          payloadJson: JSON.stringify({
+            ...data,
+            slug,
+            id,
+            is_episodic: 1,
+            created_at: ts,
+            updated_at: ts,
+          }),
+        }),
+        episodeOutboxCreate(episodeId, {
+          id: episodeId,
+          production_id: id,
+          name: episodicName,
+          sort_order: 0,
+          created_at: ts,
+          updated_at: ts,
+        }),
+        { sql: 'COMMIT', bindValues: [] },
+      ])
+    })
+    if (!skipBudgetSeed) {
+      await seedDefaultBudgetCategories(id)
+      await seedDefaultBudgetAccounts(id)
+      try {
+        const accounts = await listAccounts(id)
+        const rootIds = accounts.filter((a) => a.parent_account_id == null).map((a) => a.id)
+        if (rootIds.length > 0) {
+          await createContingencyRule({
+            production_id: id,
+            name: 'Contingency',
+            rate: 0.1,
+            base_kind: 'budget',
+            scope_mode: 'include_subtrees',
+            scope_account_ids: rootIds,
+          })
+        }
+      } catch {
+        // Non-fatal: user can add rules manually.
+      }
+    }
+    return (await getProductionById(id))!
+  }
+
+  const id = uuid()
   const { slug } = await withSlugLock(async () => {
     const s = await ensureUniqueSlug(slugify(data.name))
     await db.execute(
@@ -255,11 +339,17 @@ export async function updateProduction(
   id: string,
   data: Partial<Pick<Production, 'name' | 'notes'>>
 ): Promise<Production> {
+  const existing = await getProductionById(id)
+  if (!existing) throw new Error('Production not found')
+  const maybeEpisodic = data as Partial<{ is_episodic: boolean }>
+  if (existing.is_episodic && maybeEpisodic.is_episodic === false) {
+    throw new Error('Episodic mode cannot be disabled once enabled')
+  }
   const db = await getDb()
   const ts = now()
   await db.execute(
     `UPDATE ${TABLE} SET name = $1, notes = $2, updated_at = $3 WHERE id = $4`,
-    [data.name ?? (await getProductionById(id))!.name, data.notes ?? null, ts, id]
+    [data.name ?? existing.name, data.notes ?? null, ts, id]
   )
   await outboxPush(TABLE, id, 'update', JSON.stringify(data))
   return (await getProductionById(id))!

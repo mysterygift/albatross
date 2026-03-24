@@ -1,5 +1,6 @@
-import type { Location, Person, Scene, ShootDay, ShootDayUnit, Shot, StripboardStrip } from '@/lib/db/types'
+import type { Episode, Location, Person, Scene, ShootDay, ShootDayUnit, Shot, StripboardStrip } from '@/lib/db/types'
 import type { CallSheetAdvancedDay, CallSheetStrip } from '@/lib/pdf/callSheet'
+import { enrichCallSheetStripEpisodeLabel } from '@/lib/call-sheets/callSheetEpisodic'
 import {
   buildCallSheetStripFromStripboard,
   castPersonIdsForStrip,
@@ -19,6 +20,9 @@ export type BuildAdvancedScheduleInput = {
   castByShotId: Map<string, string[]>
   castPeople: Person[]
   maxDays?: number
+  /** When set with `episodeById`, SCENE/SHOT rows get `episodeLabel` for the EP column. */
+  includeEpisodesInSchedule?: boolean
+  episodeById?: Map<string, Pick<Episode, 'name'>>
 }
 
 function locationSummaryForStrips(
@@ -53,6 +57,11 @@ export function buildAdvancedScheduleForCallSheet(input: BuildAdvancedScheduleIn
     .slice(0, maxDays)
 
   if (future.length === 0) return []
+
+  const shotById = new Map(input.shots.map((h) => [h.id, h]))
+  const sceneById = new Map(input.scenes.map((sc) => [sc.id, sc]))
+  const episodeById = input.episodeById
+  const includeEp = input.includeEpisodesInSchedule === true && episodeById != null
 
   const ctx: BuildScheduleStripContext = {
     castBySceneId: input.castBySceneId,
@@ -92,7 +101,16 @@ export function buildAdvancedScheduleForCallSheet(input: BuildAdvancedScheduleIn
           ? (input.locations.find((l) => l.id === scene.location_id)?.name ?? null)
           : null
       const castIds = castPersonIdsForStrip(s, shot?.scene_id ?? null, ctx)
-      return buildCallSheetStripFromStripboard(s, scene, shot, locName, locState, castIds, input.castPeople)
+      const row = buildCallSheetStripFromStripboard(s, scene, shot, locName, locState, castIds, input.castPeople)
+      if (!includeEp || !episodeById) return row
+      const ep = enrichCallSheetStripEpisodeLabel({
+        strip: s,
+        shotById,
+        sceneById,
+        episodeById,
+        includeEpisodes: true,
+      })
+      return { ...row, ...ep }
     })
 
     out.push({

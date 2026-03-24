@@ -6,6 +6,7 @@
  */
 import { executeBatch, getDb } from '../client'
 import type { DemoSeedIdSource } from './demoSeedContext'
+import { northShoreGlobalShotIndex } from './northShoreDemoContent'
 
 /** Cast index 1–14 maps to idSource.person(1)..person(14). */
 export const DEMO_CAST_INDEX_MAX = 14
@@ -239,6 +240,7 @@ function expandSceneRanges(ranges: string): number[] {
 }
 
 /** Cast index (1–14) → scene numbers that cast member is in. Source of truth for scene_cast. */
+/** Mint Heist 45-scene cast ↔ scene presence. */
 const CAST_SCENE_MAP: Record<number, number[]> = {
   1: expandSceneRanges('1-8, 12-18, 21-24, 28-32, 36-40, 44-45'),
   2: expandSceneRanges('1-6, 10-16, 20-24, 29-31, 37-41, 45'),
@@ -254,6 +256,37 @@ const CAST_SCENE_MAP: Record<number, number[]> = {
   12: [10, 17, 23, 30, 36, 43],
   13: [11, 29, 35],
   14: [2, 24, 45],
+}
+
+/** North Shore 30-scene episodic demo: same 14 cast rows, story-driven presence. */
+const NORTH_SHORE_CAST_SCENE_MAP: Record<number, number[]> = {
+  1: expandSceneRanges('1-10, 12, 14, 21-24, 28-30'),
+  2: expandSceneRanges('1-7, 10, 17, 21-23, 30'),
+  3: expandSceneRanges('3, 12-14, 18, 26-27, 29'),
+  4: expandSceneRanges('8-9, 14, 19-20, 28'),
+  5: expandSceneRanges('7, 15, 24-25'),
+  6: expandSceneRanges('5-6, 15-16, 18, 23'),
+  7: expandSceneRanges('3, 9, 16, 22, 27, 29'),
+  8: expandSceneRanges('6, 9, 19, 25'),
+  9: expandSceneRanges('5, 11, 15, 22, 27'),
+  10: expandSceneRanges('10, 18, 23, 26'),
+  11: expandSceneRanges('9, 18, 24, 28'),
+  12: expandSceneRanges('12, 19'),
+  13: expandSceneRanges('5, 11, 13, 27, 29'),
+  14: expandSceneRanges('8, 13, 21'),
+}
+
+function northShoreCastIndicesForShot(sceneNum: number, shotNum: number): number[] {
+  const inScene: number[] = []
+  for (let c = 1; c <= DEMO_CAST_INDEX_MAX; c++) {
+    if ((NORTH_SHORE_CAST_SCENE_MAP[c] ?? []).includes(sceneNum)) inScene.push(c)
+  }
+  if (inScene.length === 0) return []
+  const principals = [1, 2, 3].filter((x) => inScene.includes(x))
+  if (shotNum <= 2) return inScene
+  if (shotNum <= 4) return inScene.filter((_, i) => i % 2 === 0)
+  if (shotNum <= 6) return inScene.filter((_, i) => i % 2 === 1)
+  return principals.length > 0 ? principals : [inScene[0]!]
 }
 
 /** Hero shot participation: scene number, shot number within scene, cast indices (1–14) in that shot. */
@@ -298,13 +331,20 @@ const DEMO_AVAILABILITY_CLASHES: Array<{ castIndex: number; dayNumber: number; n
  * Call after scenes and shots are seeded. Uses idSource.person(1..14), sceneCast, shotCast, availability.
  * Crew are seeded by demoCrewSeed.ts.
  */
+export type SeedDemoPeopleOptions = {
+  castScheduleVariant?: 'mint-heist' | 'north-shore-episodic'
+}
+
 export async function seedDemoPeople(
   productionId: string,
   startDate: string,
   ts: string,
-  idSource: DemoSeedIdSource
+  idSource: DemoSeedIdSource,
+  options?: SeedDemoPeopleOptions
 ): Promise<void> {
   const db = await getDb()
+  const variant = options?.castScheduleVariant ?? 'mint-heist'
+  const sceneCastMap = variant === 'north-shore-episodic' ? NORTH_SHORE_CAST_SCENE_MAP : CAST_SCENE_MAP
 
   const addDays = (yyyyMmDd: string, days: number): string => {
     const [y, m, d] = yyyyMmDd.split('-').map(Number)
@@ -342,7 +382,7 @@ export async function seedDemoPeople(
   // scene_cast: one row per (scene, person)
   let sceneCastIdx = 0
   for (let castIndex = 1; castIndex <= DEMO_CAST_INDEX_MAX; castIndex++) {
-    const sceneNumbers = CAST_SCENE_MAP[castIndex] ?? []
+    const sceneNumbers = sceneCastMap[castIndex] ?? []
     for (const sceneNum of sceneNumbers) {
       statements.push({
         sql: `INSERT INTO scene_cast (id, production_id, scene_id, person_id, created_at, updated_at)
@@ -362,27 +402,53 @@ export async function seedDemoPeople(
 
   // shot_cast: only for people already in scene_cast; refinement layer
   let shotCastIdx = 0
-  for (const entry of SHOT_CAST_ENTRIES) {
-    const sceneNum = entry.scene
-    const shotNum = entry.shot
-    const globalShotIndex = getGlobalShotIndex(sceneNum, shotNum)
-    const shotId = idSource.shot(globalShotIndex)
-    for (const castIndex of entry.castIndices) {
-      const inScene = (CAST_SCENE_MAP[castIndex] ?? []).includes(sceneNum)
-      if (!inScene) continue
-      statements.push({
-        sql: `INSERT INTO shot_cast (id, production_id, shot_id, person_id, created_at, updated_at)
+  if (variant === 'north-shore-episodic') {
+    for (let sceneNum = 1; sceneNum <= 30; sceneNum++) {
+      for (let shotNum = 1; shotNum <= 8; shotNum++) {
+        const globalShotIndex = northShoreGlobalShotIndex(sceneNum, shotNum)
+        const shotId = idSource.shot(globalShotIndex)
+        for (const castIndex of northShoreCastIndicesForShot(sceneNum, shotNum)) {
+          const inScene = (NORTH_SHORE_CAST_SCENE_MAP[castIndex] ?? []).includes(sceneNum)
+          if (!inScene) continue
+          statements.push({
+            sql: `INSERT INTO shot_cast (id, production_id, shot_id, person_id, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        bindValues: [
-          idSource.shotCast(shotCastIdx),
-          productionId,
-          shotId,
-          idSource.person(castIndex),
-          ts,
-          ts,
-        ],
-      })
-      shotCastIdx++
+            bindValues: [
+              idSource.shotCast(shotCastIdx),
+              productionId,
+              shotId,
+              idSource.person(castIndex),
+              ts,
+              ts,
+            ],
+          })
+          shotCastIdx++
+        }
+      }
+    }
+  } else {
+    for (const entry of SHOT_CAST_ENTRIES) {
+      const sceneNum = entry.scene
+      const shotNum = entry.shot
+      const globalShotIndex = getGlobalShotIndex(sceneNum, shotNum)
+      const shotId = idSource.shot(globalShotIndex)
+      for (const castIndex of entry.castIndices) {
+        const inScene = (CAST_SCENE_MAP[castIndex] ?? []).includes(sceneNum)
+        if (!inScene) continue
+        statements.push({
+          sql: `INSERT INTO shot_cast (id, production_id, shot_id, person_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+          bindValues: [
+            idSource.shotCast(shotCastIdx),
+            productionId,
+            shotId,
+            idSource.person(castIndex),
+            ts,
+            ts,
+          ],
+        })
+        shotCastIdx++
+      }
     }
   }
 

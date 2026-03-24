@@ -40,7 +40,7 @@ This document is both a **user guide** (how to use the Deliverables feature) and
 - **Route:** `/deliverables` (see [src/app/router.tsx](../src/app/router.tsx)).
 - **Navigation:** "Deliverables" (FileCheck icon) in the app sidebar.
 - **Context:** Requires a current production. If none is selected, the page shows "Select a production first."
-- **Scope:** All deliverables are scoped to the current production. Each deliverable can have one technical spec record and multiple attachments (files). Reusable **deliverable templates** (e.g. Streaming Package, Festival Package) can be applied to create a batch of deliverables at once.
+- **Scope:** All deliverables are scoped to the current production. Each deliverable can have one technical spec record and multiple attachments (files). Reusable **deliverable templates** (e.g. Streaming Package, Festival Package) can be applied to create a batch of deliverables at once. **Episodic** productions can set an optional **episode** on a deliverable (`episode_id`) so lists and filters can follow story blocks; add episodes in **Settings** first.
 
 ### 2. Key features
 

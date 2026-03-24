@@ -40,6 +40,13 @@ import { listBookingsByProduction } from '@/lib/db/repositories/booking'
 import { listCast, listCrew } from '@/lib/db/repositories/person'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { getSetting } from '@/lib/db/repositories/settings'
+import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
+import { listShootingBlocsByProduction } from '@/lib/db/repositories/shootingBlocs'
+import {
+  calendarShootingBlocDisplay,
+  orderedDistinctEpisodeNames,
+  type ShootingBlocViewFilter,
+} from '@/lib/schedule/episodicScheduleDisplay'
 import { getCastIdsBySceneIds } from '@/lib/db/repositories/scene-cast'
 import { getCastIdsByShotIds } from '@/lib/db/repositories/shot-cast'
 import { getCallSheetCastRequirements } from '@/lib/call-sheets/castRequirements'
@@ -52,6 +59,13 @@ import {
   getTravelSegmentsForDayUnit,
   type DayTravelSegment,
 } from '@/lib/logistics/dayTravel'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -368,14 +382,17 @@ function getDayTurnaroundSummary(args: {
   }
 }
 
-function CalendarEventCardBody({
+/** Exported for episodic schedule UI tests. */
+export function CalendarEventCardBody({
   event,
   onClick,
   isOverlay,
+  isEpisodic,
 }: {
   event: CalendarShootDayEvent
   onClick: () => void
   isOverlay?: boolean
+  isEpisodic?: boolean
 }) {
   const isMain = event.unitKey === 'main'
   const bgVar = isMain ? 'var(--unit-main)' : 'var(--unit-second)'
@@ -397,6 +414,11 @@ function CalendarEventCardBody({
       }}
     >
       <div className="font-medium">{event.unitName}</div>
+      {isEpisodic && (
+        <div className="mt-0.5 text-[10px] font-medium opacity-95 truncate" title={calendarShootingBlocDisplay(event.shootingBlocId, event.shootingBlocName)}>
+          {calendarShootingBlocDisplay(event.shootingBlocId, event.shootingBlocName)}
+        </div>
+      )}
       <div className="mt-0.5 opacity-90">
         {formatCallWrap(event.callTime, event.wrapTime)}
       </div>
@@ -412,9 +434,11 @@ function CalendarEventCardBody({
 function DraggableEventCard({
   event,
   onClick,
+  isEpisodic,
 }: {
   event: CalendarShootDayEvent
   onClick: () => void
+  isEpisodic?: boolean
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: event.shootDayUnitId,
@@ -440,7 +464,7 @@ function DraggableEventCard({
       >
         <GripVertical className="size-3.5" />
       </div>
-      <CalendarEventCardBody event={event} onClick={onClick} isOverlay={false} />
+      <CalendarEventCardBody event={event} onClick={onClick} isOverlay={false} isEpisodic={isEpisodic} />
     </div>
   )
 }
@@ -477,6 +501,9 @@ function DaySummaryDrawer({
   warnings,
   turnaround,
   orsApiKeySetting,
+  isEpisodic,
+  shootingBlocDisplay,
+  episodesOnUnitSummary,
 }: {
   event: CalendarShootDayEvent | null
   open: boolean
@@ -493,6 +520,10 @@ function DaySummaryDrawer({
   warnings: DaySummaryWarning[]
   turnaround: DayTurnaroundSummary
   orsApiKeySetting: string
+  isEpisodic?: boolean
+  shootingBlocDisplay?: string | null
+  /** Comma-separated episode names for scheduled material on this unit, or "—". */
+  episodesOnUnitSummary?: string | null
 }) {
   const [isEditing, setIsEditing] = useState(false)
   const [callTimeInput, setCallTimeInput] = useState('')
@@ -692,6 +723,26 @@ function DaySummaryDrawer({
         <div className="flex-1 overflow-y-auto px-7 py-4">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+              {isEpisodic && (
+                <>
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                      Shooting bloc
+                    </p>
+                    <p className="text-foreground mt-0.5 text-sm">
+                      {shootingBlocDisplay ?? '—'}
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                      Episodes (this unit)
+                    </p>
+                    <p className="text-foreground mt-0.5 text-sm">
+                      {episodesOnUnitSummary ?? '—'}
+                    </p>
+                  </div>
+                </>
+              )}
               <div>
                 <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
                   Call time
@@ -958,9 +1009,15 @@ function DaySummaryDrawer({
 
 export function ScheduleCalendarPage() {
   const queryClient = useQueryClient()
-  const { currentProductionId } = useCurrentProduction()
+  const { currentProductionId, currentProduction } = useCurrentProduction()
+  const isEpisodicProduction = currentProduction?.is_episodic === true
   const [viewDate, setViewDate] = useState(() => new Date())
+  const [calendarBlocFilter, setCalendarBlocFilter] = useState<ShootingBlocViewFilter>('all')
   const [selectedEvent, setSelectedEvent] = useState<CalendarShootDayEvent | null>(null)
+
+  useEffect(() => {
+    setCalendarBlocFilter('all')
+  }, [currentProductionId])
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   const [activeEvent, setActiveEvent] = useState<CalendarShootDayEvent | null>(null)
@@ -1066,10 +1123,30 @@ export function ScheduleCalendarPage() {
     return { start, end }
   }, [year, month])
 
+  const { data: shootingBlocs = [] } = useQuery({
+    queryKey: ['shooting-blocs', currentProductionId],
+    queryFn: () => listShootingBlocsByProduction(currentProductionId!),
+    enabled: !!currentProductionId && isEpisodicProduction,
+  })
+
+  const { data: episodes = [] } = useQuery({
+    queryKey: ['episodes', currentProductionId],
+    queryFn: () => listEpisodesByProduction(currentProductionId!),
+    enabled: !!currentProductionId && isEpisodicProduction,
+  })
+
   const { data: events = [] } = useQuery({
-    queryKey: ['calendar-events', currentProductionId, dateRange.start, dateRange.end],
+    queryKey: [
+      'calendar-events',
+      currentProductionId,
+      dateRange.start,
+      dateRange.end,
+      isEpisodicProduction ? calendarBlocFilter : 'all',
+    ],
     queryFn: () =>
-      listCalendarShootDayEvents(currentProductionId ?? '', dateRange),
+      listCalendarShootDayEvents(currentProductionId ?? '', dateRange, {
+        shootingBlocFilter: isEpisodicProduction ? calendarBlocFilter : 'all',
+      }),
     enabled: !!currentProductionId,
   })
   const { data: strips = [] } = useQuery({
@@ -1196,6 +1273,28 @@ export function ScheduleCalendarPage() {
     castByShotId,
     bookingsForSelectedDay,
     cast,
+  ])
+
+  const episodeById = useMemo(() => new Map(episodes.map((e) => [e.id, e])), [episodes])
+
+  const episodesOnUnitSummary = useMemo(() => {
+    if (!isEpisodicProduction || !selectedEvent) return null
+    const shotById = new Map(shots.map((s) => [s.id, s]))
+    const sceneById = new Map(scenes.map((s) => [s.id, s]))
+    const names = orderedDistinctEpisodeNames({
+      strips: selectedUnitScheduledStrips,
+      shotById,
+      sceneById,
+      episodeById,
+    })
+    return names.length > 0 ? names.join(', ') : '—'
+  }, [
+    isEpisodicProduction,
+    selectedEvent,
+    selectedUnitScheduledStrips,
+    shots,
+    scenes,
+    episodeById,
   ])
 
   const daySummaryStats = useMemo<DaySummaryStats>(() => {
@@ -1371,9 +1470,28 @@ export function ScheduleCalendarPage() {
 
   return (
     <div className="space-y-4 relative">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold">Schedule — Calendar</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {isEpisodicProduction && (
+            <Select
+              value={calendarBlocFilter}
+              onValueChange={(v) => setCalendarBlocFilter(v as ShootingBlocViewFilter)}
+            >
+              <SelectTrigger className="h-9 w-[200px]" aria-label="Filter calendar by shooting bloc">
+                <SelectValue placeholder="Bloc" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All blocs</SelectItem>
+                <SelectItem value="unassigned">Outside blocs</SelectItem>
+                {shootingBlocs.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           {moveMutation.isPending && (
             <span className="text-muted-foreground text-sm">Moving…</span>
           )}
@@ -1416,6 +1534,7 @@ export function ScheduleCalendarPage() {
                       key={event.shootDayUnitId}
                       event={event}
                       onClick={() => openDrawer(event)}
+                      isEpisodic={isEpisodicProduction}
                     />
                   ))}
                 </div>
@@ -1431,6 +1550,7 @@ export function ScheduleCalendarPage() {
                 event={activeEvent}
                 onClick={() => {}}
                 isOverlay
+                isEpisodic={isEpisodicProduction}
               />
             </div>
           ) : null}
@@ -1487,6 +1607,13 @@ export function ScheduleCalendarPage() {
         warnings={daySummaryWarnings}
         turnaround={dayTurnaroundSummary}
         orsApiKeySetting={orsApiKeySetting}
+        isEpisodic={isEpisodicProduction}
+        shootingBlocDisplay={
+          selectedEvent && isEpisodicProduction
+            ? calendarShootingBlocDisplay(selectedEvent.shootingBlocId, selectedEvent.shootingBlocName)
+            : undefined
+        }
+        episodesOnUnitSummary={episodesOnUnitSummary ?? undefined}
         onSaveEdits={async ({ shootDayId, callTime, wrapTime, notes }) => {
           await updateDaySummaryMutation.mutateAsync({
             shootDayId,

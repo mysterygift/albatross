@@ -5,6 +5,8 @@
  */
 export const APF_V1_TABLE_KEYS = [
   'productions',
+  'episodes',
+  'shooting_blocs',
   'units',
   'people',
   'locations',

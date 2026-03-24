@@ -749,8 +749,44 @@ pub fn run() {
         },
         Migration {
             version: 57,
+            description: "budget_revisions_approval",
+            sql: include_str!("../migrations/0057_budget_revisions_approval.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 58,
             description: "deliverable_template_svod_packages",
             sql: include_str!("../migrations/0058_deliverable_template_svod_packages.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 59,
+            description: "episodic_foundation",
+            sql: include_str!("../migrations/0059_episodic_foundation.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 60,
+            description: "scenes_episode_id",
+            sql: include_str!("../migrations/0060_scenes_episode_id.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 61,
+            description: "shoot_days_shooting_bloc",
+            sql: include_str!("../migrations/0061_shoot_days_shooting_bloc.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 62,
+            description: "music_tracks_episode_id",
+            sql: include_str!("../migrations/0062_music_tracks_episode_id.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 63,
+            description: "deliverables_episode_id",
+            sql: include_str!("../migrations/0063_deliverables_episode_id.sql"),
             kind: MigrationKind::Up,
         },
     ];

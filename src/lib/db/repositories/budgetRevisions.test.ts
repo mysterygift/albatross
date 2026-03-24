@@ -56,13 +56,18 @@ describe('budgetRevisions repository', () => {
 
   it('creates Current budget live revision when missing', async () => {
     const mockDb = {
-      select: vi.fn().mockResolvedValue([]),
+      select: vi
+        .fn()
+        .mockResolvedValueOnce([]) // outer getLive
+        .mockResolvedValueOnce([]) // inner getLive
+        .mockResolvedValueOnce([{ x: 1 }]), // legacy NULL revision rows → run backfill
       execute: vi.fn().mockResolvedValue(undefined),
     }
     vi.mocked(getDb).mockResolvedValue(mockDb as never)
 
     const id = await getOrCreateLiveBudgetRevisionIdForProduction('p2')
     expect(id).toBe('new-revision-id')
+    expect(mockDb.execute).toHaveBeenCalledWith(expect.stringContaining('BEGIN IMMEDIATE'), [])
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO budget_revisions'),
       ['new-revision-id', 'p2', 'Current budget', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z']
@@ -75,6 +80,7 @@ describe('budgetRevisions repository', () => {
       expect.stringContaining('UPDATE contingency_rules'),
       ['p2', 'new-revision-id']
     )
+    expect(mockDb.execute).toHaveBeenCalledWith('COMMIT', [])
   })
 
   it('returns explicit revision id without lookup', async () => {
@@ -115,24 +121,25 @@ describe('budgetRevisions repository', () => {
   })
 
   it('auto-creates Current budget revision while listing when legacy budget data exists', async () => {
+    const revisionRow = {
+      id: 'new-revision-id',
+      production_id: 'p1',
+      name: 'Current budget',
+      created_from_revision_id: null,
+      is_live: 1,
+      created_at: 't',
+      updated_at: 't',
+      deleted_at: null,
+    }
     const mockDb = {
       select: vi
         .fn()
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ exists_flag: 1 }])
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([
-          {
-            id: 'new-revision-id',
-            production_id: 'p1',
-            name: 'Current budget',
-            created_from_revision_id: null,
-            is_live: 1,
-            created_at: 't',
-            updated_at: 't',
-            deleted_at: null,
-          },
-        ]),
+        .mockResolvedValueOnce([]) // list revisions
+        .mockResolvedValueOnce([{ exists_flag: 1 }]) // hasAnyBudgetScopedData
+        .mockResolvedValueOnce([]) // getOrCreate outer getLive
+        .mockResolvedValueOnce([]) // getOrCreate inner getLive
+        .mockResolvedValueOnce([{ x: 1 }]) // productionHasNullBudgetRevisionScopedRows
+        .mockResolvedValueOnce([revisionRow]), // getBudgetRevisionById after create
       execute: vi.fn().mockResolvedValue(undefined),
     }
     vi.mocked(getDb).mockResolvedValue(mockDb as never)

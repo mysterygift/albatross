@@ -11,9 +11,13 @@ import {
 } from '@/components/ui/popover'
 import { X, Film, Truck, Megaphone, Utensils, Moon, StickyNote, Clock, Skull, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { StripboardStrip, StripType } from '@/lib/db/types'
+import type { StripboardStrip, StripType, Episode } from '@/lib/db/types'
 import type { Scene, Shot } from '@/lib/db/types'
 import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
+import {
+  episodeLabelForSceneRow,
+  NO_EPISODE_ASSIGNMENT_LABEL,
+} from '@/lib/schedule/episodicScheduleDisplay'
 
 const STRIP_ICONS: Record<StripType, typeof Film> = {
   SHOT: Film,
@@ -38,6 +42,8 @@ export function StripItem({
   onDeleteStrip,
   disabled,
   className,
+  isEpisodic,
+  episodeById,
 }: {
   strip: StripboardStrip
   scenes: Scene[]
@@ -54,10 +60,20 @@ export function StripItem({
   onDeleteStrip?: (strip: StripboardStrip) => void
   disabled?: boolean
   className?: string
+  /** When true, show episode label from scene (shots inherit via scene). */
+  isEpisodic?: boolean
+  episodeById?: Map<string, Episode>
 }) {
   const shot = strip.shot_id ? shots.find((sh) => sh.id === strip.shot_id) : null
   const scene = shot ? scenes.find((s) => s.id === shot.scene_id) : (strip.scene_id ? scenes.find((s) => s.id === strip.scene_id) : null)
   const Icon = STRIP_ICONS[strip.strip_type]
+  const episodeStripLabel =
+    isEpisodic &&
+    episodeById &&
+    scene &&
+    (strip.strip_type === 'SHOT' || strip.strip_type === 'SCENE')
+      ? episodeLabelForSceneRow({ scene, episodeById })
+      : null
 
   const label = (
     <div className="flex flex-col gap-0 min-w-0 flex-1">
@@ -67,6 +83,15 @@ export function StripItem({
           <>
             <span className="font-medium shrink-0">Scene {scene.scene_number} / Shot {shot.shot_number}</span>
             <div className="flex gap-1 shrink-0 flex-wrap">
+              {episodeStripLabel && (
+                <Badge
+                  variant={episodeStripLabel === NO_EPISODE_ASSIGNMENT_LABEL ? 'outline' : 'secondary'}
+                  className="text-[10px] max-w-[6.5rem] truncate"
+                  title={episodeStripLabel}
+                >
+                  {episodeStripLabel}
+                </Badge>
+              )}
               {scene.int_ext && <Badge variant="secondary" className="text-[10px]">{scene.int_ext}</Badge>}
               {scene.day_night && <Badge variant="outline" className="text-[10px]">{scene.day_night}</Badge>}
               {scene.page_eighths != null && <Badge variant="outline" className="text-[10px]">{scene.page_eighths}/8</Badge>}
@@ -79,6 +104,15 @@ export function StripItem({
               {scene.title ?? scene.heading ?? ''}
             </span>
             <div className="flex gap-1 shrink-0 flex-wrap">
+              {episodeStripLabel && (
+                <Badge
+                  variant={episodeStripLabel === NO_EPISODE_ASSIGNMENT_LABEL ? 'outline' : 'secondary'}
+                  className="text-[10px] max-w-[6.5rem] truncate"
+                  title={episodeStripLabel}
+                >
+                  {episodeStripLabel}
+                </Badge>
+              )}
               {scene.int_ext && <Badge variant="secondary" className="text-[10px]">{scene.int_ext}</Badge>}
               {scene.day_night && <Badge variant="outline" className="text-[10px]">{scene.day_night}</Badge>}
               {scene.page_eighths != null && <Badge variant="outline" className="text-[10px]">{scene.page_eighths}/8</Badge>}

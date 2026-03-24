@@ -1,6 +1,12 @@
 /**
- * Deterministic demo production seed. All operations target slug = DEMO_SLUG only.
+ * Deterministic demo production seed. Mint Heist uses DEMO_SLUG; episodic suite uses DEMO_EPISODIC_SLUG.
  * Never delete or match by name; never touch non-demo productions.
+ *
+ * North Shore (DEMO_EPISODIC_SLUG): episodic demo with 3 episodes × 10 scenes × 8 shots, Italian coastal
+ * locations, 50 crew (see demoCrewSeed NORTH_SHORE_EPISODIC_CREW), Mint Heist cast reuse, equipment/vendor
+ * pattern mirrored from the singleton demo via EPISODIC_DEMO_IDS. Two non-overlapping shooting blocs
+ * (days 1–6 vs 7–12) with mixed-episode stripboard rows; call sheets, music, and deliverables remain
+ * episode-aware. Mint Heist (DEMO_SLUG) remains the non-episodic regression anchor.
  *
  * Shot list seed (Shot Lists page):
  * - Edge cases: 10+ shots with NULL lens/shot_size/camera_movement/duration_seconds (shots 1-10);
@@ -21,19 +27,43 @@ import { seedDemoTasks } from './demoTaskSeed'
 import { seedDemoVendorFinance } from './demoVendorFinanceSeed'
 import { seedDemoVendors } from './demoVendorSeed'
 import { seedDemoEquipment } from './demoEquipmentSeed'
-import { DEMO_CREW_MEMBER_COUNT, seedDemoCrew } from './demoCrewSeed'
+import { DEMO_CREW_MEMBER_COUNT, NORTH_SHORE_EPISODIC_CREW, seedDemoCrew } from './demoCrewSeed'
 import { listDocumentsByProduction } from '../repositories/document'
+import { listEpisodesByProduction } from '../repositories/episodes'
 import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { generateCueSheet, generateLocationReleaseCover, generateContributorFormCover } from '@/lib/pdf'
 import { generateCallSheetPdf, parseCallSheetWeatherJson } from '@/lib/pdf/callSheet'
 import { isLockError } from '../perf'
+import {
+  enrichCallSheetStripEpisodeLabel,
+  shootingBlocMastheadLabelForCallSheet,
+} from '@/lib/call-sheets/callSheetEpisodic'
 import { selectPrimaryCallSheetContacts } from '@/lib/call-sheets/primaryContacts'
 import { buildCallSheetStripFromStripboard } from '@/lib/call-sheets/scheduleStripRow'
+import { persistShootDayShootingBlocId } from '@/lib/db/shootingBlocAssociation'
 import type { CameraMovement, ShotSize } from '../types'
 import { CAMERA_MOVEMENT_VALUES, SHOT_SIZE_VALUES } from '../types'
-import { DEMO_EXCHANGE_RATE_ID, DEMO_SLUG, IDS, SEED_VERSION } from './constants'
+import {
+  DEMO_EPISODIC_SLUG,
+  DEMO_EXCHANGE_RATE_ID,
+  DEMO_SLUG,
+  EPISODIC_DEMO_IDS,
+  EPISODIC_DEMO_MIXED_STRIP_SCENES,
+  IDS,
+  SEED_VERSION,
+} from './constants'
+import {
+  buildNorthShoreShotRows,
+  NORTH_SHORE_DEMO_PRODUCTION_NAME,
+  NORTH_SHORE_LOCATIONS,
+  NORTH_SHORE_SCENES,
+} from './northShoreDemoContent'
 import type { DemoSeedIdSource } from './demoSeedContext'
-import { buildDemoSeedIdSourceWithUuid, makeDemoSeedIdSourceFromIDS } from './demoSeedContext'
+import {
+  buildDemoSeedIdSourceWithUuid,
+  makeDemoSeedIdSourceFromEpisodicIDS,
+  makeDemoSeedIdSourceFromIDS,
+} from './demoSeedContext'
 import { getLastSeededAt, getSeedVersion, setSeedMeta } from './seedMeta'
 
 const ATTACHMENTS = 'attachments'
@@ -77,9 +107,8 @@ async function deleteAttachmentFilesOnDisk(paths: string[]): Promise<void> {
 }
 
 /**
- * Hard-delete demo production and its attachment files. Only call with id where slug = DEMO_SLUG.
- * Gets document paths first (before cascade removes rows), then hard-deletes production (FK
- * cascades remove all children), then deletes files from disk.
+ * Hard-delete a demo production and its attachment files. Gets document paths first (before cascade
+ * removes rows), then hard-deletes production (FK cascades remove all children), then deletes files.
  */
 async function hardDeleteDemoAndRelated(productionId: string): Promise<void> {
   const paths = await getDocumentFilePathsForProduction(productionId)
@@ -135,26 +164,34 @@ export async function ensureDemoData(): Promise<void> {
   const existing = await getProductionBySlug(DEMO_SLUG)
   if (!existing) {
     await runFullSeed()
-    return
+  } else {
+    await maybeBackfillSingletonDemoCrewIfEmpty(existing.id)
   }
-  await maybeBackfillSingletonDemoCrewIfEmpty(existing.id)
+  await ensureEpisodicDemoProduction()
 }
 
 /**
- * Find demo production by slug; hard-delete it and related rows and attachment files;
- * remove only the demo-seeded exchange rate (not user-fetched cache); then run ensureDemoData().
+ * Ensure the episodic North Shore demo exists (used after migrations or when Mint Heist already present).
+ */
+export async function ensureEpisodicDemoProduction(): Promise<void> {
+  if (await getProductionBySlug(DEMO_EPISODIC_SLUG)) return
+  await runEpisodicFullSeed()
+}
+
+/**
+ * Find demo production(s) by slug; hard-delete Mint Heist and episodic demo and attachment files;
+ * remove only the demo-seeded exchange rate (not user-fetched cache); then re-run full demo seed.
  * Does NOT reset user settings (display_currency, enable_currency_conversion_api).
  */
 export async function resetDemoData(): Promise<void> {
-  const prod = await getProductionBySlug(DEMO_SLUG)
-  if (!prod) {
-    await ensureDemoData()
-    return
-  }
   const db = await getDb()
   await db.execute(`DELETE FROM exchange_rates WHERE id = $1`, [DEMO_EXCHANGE_RATE_ID])
-  await hardDeleteDemoAndRelated(prod.id)
+  for (const slug of [DEMO_SLUG, DEMO_EPISODIC_SLUG] as const) {
+    const prod = await getProductionBySlug(slug)
+    if (prod) await hardDeleteDemoAndRelated(prod.id)
+  }
   await runFullSeed()
+  await ensureEpisodicDemoProduction()
 }
 
 export { getLastSeededAt, getSeedVersion }
@@ -192,10 +229,12 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'equipment',
     'production_tasks',
     'deliverables',
+    'episodes',
     'music_tracks',
     'clearances',
     'cue_sheets',
     'script_documents',
+    'shooting_blocs',
     'equipment_terms',
   ]
   try {
@@ -218,8 +257,8 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
           bindValues: ['b0000000-0000-4000-8000-000000000003', VERIFY_PID, 'Person', 0, ts, ts],
         },
         {
-          sql: `INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-          bindValues: ['b0000000-0000-4000-8000-000000000004', VERIFY_PID, '1', ts, ts],
+          sql: `INSERT INTO scenes (id, production_id, scene_number, episode_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+          bindValues: ['b0000000-0000-4000-8000-000000000004', VERIFY_PID, '1', null, ts, ts],
         },
         {
           sql: `INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
@@ -302,9 +341,126 @@ async function runFullSeed(): Promise<void> {
   await setSeedMeta('seed_version', SEED_VERSION)
 }
 
+export async function runEpisodicFullSeed(): Promise<void> {
+  const db = await getDb()
+  const ts = now()
+  const pid = EPISODIC_DEMO_IDS.production
+
+  const existing = await db.select<{ id: string }[]>(
+    `SELECT id FROM productions WHERE id = $1 OR slug = $2`,
+    [pid, DEMO_EPISODIC_SLUG]
+  )
+  if (existing.length > 0) {
+    const existingId = existing[0]!.id
+    const paths = await getDocumentFilePathsForProduction(existingId)
+    await hardDeleteProduction(existingId)
+    await deleteAttachmentFilesOnDisk(paths)
+  }
+
+  await mkdir(ATTACHMENTS, { baseDir: BaseDirectory.AppData, recursive: true })
+
+  const startDate = todayLocalYYYYMMDD()
+  const bloc1end = addDaysLocal(startDate, 5)
+  const bloc2start = addDaysLocal(startDate, 6)
+  const bloc2end = addDaysLocal(startDate, 11)
+
+  await db.execute(
+    `INSERT INTO productions (id, name, slug, currency_code, notes, is_episodic, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, 1, $6, $7)`,
+    [
+      pid,
+      NORTH_SHORE_DEMO_PRODUCTION_NAME,
+      DEMO_EPISODIC_SLUG,
+      'GBP',
+      'Episodic demo — Italian coastal drama. Episodes, shooting blocs, mixed stripboard days, crew, equipment, call sheets.',
+      ts,
+      ts,
+    ]
+  )
+
+  const episodeNames = ['Episode 1', 'Episode 2', 'Episode 3'] as const
+  for (let i = 0; i < episodeNames.length; i++) {
+    await db.execute(
+      `INSERT INTO episodes (id, production_id, name, sort_order, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NULL)`,
+      [EPISODIC_DEMO_IDS.episode(i + 1), pid, episodeNames[i], i, ts, ts]
+    )
+  }
+
+  await db.execute(
+    `INSERT INTO shooting_blocs (id, production_id, name, start_date, end_date, created_at, updated_at, deleted_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8), ($9, $10, $11, $12, $13, $14, $15, $16)`,
+    [
+      EPISODIC_DEMO_IDS.shootingBloc(1),
+      pid,
+      'Block A — Liguria coast',
+      startDate,
+      bloc1end,
+      ts,
+      ts,
+      null,
+      EPISODIC_DEMO_IDS.shootingBloc(2),
+      pid,
+      'Block B — Tyrrhenian run',
+      bloc2start,
+      bloc2end,
+      ts,
+      ts,
+      null,
+    ]
+  )
+
+  const e1 = EPISODIC_DEMO_IDS.episode(1)
+  const e2 = EPISODIC_DEMO_IDS.episode(2)
+  const e3 = EPISODIC_DEMO_IDS.episode(3)
+  const episodeIdForSceneNumber = (sceneNum: number): string => {
+    if (sceneNum <= 10) return e1
+    if (sceneNum <= 20) return e2
+    return e3
+  }
+
+  const musicEpisodeIdForIndex = (i: number): string | null => {
+    if (i <= 3) return e1
+    if (i <= 6) return e2
+    return null
+  }
+
+  const deliverableEpisodeIdForIndex = (i: number): string | null => {
+    if (i <= 4) return e1
+    if (i <= 8) return e2
+    return null
+  }
+
+  const idSource = makeDemoSeedIdSourceFromEpisodicIDS()
+  await runDemoContentSeed(pid, idSource, startDate, ts, {
+    includeDocuments: true,
+    includeExchangeRate: false,
+    attachmentBasePrefix: 'demo-episodic',
+    demoProductionDisplayName: NORTH_SHORE_DEMO_PRODUCTION_NAME,
+    northShoreEpisodicLayout: true,
+    episodeIdForSceneNumber,
+    mixedStripSceneNumbersByDay: EPISODIC_DEMO_MIXED_STRIP_SCENES,
+    musicEpisodeIdForIndex,
+    deliverableEpisodeIdForIndex,
+    persistShootDayBlocsAfterSeed: true,
+  })
+}
+
 export type RunDemoContentSeedOptions = {
   includeDocuments: boolean
   includeExchangeRate: boolean
+  /** Attachment filenames: `${prefix}-location-release.pdf`, etc. Default `demo` (Mint Heist). */
+  attachmentBasePrefix?: string
+  /** Cover / PDF branding when including documents. */
+  demoProductionDisplayName?: string
+  episodeIdForSceneNumber?: (sceneNumber: number) => string | null
+  mixedStripSceneNumbersByDay?: number[][] | null
+  musicEpisodeIdForIndex?: (index1Based: number) => string | null
+  deliverableEpisodeIdForIndex?: (index1Based: number) => string | null
+  /** When true, resolves `shooting_bloc_id` for each seeded day before documents (e.g. call sheet PDF). */
+  persistShootDayBlocsAfterSeed?: boolean
+  /** North Shore episodic demo: 30 scenes, 7 Italian locations, 8 shots/scene, 50 crew, equipment + vendors. */
+  northShoreEpisodicLayout?: boolean
 }
 
 /**
@@ -336,6 +492,26 @@ async function runDemoContentSeed(
   options: RunDemoContentSeedOptions
 ): Promise<void> {
   const db = await getDb()
+  const attachmentBasePrefix = options.attachmentBasePrefix ?? 'demo'
+  const demoProductionDisplayName = options.demoProductionDisplayName ?? 'Demo: The Mint Heist'
+  const northShoreLayout = options.northShoreEpisodicLayout === true
+  const sceneCount = northShoreLayout ? NORTH_SHORE_SCENES.length : 45
+  const locationCount = northShoreLayout ? NORTH_SHORE_LOCATIONS.length : 14
+  const isNorthShoreEpisodicProd = productionId === EPISODIC_DEMO_IDS.production
+
+  const prodMeta = await db.select<{ is_episodic: number }[]>(
+    `SELECT is_episodic FROM productions WHERE id = $1`,
+    [productionId]
+  )
+  const isEpisodicSeed = prodMeta.length > 0 && Number(prodMeta[0]!.is_episodic) === 1
+  let defaultEpisodeId: string | null = null
+  if (isEpisodicSeed) {
+    const eps = await listEpisodesByProduction(productionId)
+    if (eps.length === 0) {
+      throw new Error('Episodic production has no active episodes; cannot seed demo scenes.')
+    }
+    defaultEpisodeId = eps[0]!.id
+  }
 
   await db.execute(
     `INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5), ($6, $7, $8, $9, $10)`,
@@ -518,8 +694,8 @@ async function runDemoContentSeed(
     },
   ]
 
-  for (let i = 1; i <= 14; i++) {
-    const loc = DEMO_LOCATIONS[i - 1]!
+  for (let i = 1; i <= locationCount; i++) {
+    const loc = northShoreLayout ? NORTH_SHORE_LOCATIONS[i - 1]! : DEMO_LOCATIONS[i - 1]!
     await db.execute(
       `INSERT INTO locations (id, production_id, name, booked_status, address, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
@@ -539,24 +715,53 @@ async function runDemoContentSeed(
     )
   }
 
-  const intExt = ['INT', 'EXT', 'EXT', 'INT', 'EXT'] as const
-  const dayNight = ['DAY', 'NIGHT', 'DAY', 'NIGHT', 'DAY'] as const
-  for (let s = 1; s <= 45; s++) {
-    const locId = s <= 14 ? idSource.location(((s - 1) % 14) + 1) : null
+  const intExtMint = ['INT', 'EXT', 'EXT', 'INT', 'EXT'] as const
+  const dayNightMint = ['DAY', 'NIGHT', 'DAY', 'NIGHT', 'DAY'] as const
+  for (let s = 1; s <= sceneCount; s++) {
+    const episodeIdForScene =
+      isEpisodicSeed && options.episodeIdForSceneNumber
+        ? (options.episodeIdForSceneNumber(s) ?? defaultEpisodeId)
+        : defaultEpisodeId
+    let locId: string | null
+    let heading: string
+    let title: string
+    let description: string
+    let int_ext: 'INT' | 'EXT'
+    let day_night: 'DAY' | 'NIGHT'
+    let page_eighths: number
+    if (northShoreLayout) {
+      const def = NORTH_SHORE_SCENES[s - 1]!
+      locId = idSource.location(def.locationIndex)
+      heading = def.heading
+      title = def.title
+      description = def.description
+      int_ext = def.int_ext
+      day_night = def.day_night
+      page_eighths = def.page_eighths
+    } else {
+      locId = s <= 14 ? idSource.location(((s - 1) % 14) + 1) : null
+      heading = `${intExtMint[(s - 1) % 5]} - ${dayNightMint[(s - 1) % 5]}`
+      title = `Scene ${s}`
+      description = `Description for scene ${s}`
+      int_ext = intExtMint[(s - 1) % 5]
+      day_night = dayNightMint[(s - 1) % 5]
+      page_eighths = 8 + (s % 4)
+    }
     await db.execute(
-      `INSERT INTO scenes (id, production_id, scene_number, heading, title, description, int_ext, day_night, page_eighths, location_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      `INSERT INTO scenes (id, production_id, scene_number, heading, title, description, int_ext, day_night, page_eighths, location_id, episode_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         idSource.scene(s),
         productionId,
         String(s),
-        `${intExt[(s - 1) % 5]} - ${dayNight[(s - 1) % 5]}`,
-        `Scene ${s}`,
-        `Description for scene ${s}`,
-        intExt[(s - 1) % 5],
-        dayNight[(s - 1) % 5],
-        8 + (s % 4),
+        heading,
+        title,
+        description,
+        int_ext,
+        day_night,
+        page_eighths,
         locId,
+        episodeIdForScene,
         ts,
         ts,
       ]
@@ -586,9 +791,37 @@ async function runDemoContentSeed(
   }
 
   // -------------------------------------------------------------------------
-  // Shots: 120 total, rich fields + explicit test cases
-  // Distribution: 5 coverage scenes × 6; 10 scenes × 1–2; 20 scenes × 2–4; 10 scenes × 2–3
+  // Shots: Mint Heist 120 w/ edge cases; North Shore 30×8 coastal coverage
   // -------------------------------------------------------------------------
+  const firstShotIdBySceneId = new Map<string, string>()
+  if (northShoreLayout) {
+    const northRows = buildNorthShoreShotRows({ idSource, ts })
+    for (const row of northRows) {
+      if (!firstShotIdBySceneId.has(row.scene_id)) firstShotIdBySceneId.set(row.scene_id, row.id)
+      await db.execute(
+        `INSERT INTO shots (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        [
+          row.id,
+          row.scene_id,
+          row.shot_number,
+          row.description,
+          row.shot_description,
+          row.subject,
+          row.action_description,
+          row.shot_size,
+          row.support,
+          row.lens,
+          row.duration_seconds,
+          row.estimated_shoot_minutes,
+          row.camera_movement,
+          row.notes,
+          ts,
+          ts,
+        ]
+      )
+    }
+  } else {
   const sceneShotCounts: number[] = []
   for (let s = 0; s < 5; s++) sceneShotCounts.push(6) // coverage
   for (let s = 0; s < 10; s++) sceneShotCounts.push(s % 2 === 0 ? 1 : 2)
@@ -727,7 +960,6 @@ async function runDemoContentSeed(
     }
   }
 
-  const firstShotIdBySceneId = new Map<string, string>()
   for (const row of shotRows) {
     if (!firstShotIdBySceneId.has(row.scene_id)) firstShotIdBySceneId.set(row.scene_id, row.id)
     await db.execute(
@@ -753,30 +985,63 @@ async function runDemoContentSeed(
       ]
     )
   }
+  }
 
-  await seedDemoPeople(productionId, startDate, ts, idSource)
+  await seedDemoPeople(
+    productionId,
+    startDate,
+    ts,
+    idSource,
+    northShoreLayout ? { castScheduleVariant: 'north-shore-episodic' } : undefined
+  )
 
-  for (let s = 1; s <= 12; s++) {
-    const locId = idSource.location(((s - 1) % 14) + 1)
-    await db.execute(
-      `INSERT INTO location_scene (id, location_id, scene_id, created_at, updated_at)
+  if (northShoreLayout) {
+    for (let s = 1; s <= sceneCount; s++) {
+      const locIdx = NORTH_SHORE_SCENES[s - 1]!.locationIndex
+      const locId = idSource.location(locIdx)
+      await db.execute(
+        `INSERT INTO location_scene (id, location_id, scene_id, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5)`,
-      [idSource.locationScene(s), locId, idSource.scene(s), ts, ts]
-    )
+        [idSource.locationScene(s), locId, idSource.scene(s), ts, ts]
+      )
+    }
+  } else {
+    for (let s = 1; s <= 12; s++) {
+      const locId = idSource.location(((s - 1) % 14) + 1)
+      await db.execute(
+        `INSERT INTO location_scene (id, location_id, scene_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+        [idSource.locationScene(s), locId, idSource.scene(s), ts, ts]
+      )
+    }
   }
 
   // -------------------------------------------------------------------------
   // Cast bookings: aligned with scene_cast and stripboard; respects cast availability clashes
   // -------------------------------------------------------------------------
-  await seedDemoBookings(productionId, ts, idSource)
+  await seedDemoBookings(
+    productionId,
+    ts,
+    idSource,
+    northShoreLayout
+      ? {
+          sceneNumbersForDay: (dayNum) => EPISODIC_DEMO_MIXED_STRIP_SCENES[dayNum - 1] ?? [],
+          maxSceneNumber: sceneCount,
+        }
+      : undefined
+  )
 
   // -------------------------------------------------------------------------
-  // Vendors (singleton demo only): seed before budget so expenses can get vendor_id.
+  // Vendors + equipment: singleton Mint Heist and North Shore episodic share vendor/invoice/equipment pattern.
   // -------------------------------------------------------------------------
   const isSingletonDemo = productionId === IDS.production
   let vendorIdByCompanyName: Record<string, string> | null = null
-  if (isSingletonDemo) {
-    vendorIdByCompanyName = await seedDemoVendors(productionId, ts)
+  if (isSingletonDemo || isNorthShoreEpisodicProd) {
+    vendorIdByCompanyName = await seedDemoVendors(
+      productionId,
+      ts,
+      isNorthShoreEpisodicProd ? EPISODIC_DEMO_IDS : IDS
+    )
   }
 
   // -------------------------------------------------------------------------
@@ -788,33 +1053,66 @@ async function runDemoContentSeed(
   await seedDemoBudget(productionId, startDate, ts, addDaysLocal, idSource.budgetItem, idSource.expense, vendorIdByCompanyName ?? undefined)
   await seedDemoTasks(productionId, startDate, ts, addDaysLocal, idSource)
   await seedDemoReconciliation(productionId, ts, idSource.budgetItem, idSource.expense, idSource.reconciliationLink)
-  await seedDemoDeliverables(productionId, startDate, ts, addDaysLocal, idSource)
+  await seedDemoDeliverables(
+    productionId,
+    startDate,
+    ts,
+    addDaysLocal,
+    idSource,
+    options.deliverableEpisodeIdForIndex
+  )
 
   // -------------------------------------------------------------------------
   // Vendor finance (singleton demo only): invoices, POs, reminder tasks, invoice/PO↔expense links.
   // -------------------------------------------------------------------------
-  if (isSingletonDemo && vendorIdByCompanyName) {
-    await seedDemoVendorFinance(productionId, startDate, ts, addDaysLocal, vendorIdByCompanyName)
-    await seedDemoEquipment(productionId, startDate, ts, addDaysLocal, vendorIdByCompanyName)
+  if ((isSingletonDemo || isNorthShoreEpisodicProd) && vendorIdByCompanyName) {
+    await seedDemoVendorFinance(
+      productionId,
+      startDate,
+      ts,
+      addDaysLocal,
+      vendorIdByCompanyName,
+      isNorthShoreEpisodicProd ? EPISODIC_DEMO_IDS : IDS
+    )
+    await seedDemoEquipment(
+      productionId,
+      startDate,
+      ts,
+      addDaysLocal,
+      vendorIdByCompanyName,
+      isNorthShoreEpisodicProd ? EPISODIC_DEMO_IDS : IDS
+    )
   }
 
-  // Crew: people (is_cast=0), and for singleton demo only: crew labour vendors and invoices
-  await seedDemoCrew(productionId, startDate, ts, idSource, addDaysLocal)
+  // Crew: people (is_cast=0), and for singleton Mint Heist only: crew labour vendors and invoices
+  await seedDemoCrew(productionId, startDate, ts, idSource, addDaysLocal, {
+    crewRoster: isNorthShoreEpisodicProd ? NORTH_SHORE_EPISODIC_CREW : undefined,
+  })
   await seedDemoCrewBookings(productionId, ts, idSource)
 
-  const hods = [
-    ['Director', 'Jane Doe', '555-0100', 'director@demo.com'],
-    ['1st AD', 'John Smith', '555-0101', 'ad@demo.com'],
-    ['DoP', 'Alex Camera', '555-0102', 'dop@demo.com'],
-    ['Sound', 'Sam Mix', '555-0103', 'sound@demo.com'],
-    ['Gaffer', 'Glen Light', '555-0104', 'gaffer@demo.com'],
-    ['Art Director', 'Art Design', '555-0105', 'art@demo.com'],
-  ]
+  const hods = northShoreLayout
+    ? ([
+        ['Director', 'Giuseppe Conti', '+39 329 0104501', 'giuseppe.conti@northshore-demo.pictures'],
+        ['1st AD', 'Alessandro Costa', '+39 329 0104509', 'alessandro.costa@northshore-demo.pictures'],
+        ['DoP', 'Filippo Colombo', '+39 329 0104528', 'filippo.colombo@northshore-demo.pictures'],
+        ['Sound', 'Emiliano Rizzo', '+39 329 0104545', 'emiliano.rizzo@northshore-demo.pictures'],
+        ['Gaffer', 'Francesco Damico', '+39 329 0104536', 'francesco.damico@northshore-demo.pictures'],
+        ['Art Director', 'Andrea Moretti', '+39 329 0104522', 'andrea.moretti@northshore-demo.pictures'],
+      ] as const)
+    : ([
+        ['Director', 'Jane Doe', '555-0100', 'director@demo.com'],
+        ['1st AD', 'John Smith', '555-0101', 'ad@demo.com'],
+        ['DoP', 'Alex Camera', '555-0102', 'dop@demo.com'],
+        ['Sound', 'Sam Mix', '555-0103', 'sound@demo.com'],
+        ['Gaffer', 'Glen Light', '555-0104', 'gaffer@demo.com'],
+        ['Art Director', 'Art Design', '555-0105', 'art@demo.com'],
+      ] as const)
   for (let i = 0; i < hods.length; i++) {
+    const row = hods[i]!
     await db.execute(
       `INSERT INTO key_contacts (id, production_id, department, name, phone, email, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [idSource.keyContact(i + 1), productionId, hods[i][0], hods[i][1], hods[i][2], hods[i][3], ts, ts]
+      [idSource.keyContact(i + 1), productionId, row[0], row[1], row[2], row[3], ts, ts]
     )
   }
 
@@ -834,7 +1132,9 @@ async function runDemoContentSeed(
         [idSource.strip(stripIdx++), productionId, dayId, sduId, 'CALL', 'Call 07:00', sortIndex++, ts, ts]
       )
       for (let sc = 1; sc <= 5; sc++) {
-        const sceneNum = (day - 1) * 4 + sc
+        const mixed = options.mixedStripSceneNumbersByDay?.[day - 1]
+        const sceneNum = mixed?.[sc - 1] ?? (day - 1) * 4 + sc
+        if (sceneNum < 1 || sceneNum > sceneCount) continue
         const sceneId = idSource.scene(sceneNum)
         const shotId = firstShotIdBySceneId.get(sceneId) ?? null
         await db.execute(
@@ -863,10 +1163,11 @@ async function runDemoContentSeed(
 
   const trackTitles = ['Opening Theme', 'Chase Sequence', 'Love Scene', 'Tension Build', 'End Credits', 'Ambient 1', 'Ambient 2', 'Action Sting', 'Emotional', 'Transition']
   for (let i = 1; i <= 10; i++) {
+    const episodeId = options.musicEpisodeIdForIndex?.(i) ?? null
     await db.execute(
-      `INSERT INTO music_tracks (id, production_id, title, artist, publisher_label, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [idSource.musicTrack(i), productionId, trackTitles[i - 1], 'Demo Artist', 'Demo Music Co', ts, ts]
+      `INSERT INTO music_tracks (id, production_id, episode_id, title, artist, publisher_label, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [idSource.musicTrack(i), productionId, episodeId, trackTitles[i - 1], 'Demo Artist', 'Demo Music Co', ts, ts]
     )
   }
 
@@ -878,34 +1179,62 @@ async function runDemoContentSeed(
     )
   }
 
+  if (options.persistShootDayBlocsAfterSeed) {
+    for (let d = 1; d <= 12; d++) {
+      const shootDate = addDaysLocal(startDate, d - 1)
+      await persistShootDayShootingBlocId(idSource.shootDay(d), productionId, shootDate)
+    }
+  }
+
   if (options.includeDocuments) {
+    const nsLoc0 = NORTH_SHORE_LOCATIONS[0]!
     const locReleasePdf = await generateLocationReleaseCover({
-      productionName: 'Demo: The Mint Heist',
-      locationName: 'Mint Building',
-      address: '105 Main St',
+      productionName: demoProductionDisplayName,
+      locationName: northShoreLayout ? nsLoc0.name : 'Mint Building',
+      address: northShoreLayout ? nsLoc0.address.split(',')[0] ?? nsLoc0.address : '105 Main St',
     })
-    const locPath = `${ATTACHMENTS}/demo-location-release.pdf`
+    const locPath = `${ATTACHMENTS}/${attachmentBasePrefix}-location-release.pdf`
     await writeFile(locPath, locReleasePdf, { baseDir: BaseDirectory.AppData })
     await db.execute(
       `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [idSource.document(1), productionId, 'location_release', idSource.location(5), 'demo-location-release.pdf', locPath, 'application/pdf', ts, ts]
+      [
+        idSource.document(1),
+        productionId,
+        'location_release',
+        northShoreLayout ? idSource.location(1) : idSource.location(5),
+        `${attachmentBasePrefix}-location-release.pdf`,
+        locPath,
+        'application/pdf',
+        ts,
+        ts,
+      ]
     )
 
     const contribPdf = await generateContributorFormCover({
-      productionName: 'Demo: The Mint Heist',
+      productionName: demoProductionDisplayName,
       contributorName: 'Jade Mercer',
       role: "Eleanor 'Jade' Mercer",
     })
-    const contribPath = `${ATTACHMENTS}/demo-contributor-form.pdf`
+    const contribPath = `${ATTACHMENTS}/${attachmentBasePrefix}-contributor-form.pdf`
     await writeFile(contribPath, contribPdf, { baseDir: BaseDirectory.AppData })
     await db.execute(
       `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [idSource.document(2), productionId, 'contributor_form', idSource.person(1), 'demo-contributor-form.pdf', contribPath, 'application/pdf', ts, ts]
+      [
+        idSource.document(2),
+        productionId,
+        'contributor_form',
+        idSource.person(1),
+        `${attachmentBasePrefix}-contributor-form.pdf`,
+        contribPath,
+        'application/pdf',
+        ts,
+        ts,
+      ]
     )
 
-    const callSheetPath = `${ATTACHMENTS}/demo-call-sheet.pdf`
+    const callSheetPath = `${ATTACHMENTS}/${attachmentBasePrefix}-call-sheet.pdf`
     const shootDay = await db.select<Record<string, unknown>[]>(`SELECT * FROM shoot_days WHERE id = $1`, [idSource.shootDay(1)])
     if (shootDay.length) {
       const data = await buildCallSheetDataForSeed(productionId, idSource.shootDay(1), startDate)
@@ -915,11 +1244,21 @@ async function runDemoContentSeed(
     await db.execute(
       `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [idSource.document(3), productionId, 'call_sheet', idSource.shootDay(1), 'demo-call-sheet.pdf', callSheetPath, 'application/pdf', ts, ts]
+      [
+        idSource.document(3),
+        productionId,
+        'call_sheet',
+        idSource.shootDay(1),
+        `${attachmentBasePrefix}-call-sheet.pdf`,
+        callSheetPath,
+        'application/pdf',
+        ts,
+        ts,
+      ]
     )
 
     for (let i = 4; i <= 10; i++) {
-      const fileName = `demo-doc-${i}.txt`
+      const fileName = `${attachmentBasePrefix}-doc-${i}.txt`
       const path = `${ATTACHMENTS}/${fileName}`
       await writeTextFile(path, `Demo document ${i} for Albatross.\nGenerated at ${ts}`, { baseDir: BaseDirectory.AppData })
       await db.execute(
@@ -934,13 +1273,23 @@ async function runDemoContentSeed(
       artist: 'Demo Artist',
       publisher: 'Demo Music Co',
     }))
-    const cuePdf = await generateCueSheet('Demo: The Mint Heist', cueRows)
-    const cuePath = `${ATTACHMENTS}/demo-cue-sheet.pdf`
+    const cuePdf = await generateCueSheet(demoProductionDisplayName, cueRows)
+    const cuePath = `${ATTACHMENTS}/${attachmentBasePrefix}-cue-sheet.pdf`
     await writeFile(cuePath, cuePdf, { baseDir: BaseDirectory.AppData })
     await db.execute(
       `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [idSource.document(11), productionId, 'cue_sheet', null, 'demo-cue-sheet.pdf', cuePath, 'application/pdf', ts, ts]
+      [
+        idSource.document(11),
+        productionId,
+        'cue_sheet',
+        null,
+        `${attachmentBasePrefix}-cue-sheet.pdf`,
+        cuePath,
+        'application/pdf',
+        ts,
+        ts,
+      ]
     )
     await db.execute(
       `INSERT INTO cue_sheets (id, production_id, generated_at, document_id, created_at, updated_at)
@@ -979,7 +1328,11 @@ async function buildCallSheetDataForSeed(
   fallbackShootDate: string
 ): Promise<import('@/lib/pdf/callSheet').CallSheetData> {
   const db = await getDb()
-  const prodRows = await db.select<Record<string, unknown>[]>(`SELECT name FROM productions WHERE id = $1`, [productionId])
+  const prodRows = await db.select<Record<string, unknown>[]>(
+    `SELECT name, is_episodic FROM productions WHERE id = $1`,
+    [productionId]
+  )
+  const isEpisodicProduction = Number(prodRows[0]?.is_episodic ?? 0) === 1
   const dayRows = await db.select<Record<string, unknown>[]>(`SELECT * FROM shoot_days WHERE id = $1`, [shootDayId])
   const strips = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM stripboard_strips WHERE shoot_day_id = $1 AND deleted_at IS NULL ORDER BY sort_index`,
@@ -1006,21 +1359,45 @@ async function buildCallSheetDataForSeed(
   )
   const locById = new Map((locRows || []).map((r) => [r.id as string, r]))
   const sceneRows = await db.select<Record<string, unknown>[]>(
-    `SELECT id, scene_number, title, heading, description, int_ext, day_night, page_eighths, location_id FROM scenes WHERE production_id = $1 AND deleted_at IS NULL`,
+    `SELECT id, scene_number, title, heading, description, int_ext, day_night, page_eighths, location_id, episode_id FROM scenes WHERE production_id = $1 AND deleted_at IS NULL`,
     [productionId]
   )
   const shotRows = await db.select<Record<string, unknown>[]>(
-    `SELECT id, scene_id, shot_number, description, shot_description, notes FROM shots WHERE production_id = $1 AND deleted_at IS NULL`,
+    `SELECT sh.id, sh.scene_id, sh.shot_number, sh.description, sh.shot_description, sh.notes
+     FROM shots sh
+     INNER JOIN scenes sc ON sc.id = sh.scene_id AND sc.production_id = $1 AND sc.deleted_at IS NULL
+     WHERE sh.deleted_at IS NULL`,
     [productionId]
   )
   const sceneMap = new Map((sceneRows || []).map((r) => [r.id as string, r]))
   const shotMap = new Map((shotRows || []).map((r) => [r.id as string, r]))
+  const sceneByEpisode = new Map(
+    (sceneRows || []).map((r) => [r.id as string, { episode_id: (r.episode_id as string | null) ?? null }])
+  )
+  const shotByScene = new Map(
+    (shotRows || []).map((r) => [r.id as string, { scene_id: r.scene_id as string }])
+  )
+  let episodeById = new Map<string, { name: string }>()
+  let blocsById = new Map<string, { name: string }>()
+  if (isEpisodicProduction) {
+    const epRows = await db.select<Record<string, unknown>[]>(
+      `SELECT id, name FROM episodes WHERE production_id = $1 AND deleted_at IS NULL`,
+      [productionId]
+    )
+    episodeById = new Map((epRows || []).map((r) => [r.id as string, { name: r.name as string }]))
+    const blocRows = await db.select<Record<string, unknown>[]>(
+      `SELECT id, name FROM shooting_blocs WHERE production_id = $1 AND deleted_at IS NULL`,
+      [productionId]
+    )
+    blocsById = new Map((blocRows || []).map((r) => [r.id as string, { name: r.name as string }]))
+  }
 
   const productionName = (prodRows[0]?.name as string) ?? 'Demo'
   const day = dayRows[0] as Record<string, unknown>
   const shootDate = (day?.shoot_date as string) ?? fallbackShootDate
   const locState = { lastLocationId: null as string | null }
-  const schedule: import('@/lib/pdf/callSheet').CallSheetStrip[] = strips.map((s) => {
+  const schedule: import('@/lib/pdf/callSheet').CallSheetStrip[] = []
+  for (const s of strips) {
     const sceneId = s.scene_id as string | null
     const shotId = s.shot_id as string | null
     const scRaw = sceneId ? sceneMap.get(sceneId) : undefined
@@ -1050,7 +1427,7 @@ async function buildCallSheetDataForSeed(
         : null
     const locRec = scene?.location_id ? locById.get(scene.location_id) : undefined
     const locName = locRec ? ((locRec.name as string) ?? null) : null
-    return buildCallSheetStripFromStripboard(
+    let row = buildCallSheetStripFromStripboard(
       {
         strip_type: s.strip_type as string,
         scene_id: sceneId,
@@ -1065,10 +1442,35 @@ async function buildCallSheetDataForSeed(
       [],
       [],
     )
+    if (isEpisodicProduction) {
+      const ep = enrichCallSheetStripEpisodeLabel({
+        strip: {
+          strip_type: s.strip_type as string,
+          scene_id: sceneId,
+          shot_id: shotId,
+        },
+        shotById: shotByScene,
+        sceneById: sceneByEpisode,
+        episodeById,
+        includeEpisodes: true,
+      })
+      row = { ...row, ...ep }
+    }
+    schedule.push(row)
+  }
+
+  const shootingBlocId = (day?.shooting_bloc_id as string | null) ?? null
+  const shootingBlocMastheadLabel = shootingBlocMastheadLabelForCallSheet({
+    isEpisodicProduction,
+    shootingBlocId,
+    blocsById,
   })
 
   return {
     productionName,
+    isEpisodicProduction,
+    includeEpisodesInSchedule: isEpisodicProduction,
+    shootingBlocMastheadLabel,
     shootDate,
     unitName: 'Main Unit',
     dayNumber: (day?.day_number as number) ?? null,

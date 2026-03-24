@@ -18,6 +18,7 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 - [6. Script Import](#6-script-import)
 - [7. Fundamental workflow](#7-fundamental-workflow)
 - [8. Relationships and connections to other pages](#8-relationships-and-connections-to-other-pages)
+- [9. Episodic productions (user guide)](#9-episodic-productions-user-guide)
 
 **Part I — Current state**
 
@@ -51,6 +52,7 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 - **Route:** `/schedule` redirects to `/schedule/calendar`. Child routes: `/schedule/calendar`, `/schedule/stripboard`, `/schedule/shots`, `/schedule/script-import`.
 - **Navigation:** "Schedule" (Calendar icon) in app nav with sub-items: Calendar, Stripboard, Shot Lists, Script Import.
 - **Context:** Requires a current production. All schedule data is scoped by `production_id`.
+- **Episodic:** Productions created with **episodic** mode (`productions.is_episodic = 1`) add **episodes**, **shooting blocs**, scene **episode** assignment, and optional **shoot day ↔ bloc** association. See [§9](#9-episodic-productions-user-guide).
 
 ### 2. Child pages summary
 
@@ -63,13 +65,14 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 
 ### 3. Calendar
 
-- **Month view:** One event per (shoot_day, shoot_day_unit). Events show unit name, call–wrap time, estimated runtime, primary location, shot count.
+- **Month view:** One event per (shoot_day, shoot_day_unit). Events show unit name, call–wrap time, estimated runtime, primary location, shot count. Episodic productions may show **shooting bloc** / **episode** hints on events and support a **bloc filter** (all, unassigned, or one bloc).
 - **Drag and drop:** Drag an event to another date to move the shoot day. If target date already has a shoot, the two days swap.
 - **Day Summary drawer:** Click an event to open. Shows call time, lunch, wrap time, location, shot count, estimated runtime. Warning if runtime > 10h 30min. Actions: "Open Stripboard", "Generate Call Sheet" (placeholder).
 - **Unit colours:** Main Unit and Second Unit use distinct CSS variables for quick identification.
 
 ### 4. Stripboard
 
+- **Episodic:** Day column headers may show the **shooting bloc** for that shoot day; shot/scene strips may show an **episode** badge. Use the **bloc filter** to hide columns outside the selected block (or show only days “outside blocs”).
 - **Layout:** Left panel (Unscheduled Shots), center (day/unit columns), right (Boneyard).
 - **New shoot day:** Header action "New shoot day" opens a lightweight dialog to enter a shoot date. Creates an empty shoot day for the current production with Main Unit by default (no Second Unit, no strips). After creation the stripboard refreshes, the new day scrolls into view, and a brief "Shoot day created." message is shown.
 - **Unscheduled Shots:** Shots not yet on the stripboard. Search, filter by location, multi-select, "Assign to Day" (shoot day + unit). Can drag shots onto a column or **onto a specific strip**; the new shot strip is inserted **above or below** that strip depending on where you release (not only at the bottom of the column).
@@ -82,6 +85,7 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 ### 5. Shot Lists
 
 - **Scene selector:** Choose a scene to view its shots.
+- **Episodic productions:** **New scene** and **Edit scene** require an **episode** (add episodes under **Settings** first). Script import / new scenes must target an episode when the production is episodic.
 - **New scene:** "New scene" button in the header opens a dialog to create a scene in the current production. Required: scene number. Optional: heading, title, INT/EXT, DAY/NIGHT, location. On success the scene list refreshes and the new scene is selected so you can add shots immediately.
 - **Edit scene:** When a scene is selected, "Edit scene" appears in the header. Opens a dialog pre-filled with that scene’s metadata (scene number, heading, title, INT/EXT, DAY/NIGHT, location). Save updates the scene; the list refreshes and the edited scene stays selected.
 - **Shot table:** Columns include scene/shot number, subject, shot description, size, duration, estimated shoot minutes, camera movement, lens, support, notes, and cast. Rows are ordered by **shot number** within the selected scene (`listShotsByScene`).
@@ -131,6 +135,44 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 | **Locations** | Scenes link to locations; Stripboard Unscheduled filter by location. |
 | **Duplicate production** | When a production is duplicated, schedule entities (shoot days, scenes, shots, stripboard strips) are copied with ID mapping. |
 | **Productions** | All schedule data scoped by production. |
+| **Settings (episodic)** | Episodes list (add, rename, reorder, archive) and shooting blocs (name + date range; changing ranges can re-tag shoot days). |
+| **Deliverables / Music** | Optional `episode_id` on rows for episodic productions (filtering and reporting). |
+| **Import/export (APF)** | Episodic packages must include `episodes`, `shooting_blocs`, `scenes.episode_id`, and `shoot_days.shooting_bloc_id` closure; see [project-import-export-format-v1.md](project-import-export-format-v1.md). |
+
+### 9. Episodic productions (user guide)
+
+**Turning on episodic mode**
+
+- When **creating a production** (Productions list → New), you can enable **Episodic series**. That flag is **permanent**: you cannot switch a production back to single-story mode.
+- The app creates an initial episode (e.g. “Episode 1”) so you can assign scenes immediately. Add, rename, reorder, or archive episodes under **Settings** while the episodic production is selected.
+
+**Episodes and scenes**
+
+- Every **scene** in an episodic production has an **episode** (required in Shot Lists when creating or editing a scene). Shots inherit episode context from their scene.
+- **Shot Lists:** Episode selector appears in the **New scene** and **Edit scene** flows when the production is episodic.
+
+**Shooting blocs**
+
+- **Shooting blocs** are named **date ranges** (start/end per calendar day) that represent blocks of photography (e.g. a prep block, or “Episodes 1–2” shoot weeks).
+- Manage bloc **names and ranges** in **Settings → Shooting blocs**. When you change a bloc’s dates, shoot days whose calendar date falls in the range can be **re-associated** with that bloc (the UI may prompt to confirm moves that affect many days).
+
+**Shoot days**
+
+- Each **shoot day** can reference a **`shooting_bloc_id`** (nullable). Days outside every bloc range show as **Outside blocs** in schedule UIs. Association is **app-maintained** from bloc calendars, not a free-form pick list on the day.
+
+**Calendar**
+
+- Episodic productions can **filter** calendar events by shooting bloc (e.g. one bloc, “unassigned” days only, or all). Event copy can reflect **episode** names derived from scheduled strips’ scenes.
+
+**Stripboard**
+
+- **Column headers** can show the shoot day’s shooting-bloc label.
+- **Strips** (shot/scene) can show a small **episode** badge when the scene has an episode.
+- A **bloc filter** narrows which day columns appear (same semantics as calendar: all, unassigned, or a specific bloc).
+
+**Call sheets, DooD, bookings**
+
+- Call sheets and people workflows still key off **shoot days** and stripboard strips; episodic metadata is additive (episode/bloc labels where surfaced in PDFs or schedule helpers). DooD and booking rules remain cast/stripboard-driven.
 
 ---
 
@@ -138,7 +180,7 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 
 ### 1. Overview and purpose (current state)
 
-Schedule manages **shoot_days**, **shoot_day_units**, **scenes**, **shots**, and **stripboard_strips**. The Calendar and Stripboard are the main scheduling UIs; Shot List and Script Import feed the stripboard. The stripboard is shot-based; `getScheduledSceneIdsByShootDay` and `getScheduledShotIdsByShootDay` (from [stripboard-strips](src/lib/db/repositories/stripboard-strips.ts)) drive People (DooD) and booking intelligence.
+Schedule manages **shoot_days**, **shoot_day_units**, **scenes**, **shots**, and **stripboard_strips**. Episodic productions additionally use **episodes**, **shooting_blocs**, **`scenes.episode_id`**, and **`shoot_days.shooting_bloc_id`**. The Calendar and Stripboard are the main scheduling UIs; Shot List and Script Import feed the stripboard. The stripboard is shot-based; `getScheduledSceneIdsByShootDay` and `getScheduledShotIdsByShootDay` (from [stripboard-strips](src/lib/db/repositories/stripboard-strips.ts)) drive People (DooD) and booking intelligence.
 
 ### 2. Architecture and file layout
 
@@ -161,23 +203,30 @@ src/
 │   │   ├── shoot-day-units.ts
 │   │   ├── stripboard-strips.ts
 │   │   ├── calendar.ts         # listCalendarShootDayEvents
+│   │   ├── episodes.ts
+│   │   ├── shootingBlocs.ts
 │   │   └── units.ts
+│   ├── schedule/
+│   │   └── episodicScheduleDisplay.ts  # Bloc/episode labels, filters, strip → scene
 │   └── script-parser/          # Parser interface, txt-parser
 ```
 
 ### 3. Data model
 
-- **ShootDay:** id, production_id, shoot_date (YYYY-MM-DD), day_number, call_time, wrap_time, notes, meal_times_json, etc.
+- **Production (episodic):** `is_episodic` (`0` | `1`). Once created as episodic, the app does not allow turning it off.
+- **Episode:** id, production_id, name, sort_order; soft-delete via `deleted_at` (archived). Repositories: [episodes.ts](src/lib/db/repositories/episodes.ts); Settings flows use [episodeManagementService.ts](src/lib/db/episodeManagementService.ts).
+- **ShootingBloc:** id, production_id, name, `start_date`, `end_date` (YYYY-MM-DD); soft-delete. [shootingBlocs.ts](src/lib/db/repositories/shootingBlocs.ts); range changes: [shootingBlocAssociation.ts](src/lib/db/shootingBlocAssociation.ts).
+- **ShootDay:** id, production_id, shoot_date (YYYY-MM-DD), day_number, call_time, wrap_time, notes, meal_times_json, optional **`shooting_bloc_id`** → `shooting_blocs` (`ON DELETE SET NULL`), etc.
 - **ShootDayUnit:** id, shoot_day_id, unit_id, is_locked. Links a unit (Main, Second) to a shoot day.
-- **Scene:** id, production_id, scene_number, heading, title, int_ext, day_night, location_id, duration_minutes, etc.
+- **Scene:** id, production_id, scene_number, heading, title, int_ext, day_night, location_id, duration_minutes, optional **`episode_id`** → `episodes` (required in UI when `is_episodic = 1`), etc.
 - **Shot:** id, scene_id, **shot_number** (unique among non-deleted shots in the same scene; enforced in `createShot` / `updateShot`), description, estimated_shoot_minutes, shot_size, camera_movement, etc.
 - **StripboardStrip:** id, production_id, shoot_day_id, shoot_day_unit_id, strip_type (SHOT|SCENE|MOVE|CALL|LUNCH|WRAP|NOTE), shot_id, scene_id, strip_status (SCHEDULED|UNSCHEDULED|BONEYARD), sort_index, estimated_minutes.
 - **Unit:** id, production_id, name (e.g. "Main Unit", "Second Unit").
 
 ### 4. Data flow and dependencies
 
-- **Calendar:** [calendar.ts](src/lib/db/repositories/calendar.ts) `listCalendarShootDayEvents(productionId, dateRange)` — aggregates from shoot_days, shoot_day_units, stripboard_strips, shots. `moveShootDayToDate`, `swapShootDays` for drag.
-- **Stripboard:** `listShootDaysByProduction`, `listShootDayUnitsByProduction`, `listStripsByProduction`, `listScenesByProduction`, `listShotsByProduction`, `listUnscheduledShots`, `listBoneyardStrips`. Mutations: `createStrip`, `createShotStrip`, `moveStrip`, `moveStripToUnscheduled`, `moveStripToBoneyard`, `reorderStrip`, `bulkAssignShotsToDay`, `deleteStrip`. **`createStrip`** accepts optional **`sort_index`**; if omitted, new strips append after the current max `sort_index` for that day/unit. **`createShotStrip`** accepts an optional **`sortIndex`** argument (passed through as `sort_index`) so drag-from-unscheduled can persist insertion order to match the drop. Shoot day creation: `createShootDayWithDefaultMainUnit(productionId, shootDate)` in [schedule.ts](src/lib/db/repositories/schedule.ts) — creates one shoot day and one Main Unit shoot_day_unit in a single transaction; no strips. Stripboard invalidates `stripboardQueryKeys.all` after creation and scrolls the new day into view.
+- **Calendar:** [calendar.ts](src/lib/db/repositories/calendar.ts) `listCalendarShootDayEvents(productionId, dateRange)` — aggregates from shoot_days, shoot_day_units, stripboard_strips, shots; joins **shooting bloc** name/id where present. `moveShootDayToDate`, `swapShootDays` for drag. Episodic UI uses [episodicScheduleDisplay.ts](src/lib/schedule/episodicScheduleDisplay.ts) for bloc labels, episode name ordering, and filter helpers.
+- **Stripboard:** `listShootDaysByProduction`, `listShootDayUnitsByProduction`, `listStripsByProduction`, `listScenesByProduction`, `listShotsByProduction`, `listUnscheduledShots`, `listBoneyardStrips`; episodic pages also load `listEpisodesByProduction`, `listShootingBlocsByProduction` for badges and bloc filters. Mutations: `createStrip`, `createShotStrip`, `moveStrip`, `moveStripToUnscheduled`, `moveStripToBoneyard`, `reorderStrip`, `bulkAssignShotsToDay`, `deleteStrip`. **`createStrip`** accepts optional **`sort_index`**; if omitted, new strips append after the current max `sort_index` for that day/unit. **`createShotStrip`** accepts an optional **`sortIndex`** argument (passed through as `sort_index`) so drag-from-unscheduled can persist insertion order to match the drop. Shoot day creation: `createShootDayWithDefaultMainUnit(productionId, shootDate)` in [schedule.ts](src/lib/db/repositories/schedule.ts) — creates one shoot day and one Main Unit shoot_day_unit in a single transaction; no strips. Stripboard invalidates `stripboardQueryKeys.all` after creation and scrolls the new day into view.
 - **Shot Lists:** `listScenesByProduction`, `listShotsByScene`, `createScene`, `updateScene`, `createShot`, `updateShot`, `deleteShot`. Scene create/edit use the same optional fields (heading, title, int_ext, day_night, location_id). **`createShot`** enforces a non-empty trimmed `shot_number` and rejects a duplicate `shot_number` within the same scene (application check before insert). **`updateShot`** loads the shot first; if `shot_number` is in the patch, it trims, rejects empty/whitespace, and rejects duplicates in the same scene for any **other** shot id. Invalidates `['scenes', currentProductionId]` and `['scenes']` for scene mutations; shot mutations invalidate `['shots', selectedSceneId]` (and the same related keys as other shot updates, e.g. production shots and equipment terms where applicable). New scene is selected after create, edited scene stays selected after update.
 - **Script Import:** `defaultParser.parse()`, `createScene`. Invalidates `['scenes']` and `['scenes', currentProductionId]` on create.
 
@@ -226,7 +275,7 @@ src/
 
 ### 3. Duplicate production
 
-When a production is duplicated via [src/lib/db/duplicateProduction.ts](src/lib/db/duplicateProduction.ts), the following schedule entities are copied with new IDs and mapped so references stay consistent: **units**, **shoot_days**, **shoot_day_units**, **scenes** (with `location_id` mapped), **shots** (with `scene_id` mapped), **stripboard_strips** (with `shoot_day_id`, `shoot_day_unit_id`, `scene_id`, `shot_id` mapped). Bookings are **not** copied. **scene_cast** and **shot_cast** are copied (person/scene/shot maps). Any change to these tables or their columns must be reflected in duplicateProduction.
+When a production is duplicated via [src/lib/db/duplicateProduction.ts](src/lib/db/duplicateProduction.ts), the following schedule entities are copied with new IDs and mapped so references stay consistent: **units**, **shoot_days**, **shoot_day_units**, **scenes** (with `location_id` and episodic **`episode_id`** mapped), **shots** (with `scene_id` mapped), **stripboard_strips** (with `shoot_day_id`, `shoot_day_unit_id`, `scene_id`, `shot_id` mapped). For **episodic** productions, **episodes** and **shooting_blocs** are copied and **`shoot_days.shooting_bloc_id`** is remapped. Bookings are **not** copied. **scene_cast** and **shot_cast** are copied (person/scene/shot maps). Any change to these tables or their columns must be reflected in duplicateProduction.
 
 ### 4. Checklist for refactors
 
@@ -258,6 +307,11 @@ When changing Schedule (shoot_days, scenes, shots, stripboard_strips, shoot_day_
 | Schedule repo | [src/lib/db/repositories/schedule.ts](src/lib/db/repositories/schedule.ts) |
 | Stripboard strips repo | [src/lib/db/repositories/stripboard-strips.ts](src/lib/db/repositories/stripboard-strips.ts) |
 | Calendar repo | [src/lib/db/repositories/calendar.ts](src/lib/db/repositories/calendar.ts) |
+| Episodes repo | [src/lib/db/repositories/episodes.ts](src/lib/db/repositories/episodes.ts) |
+| Shooting blocs repo | [src/lib/db/repositories/shootingBlocs.ts](src/lib/db/repositories/shootingBlocs.ts) |
+| Episodic schedule UI helpers | [src/lib/schedule/episodicScheduleDisplay.ts](src/lib/schedule/episodicScheduleDisplay.ts) |
+| Episodes Settings UI | [src/features/settings/EpisodesSettingsSection.tsx](src/features/settings/EpisodesSettingsSection.tsx) |
+| Shooting blocs Settings UI | [src/features/settings/ShootingBlocsSettingsSection.tsx](src/features/settings/ShootingBlocsSettingsSection.tsx) |
 | Shoot day units repo | [src/lib/db/repositories/shoot-day-units.ts](src/lib/db/repositories/shoot-day-units.ts) |
 | Units repo | [src/lib/db/repositories/units.ts](src/lib/db/repositories/units.ts) |
 | Router | [src/app/router.tsx](src/app/router.tsx) |
@@ -270,6 +324,7 @@ When changing Schedule (shoot_days, scenes, shots, stripboard_strips, shoot_day_
 
 ### 3. Gaps and future work
 
+- Episodic: further cross-feature surfacing (e.g. budget revision per episode, richer call-sheet episode columns) may evolve; import/export rules are documented in APF v1.
 - PDF script parsing not implemented.
 - Broader calendar integration (external calendars) not present.
 - Stripboard: page-eighths target (48) referenced but full page count UI may be incomplete.

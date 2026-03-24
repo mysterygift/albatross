@@ -7,9 +7,17 @@ import {
 } from '../outbox'
 import type { ShootDay, Scene, Shot, ShotCast, StripboardItem } from '../types'
 import { CAMERA_MOVEMENT_VALUES, SHOT_SIZE_VALUES } from '../types'
+import {
+  getActiveEpisodeByIdForProduction,
+} from './episodes'
+import { getProductionById } from './production'
 import { getPersonById } from './person'
 import { getShootDayUnitById, listShootDayUnitsByShootDay } from './shoot-day-units'
 import { ensureMainUnit } from './units'
+import {
+  findShootingBlocIdForProductionDate,
+  persistShootDayShootingBlocId,
+} from '../shootingBlocAssociation'
 
 const DAY_TABLE = 'shoot_days'
 const SDU_TABLE = 'shoot_day_units'
@@ -97,6 +105,7 @@ function rowToShootDay(r: Record<string, unknown>): ShootDay {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    shooting_bloc_id: (r.shooting_bloc_id as string | null) ?? null,
     shoot_date: r.shoot_date as string,
     day_number: r.day_number as number | null,
     call_time: r.call_time as string | null,
@@ -121,6 +130,7 @@ function rowToScene(r: Record<string, unknown>): Scene {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    episode_id: (r.episode_id as string | null) ?? null,
     scene_number: r.scene_number as string,
     heading: r.heading as string | null,
     title: (r.title as string | null) ?? null,
@@ -255,6 +265,7 @@ export async function updateShootDay(
   id: string,
   data: Partial<Pick<ShootDay, (typeof SHOOT_DAY_UPDATE_KEYS)[number]>>
 ): Promise<ShootDay> {
+  const before = await getShootDayById(id)
   const db = await getDb()
   const ts = now()
   const cols: string[] = []
@@ -277,6 +288,9 @@ export async function updateShootDay(
       callTime: data.call_time,
       wrapTime: data.wrap_time,
     })
+  }
+  if (data.shoot_date !== undefined && before) {
+    await persistShootDayShootingBlocId(id, before.production_id, data.shoot_date)
   }
   return (await getShootDayById(id))!
 }
@@ -377,8 +391,44 @@ export async function moveShootDayToDate(
     await executeBatch(db, statements)
     return { success: true } as const
   })
-  if (result.success) await resequenceShootDays(day.production_id)
+  if (result.success) {
+    await resequenceShootDays(day.production_id)
+    await persistShootDayShootingBlocId(shootDayId, day.production_id, newDate)
+  }
   return result
+}
+
+/**
+ * Batch `shoot_date` updates for a shooting-bloc **pure calendar shift**. Does not resolve `shooting_bloc_id`
+ * per row; caller must update the bloc row and run `reassignShootDaysAfterShootingBlocRangeChange`.
+ */
+export async function setShootDayDatesForBlocShiftBatch(
+  productionId: string,
+  orderedUpdates: { shootDayId: string; newDate: string }[]
+): Promise<void> {
+  if (orderedUpdates.length === 0) return
+  const ts = now()
+  await runInSerializedTransaction(async () => {
+    const conn = await getDb()
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN', bindValues: [] }]
+    for (const u of orderedUpdates) {
+      statements.push({
+        sql: `UPDATE ${DAY_TABLE} SET shoot_date = $1, updated_at = $2 WHERE id = $3 AND production_id = $4 AND deleted_at IS NULL`,
+        bindValues: [u.newDate, ts, u.shootDayId, productionId],
+      })
+      statements.push(
+        outboxStatementForRow({
+          entity: DAY_TABLE,
+          entityId: u.shootDayId,
+          operation: 'update',
+          payloadJson: JSON.stringify({ shoot_date: u.newDate }),
+        })
+      )
+    }
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+    await executeBatch(conn, statements)
+  })
+  await resequenceShootDays(productionId)
 }
 
 type CreateShootDayWithDefaultMainUnitArgs = {
@@ -408,14 +458,15 @@ export async function createShootDayWithDefaultMainUnit(args: CreateShootDayWith
   const callStripId = uuid()
   const wrapStripId = uuid()
   const ts = now()
+  const shootingBlocId = await findShootingBlocIdForProductionDate(productionId, shootDate)
 
   await runInSerializedTransaction(async () => {
     const db = await getDb()
     const statements: Array<{ sql: string; bindValues: unknown[] }> = [
       { sql: 'BEGIN', bindValues: [] },
       {
-        sql: `INSERT INTO ${DAY_TABLE} (id, production_id, shoot_date, day_number, call_time, wrap_time, notes, weather_manual, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        sql: `INSERT INTO ${DAY_TABLE} (id, production_id, shoot_date, day_number, call_time, wrap_time, notes, weather_manual, shooting_bloc_id, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         bindValues: [
           shootDayId,
           productionId,
@@ -425,6 +476,7 @@ export async function createShootDayWithDefaultMainUnit(args: CreateShootDayWith
           args.wrapTime ?? null,
           args.notes ?? null,
           args.weatherManual ?? null,
+          shootingBlocId,
           ts,
           ts,
         ],
@@ -441,6 +493,7 @@ export async function createShootDayWithDefaultMainUnit(args: CreateShootDayWith
           wrap_time: args.wrapTime ?? null,
           notes: args.notes ?? null,
           weather_manual: args.weatherManual ?? null,
+          shooting_bloc_id: shootingBlocId,
           id: shootDayId,
         }),
       }),
@@ -641,6 +694,8 @@ export async function moveShootDayUnitToDate(
     return { success: false, reason: 'conflict', existingShootDayId: existing[0]!.id as string }
   }
 
+  const shootingBlocIdForNewDay = await findShootingBlocIdForProductionDate(day.production_id, newDate)
+
   const result = await runInSerializedTransaction(async () => {
     const db = await getDb()
     if (isSingleUnit) {
@@ -679,8 +734,8 @@ export async function moveShootDayUnitToDate(
       const statements: Array<{ sql: string; bindValues: unknown[] }> = [
         { sql: 'BEGIN', bindValues: [] },
         {
-          sql: `INSERT INTO ${DAY_TABLE} (id, production_id, shoot_date, day_number, call_time, wrap_time, notes, weather_manual, meal_times_json, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          sql: `INSERT INTO ${DAY_TABLE} (id, production_id, shoot_date, day_number, call_time, wrap_time, notes, weather_manual, meal_times_json, shooting_bloc_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           bindValues: [
             newShootDayId,
             day.production_id,
@@ -691,6 +746,7 @@ export async function moveShootDayUnitToDate(
             day.notes ?? null,
             day.weather_manual ?? null,
             day.meal_times_json ?? null,
+            shootingBlocIdForNewDay,
             ts,
             ts,
           ],
@@ -708,6 +764,7 @@ export async function moveShootDayUnitToDate(
             notes: day.notes,
             weather_manual: day.weather_manual,
             meal_times_json: day.meal_times_json,
+            shooting_bloc_id: shootingBlocIdForNewDay,
             id: newShootDayId,
           }),
         }),
@@ -747,7 +804,12 @@ export async function moveShootDayUnitToDate(
     }
     return { success: true } as const
   })
-  if (result.success) await resequenceShootDays(day.production_id)
+  if (result.success) {
+    await resequenceShootDays(day.production_id)
+    if (isSingleUnit) {
+      await persistShootDayShootingBlocId(day.id, day.production_id, newDate)
+    }
+  }
   return result
 }
 
@@ -901,6 +963,8 @@ export async function swapShootDays(shootDayIdA: string, shootDayIdB: string): P
     await executeBatch(db, statements)
   })
   await resequenceShootDays(dayA.production_id)
+  await persistShootDayShootingBlocId(shootDayIdA, dayA.production_id, dateB)
+  await persistShootDayShootingBlocId(shootDayIdB, dayB.production_id, dateA)
 }
 
 // Scenes
@@ -933,13 +997,28 @@ export async function createScene(data: {
   page_eighths?: number | null
   location_id?: string | null
   duration_minutes?: number | null
+  episode_id?: string | null
 }): Promise<Scene> {
+  const prod = await getProductionById(data.production_id)
+  if (!prod) throw new Error('Production not found')
+
+  let episodeId: string | null = null
+  if (prod.is_episodic) {
+    const raw = data.episode_id?.trim() ?? ''
+    if (!raw) throw new Error('Episodic productions require an episode for each scene.')
+    const ep = await getActiveEpisodeByIdForProduction(data.production_id, raw)
+    if (!ep) throw new Error('Episode not found or archived.')
+    episodeId = raw
+  } else if (data.episode_id != null && String(data.episode_id).trim() !== '') {
+    throw new Error('Episode cannot be set for non-episodic productions.')
+  }
+
   const db = await getDb()
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${SCENE_TABLE} (id, production_id, scene_number, heading, description, title, int_ext, day_night, page_eighths, location_id, duration_minutes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    `INSERT INTO ${SCENE_TABLE} (id, production_id, scene_number, heading, description, title, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [
       id,
       data.production_id,
@@ -952,22 +1031,50 @@ export async function createScene(data: {
       data.page_eighths ?? null,
       data.location_id ?? null,
       data.duration_minutes ?? null,
+      episodeId,
       ts,
       ts,
     ]
   )
-  await outboxPush(SCENE_TABLE, id, 'create', JSON.stringify({ ...data, id }))
+  await outboxPush(SCENE_TABLE, id, 'create', JSON.stringify({ ...data, id, episode_id: episodeId }))
   return (await getSceneById(id))!
 }
 
 const SCENE_UPDATE_KEYS = [
-  'scene_number', 'heading', 'title', 'description', 'int_ext', 'day_night', 'page_eighths', 'location_id', 'duration_minutes',
+  'scene_number',
+  'heading',
+  'title',
+  'description',
+  'int_ext',
+  'day_night',
+  'page_eighths',
+  'location_id',
+  'duration_minutes',
+  'episode_id',
 ] as const
 
 export async function updateScene(
   id: string,
   data: Partial<Pick<Scene, (typeof SCENE_UPDATE_KEYS)[number]>>
 ): Promise<Scene> {
+  const existing = await getSceneById(id)
+  if (!existing) throw new Error('Scene not found')
+  const prod = await getProductionById(existing.production_id)
+  if (!prod) throw new Error('Production not found')
+
+  if (data.episode_id !== undefined) {
+    if (!prod.is_episodic) {
+      throw new Error('Episode cannot be set for non-episodic productions.')
+    }
+    if (data.episode_id === null) {
+      throw new Error('Episodic scenes must stay assigned to an episode.')
+    }
+    if (data.episode_id !== existing.episode_id) {
+      const ep = await getActiveEpisodeByIdForProduction(existing.production_id, data.episode_id)
+      if (!ep) throw new Error('Episode not found or archived.')
+    }
+  }
+
   const db = await getDb()
   const ts = now()
   const cols: string[] = []
@@ -979,7 +1086,7 @@ export async function updateScene(
       vals.push(data[k])
     }
   }
-  if (cols.length === 0) return (await getSceneById(id))!
+  if (cols.length === 0) return existing
   cols.push(`updated_at = $${i}`)
   vals.push(ts, id)
   await db.execute(`UPDATE ${SCENE_TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1}`, vals)
@@ -995,6 +1102,42 @@ export async function deleteScene(id: string): Promise<void> {
     [ts, ts, id]
   )
   await outboxPush(SCENE_TABLE, id, 'delete', null)
+}
+
+const EPISODES_TABLE = 'episodes'
+
+/**
+ * Episode context for a shot is always derived from the parent scene (`scenes.episode_id`).
+ * Shots do not store episode_id; do not add a separate shot-level assignment path.
+ */
+export type ShotEpisodeContext = {
+  shot_id: string
+  scene_id: string
+  episode_id: string | null
+  episode_name: string | null
+  episode_deleted_at: string | null
+}
+
+export async function getShotEpisodeContext(shotId: string): Promise<ShotEpisodeContext | null> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT sh.id AS shot_id, sh.scene_id AS scene_id, sc.episode_id AS episode_id,
+            e.name AS episode_name, e.deleted_at AS episode_deleted_at
+     FROM ${SHOT_TABLE} sh
+     INNER JOIN ${SCENE_TABLE} sc ON sc.id = sh.scene_id AND sc.deleted_at IS NULL
+     LEFT JOIN ${EPISODES_TABLE} e ON e.id = sc.episode_id AND e.production_id = sc.production_id
+     WHERE sh.id = $1 AND sh.deleted_at IS NULL`,
+    [shotId]
+  )
+  if (!rows.length) return null
+  const r = rows[0]!
+  return {
+    shot_id: r.shot_id as string,
+    scene_id: r.scene_id as string,
+    episode_id: (r.episode_id as string | null) ?? null,
+    episode_name: (r.episode_name as string | null) ?? null,
+    episode_deleted_at: (r.episode_deleted_at as string | null) ?? null,
+  }
 }
 
 // Shots

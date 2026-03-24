@@ -10,6 +10,7 @@ PEOPLE
 
 BUDGET
 1. Importing/Exporting to MovieMagic Budgeting. Examine file structure to make sure that the budget from albatross gets imported/exported in the correct format.
+2. When adding a line item and 
 
 CALL SHEET
 1. Need to add text field to Call Sheet Form for safety information.

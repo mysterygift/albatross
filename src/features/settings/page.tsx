@@ -76,8 +76,11 @@ import {
   verifyCascades,
 } from '@/lib/db/seed/demoProductionSeed'
 import { getProductionBySlug } from '@/lib/db/repositories/production'
+import { enableEpisodicProduction } from '@/lib/db/episodicProductionService'
 import { getSetting, setSetting, FIRST_LAUNCH_TUTORIAL_SEEN_KEY, setFirstLaunchTutorialSeen } from '@/lib/db/repositories/settings'
 import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
+import { EpisodesSettingsSection } from '@/features/settings/EpisodesSettingsSection'
+import { ShootingBlocsSettingsSection } from '@/features/settings/ShootingBlocsSettingsSection'
 import {
   API_CALL_TRACKER_IDS,
   API_CALL_TRACKER_LABELS,
@@ -129,7 +132,8 @@ function ApiCallTrackerPanel({ trackingOn }: { trackingOn: boolean }) {
 
 export function SettingsPage() {
   const navigate = useNavigate()
-  const { currentProductionId, setCurrentProductionId, refetchProductions } = useCurrentProduction()
+  const { currentProductionId, currentProduction, setCurrentProductionId, refetchProductions } =
+    useCurrentProduction()
   const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
   const revisionId = workingBudgetRevision?.id
   const {
@@ -154,6 +158,9 @@ export function SettingsPage() {
   const [tutorialToast, setTutorialToast] = useState<string | null>(null)
   const [orsApiKeyDraft, setOrsApiKeyDraft] = useState('')
   const [orsApiKeyToast, setOrsApiKeyToast] = useState<string | null>(null)
+  const [episodicEnableOpen, setEpisodicEnableOpen] = useState(false)
+  const [episodicInitialEpisode, setEpisodicInitialEpisode] = useState('')
+  const [episodicEnableError, setEpisodicEnableError] = useState<string | null>(null)
 
   const toggleAccountExpanded = useCallback((accountId: string) => {
     setExpandedAccountIds((prev) => {
@@ -219,6 +226,28 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['settings', API_CALL_TRACKING_SETTING_KEY] })
     },
   })
+  const enableEpisodicMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentProductionId) throw new Error('No production selected')
+      const name = episodicInitialEpisode.trim()
+      if (!name) throw new Error('Enter a name for the first episode')
+      return enableEpisodicProduction({ productionId: currentProductionId, initialEpisodeName: name })
+    },
+    onSuccess: () => {
+      setEpisodicEnableOpen(false)
+      setEpisodicInitialEpisode('')
+      setEpisodicEnableError(null)
+      queryClient.invalidateQueries({ queryKey: ['productions'] })
+      if (currentProductionId) {
+        queryClient.invalidateQueries({ queryKey: ['episodes-management', currentProductionId] })
+      }
+      refetchProductions()
+    },
+    onError: (err) => {
+      setEpisodicEnableError(err instanceof Error ? err.message : 'Could not enable episodic mode')
+    },
+  })
+
   const setOrsApiKeyMutation = useMutation({
     mutationFn: async (nextValue: string) => {
       const trimmed = nextValue.trim()
@@ -412,6 +441,97 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {currentProductionId && currentProduction && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Episodic production</CardTitle>
+            <CardDescription>
+              For series and multi-episode work. When enabled, episodes organize script, schedule, and deliveries in later releases.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {currentProduction.is_episodic ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Episodic mode is <span className="font-medium text-foreground">on</span> for this production. This
+                  cannot be turned off.
+                </p>
+                <EpisodesSettingsSection productionId={currentProductionId} />
+                <ShootingBlocsSettingsSection productionId={currentProductionId} />
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Enable episodic mode only if this project is a series or has multiple episodes. You will need at least one episode name to continue.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEpisodicEnableError(null)
+                    setEpisodicInitialEpisode('')
+                    setEpisodicEnableOpen(true)
+                  }}
+                >
+                  Enable episodic mode…
+                </Button>
+              </>
+            )}
+            <Dialog
+              open={episodicEnableOpen}
+              onOpenChange={(open) => {
+                setEpisodicEnableOpen(open)
+                if (!open) {
+                  setEpisodicEnableError(null)
+                  setEpisodicInitialEpisode('')
+                }
+              }}
+            >
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Enable episodic mode</DialogTitle>
+                  <p className="text-muted-foreground text-sm leading-snug">
+                    This choice is permanent. You will not be able to disable episodic mode for this production later. Episodic projects must have at least one episode—you are about to create the first one.
+                  </p>
+                </DialogHeader>
+                <div className="rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-amber-800 dark:text-amber-200 text-xs leading-snug">
+                  This cannot be undone. Only continue if this production should stay episodic for its lifetime.
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="episodic-first-episode">First episode name</Label>
+                  <Input
+                    id="episodic-first-episode"
+                    value={episodicInitialEpisode}
+                    onChange={(e) => setEpisodicInitialEpisode(e.target.value)}
+                    placeholder="e.g. Episode 1"
+                  />
+                </div>
+                {episodicEnableError && (
+                  <p className="text-destructive text-sm">{episodicEnableError}</p>
+                )}
+                <DialogFooter className="gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setEpisodicEnableOpen(false)}
+                    disabled={enableEpisodicMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => enableEpisodicMutation.mutate()}
+                    disabled={enableEpisodicMutation.isPending}
+                  >
+                    {enableEpisodicMutation.isPending ? 'Enabling…' : 'Enable episodic mode'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </CardContent>
+        </Card>
+      )}
 
       {currentProductionId && (
         <Card>

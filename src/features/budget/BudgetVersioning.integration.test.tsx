@@ -484,7 +484,7 @@ describe('Budget versioning integration flows', () => {
     renderBudgetWorkspace('/budget?tab=compare')
 
     await screen.findByText('Create budget revision...')
-    await user.click(screen.getByText('Compare'))
+    await user.click(screen.getByRole('button', { name: 'Compare' }))
     await user.click(screen.getAllByText(/Scenario A/)[0]!)
     await user.click(screen.getAllByText(/Current budget/)[0]!)
 

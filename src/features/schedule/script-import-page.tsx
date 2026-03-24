@@ -3,9 +3,10 @@ import { useCurrentProduction } from '@/features/productions/context'
 import { pickAndSaveAttachment } from '@/lib/files'
 import { createDocument } from '@/lib/db/repositories/document'
 import { createScene } from '@/lib/db/repositories/schedule'
+import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
 import { defaultParser } from '@/lib/script-parser'
 import type { ParsedScene } from '@/lib/script-parser'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { BaseDirectory } from '@tauri-apps/plugin-fs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,17 +17,34 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Upload } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+const SELECT_NONE = '__none__'
 
 const schema = z.object({
   rawText: z.string().optional(),
 })
 
 export function ScriptImportPage() {
-  const { currentProductionId } = useCurrentProduction()
+  const { currentProductionId, currentProduction } = useCurrentProduction()
+  const isEpisodic = currentProduction?.is_episodic === true
+  const [importEpisodeId, setImportEpisodeId] = useState('')
   const [importedScenes, setImportedScenes] = useState<ParsedScene[] | null>(null)
   const [uploadedDoc, setUploadedDoc] = useState<{ name: string; id: string } | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
   const queryClient = useQueryClient()
+
+  const { data: importEpisodes = [] } = useQuery({
+    queryKey: ['episodes', currentProductionId],
+    queryFn: () => listEpisodesByProduction(currentProductionId!),
+    enabled: !!currentProductionId && isEpisodic,
+  })
 
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
@@ -36,6 +54,10 @@ export function ScriptImportPage() {
   const createScenesMutation = useMutation({
     mutationFn: async (scenes: ParsedScene[]) => {
       if (!currentProductionId) return
+      const epId = importEpisodeId.trim()
+      if (isEpisodic && !epId) {
+        throw new Error('Choose an episode before importing scenes.')
+      }
       for (const s of scenes) {
         await createScene({
           production_id: currentProductionId,
@@ -45,6 +67,7 @@ export function ScriptImportPage() {
           description: null,
           int_ext: s.int_ext ?? undefined,
           day_night: s.day_night ?? undefined,
+          ...(isEpisodic ? { episode_id: epId } : {}),
         })
       }
     },
@@ -56,6 +79,9 @@ export function ScriptImportPage() {
       setImportedScenes(null)
       form.setValue('rawText', '')
       setParseError(null)
+    },
+    onError: (e) => {
+      setParseError(e instanceof Error ? e.message : 'Could not create scenes.')
     },
   })
 
@@ -180,10 +206,43 @@ export function ScriptImportPage() {
                   </li>
                 ))}
               </ul>
+              {isEpisodic && (
+                <div className="mt-3 space-y-2">
+                  <Label>
+                    Episode for imported scenes<span className="text-destructive">*</span>
+                  </Label>
+                  <Select
+                    value={importEpisodeId.trim() ? importEpisodeId : SELECT_NONE}
+                    onValueChange={(v) => setImportEpisodeId(v === SELECT_NONE ? '' : v)}
+                    disabled={createScenesMutation.isPending || importEpisodes.length === 0}
+                  >
+                    <SelectTrigger className="bg-input border-border">
+                      <SelectValue placeholder="Select episode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={SELECT_NONE}>Select episode…</SelectItem>
+                      {importEpisodes.map((ep) => (
+                        <SelectItem key={ep.id} value={ep.id}>
+                          {ep.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {importEpisodes.length === 0 && (
+                    <p className="text-sm text-amber-600 dark:text-amber-400">
+                      Add an episode in Settings before importing scenes.
+                    </p>
+                  )}
+                </div>
+              )}
               <Button
                 className="mt-2"
                 onClick={() => createScenesMutation.mutate(importedScenes)}
-                disabled={createScenesMutation.isPending || importedScenes.length === 0}
+                disabled={
+                  createScenesMutation.isPending ||
+                  importedScenes.length === 0 ||
+                  (isEpisodic && (!importEpisodeId.trim() || importEpisodes.length === 0))
+                }
               >
                 Create scenes in production
               </Button>

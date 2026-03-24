@@ -305,19 +305,22 @@ export async function seedDemoDeliverables(
   startDate: string,
   ts: string,
   addDaysLocal: (yyyyMmDd: string, days: number) => string,
-  idSource: DemoDeliverableSeedIdSource = IDS
+  idSource: DemoDeliverableSeedIdSource = IDS,
+  episodeIdForIndex1Based?: (index1Based: number) => string | null
 ): Promise<void> {
   const db = await getDb()
 
   for (let i = 1; i <= DEMO_DELIVERABLES.length; i++) {
     const d = DEMO_DELIVERABLES[i - 1]!
     const dueDate = addDaysLocal(startDate, 60 + i * 7)
+    const episodeId = episodeIdForIndex1Based?.(i) ?? null
     await db.execute(
-      `INSERT INTO deliverables (id, production_id, name, due_date, status, recipient, delivery_method, delivered_by, delivered_at, approval_status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      `INSERT INTO deliverables (id, production_id, episode_id, name, due_date, status, recipient, delivery_method, delivered_by, delivered_at, approval_status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         idSource.deliverable(i),
         pid,
+        episodeId,
         d.name,
         dueDate,
         d.status,

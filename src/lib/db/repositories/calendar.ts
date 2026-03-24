@@ -52,6 +52,15 @@ export async function listCalendarShootDayEvents(
     unitFilter = ` AND u.id = $${params.length}`
   }
 
+  let shootingBlocFilterSql = ''
+  const blocF = filters?.shootingBlocFilter
+  if (blocF === 'unassigned') {
+    shootingBlocFilterSql = ' AND sd.shooting_bloc_id IS NULL'
+  } else if (blocF && blocF !== 'all') {
+    params.push(blocF)
+    shootingBlocFilterSql = ` AND sd.shooting_bloc_id = $${params.length}`
+  }
+
   // Stats aggregation: shot count and est minutes per (shoot_day_id, shoot_day_unit_id).
   // estMinutes = SUM(COALESCE(strip.estimated_minutes, shot.estimated_shoot_minutes, 0))
   const rows = await db.select<Record<string, unknown>[]>(
@@ -76,6 +85,8 @@ export async function listCalendarShootDayEvents(
       sd.id AS shoot_day_id,
       sdu.id AS shoot_day_unit_id,
       sd.shoot_date AS date,
+      sd.shooting_bloc_id AS shooting_bloc_id,
+      sb.name AS shooting_bloc_name,
       u.id AS unit_id,
       u.name AS unit_name,
       sd.call_time,
@@ -101,12 +112,14 @@ export async function listCalendarShootDayEvents(
     FROM shoot_days sd
     INNER JOIN shoot_day_units sdu ON sdu.shoot_day_id = sd.id AND sdu.deleted_at IS NULL
     INNER JOIN units u ON u.id = sdu.unit_id AND u.deleted_at IS NULL
+    LEFT JOIN shooting_blocs sb ON sb.id = sd.shooting_bloc_id AND sb.deleted_at IS NULL
     LEFT JOIN strip_stats ss ON ss.shoot_day_id = sd.id AND ss.shoot_day_unit_id = sdu.id
     WHERE sd.production_id = $1
       AND sd.deleted_at IS NULL
       AND sd.shoot_date >= $2
       AND sd.shoot_date <= $3
       ${unitFilter}
+      ${shootingBlocFilterSql}
     ORDER BY sd.shoot_date, u.name
     `,
     params
@@ -137,6 +150,8 @@ export async function listCalendarShootDayEvents(
       shootDayId: r.shoot_day_id as string,
       shootDayUnitId: r.shoot_day_unit_id as string,
       date: r.date as string,
+      shootingBlocId: (r.shooting_bloc_id as string | null) ?? null,
+      shootingBlocName: (r.shooting_bloc_name as string | null) ?? null,
       unitId: r.unit_id as string,
       unitName: r.unit_name as string,
       unitKey: unitNameToKey(r.unit_name as string),

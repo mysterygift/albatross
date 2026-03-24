@@ -20,6 +20,8 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
 
   const [
     productions,
+    episodeRows,
+    shootingBlocRows,
     units,
     people,
     locations,
@@ -74,6 +76,14 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
   ] = await Promise.all([
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM productions WHERE id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM episodes WHERE production_id = $1 ORDER BY sort_order ASC, id ASC`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM shooting_blocs WHERE production_id = $1 ORDER BY start_date ASC, id ASC`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -323,6 +333,8 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
 
   const raw: Record<ApfV1TableKey, ApfTableRow[]> = {
     productions: asRows(productions),
+    episodes: asRows(episodeRows),
+    shooting_blocs: asRows(shootingBlocRows),
     units: asRows(units),
     people: asRows(people),
     locations: asRows(locations),

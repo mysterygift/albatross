@@ -4,10 +4,13 @@
  *
  * Locking: What caused "database is locked" was concurrent writes (e.g. UI + outbox + cascade
  * verification) and no busy_timeout/retry. We now: (1) set WAL + busy_timeout (8s) + foreign_keys
- * on init; (2) serialize writes with a single promise queue so only one write runs at a time;
+ * on init; (2) serialize **every** wrapped `execute()` through a re-entrant global tail queue so the
+ * Tauri SQL pool never runs two `execute()` calls at once (nested RST used to bypass the old queue).
  * (3) retry execute/select on SQLITE_BUSY up to 3 times with exponential backoff; (4) log errors
  * and retries in db/perf. Verify: open DB Perf HUD (dev), use the app, click "Log to console"
  * and check for lock errors; cascade verification disables its button while running and reports BUSY.
+ * **Nested runInSerializedTransaction:** Same serializer as `execute` — nested calls run inline
+ * (re-entrant) so we never deadlock waiting on ourselves.
  * See docs/DATABASE_LAYER.md for how to write transaction-safe code and avoid open transactions.
  *
  * Foreign key enforcement: we run PRAGMA foreign_keys = ON on every connection.
@@ -25,60 +28,49 @@ const MAX_RETRIES = 3
 let db: Database | null = null
 let fkChecked = false
 
-/** Write queue: only one write (execute INSERT/UPDATE/DELETE/REPLACE) at a time. */
-let writeQueue = Promise.resolve<void>(undefined)
-
 /**
- * True while a runInSerializedTransaction callback is running. When set, execute() does not
- * enqueue writes (runs them immediately) so we avoid deadlock: the callback would otherwise
- * wait for its own UPDATE to be dequeued while holding the queue slot.
+ * Re-entrant global serialization for all wrapped `execute()` calls (and `runInSerializedTransaction`).
+ * The Tauri SQL plugin may use a connection pool; without this, nested transactions skipped the old
+ * queue and concurrent `raw.execute` calls could use different connections → "database is locked".
  */
-let inSerializedTransaction = false
+let executeNestingDepth = 0
+let executeTail = Promise.resolve()
+
+function runSerializedExecute<T>(fn: () => Promise<T>): Promise<T> {
+  if (executeNestingDepth > 0) {
+    executeNestingDepth++
+    return fn().finally(() => {
+      executeNestingDepth--
+    })
+  }
+  const job = executeTail.then(async () => {
+    executeNestingDepth++
+    try {
+      return await fn()
+    } finally {
+      executeNestingDepth--
+    }
+  })
+  executeTail = job.then(
+    () => undefined,
+    () => undefined
+  )
+  return job
+}
 
 /** Debug: track logical transaction depth to see if something commits between BEGIN and COMMIT. */
 let txnDepth = 0
 
 /**
- * Run a full transaction (BEGIN ... COMMIT/ROLLBACK) as a single queued task. Use this for any
- * code that does BEGIN so we never start a second transaction on the same connection
- * ("cannot start a transaction within a transaction"). Only one such block runs at a time.
- * Writes inside the callback run immediately (no double-queue) to avoid deadlock.
+ * Run a full transaction (BEGIN ... COMMIT/ROLLBACK) with the same execute serialization as
+ * `db.execute`. Nested calls run re-entrantly (no deadlock).
  */
 export function runInSerializedTransaction<T>(fn: () => Promise<T>): Promise<T> {
-  return enqueueWrite(async () => {
-    inSerializedTransaction = true
-    try {
-      return await fn()
-    } finally {
-      inSerializedTransaction = false
-    }
-  })
-}
-
-function enqueueWrite<T>(fn: () => Promise<T>): Promise<T> {
-  const next = writeQueue.then(
-    () => fn(),
-    () => fn()
-  )
-  writeQueue = next.then(
-    () => undefined,
-    () => undefined
-  )
-  return next
+  return runSerializedExecute(fn)
 }
 
 function sanitizeSql(sql: string, maxLen: number = 120): string {
   return sql.replace(/\s+/g, ' ').trim().slice(0, maxLen)
-}
-
-function isWriteSql(sql: string): boolean {
-  const t = sql.trim().toUpperCase()
-  return (
-    t.startsWith('INSERT') ||
-    t.startsWith('UPDATE') ||
-    t.startsWith('DELETE') ||
-    t.startsWith('REPLACE')
-  )
 }
 
 function getErrorMessage(e: unknown): string {
@@ -139,9 +131,10 @@ function wrapWithPerf(raw: Database): Database {
           return result
         })
       try {
-        // Inside a serialized transaction, run writes immediately to avoid deadlock (callback waiting for its own write).
-        if (isWriteSql(query) && !inSerializedTransaction) return await enqueueWrite(run)
-        return await run()
+        // Inside runInSerializedTransaction (or any holder that bumped executeNestingDepth), run
+        // immediately so we do not schedule a second tail job (would reorder work across awaits).
+        if (executeNestingDepth > 0) return await run()
+        return await runSerializedExecute(run)
       } catch (e) {
         const durationMs = performance.now() - start
         if (isCommit || isRollback) txnDepth = Math.max(0, txnDepth - 1)

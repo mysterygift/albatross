@@ -1,12 +1,13 @@
 /**
  * Demo seed ID source: provides entity IDs for seeding demo-style content.
  * Used by (1) singleton demo production (DEMO_SLUG) via makeDemoSeedIdSourceFromIDS,
- * and (2) user-created Demo template productions via buildDemoSeedIdSourceWithUuid.
+ * (2) episodic demo via makeDemoSeedIdSourceFromEpisodicIDS,
+ * and (3) user-created Demo template productions via buildDemoSeedIdSourceWithUuid.
  * Keeps the two flows separate and avoids collision with DEMO_SLUG.
  */
 
 import { uuid } from '../client'
-import { IDS } from './constants'
+import { EPISODIC_DEMO_IDS, IDS } from './constants'
 import { DEMO_BUDGET_ITEMS, DEMO_EXPENSES } from './demoBudgetSeed'
 import { DEMO_LINKS } from './demoReconciliationSeed'
 
@@ -72,6 +73,41 @@ export function makeDemoSeedIdSourceFromIDS(): DemoSeedIdSource {
     deliverable: IDS.deliverable,
     technicalSpec: IDS.technicalSpec,
     reconciliationLink: IDS.reconciliationLink,
+  }
+}
+
+/** ID source for the episodic singleton demo (DEMO_EPISODIC_SLUG). */
+export function makeDemoSeedIdSourceFromEpisodicIDS(): DemoSeedIdSource {
+  const d = EPISODIC_DEMO_IDS
+  return {
+    unitMain: d.unitMain,
+    unitSecond: d.unitSecond,
+    shootDay: d.shootDay,
+    shootDayUnit: d.shootDayUnit,
+    scene: d.scene,
+    shot: d.shot,
+    person: d.person,
+    location: d.location,
+    equipmentTerm: d.equipmentTerm,
+    sceneCast: d.sceneCast,
+    shotCast: d.shotCast,
+    availability: d.availability,
+    locationScene: d.locationScene,
+    budgetItem: d.budgetItem,
+    expense: d.expense,
+    keyContact: d.keyContact,
+    strip: d.strip,
+    document: d.document,
+    musicTrack: d.musicTrack,
+    clearance: d.clearance,
+    cueSheet: d.cueSheet,
+    booking: d.booking,
+    crewBooking: d.crewBooking,
+    taskSection: d.taskSection,
+    task: d.task,
+    deliverable: d.deliverable,
+    technicalSpec: d.technicalSpec,
+    reconciliationLink: d.reconciliationLink,
   }
 }
 

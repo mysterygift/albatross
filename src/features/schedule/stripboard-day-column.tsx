@@ -10,7 +10,7 @@ import type { ShootDay } from '@/lib/db/types'
 import type { Unit } from '@/lib/db/types'
 import type { ShootDayUnit } from '@/lib/db/types'
 import type { StripboardStrip } from '@/lib/db/types'
-import type { Scene, Shot } from '@/lib/db/types'
+import type { Scene, Shot, Episode } from '@/lib/db/types'
 
 export type ColumnFilter = { int: boolean; ext: boolean; day: boolean; night: boolean }
 
@@ -32,6 +32,9 @@ export function StripboardDayColumn({
   onToggleLock,
   columnFilters,
   onColumnFilterChange,
+  isEpisodic,
+  shootingBlocLabel,
+  episodeById,
 }: {
   day: ShootDay
   units: Unit[]
@@ -52,6 +55,10 @@ export function StripboardDayColumn({
   onToggleLock?: (shootDayUnitId: string, isLocked: boolean) => void
   columnFilters?: Record<string, ColumnFilter>
   onColumnFilterChange?: (colId: string, key: keyof ColumnFilter, value: boolean) => void
+  isEpisodic?: boolean
+  /** Day-level label from `shoot_days.shooting_bloc_id` + bloc catalog; episodic only. */
+  shootingBlocLabel?: string
+  episodeById?: Map<string, Episode>
 }) {
   return (
     <Card className="w-64 shrink-0 flex flex-col bg-card border-border overflow-hidden">
@@ -62,6 +69,14 @@ export function StripboardDayColumn({
             <Badge variant="secondary" className="text-xs">Day {day.day_number}</Badge>
           )}
         </CardTitle>
+        {isEpisodic && shootingBlocLabel != null && (
+          <p
+            className="text-muted-foreground text-xs mt-2 font-medium leading-snug truncate"
+            title={shootingBlocLabel}
+          >
+            {shootingBlocLabel}
+          </p>
+        )}
       </CardHeader>
       <CardContent className="flex-1 overflow-hidden flex flex-col p-0">
         {stripsByUnit.map(({ shootDayUnit, strips: unitStrips }) => {
@@ -86,6 +101,8 @@ export function StripboardDayColumn({
             onToggleLock={onToggleLock}
             columnFilter={columnFilters?.[columnId(day.id, shootDayUnit.id)] ?? DEFAULT_COLUMN_FILTER}
             onColumnFilterChange={onColumnFilterChange ? (key, value) => onColumnFilterChange(columnId(day.id, shootDayUnit.id), key, value) : undefined}
+            isEpisodic={isEpisodic}
+            episodeById={episodeById}
           />
           )
         })}
@@ -116,6 +133,8 @@ function UnitColumn({
   onToggleLock,
   columnFilter,
   onColumnFilterChange,
+  isEpisodic,
+  episodeById,
 }: {
   day?: ShootDay
   shootDayUnit: ShootDayUnit
@@ -134,6 +153,8 @@ function UnitColumn({
   onToggleLock?: (shootDayUnitId: string, isLocked: boolean) => void
   columnFilter: ColumnFilter
   onColumnFilterChange?: (key: keyof ColumnFilter, value: boolean) => void
+  isEpisodic?: boolean
+  episodeById?: Map<string, Episode>
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: colId })
 
@@ -309,6 +330,8 @@ function UnitColumn({
                 onDeleteStrip={onDeleteStrip}
                 disabled={isLocked}
                 className={filtersActive && strip.strip_type !== 'SHOT' ? 'opacity-60' : undefined}
+                isEpisodic={isEpisodic}
+                episodeById={episodeById}
               />
             ))}
             {displayStrips.length === 0 && (

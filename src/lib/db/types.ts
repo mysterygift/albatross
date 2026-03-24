@@ -13,12 +13,30 @@ export type Production = {
   /** ISO 4217 code; all stored budget numbers are in this currency. Default GBP. */
   currency_code: string
   notes: string | null
+  /** When true, production uses episodic mode. Irreversible once enabled (app-enforced). */
+  is_episodic: boolean
   /** When set, production was completed/wrapped (e.g. via Wrap Production workflow). */
   wrapped_at: string | null
   /** When set, production is archived (hidden from default list); reversible. */
   archived_at: string | null
   /** When set to 'demo', production was created from the Demo template (used for override confirmation). */
   created_from_template: string | null
+} & SoftDeletable
+
+export type Episode = {
+  id: string
+  production_id: string
+  name: string
+  sort_order: number
+} & SoftDeletable
+
+/** Inclusive calendar date range; dates are ISO `YYYY-MM-DD` strings. */
+export type ShootingBloc = {
+  id: string
+  production_id: string
+  name: string
+  start_date: string
+  end_date: string
 } & SoftDeletable
 
 export type Person = {
@@ -349,6 +367,8 @@ export type ProductionTotalAccount = {
 export type ShootDay = {
   id: string
   production_id: string
+  /** System-managed from `shoot_date` and non-overlapping bloc ranges; not user-editable. */
+  shooting_bloc_id: string | null
   shoot_date: string
   day_number: number | null
   call_time: string | null
@@ -408,6 +428,8 @@ export type StripboardStrip = {
 export type Scene = {
   id: string
   production_id: string
+  /** Episodic productions only; scenes reference an episode row (archive = episode soft-delete). */
+  episode_id: string | null
   scene_number: string
   heading: string | null
   title: string | null
@@ -675,6 +697,8 @@ export type TaskTemplateItem = {
 export type Deliverable = {
   id: string
   production_id: string
+  /** Episodic productions only: null = project-wide; set = specific episode. */
+  episode_id: string | null
   name: string
   due_date: string | null
   status: string
@@ -725,6 +749,8 @@ export type TechnicalSpec = {
 export type MusicTrack = {
   id: string
   production_id: string
+  /** Episodic productions only: null = project-wide; set = specific episode. */
+  episode_id: string | null
   title: string
   artist: string | null
   publisher_label: string | null
@@ -766,6 +792,9 @@ export type CalendarShootDayEvent = {
   shootDayId: string
   shootDayUnitId: string
   date: string
+  /** From `shoot_days.shooting_bloc_id`; null when no bloc covers the day. */
+  shootingBlocId: string | null
+  shootingBlocName: string | null
   unitId: string
   unitName: string
   unitKey: CalendarUnitKey
@@ -787,4 +816,9 @@ export type CalendarDateRange = {
 export type CalendarEventFilters = {
   /** When set, only include events for this unit. */
   unitId?: string | null
+  /**
+   * Episodic schedule narrowing. `'unassigned'` = shoot days outside any bloc.
+   * A bloc id = that bloc only. Omit or `'all'` for no filter.
+   */
+  shootingBlocFilter?: 'all' | 'unassigned' | string
 }
