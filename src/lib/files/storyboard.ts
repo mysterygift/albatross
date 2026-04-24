@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { BaseDirectory, copyFile, mkdir, remove, writeFile } from '@tauri-apps/plugin-fs'
+import { BaseDirectory, copyFile, mkdir, readFile, remove, writeFile } from '@tauri-apps/plugin-fs'
 import { resolveAppDataPath } from './index'
 
 const STORYBOARD_ROOT = 'storyboards'
@@ -153,4 +153,25 @@ export async function saveStoryboardImportCandidatePng(args: {
   await mkdir(directory, { baseDir: BaseDirectory.AppData, recursive: true })
   await writeFile(storageKey, args.pngBytes, { baseDir: BaseDirectory.AppData })
   return storageKey
+}
+
+function mimeTypeForStoryboardStorageKey(storageKey: string): string {
+  const lower = storageKey.toLowerCase()
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  return 'application/octet-stream'
+}
+
+export async function createStoryboardImageObjectUrl(
+  storageKey: string,
+  mimeType?: string | null
+): Promise<string> {
+  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+    return resolveStoryboardImagePath(storageKey)
+  }
+  const bytes = await readFile(storageKey, { baseDir: BaseDirectory.AppData })
+  const blob = new Blob([bytes], { type: mimeType ?? mimeTypeForStoryboardStorageKey(storageKey) })
+  return URL.createObjectURL(blob)
 }

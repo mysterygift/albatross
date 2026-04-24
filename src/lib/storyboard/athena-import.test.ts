@@ -19,6 +19,15 @@ const fileMock = vi.hoisted(() => ({
 
 const pdfjsMock = vi.hoisted(() => ({
   getDocument: vi.fn(),
+  OPS: {
+    transform: 1,
+    save: 2,
+    restore: 3,
+    paintJpegXObject: 4,
+    paintImageXObject: 5,
+    paintXObject: 6,
+    paintImageMaskXObject: 7,
+  },
 }))
 
 vi.mock('@tauri-apps/plugin-fs', () => fsMock)
@@ -90,15 +99,35 @@ describe('athena import extraction foundation', () => {
           getViewport: () => ({
             width: 1000,
             height: 800,
-            convertToViewportPoint: (x: number, y: number) => [x, y],
           }),
-          render: () => ({ promise: Promise.resolve() }),
-          getTextContent: async () => ({
-            items: [
-              { str: '2', transform: [1, 0, 0, 1, 300, 700] },
-              { str: '1', transform: [1, 0, 0, 1, 120, 700] },
+          getOperatorList: async () => ({
+            fnArray: [
+              pdfjsMock.OPS.save,
+              pdfjsMock.OPS.transform,
+              pdfjsMock.OPS.paintImageXObject,
+              pdfjsMock.OPS.restore,
+              pdfjsMock.OPS.save,
+              pdfjsMock.OPS.transform,
+              pdfjsMock.OPS.paintImageXObject,
+              pdfjsMock.OPS.restore,
+            ],
+            argsArray: [
+              [],
+              [120, 0, 0, 80, 120, 700],
+              ['img-1'],
+              [],
+              [],
+              [200, 0, 0, 90, 300, 650],
+              ['img-2'],
+              [],
             ],
           }),
+          objs: {
+            get: (name: string) =>
+              name === 'img-1'
+                ? { width: 120, height: 80, bitmap: { width: 120, height: 80 } }
+                : { width: 200, height: 90, bitmap: { width: 200, height: 90 } },
+          },
         }),
       }),
     })
@@ -110,8 +139,10 @@ describe('athena import extraction foundation', () => {
       sceneId: null,
     })
     expect(result.candidates).toHaveLength(2)
-    expect(result.candidates[0]!.detected_number_text).toBe('1')
-    expect(result.candidates[1]!.detected_number_text).toBe('2')
+    expect(result.candidates[0]!.detected_number_text).toBeNull()
+    expect(result.candidates[1]!.detected_number_text).toBeNull()
+    expect(result.candidates[0]!.bbox.width).toBe(120)
+    expect(result.candidates[1]!.bbox.width).toBe(200)
     expect(storyboardRepoMock.updateStoryboardImport).toHaveBeenCalledWith(
       'import-1',
       expect.objectContaining({ status: 'completed' })
@@ -126,10 +157,10 @@ describe('athena import extraction foundation', () => {
           getViewport: () => ({
             width: 900,
             height: 700,
-            convertToViewportPoint: (x: number, y: number) => [x, y],
           }),
+          getOperatorList: async () => ({ fnArray: [], argsArray: [] }),
+          objs: { get: () => null },
           render: () => ({ promise: Promise.resolve() }),
-          getTextContent: async () => ({ items: [] }),
         }),
       }),
     })
@@ -173,10 +204,10 @@ describe('athena import extraction foundation', () => {
             getViewport: () => ({
               width: 1000,
               height: 800,
-              convertToViewportPoint: (x: number, y: number) => [x, y],
             }),
+            getOperatorList: async () => ({ fnArray: [], argsArray: [] }),
+            objs: { get: () => null },
             render: () => ({ promise: Promise.resolve() }),
-            getTextContent: async () => ({ items: [] }),
           }
         },
       }),

@@ -134,6 +134,7 @@ export {
   assertAthenaPdfFilename,
   buildStoryboardImportCandidateStorageKey,
   buildStoryboardImageStorageKey,
+  createStoryboardImageObjectUrl,
   pickAthenaGalleryPdfForImport,
   pickStoryboardImageForManualImport,
   removeStoryboardImageFile,

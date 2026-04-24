@@ -62,10 +62,6 @@ type Anchor = {
 
 type OrderedAnchor = Anchor & { panelIndex: number }
 
-function isNumberLikeText(text: string): boolean {
-  return /^\d{1,4}[A-Za-z]?$/.test(text.trim())
-}
-
 function normalizeMatchToken(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, '')
 }
@@ -240,10 +236,6 @@ export function buildAthenaImportReviewRows(args: {
   })
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
-}
-
 function canvasToPngBytes(canvas: HTMLCanvasElement): Uint8Array {
   const dataUrl = canvas.toDataURL('image/png')
   const base64 = dataUrl.split(',')[1] ?? ''
@@ -253,40 +245,27 @@ function canvasToPngBytes(canvas: HTMLCanvasElement): Uint8Array {
   return bytes
 }
 
-function derivePanelBboxes(
-  ordered: OrderedAnchor[],
-  canvasWidth: number,
-  canvasHeight: number
-): Array<{ x: number; y: number; width: number; height: number; numberText: string }> {
-  const rows = groupAnchorRows(ordered)
-  const rowTops = rows.map((row, index) => {
-    const currentY = row[0]!.y
-    const prevY = index === 0 ? canvasHeight : rows[index - 1]![0]!.y
-    return (prevY + currentY) / 2
-  })
-  const rowBottoms = rows.map((row, index) => {
-    const currentY = row[0]!.y
-    const nextY = index === rows.length - 1 ? 0 : rows[index + 1]![0]!.y
-    return (currentY + nextY) / 2
-  })
+function multiplyMatrices(a: number[], b: number[]): number[] {
+  return [
+    (a[0] ?? 0) * (b[0] ?? 0) + (a[2] ?? 0) * (b[1] ?? 0),
+    (a[1] ?? 0) * (b[0] ?? 0) + (a[3] ?? 0) * (b[1] ?? 0),
+    (a[0] ?? 0) * (b[2] ?? 0) + (a[2] ?? 0) * (b[3] ?? 0),
+    (a[1] ?? 0) * (b[2] ?? 0) + (a[3] ?? 0) * (b[3] ?? 0),
+    (a[0] ?? 0) * (b[4] ?? 0) + (a[2] ?? 0) * (b[5] ?? 0) + (a[4] ?? 0),
+    (a[1] ?? 0) * (b[4] ?? 0) + (a[3] ?? 0) * (b[5] ?? 0) + (a[5] ?? 0),
+  ]
+}
 
-  const boxes: Array<{ x: number; y: number; width: number; height: number; numberText: string }> = []
-  rows.forEach((row, rowIndex) => {
-    row.forEach((anchor, colIndex) => {
-      const prevX = colIndex === 0 ? 0 : row[colIndex - 1]!.x
-      const nextX = colIndex === row.length - 1 ? canvasWidth : row[colIndex + 1]!.x
-      const left = colIndex === 0 ? 0 : (prevX + anchor.x) / 2
-      const right = colIndex === row.length - 1 ? canvasWidth : (anchor.x + nextX) / 2
-      const top = rowTops[rowIndex]!
-      const bottom = rowBottoms[rowIndex]!
-      const x = clamp(Math.floor(left), 0, canvasWidth - 1)
-      const y = clamp(Math.floor(canvasHeight - top), 0, canvasHeight - 1)
-      const width = clamp(Math.ceil(right - left), 1, canvasWidth - x)
-      const height = clamp(Math.ceil(top - bottom), 1, canvasHeight - y)
-      boxes.push({ x, y, width, height, numberText: anchor.numberText })
-    })
-  })
-  return boxes
+function toPositiveInteger(value: unknown, fallback: number): number {
+  const asNumber = Number(value)
+  if (!Number.isFinite(asNumber) || asNumber <= 0) return fallback
+  return Math.max(1, Math.round(asNumber))
+}
+
+type PdfImageObject = {
+  width?: number
+  height?: number
+  bitmap?: CanvasImageSource
 }
 
 export async function extractAthenaPanelsFromPdf(args: {
@@ -295,6 +274,12 @@ export async function extractAthenaPanelsFromPdf(args: {
   sourceFilename: string
   sceneId: string | null
 }): Promise<{ importId: string; candidates: AthenaPanelCandidate[] }> {
+  const buildPreviewUrl = async (pngBytes: Uint8Array, storageKey: string): Promise<string> => {
+    if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      return URL.createObjectURL(new Blob([pngBytes], { type: 'image/png' }))
+    }
+    return getFileUrl(storageKey)
+  }
   // #region agent log
   fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
     method: 'POST',
@@ -365,7 +350,7 @@ export async function extractAthenaPanelsFromPdf(args: {
       ;(globalThis as unknown as { DOMMatrix: new () => unknown }).DOMMatrix = class {}
     }
 
-    const { getDocument } = await import('pdfjs-dist')
+    const { getDocument, OPS } = await import('pdfjs-dist')
     const loadingTask = getDocument({
       data: pdfBytes,
       useWorkerFetch: false,
@@ -399,27 +384,110 @@ export async function extractAthenaPanelsFromPdf(args: {
     let globalOrder = 0
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
       const page = await pdf.getPage(pageNumber)
-      const viewport = page.getViewport({ scale: 2 })
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.max(1, Math.ceil(viewport.width))
-      canvas.height = Math.max(1, Math.ceil(viewport.height))
-      const context = canvas.getContext('2d')
-      if (!context) throw new Error('Could not create canvas context for PDF extraction.')
-      await page.render({ canvasContext: context, viewport }).promise
+      const viewport = page.getViewport({ scale: 1 })
+      const operatorList = await page.getOperatorList()
+      const fnArray: number[] = operatorList.fnArray ?? []
+      const argsArray: unknown[][] = operatorList.argsArray ?? []
 
-      const text = await page.getTextContent()
-      const anchors: Anchor[] = []
-      for (const item of text.items) {
-        if (!item || typeof item !== 'object' || !('str' in item) || !('transform' in item)) continue
-        const str = typeof item.str === 'string' ? item.str.trim() : ''
-        if (!isNumberLikeText(str)) continue
-        const transform = (item as { transform: number[] }).transform
-        const point = viewport.convertToViewportPoint(transform[4] ?? 0, transform[5] ?? 0)
-        anchors.push({ x: point[0] ?? 0, y: point[1] ?? 0, numberText: str })
+      const currentTransform = [1, 0, 0, 1, 0, 0]
+      const stateStack: number[][] = []
+      let pagePanelIndex = 0
+
+      const imageOps = new Set<number>([
+        OPS.paintJpegXObject,
+        OPS.paintImageXObject,
+        OPS.paintXObject,
+        OPS.paintImageMaskXObject,
+      ])
+
+      for (let i = 0; i < fnArray.length; i++) {
+        const op = fnArray[i]
+        const opArgs = Array.isArray(argsArray[i]) ? argsArray[i]! : []
+        if (op === OPS.transform) {
+          const transform = opArgs.map((value) => Number(value)) as number[]
+          if (transform.length >= 6) {
+            const next = multiplyMatrices(currentTransform, transform)
+            for (let idx = 0; idx < 6; idx++) currentTransform[idx] = next[idx] ?? currentTransform[idx]!
+          }
+          continue
+        }
+        if (op === OPS.save) {
+          stateStack.push([...currentTransform])
+          continue
+        }
+        if (op === OPS.restore) {
+          const restored = stateStack.pop()
+          if (restored) {
+            for (let idx = 0; idx < 6; idx++) currentTransform[idx] = restored[idx] ?? currentTransform[idx]!
+          }
+          continue
+        }
+        if (!imageOps.has(op)) continue
+
+        const imageRef = opArgs[0]
+        const imageObject =
+          typeof imageRef === 'string' && page.objs && typeof page.objs.get === 'function'
+            ? ((page.objs.get(imageRef) as PdfImageObject | undefined) ?? null)
+            : null
+        const bitmap = imageObject?.bitmap as CanvasImageSource | undefined
+        if (!bitmap) continue
+
+        const intrinsicWidth = toPositiveInteger(imageObject?.width, (bitmap as { width?: number }).width ?? 1)
+        const intrinsicHeight = toPositiveInteger(
+          imageObject?.height,
+          (bitmap as { height?: number }).height ?? 1
+        )
+        const panelCanvas = document.createElement('canvas')
+        panelCanvas.width = intrinsicWidth
+        panelCanvas.height = intrinsicHeight
+        const panelCtx = panelCanvas.getContext('2d')
+        if (!panelCtx) throw new Error('Could not create panel canvas context.')
+        panelCtx.drawImage(bitmap, 0, 0, intrinsicWidth, intrinsicHeight)
+
+        const bboxWidth = Math.max(1, Math.round(Math.hypot(currentTransform[0] ?? 0, currentTransform[1] ?? 0)))
+        const bboxHeight = Math.max(1, Math.round(Math.hypot(currentTransform[2] ?? 0, currentTransform[3] ?? 0)))
+        const bboxX = Math.max(0, Math.round(currentTransform[4] ?? 0))
+        const bboxY = Math.max(0, Math.round((viewport.height ?? 0) - (currentTransform[5] ?? 0) - bboxHeight))
+
+        const pngBytes = canvasToPngBytes(panelCanvas)
+        const storageKey = await saveStoryboardImportCandidatePng({
+          pngBytes,
+          productionId: args.productionId,
+          sourceImportId: importRow.id,
+          pageNumber,
+          panelIndex: pagePanelIndex,
+        })
+        candidates.push({
+          id: crypto.randomUUID(),
+          source_import_id: importRow.id,
+          storage_key: storageKey,
+          preview_url: await buildPreviewUrl(pngBytes, storageKey),
+          page_number: pageNumber,
+          panel_index: pagePanelIndex,
+          global_order: globalOrder++,
+          detected_number_text: null,
+          number_confidence: 'unknown',
+          bbox: {
+            x: bboxX,
+            y: bboxY,
+            width: bboxWidth,
+            height: bboxHeight,
+          },
+        })
+        createdStorageKeys.push(storageKey)
+        pagePanelIndex += 1
       }
 
-      if (anchors.length === 0) {
-        const pngBytes = canvasToPngBytes(canvas)
+      if (pagePanelIndex === 0) {
+        const fallbackViewport = page.getViewport({ scale: 2 })
+        const fallbackCanvas = document.createElement('canvas')
+        fallbackCanvas.width = Math.max(1, Math.ceil(fallbackViewport.width))
+        fallbackCanvas.height = Math.max(1, Math.ceil(fallbackViewport.height))
+        const fallbackContext = fallbackCanvas.getContext('2d')
+        if (!fallbackContext) throw new Error('Could not create canvas context for PDF extraction.')
+        await page.render({ canvasContext: fallbackContext, viewport: fallbackViewport }).promise
+
+        const pngBytes = canvasToPngBytes(fallbackCanvas)
         const storageKey = await saveStoryboardImportCandidatePng({
           pngBytes,
           productionId: args.productionId,
@@ -431,57 +499,13 @@ export async function extractAthenaPanelsFromPdf(args: {
           id: crypto.randomUUID(),
           source_import_id: importRow.id,
           storage_key: storageKey,
-          preview_url: await getFileUrl(storageKey),
+          preview_url: await buildPreviewUrl(pngBytes, storageKey),
           page_number: pageNumber,
           panel_index: 0,
           global_order: globalOrder++,
           detected_number_text: null,
           number_confidence: 'unknown',
-          bbox: { x: 0, y: 0, width: canvas.width, height: canvas.height },
-        })
-        createdStorageKeys.push(storageKey)
-        continue
-      }
-
-      const orderedAnchors = orderAthenaAnchorsLeftToRightTopToBottom(anchors)
-      const panelBboxes = derivePanelBboxes(orderedAnchors, canvas.width, canvas.height)
-      for (let panelIndex = 0; panelIndex < panelBboxes.length; panelIndex++) {
-        const panel = panelBboxes[panelIndex]!
-        const panelCanvas = document.createElement('canvas')
-        panelCanvas.width = panel.width
-        panelCanvas.height = panel.height
-        const panelCtx = panelCanvas.getContext('2d')
-        if (!panelCtx) throw new Error('Could not create panel canvas context.')
-        panelCtx.drawImage(
-          canvas,
-          panel.x,
-          panel.y,
-          panel.width,
-          panel.height,
-          0,
-          0,
-          panel.width,
-          panel.height
-        )
-        const pngBytes = canvasToPngBytes(panelCanvas)
-        const storageKey = await saveStoryboardImportCandidatePng({
-          pngBytes,
-          productionId: args.productionId,
-          sourceImportId: importRow.id,
-          pageNumber,
-          panelIndex,
-        })
-        candidates.push({
-          id: crypto.randomUUID(),
-          source_import_id: importRow.id,
-          storage_key: storageKey,
-          preview_url: await getFileUrl(storageKey),
-          page_number: pageNumber,
-          panel_index: panelIndex,
-          global_order: globalOrder++,
-          detected_number_text: panel.numberText,
-          number_confidence: 'text',
-          bbox: { x: panel.x, y: panel.y, width: panel.width, height: panel.height },
+          bbox: { x: 0, y: 0, width: fallbackCanvas.width, height: fallbackCanvas.height },
         })
         createdStorageKeys.push(storageKey)
       }

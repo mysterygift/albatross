@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { listScenesByProduction, listShotsByProduction } from '@/lib/db/repositories/schedule'
@@ -12,6 +12,7 @@ import {
 } from '@/lib/db/repositories/storyboard'
 import type { Scene, Shot, StoryboardImage } from '@/lib/db/types'
 import {
+  createStoryboardImageObjectUrl,
   getFileUrl,
   pickAthenaGalleryPdfForImport,
   pickStoryboardImageForManualImport,
@@ -56,6 +57,9 @@ function shotSummary(shot: Shot): string {
 }
 
 async function cleanupImportCandidates(candidates: AthenaPanelCandidate[]): Promise<void> {
+  for (const candidate of candidates) {
+    if (candidate.preview_url.startsWith('blob:')) URL.revokeObjectURL(candidate.preview_url)
+  }
   await Promise.all(candidates.map((candidate) => removeStoryboardImageFile(candidate.storage_key)))
 }
 
@@ -68,6 +72,8 @@ export function StoryboardPage() {
   const [selectedSceneId, setSelectedSceneId] = useState<string>(ALL_SCENES)
   const [importCandidates, setImportCandidates] = useState<AthenaPanelCandidate[]>([])
   const [lastImportId, setLastImportId] = useState<string | null>(null)
+  const [excludeSelectionOpen, setExcludeSelectionOpen] = useState(false)
+  const [excludedCandidateIds, setExcludedCandidateIds] = useState<Set<string>>(new Set())
   const [reviewOpen, setReviewOpen] = useState(false)
   const [manualShotIdByCandidateId, setManualShotIdByCandidateId] = useState<Map<string, string>>(new Map())
   const [conflictPolicyByCandidateId, setConflictPolicyByCandidateId] = useState<
@@ -145,13 +151,18 @@ export function StoryboardPage() {
     [selectedSceneId, scopedScenes]
   )
 
+  const activeImportCandidates = useMemo(
+    () => importCandidates.filter((candidate) => !excludedCandidateIds.has(candidate.id)),
+    [importCandidates, excludedCandidateIds]
+  )
+
   const importPreviewRows = useMemo(() => {
     return matchAthenaPanelsToShots({
-      candidates: importCandidates,
+      candidates: activeImportCandidates,
       shots: shotsQuery.data ?? [],
       selectedSceneId: selectedSceneId === ALL_SCENES ? null : selectedSceneId,
     })
-  }, [importCandidates, shotsQuery.data, selectedSceneId])
+  }, [activeImportCandidates, shotsQuery.data, selectedSceneId])
 
   const existingImageCountByShotId = useMemo(() => {
     const map = new Map<string, number>()
@@ -190,7 +201,14 @@ export function StoryboardPage() {
     ],
     queryFn: async () => {
       const entries = await Promise.all(
-        imagesNeedingUrls.map(async (img) => [img.id, await getFileUrl(img.storage_key)] as const)
+        imagesNeedingUrls.map(async (img) => {
+          try {
+            const blobUrl = await createStoryboardImageObjectUrl(img.storage_key, img.mime_type)
+            return [img.id, blobUrl] as const
+          } catch {
+            return [img.id, await getFileUrl(img.storage_key)] as const
+          }
+        })
       )
       // #region agent log
       fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
@@ -205,6 +223,7 @@ export function StoryboardPage() {
           data: {
             imageCount: entries.length,
             urlsWithWhitespace: entries.filter(([, url]) => /\s/.test(url)).length,
+            blobUrlCount: entries.filter(([, url]) => url.startsWith('blob:')).length,
             firstUrl: entries[0]?.[1] ?? null,
           },
           timestamp: Date.now(),
@@ -215,6 +234,15 @@ export function StoryboardPage() {
     },
     enabled: imagesNeedingUrls.length > 0,
   })
+
+  useEffect(() => {
+    return () => {
+      const urls = imageUrlsQuery.data ? [...imageUrlsQuery.data.values()] : []
+      for (const url of urls) {
+        if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+      }
+    }
+  }, [imageUrlsQuery.data])
 
   const refreshStoryboardQueries = () => {
     queryClient.invalidateQueries({ queryKey: ['storyboard-images-by-production', currentProductionId] })
@@ -365,10 +393,11 @@ export function StoryboardPage() {
       // #endregion
       setImportCandidates(result.candidates)
       setLastImportId(result.importId)
+      setExcludedCandidateIds(new Set())
       setManualShotIdByCandidateId(new Map())
       setConflictPolicyByCandidateId(new Map())
       setAllowMultiplePanelsPerShot(false)
-      setReviewOpen(true)
+      setExcludeSelectionOpen(true)
     },
     onError: (error) => {
       // #region agent log
@@ -407,8 +436,10 @@ export function StoryboardPage() {
     },
     onSuccess: () => {
       setActionError(null)
+      setExcludeSelectionOpen(false)
       setReviewOpen(false)
       setImportCandidates([])
+      setExcludedCandidateIds(new Set())
       setManualShotIdByCandidateId(new Map())
       setConflictPolicyByCandidateId(new Map())
       setAllowMultiplePanelsPerShot(false)
@@ -495,8 +526,8 @@ export function StoryboardPage() {
       // #endregion
 
       const appliedCandidateIds = new Set(items.map((item) => item.candidate_id))
-      const skipped = reviewRows.filter((row) => !appliedCandidateIds.has(row.candidate.id))
-      await Promise.all(skipped.map((row) => removeStoryboardImageFile(row.candidate.storage_key)))
+      const skippedCandidates = importCandidates.filter((candidate) => !appliedCandidateIds.has(candidate.id))
+      await Promise.all(skippedCandidates.map((candidate) => removeStoryboardImageFile(candidate.storage_key)))
       // #region agent log
       fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
         method: 'POST',
@@ -509,7 +540,7 @@ export function StoryboardPage() {
           message: 'Apply import skipped-candidate cleanup completed',
           data: {
             importId: lastImportId,
-            skippedCount: skipped.length,
+            skippedCount: skippedCandidates.length,
           },
           timestamp: Date.now(),
         }),
@@ -537,8 +568,13 @@ export function StoryboardPage() {
       // #endregion
       setActionError(null)
       refreshStoryboardQueries()
+      setExcludeSelectionOpen(false)
       setReviewOpen(false)
+      for (const candidate of importCandidates) {
+        if (candidate.preview_url.startsWith('blob:')) URL.revokeObjectURL(candidate.preview_url)
+      }
       setImportCandidates([])
+      setExcludedCandidateIds(new Set())
       setManualShotIdByCandidateId(new Map())
       setConflictPolicyByCandidateId(new Map())
       setAllowMultiplePanelsPerShot(false)
@@ -642,7 +678,8 @@ export function StoryboardPage() {
         <Card className="border-border">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">
-              Athena import preview ({importCandidates.length} candidate{importCandidates.length !== 1 ? 's' : ''})
+              Athena import preview ({activeImportCandidates.length} active of {importCandidates.length} candidate
+              {importCandidates.length !== 1 ? 's' : ''})
             </CardTitle>
             {lastImportId && (
               <p className="text-xs text-muted-foreground">
@@ -651,8 +688,8 @@ export function StoryboardPage() {
             )}
             <div>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => setReviewOpen(true)}>
-                  Review and apply import
+                <Button size="sm" variant="outline" onClick={() => setExcludeSelectionOpen(true)}>
+                  Choose panels
                 </Button>
                 <Button
                   size="sm"
@@ -1019,6 +1056,96 @@ export function StoryboardPage() {
           )
         })
       )}
+      <Dialog open={excludeSelectionOpen} onOpenChange={setExcludeSelectionOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogTitle>Exclude non-shot images</DialogTitle>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Deselect panels that should be excluded before matching and review.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setExcludedCandidateIds(new Set(importCandidates.map((candidate) => candidate.id)))}
+              >
+                Exclude all
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setExcludedCandidateIds(new Set())}>
+                Include all
+              </Button>
+            </div>
+            <div className="max-h-[55vh] overflow-auto rounded-md border border-border p-3">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {importCandidates.map((candidate) => {
+                  const excluded = excludedCandidateIds.has(candidate.id)
+                  return (
+                    <label
+                      key={candidate.id}
+                      className={`rounded border p-2 ${excluded ? 'border-destructive/50 bg-destructive/5' : 'border-border bg-muted/20'}`}
+                    >
+                      <div className="mb-2 overflow-hidden rounded border border-border bg-muted">
+                        <img
+                          src={candidate.preview_url}
+                          alt={`Exclude panel ${candidate.global_order + 1}`}
+                          className="h-28 w-full object-cover"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={!excluded}
+                          onChange={(event) => {
+                            setExcludedCandidateIds((prev) => {
+                              const next = new Set(prev)
+                              if (event.target.checked) next.delete(candidate.id)
+                              else next.add(candidate.id)
+                              return next
+                            })
+                          }}
+                        />
+                        Include panel #{candidate.global_order + 1}
+                      </div>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setExcludeSelectionOpen(false)}>
+                Close
+              </Button>
+              <Button
+                onClick={() => {
+                  // #region agent log
+                  fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+                    body: JSON.stringify({
+                      sessionId: '72cc09',
+                      runId: 'pre-fix',
+                      hypothesisId: 'H15',
+                      location: 'src/features/schedule/storyboard-page.tsx:excludeSelection:continue',
+                      message: 'User confirmed excluded Athena candidates',
+                      data: {
+                        totalCandidates: importCandidates.length,
+                        excludedCount: excludedCandidateIds.size,
+                        includedCount: importCandidates.length - excludedCandidateIds.size,
+                      },
+                      timestamp: Date.now(),
+                    }),
+                  }).catch(() => {})
+                  // #endregion
+                  setExcludeSelectionOpen(false)
+                  setReviewOpen(true)
+                }}
+              >
+                Continue to review
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
         <DialogContent className="max-w-5xl">
           <DialogTitle>Athena import review</DialogTitle>

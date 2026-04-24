@@ -479,6 +479,8 @@ describe('StoryboardPage', () => {
 
     render(wrap(<StoryboardPage />))
     await user.click(await screen.findByRole('button', { name: 'Import Athena Gallery PDF' }))
+    expect(await screen.findByText(/Exclude non-shot images/i)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Continue to review' }))
     expect(await screen.findByText(/Athena import review/i)).toBeTruthy()
     expect(await screen.findByText(/Conflict handling/i)).toBeTruthy()
 
@@ -493,7 +495,8 @@ describe('StoryboardPage', () => {
 
     render(wrap(<StoryboardPage />))
     await user.click(await screen.findByRole('button', { name: 'Import Athena Gallery PDF' }))
-    expect(await screen.findByText(/Athena import review/i)).toBeTruthy()
+    expect(await screen.findByText(/Exclude non-shot images/i)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Continue to review' }))
     await user.click(screen.getByRole('button', { name: 'Discard import' }))
     await waitFor(() => expect(filesRepo.removeStoryboardImageFile).toHaveBeenCalled())
     await waitFor(() => expect(storyboardRepo.updateStoryboardImport).toHaveBeenCalled())
