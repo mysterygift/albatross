@@ -15,6 +15,11 @@ import { getPersonById } from './person'
 import { getShootDayUnitById, listShootDayUnitsByShootDay } from './shoot-day-units'
 import { ensureMainUnit } from './units'
 import {
+  cleanupStoryboardImagesForDeletedScene,
+  cleanupStoryboardImagesForDeletedShot,
+  updateStoryboardSceneForMovedShot,
+} from './storyboard'
+import {
   findShootingBlocIdForProductionDate,
   persistShootDayShootingBlocId,
 } from '../shootingBlocAssociation'
@@ -1102,6 +1107,7 @@ export async function deleteScene(id: string): Promise<void> {
     [ts, ts, id]
   )
   await outboxPush(SCENE_TABLE, id, 'delete', null)
+  await cleanupStoryboardImagesForDeletedScene(id)
 }
 
 const EPISODES_TABLE = 'episodes'
@@ -1505,6 +1511,37 @@ export async function deleteShot(id: string): Promise<void> {
     [ts, ts, id]
   )
   await outboxPush(SHOT_TABLE, id, 'delete', null)
+  await cleanupStoryboardImagesForDeletedShot(id)
+}
+
+/**
+ * Move a shot between scenes in the same production. Storyboard image rows remain attached
+ * to the shot and have scene_id synchronized to the new parent scene.
+ */
+export async function moveShotToScene(shotId: string, toSceneId: string): Promise<Shot> {
+  const existing = await getShotById(shotId)
+  if (!existing) throw new Error('Shot not found or deleted')
+
+  const targetScene = await getSceneById(toSceneId)
+  if (!targetScene) throw new Error('Target scene not found or deleted')
+
+  const currentScene = await getSceneById(existing.scene_id)
+  if (!currentScene) throw new Error('Current scene not found or deleted')
+
+  if (currentScene.production_id !== targetScene.production_id) {
+    throw new Error('Cannot move a shot across productions')
+  }
+  if (existing.scene_id === toSceneId) return existing
+
+  const db = await getDb()
+  const ts = now()
+  await db.execute(
+    `UPDATE ${SHOT_TABLE} SET scene_id = $1, updated_at = $2 WHERE id = $3`,
+    [toSceneId, ts, shotId]
+  )
+  await outboxPush(SHOT_TABLE, shotId, 'update', JSON.stringify({ scene_id: toSceneId }))
+  await updateStoryboardSceneForMovedShot(shotId, toSceneId)
+  return (await getShotById(shotId))!
 }
 
 // Stripboard

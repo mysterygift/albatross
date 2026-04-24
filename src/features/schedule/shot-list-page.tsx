@@ -864,7 +864,7 @@ export function ShotListPage() {
       {selectedSceneId && (
         <>
           <Card className="border-zinc-700 bg-zinc-800/50">
-            <CardHeader className="border-b border-zinc-700 py-3 flex flex-row items-center justify-between gap-2">
+            <CardHeader className="border-b border-zinc-700 py-0 flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-sm font-medium text-zinc-200">Cast in this scene</CardTitle>
               <Button
                 variant="outline"
@@ -943,7 +943,7 @@ export function ShotListPage() {
                 }}
               >
                 <Pencil className="size-3.5" />
-                {editMode ? 'Edit mode' : 'Edit'}
+                {editMode ? 'Editing...' : 'Edit'}
               </Button>
             </div>
           </div>

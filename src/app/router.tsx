@@ -6,6 +6,7 @@ import { BudgetPage } from '@/features/budget/page'
 import { ScheduleCalendarPage } from '@/features/schedule/calendar-page'
 import { StripboardPage } from '@/features/schedule/stripboard-page'
 import { ShotListPage } from '@/features/schedule/shot-list-page'
+import { StoryboardPage } from '@/features/schedule/storyboard-page'
 import { ScriptImportPage } from '@/features/schedule/script-import-page'
 import { PeoplePage } from '@/features/people/page'
 import { BookingsPage } from '@/features/people/pages/BookingsPage'
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
       { path: 'schedule/calendar', element: <ScheduleCalendarPage /> },
       { path: 'schedule/stripboard', element: <StripboardPage /> },
       { path: 'schedule/shots', element: <ShotListPage /> },
+      { path: 'schedule/storyboard', element: <StoryboardPage /> },
       { path: 'schedule/script-import', element: <ScriptImportPage /> },
       { path: 'people', element: <Navigate to="/people/bookings" replace /> },
       { path: 'people/bookings', element: <BookingsPage /> },

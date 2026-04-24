@@ -104,3 +104,18 @@ export {
   pickApfSavePath,
   sanitizeProductionExportBasename,
 } from '@/lib/files/apfProjectDialogs'
+
+export {
+  assertAthenaPdfFilename,
+  buildStoryboardImportCandidateStorageKey,
+  buildStoryboardImageStorageKey,
+  pickAthenaGalleryPdfForImport,
+  pickStoryboardImageForManualImport,
+  removeStoryboardImageFile,
+  resolveStoryboardImagePath,
+  saveStoryboardImportCandidatePng,
+  saveStoryboardImageFromLocalPath,
+  type PickedStoryboardPdf,
+  type PickedStoryboardImage,
+  type StoryboardSourceType,
+} from '@/lib/files/storyboard'

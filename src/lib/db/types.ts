@@ -523,6 +523,40 @@ export type Shot = {
   notes: string | null
 } & SoftDeletable
 
+export const STORYBOARD_IMAGE_SOURCE_TYPES = ['manual', 'athena_pdf_import'] as const
+export type StoryboardImageSourceType = (typeof STORYBOARD_IMAGE_SOURCE_TYPES)[number]
+
+export type StoryboardImage = {
+  id: string
+  production_id: string
+  scene_id: string
+  shot_id: string
+  storage_key: string
+  original_filename: string
+  mime_type: string
+  width: number | null
+  height: number | null
+  sort_order: number
+  source_type: StoryboardImageSourceType
+  source_import_id: string | null
+} & SoftDeletable
+
+export const STORYBOARD_IMPORT_SOURCE_TYPES = ['athena_pdf_import'] as const
+export type StoryboardImportSourceType = (typeof STORYBOARD_IMPORT_SOURCE_TYPES)[number]
+
+export const STORYBOARD_IMPORT_STATUS_VALUES = ['pending', 'completed', 'failed'] as const
+export type StoryboardImportStatus = (typeof STORYBOARD_IMPORT_STATUS_VALUES)[number]
+
+export type StoryboardImport = {
+  id: string
+  production_id: string
+  scene_id: string | null
+  source_filename: string
+  source_type: StoryboardImportSourceType
+  status: StoryboardImportStatus
+  metadata_json: string | null
+} & SoftDeletable
+
 export type EquipmentTerm = {
   id: string
   production_id: string
