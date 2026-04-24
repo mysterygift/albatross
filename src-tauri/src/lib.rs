@@ -789,6 +789,12 @@ pub fn run() {
             sql: include_str!("../migrations/0063_deliverables_episode_id.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 64,
+            description: "storyboard_foundation",
+            sql: include_str!("../migrations/0064_storyboard_foundation.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

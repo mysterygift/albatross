@@ -192,6 +192,25 @@ export function StoryboardPage() {
       const entries = await Promise.all(
         imagesNeedingUrls.map(async (img) => [img.id, await getFileUrl(img.storage_key)] as const)
       )
+      // #region agent log
+      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+        body: JSON.stringify({
+          sessionId: '72cc09',
+          runId: 'pre-fix',
+          hypothesisId: 'H12',
+          location: 'src/features/schedule/storyboard-page.tsx:imageUrlsQuery:resolved',
+          message: 'Resolved storyboard image URLs',
+          data: {
+            imageCount: entries.length,
+            urlsWithWhitespace: entries.filter(([, url]) => /\s/.test(url)).length,
+            firstUrl: entries[0]?.[1] ?? null,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
       return new Map(entries)
     },
     enabled: imagesNeedingUrls.length > 0,
@@ -292,6 +311,26 @@ export function StoryboardPage() {
       }
       const picked = await pickAthenaGalleryPdfForImport()
       if (!picked) return
+      // #region agent log
+      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+        body: JSON.stringify({
+          sessionId: '72cc09',
+          runId: 'pre-fix',
+          hypothesisId: 'H1',
+          location: 'src/features/schedule/storyboard-page.tsx:importAthenaPdfMutation:picked',
+          message: 'Athena PDF picked for import',
+          data: {
+            productionId: currentProductionId,
+            selectedSceneId,
+            originalFilename: picked.originalFilename,
+            mimeType: picked.mimeType,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
       const selectedSceneIdOrNull = selectedSceneId === ALL_SCENES ? null : selectedSceneId
       const extracted = await extractAthenaPanelsFromPdf({
         productionId: currentProductionId,
@@ -304,6 +343,26 @@ export function StoryboardPage() {
     onSuccess: (result) => {
       setActionError(null)
       if (!result) return
+      // #region agent log
+      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+        body: JSON.stringify({
+          sessionId: '72cc09',
+          runId: 'pre-fix',
+          hypothesisId: 'H7',
+          location: 'src/features/schedule/storyboard-page.tsx:importAthenaPdfMutation:onSuccess',
+          message: 'Athena import extraction result accepted by UI',
+          data: {
+            importId: result.importId,
+            candidateCount: result.candidates.length,
+            previewUrlCount: result.candidates.filter((c) => !!c.preview_url).length,
+            firstPreviewUrl: result.candidates[0]?.preview_url ?? null,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
       setImportCandidates(result.candidates)
       setLastImportId(result.importId)
       setManualShotIdByCandidateId(new Map())
@@ -312,6 +371,23 @@ export function StoryboardPage() {
       setReviewOpen(true)
     },
     onError: (error) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+        body: JSON.stringify({
+          sessionId: '72cc09',
+          runId: 'pre-fix',
+          hypothesisId: 'H5',
+          location: 'src/features/schedule/storyboard-page.tsx:importAthenaPdfMutation:onError',
+          message: 'Athena import mutation failed',
+          data: {
+            errorMessage: error instanceof Error ? error.message : String(error),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
       setActionError(error instanceof Error ? error.message : 'Could not import Athena Gallery PDF.')
     },
   })
@@ -373,18 +449,92 @@ export function StoryboardPage() {
       if (items.some((item) => !item.scene_id)) {
         throw new Error('One or more matched shots are no longer available.')
       }
+      // #region agent log
+      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+        body: JSON.stringify({
+          sessionId: '72cc09',
+          runId: 'pre-fix',
+          hypothesisId: 'H8',
+          location: 'src/features/schedule/storyboard-page.tsx:applyImportMutation:beforeApply',
+          message: 'Apply import mutation prepared rows',
+          data: {
+            importId: lastImportId,
+            reviewRowCount: reviewRows.length,
+            readyRowCount: readyRows.length,
+            itemCount: items.length,
+            skippedCount: reviewRows.length - readyRows.length,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
       const result = await applyAthenaImportToStoryboard({
         production_id: currentProductionId,
         source_import_id: lastImportId,
         items,
       })
+      // #region agent log
+      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+        body: JSON.stringify({
+          sessionId: '72cc09',
+          runId: 'pre-fix',
+          hypothesisId: 'H8',
+          location: 'src/features/schedule/storyboard-page.tsx:applyImportMutation:afterApply',
+          message: 'Apply import repository call returned',
+          data: {
+            importId: lastImportId,
+            appliedCount: result.appliedCount,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
 
       const appliedCandidateIds = new Set(items.map((item) => item.candidate_id))
       const skipped = reviewRows.filter((row) => !appliedCandidateIds.has(row.candidate.id))
       await Promise.all(skipped.map((row) => removeStoryboardImageFile(row.candidate.storage_key)))
+      // #region agent log
+      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+        body: JSON.stringify({
+          sessionId: '72cc09',
+          runId: 'pre-fix',
+          hypothesisId: 'H10',
+          location: 'src/features/schedule/storyboard-page.tsx:applyImportMutation:afterSkippedCleanup',
+          message: 'Apply import skipped-candidate cleanup completed',
+          data: {
+            importId: lastImportId,
+            skippedCount: skipped.length,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
       return result
     },
     onSuccess: (result) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+        body: JSON.stringify({
+          sessionId: '72cc09',
+          runId: 'pre-fix',
+          hypothesisId: 'H10',
+          location: 'src/features/schedule/storyboard-page.tsx:applyImportMutation:onSuccess',
+          message: 'Apply import mutation completed in UI',
+          data: {
+            appliedCount: result.appliedCount,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
       setActionError(null)
       refreshStoryboardQueries()
       setReviewOpen(false)
@@ -398,6 +548,23 @@ export function StoryboardPage() {
       }
     },
     onError: (error) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+        body: JSON.stringify({
+          sessionId: '72cc09',
+          runId: 'pre-fix',
+          hypothesisId: 'H10',
+          location: 'src/features/schedule/storyboard-page.tsx:applyImportMutation:onError',
+          message: 'Apply import mutation failed in UI',
+          data: {
+            errorMessage: error instanceof Error ? error.message : String(error),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
       setActionError(error instanceof Error ? error.message : 'Could not apply Athena import.')
     },
   })
@@ -507,6 +674,27 @@ export function StoryboardPage() {
                       src={row.candidate.preview_url}
                       alt={`Imported panel ${row.candidate.global_order + 1}`}
                       className="h-36 w-full object-cover"
+                      onError={(event) => {
+                        // #region agent log
+                        fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+                          body: JSON.stringify({
+                            sessionId: '72cc09',
+                            runId: 'pre-fix',
+                            hypothesisId: 'H13',
+                            location: 'src/features/schedule/storyboard-page.tsx:importPreviewImg:onError',
+                            message: 'Import preview image failed to load',
+                            data: {
+                              src: (event.currentTarget as HTMLImageElement).currentSrc || row.candidate.preview_url,
+                              candidateId: row.candidate.id,
+                              storageKey: row.candidate.storage_key,
+                            },
+                            timestamp: Date.now(),
+                          }),
+                        }).catch(() => {})
+                        // #endregion
+                      }}
                     />
                   </div>
                   <p className="text-xs font-medium">Order {row.candidate.global_order + 1}</p>
@@ -610,6 +798,35 @@ export function StoryboardPage() {
                                             src={src}
                                             alt={image.original_filename}
                                             className="h-full w-full object-cover"
+                                            onError={(event) => {
+                                              // #region agent log
+                                              fetch(
+                                                'http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',
+                                                {
+                                                  method: 'POST',
+                                                  headers: {
+                                                    'Content-Type': 'application/json',
+                                                    'X-Debug-Session-Id': '72cc09',
+                                                  },
+                                                  body: JSON.stringify({
+                                                    sessionId: '72cc09',
+                                                    runId: 'pre-fix',
+                                                    hypothesisId: 'H14',
+                                                    location:
+                                                      'src/features/schedule/storyboard-page.tsx:storyboardThumb:onError',
+                                                    message: 'Storyboard thumbnail failed to load',
+                                                    data: {
+                                                      imageId: image.id,
+                                                      storageKey: image.storage_key,
+                                                      src:
+                                                        (event.currentTarget as HTMLImageElement).currentSrc || src,
+                                                    },
+                                                    timestamp: Date.now(),
+                                                  }),
+                                                }
+                                              ).catch(() => {})
+                                              // #endregion
+                                            }}
                                           />
                                         ) : (
                                           <div className="flex h-full w-full items-center justify-center px-2 text-center text-xs text-muted-foreground">
@@ -703,6 +920,36 @@ export function StoryboardPage() {
                                                   src={src}
                                                   alt={image.original_filename}
                                                   className="h-full w-full object-cover"
+                                                  onError={(event) => {
+                                                    // #region agent log
+                                                    fetch(
+                                                      'http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',
+                                                      {
+                                                        method: 'POST',
+                                                        headers: {
+                                                          'Content-Type': 'application/json',
+                                                          'X-Debug-Session-Id': '72cc09',
+                                                        },
+                                                        body: JSON.stringify({
+                                                          sessionId: '72cc09',
+                                                          runId: 'pre-fix',
+                                                          hypothesisId: 'H14',
+                                                          location:
+                                                            'src/features/schedule/storyboard-page.tsx:storyboardTableThumb:onError',
+                                                          message: 'Storyboard table thumbnail failed to load',
+                                                          data: {
+                                                            imageId: image.id,
+                                                            storageKey: image.storage_key,
+                                                            src:
+                                                              (event.currentTarget as HTMLImageElement).currentSrc ||
+                                                              src,
+                                                          },
+                                                          timestamp: Date.now(),
+                                                        }),
+                                                      }
+                                                    ).catch(() => {})
+                                                    // #endregion
+                                                  }}
                                                 />
                                               ) : (
                                                 <div className="flex h-full w-full items-center justify-center px-2 text-center text-xs text-muted-foreground">
@@ -806,6 +1053,27 @@ export function StoryboardPage() {
                           src={row.candidate.preview_url}
                           alt={`Review panel ${row.candidate.global_order + 1}`}
                           className="h-20 w-28 rounded object-cover"
+                      onError={(event) => {
+                        // #region agent log
+                        fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+                          body: JSON.stringify({
+                            sessionId: '72cc09',
+                            runId: 'pre-fix',
+                            hypothesisId: 'H13',
+                            location: 'src/features/schedule/storyboard-page.tsx:reviewPreviewImg:onError',
+                            message: 'Review preview image failed to load',
+                            data: {
+                              src: (event.currentTarget as HTMLImageElement).currentSrc || row.candidate.preview_url,
+                              candidateId: row.candidate.id,
+                              storageKey: row.candidate.storage_key,
+                            },
+                            timestamp: Date.now(),
+                          }),
+                        }).catch(() => {})
+                        // #endregion
+                      }}
                         />
                         <p className="mt-1 text-xs text-muted-foreground">
                           #{row.candidate.global_order + 1} p{row.candidate.page_number}:{row.candidate.panel_index + 1}

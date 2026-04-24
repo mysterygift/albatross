@@ -39,13 +39,19 @@ export function createSqlJsTauriAdapter(raw: Database): TauriLikeSqlDb {
       }
     },
     async execute(sql: string, bindValues?: unknown[]): Promise<void> {
-      const { sql: ssql, binds } = tauriSqlAndBindsForSqlJs(sql, bindValues)
-      const stmt = raw.prepare(ssql)
-      try {
-        if (binds.length > 0) stmt.bind(binds)
-        stmt.step()
-      } finally {
-        stmt.free()
+      const statements = sql
+        .split(';')
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0)
+      for (const part of statements) {
+        const { sql: ssql, binds } = tauriSqlAndBindsForSqlJs(part, bindValues)
+        const stmt = raw.prepare(ssql)
+        try {
+          if (binds.length > 0) stmt.bind(binds)
+          stmt.step()
+        } finally {
+          stmt.free()
+        }
       }
     },
   }

@@ -1,4 +1,4 @@
-import { getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import type {
   StoryboardImage,
@@ -17,13 +17,25 @@ const IMAGE_TABLE = 'storyboard_images'
 const IMPORT_TABLE = 'storyboard_imports'
 
 function isMissingStoryboardTableError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  const message = error.message.toLowerCase()
+  let message = ''
+  if (error instanceof Error) {
+    message = error.message
+  } else if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string'
+  ) {
+    message = (error as { message: string }).message
+  } else {
+    message = String(error)
+  }
+  const normalized = message.toLowerCase()
   return (
-    message.includes('no such table') ||
-    message.includes('does not exist') ||
-    message.includes('unknown table')
-  ) && message.includes('storyboard_')
+    normalized.includes('no such table') ||
+    normalized.includes('does not exist') ||
+    normalized.includes('unknown table')
+  ) && normalized.includes('storyboard_')
 }
 
 type ShotContext = {
@@ -169,7 +181,8 @@ export async function listStoryboardImagesByProduction(productionId: string): Pr
     )
     return rows.map(rowToStoryboardImage)
   } catch (error) {
-    if (isMissingStoryboardTableError(error)) return []
+    const isMissingTable = isMissingStoryboardTableError(error)
+    if (isMissingTable) return []
     throw error
   }
 }
@@ -617,62 +630,82 @@ export async function applyAthenaImportToStoryboard(args: {
     sortCursorByShot.set(shotId, maxSort + 1)
   }
 
+  // #region agent log
+  fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+    body: JSON.stringify({
+      sessionId: '72cc09',
+      runId: 'pre-fix',
+      hypothesisId: 'H9',
+      location: 'src/lib/db/repositories/storyboard.ts:applyAthenaImportToStoryboard:beforeTx',
+      message: 'Applying Athena import in repository',
+      data: {
+        sourceImportId: args.source_import_id,
+        itemCount: args.items.length,
+        shotCount: shotIds.length,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion
   await runInSerializedTransaction(async () => {
     const conn = await getDb()
-    await conn.execute('BEGIN')
-    try {
-      const replacedShots = new Set<string>()
-      for (const item of args.items) {
-        if (item.conflict_policy === 'replace' && !replacedShots.has(item.shot_id)) {
-          const existing = existingByShot.get(item.shot_id) ?? []
-          if (existing.length > 0) {
-            await conn.execute(
-              `UPDATE ${IMAGE_TABLE}
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN', bindValues: [] }]
+    const replacedShots = new Set<string>()
+    for (const item of args.items) {
+      if (item.conflict_policy === 'replace' && !replacedShots.has(item.shot_id)) {
+        const existing = existingByShot.get(item.shot_id) ?? []
+        if (existing.length > 0) {
+          statements.push({
+            sql: `UPDATE ${IMAGE_TABLE}
                SET deleted_at = $1, updated_at = $2
                WHERE shot_id = $3 AND deleted_at IS NULL`,
-              [ts, ts, item.shot_id]
-            )
-            for (const old of existing) {
-              const stmt = outboxStatementForRow({
+            bindValues: [ts, ts, item.shot_id],
+          })
+          for (const old of existing) {
+            statements.push(
+              outboxStatementForRow({
                 entity: IMAGE_TABLE,
                 entityId: old.id,
                 operation: 'delete',
                 payloadJson: null,
               })
-              await conn.execute(stmt.sql, stmt.bindValues)
-            }
+            )
           }
-          sortCursorByShot.set(item.shot_id, 0)
-          replacedShots.add(item.shot_id)
         }
+        sortCursorByShot.set(item.shot_id, 0)
+        replacedShots.add(item.shot_id)
+      }
 
-        const sortOrder = sortCursorByShot.get(item.shot_id) ?? 0
-        sortCursorByShot.set(item.shot_id, sortOrder + 1)
-        const imageId = uuid()
-        const mimeType = item.mime_type.trim().toLowerCase()
-        await conn.execute(
-          `INSERT INTO ${IMAGE_TABLE} (
+      const sortOrder = sortCursorByShot.get(item.shot_id) ?? 0
+      sortCursorByShot.set(item.shot_id, sortOrder + 1)
+      const imageId = uuid()
+      const mimeType = item.mime_type.trim().toLowerCase()
+      statements.push({
+        sql: `INSERT INTO ${IMAGE_TABLE} (
              id, production_id, scene_id, shot_id, storage_key, original_filename, mime_type,
              width, height, sort_order, source_type, source_import_id, created_at, updated_at
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-          [
-            imageId,
-            args.production_id,
-            item.scene_id,
-            item.shot_id,
-            item.storage_key,
-            item.original_filename,
-            mimeType,
-            item.width ?? null,
-            item.height ?? null,
-            sortOrder,
-            'athena_pdf_import',
-            args.source_import_id,
-            ts,
-            ts,
-          ]
-        )
-        const outboxStmt = outboxStatementForRow({
+        bindValues: [
+          imageId,
+          args.production_id,
+          item.scene_id,
+          item.shot_id,
+          item.storage_key,
+          item.original_filename,
+          mimeType,
+          item.width ?? null,
+          item.height ?? null,
+          sortOrder,
+          'athena_pdf_import',
+          args.source_import_id,
+          ts,
+          ts,
+        ],
+      })
+      statements.push(
+        outboxStatementForRow({
           entity: IMAGE_TABLE,
           entityId: imageId,
           operation: 'create',
@@ -691,14 +724,29 @@ export async function applyAthenaImportToStoryboard(args: {
             source_import_id: args.source_import_id,
           }),
         })
-        await conn.execute(outboxStmt.sql, outboxStmt.bindValues)
-      }
-      await conn.execute('COMMIT')
-    } catch (error) {
-      await conn.execute('ROLLBACK')
-      throw error
+      )
     }
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+    await executeBatch(conn, statements)
   })
+  // #region agent log
+  fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+    body: JSON.stringify({
+      sessionId: '72cc09',
+      runId: 'pre-fix',
+      hypothesisId: 'H9',
+      location: 'src/lib/db/repositories/storyboard.ts:applyAthenaImportToStoryboard:afterTx',
+      message: 'Applied Athena import transaction successfully',
+      data: {
+        sourceImportId: args.source_import_id,
+        appliedCount: args.items.length,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion
 
   return { appliedCount: args.items.length }
 }

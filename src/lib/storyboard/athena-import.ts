@@ -295,14 +295,54 @@ export async function extractAthenaPanelsFromPdf(args: {
   sourceFilename: string
   sceneId: string | null
 }): Promise<{ importId: string; candidates: AthenaPanelCandidate[] }> {
+  // #region agent log
+  fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+    body: JSON.stringify({
+      sessionId: '72cc09',
+      runId: 'pre-fix',
+      hypothesisId: 'H2',
+      location: 'src/lib/storyboard/athena-import.ts:extractAthenaPanelsFromPdf:entry',
+      message: 'Starting Athena PDF extraction',
+      data: {
+        productionId: args.productionId,
+        sceneId: args.sceneId,
+        sourceFilename: args.sourceFilename,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion
+  let stage = 'validate_filename'
   assertAthenaPdfFilename(args.sourceFilename)
+  stage = 'read_file'
   const rawBytes = await readFile(args.sourcePath)
   const pdfBytes = rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(rawBytes)
   const pdfHeader = new TextDecoder().decode(pdfBytes.slice(0, 5))
+  // #region agent log
+  fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+    body: JSON.stringify({
+      sessionId: '72cc09',
+      runId: 'pre-fix',
+      hypothesisId: 'H2',
+      location: 'src/lib/storyboard/athena-import.ts:extractAthenaPanelsFromPdf:pdfHeader',
+      message: 'Read Athena PDF bytes and header',
+      data: {
+        byteLength: pdfBytes.length,
+        header: pdfHeader,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion
   if (!pdfHeader.startsWith('%PDF-')) {
     throw new Error('Selected file is not a valid PDF.')
   }
 
+  stage = 'create_import_row'
   const importRow = await createStoryboardImport({
     production_id: args.productionId,
     scene_id: args.sceneId,
@@ -317,6 +357,7 @@ export async function extractAthenaPanelsFromPdf(args: {
 
   const createdStorageKeys: string[] = []
   try {
+    stage = 'pdfjs_get_document'
     if (typeof document === 'undefined') {
       throw new Error('PDF extraction requires a browser rendering context.')
     }
@@ -330,7 +371,26 @@ export async function extractAthenaPanelsFromPdf(args: {
       useWorkerFetch: false,
       isEvalSupported: false,
     })
+    stage = 'pdfjs_loading_task'
     const pdf = await loadingTask.promise
+    // #region agent log
+    fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+      body: JSON.stringify({
+        sessionId: '72cc09',
+        runId: 'pre-fix',
+        hypothesisId: 'H4',
+        location: 'src/lib/storyboard/athena-import.ts:extractAthenaPanelsFromPdf:pdfLoaded',
+        message: 'PDF loaded successfully',
+        data: {
+          importId: importRow.id,
+          numPages: pdf.numPages,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
     if (pdf.numPages > ATHENA_MAX_IMPORT_PAGES) {
       throw new Error(`Athena PDF exceeds maximum supported length (${ATHENA_MAX_IMPORT_PAGES} pages).`)
     }
@@ -443,8 +503,55 @@ export async function extractAthenaPanelsFromPdf(args: {
         })),
       }),
     })
+    // #region agent log
+    fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+      body: JSON.stringify({
+        sessionId: '72cc09',
+        runId: 'pre-fix',
+        hypothesisId: 'H6',
+        location: 'src/lib/storyboard/athena-import.ts:extractAthenaPanelsFromPdf:success',
+        message: 'Athena extraction completed',
+        data: {
+          importId: importRow.id,
+          candidateCount: candidates.length,
+          previewUrlCount: candidates.filter((c) => !!c.preview_url).length,
+          firstPreviewUrl: candidates[0]?.preview_url ?? null,
+          bboxSummary: {
+            uniqueSizes: [...new Set(candidates.map((c) => `${c.bbox.width}x${c.bbox.height}`))],
+            minWidth: Math.min(...candidates.map((c) => c.bbox.width)),
+            maxWidth: Math.max(...candidates.map((c) => c.bbox.width)),
+            minHeight: Math.min(...candidates.map((c) => c.bbox.height)),
+            maxHeight: Math.max(...candidates.map((c) => c.bbox.height)),
+          },
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
     return { importId: importRow.id, candidates }
   } catch (error) {
+    // #region agent log
+    fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
+      body: JSON.stringify({
+        sessionId: '72cc09',
+        runId: 'pre-fix',
+        hypothesisId: 'H3',
+        location: 'src/lib/storyboard/athena-import.ts:extractAthenaPanelsFromPdf:catch',
+        message: 'Athena extraction failed',
+        data: {
+          stage,
+          importId: importRow.id,
+          createdCandidateCount: createdStorageKeys.length,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
     await Promise.all(createdStorageKeys.map((key) => removeStoryboardImageFile(key)))
     await updateStoryboardImport(importRow.id, {
       status: 'failed',
