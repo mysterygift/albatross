@@ -207,7 +207,7 @@ describe('postgres core production graph validation', () => {
         booked_status: 'hold',
         address: null,
       })
-      const updated = await updateLocation(location.id, { address: 'Pier 12, Harbor Road', permit_fee: '' })
+      const updated = await updateLocation(location.id, { address: 'Pier 12, Harbor Road', permit_fee: null })
       expect(updated.address).toContain('Harbor')
       expect(updated.permit_fee).toBeNull()
 

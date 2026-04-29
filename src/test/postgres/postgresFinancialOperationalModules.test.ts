@@ -506,7 +506,7 @@ describe('postgres financial/operational/asset-heavy module validation', () => {
         production_id: production.id,
         scene_id: scene.id,
         source_filename: 'athena.pdf',
-        source_type: 'athena_pdf',
+        source_type: 'athena_pdf_import',
         status: 'pending',
         metadata_json: JSON.stringify({ source: 'athena' }),
       })

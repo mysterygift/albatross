@@ -18,10 +18,11 @@ vi.mock('@/lib/db/client', async (importOriginal) => {
 import { ensureSettingsDefaults } from '@/lib/db/repositories/settings'
 
 function createAdapter(dialect: 'sqlite' | 'postgres'): DatabaseAdapter {
+  const select: DatabaseAdapter['select'] = async <T>() => [] as unknown as T
   return {
     dialect,
     execute: vi.fn(async () => ({ rowsAffected: 1, lastInsertId: 0 })),
-    select: vi.fn(async () => []),
+    select: vi.fn(select) as DatabaseAdapter['select'],
     executeBatch: vi.fn(async () => undefined),
     runInSerializedTransaction: vi.fn(async (fn: () => Promise<unknown>) => fn()) as DatabaseAdapter['runInSerializedTransaction'],
   }

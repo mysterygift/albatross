@@ -350,7 +350,7 @@ describe('postgres phase 6 performance and concurrency hardening', () => {
       const production = await createProduction({ name: 'Phase6 Conflicts', notes: null }, { skipBudgetSeed: true })
       const category = await createBudgetCategory({ production_id: production.id, code: 'ATL', name: 'ATL' })
       const scene = await createScene({ production_id: production.id, scene_number: '1', heading: 'EXT. BEACH' })
-      const shot = await createShot({ scene_id: scene.id, shot_number: '1' })
+      await createShot({ scene_id: scene.id, shot_number: '1' })
       const budgetItem = await createBudgetItem({
         production_id: production.id,
         category_id: category.id,

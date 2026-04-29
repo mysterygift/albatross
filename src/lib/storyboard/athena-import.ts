@@ -276,7 +276,7 @@ export async function extractAthenaPanelsFromPdf(args: {
 }): Promise<{ importId: string; candidates: AthenaPanelCandidate[] }> {
   const buildPreviewUrl = async (pngBytes: Uint8Array, storageKey: string): Promise<string> => {
     if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
-      return URL.createObjectURL(new Blob([pngBytes], { type: 'image/png' }))
+      return URL.createObjectURL(new Blob([pngBytes.slice().buffer], { type: 'image/png' }))
     }
     return getFileUrl(storageKey)
   }
@@ -394,7 +394,6 @@ export async function extractAthenaPanelsFromPdf(args: {
       let pagePanelIndex = 0
 
       const imageOps = new Set<number>([
-        OPS.paintJpegXObject,
         OPS.paintImageXObject,
         OPS.paintXObject,
         OPS.paintImageMaskXObject,
@@ -485,7 +484,7 @@ export async function extractAthenaPanelsFromPdf(args: {
         fallbackCanvas.height = Math.max(1, Math.ceil(fallbackViewport.height))
         const fallbackContext = fallbackCanvas.getContext('2d')
         if (!fallbackContext) throw new Error('Could not create canvas context for PDF extraction.')
-        await page.render({ canvasContext: fallbackContext, viewport: fallbackViewport }).promise
+        await page.render({ canvas: fallbackCanvas, canvasContext: fallbackContext, viewport: fallbackViewport }).promise
 
         const pngBytes = canvasToPngBytes(fallbackCanvas)
         const storageKey = await saveStoryboardImportCandidatePng({

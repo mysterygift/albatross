@@ -1,4 +1,4 @@
-import type { ClientConfig, PoolConfig } from 'pg'
+import type { PoolConfig } from 'pg'
 import { Client } from 'pg'
 
 type ResolvedPgConfig = {
