@@ -5,7 +5,7 @@
  * Multi-row inserts: runInSerializedTransaction + executeBatch(BEGIN, INSERT…, COMMIT) per DATABASE_LAYER.md.
  */
 
-import { executeBatch, getDb, runInSerializedTransaction, uuid } from '../client'
+import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import type { FloatExpenseLink } from '../types'
 import { resolveBudgetRevisionId } from './budgetRevisions'
 
@@ -18,15 +18,25 @@ function sumBudgetMatchedForExpense(expenseId: string, rows: Record<string, unkn
 }
 
 function rowToLink(r: Record<string, unknown>): FloatExpenseLink {
+  const toEpochMs = (value: unknown): number => {
+    if (typeof value === 'number') return value
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value)
+      if (Number.isFinite(parsed)) return parsed
+      const numeric = Number(value)
+      if (Number.isFinite(numeric)) return numeric
+    }
+    return 0
+  }
   return {
     id: r.id as string,
     budget_revision_id: (r.budget_revision_id as string | null) ?? null,
     float_id: r.float_id as string,
     expense_id: r.expense_id as string,
     matched_amount: Number(r.matched_amount) || 0,
-    created_at: Number(r.created_at),
-    updated_at: Number(r.updated_at),
-    deleted_at: r.deleted_at != null ? Number(r.deleted_at) : null,
+    created_at: toEpochMs(r.created_at),
+    updated_at: toEpochMs(r.updated_at),
+    deleted_at: r.deleted_at != null ? toEpochMs(r.deleted_at) : null,
   }
 }
 
@@ -161,7 +171,7 @@ export async function createFloatExpenseLinks(
       }
     }
 
-    const ts = Date.now()
+    const ts = now()
     const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
     const statements: Array<{ sql: string; bindValues: unknown[] }> = [
       { sql: 'BEGIN TRANSACTION', bindValues: [] },
@@ -183,7 +193,7 @@ export async function createFloatExpenseLinks(
 /** Soft-delete a float–expense link (e.g. mistaken match). */
 export async function deleteFloatExpenseLink(id: string): Promise<void> {
   const db = await getDb()
-  const ts = Date.now()
+  const ts = now()
   await db.execute(
     `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
     [ts, ts, id]

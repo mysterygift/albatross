@@ -1,5 +1,6 @@
 import { getDb, now, uuid } from '../client'
 import { outboxPush } from '../outbox'
+import { coerceBoolean } from '../sqlValueCoercion'
 import type { Person } from '../types'
 
 const TABLE = 'people'
@@ -9,7 +10,7 @@ function rowToPerson(r: Record<string, unknown>): Person {
     id: r.id as string,
     production_id: r.production_id as string,
     name: r.name as string,
-    is_cast: (r.is_cast as number) ?? 0,
+    is_cast: coerceBoolean(r.is_cast, false) ? 1 : 0,
     email: r.email as string | null,
     phone: r.phone as string | null,
     department: r.department as string | null,
@@ -38,8 +39,9 @@ export async function listPeopleByProduction(productionId: string): Promise<Pers
 
 export async function listCast(productionId: string): Promise<Person[]> {
   const db = await getDb()
+  const castPredicate = db.dialect === 'postgres' ? 'is_cast = TRUE' : 'is_cast = 1'
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND is_cast = 1 AND deleted_at IS NULL ORDER BY name`,
+    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND ${castPredicate} AND deleted_at IS NULL ORDER BY name`,
     [productionId]
   )
   return rows.map(rowToPerson)
@@ -47,8 +49,9 @@ export async function listCast(productionId: string): Promise<Person[]> {
 
 export async function listCrew(productionId: string): Promise<Person[]> {
   const db = await getDb()
+  const crewPredicate = db.dialect === 'postgres' ? 'is_cast = FALSE' : 'is_cast = 0'
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND is_cast = 0 AND deleted_at IS NULL ORDER BY name`,
+    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND ${crewPredicate} AND deleted_at IS NULL ORDER BY name`,
     [productionId]
   )
   return rows.map(rowToPerson)
@@ -77,7 +80,7 @@ export async function createPerson(data: PersonInsert): Promise<Person> {
       id,
       data.production_id,
       data.name,
-      data.is_cast ?? 0,
+      coerceBoolean(data.is_cast, false),
       data.email ?? null,
       data.phone ?? null,
       data.department ?? null,
@@ -110,7 +113,11 @@ export async function updatePerson(
   for (const k of allowed) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(data[k])
+      if (k === 'is_cast') {
+        vals.push(coerceBoolean(data[k], false))
+      } else {
+        vals.push(data[k])
+      }
     }
   }
   if (cols.length === 0) return (await getPersonById(id))!

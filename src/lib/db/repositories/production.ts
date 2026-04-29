@@ -1,6 +1,8 @@
 import { BaseDirectory, remove } from '@tauri-apps/plugin-fs'
 import { getDb, now, uuid, runInSerializedTransaction, executeBatch } from '../client'
+import { OptimisticConcurrencyConflictError } from '../concurrency'
 import { outboxPush, outboxStatementForRow } from '../outbox'
+import { coerceBoolean, coerceIsoString } from '../sqlValueCoercion'
 import type { Production } from '../types'
 import { episodeInsertStatement, episodeOutboxCreate } from './episodes'
 import { seedDefaultBudgetCategories } from './budget'
@@ -24,21 +26,18 @@ export function slugify(name: string): string {
 }
 
 function rowToProduction(r: Record<string, unknown>): Production {
-  const isEpisodicCol = r.is_episodic
-  const is_episodic =
-    isEpisodicCol === undefined || isEpisodicCol === null ? false : Number(isEpisodicCol) === 1
   return {
     id: r.id as string,
     name: r.name as string,
     slug: (r.slug as string) ?? `prod-${r.id as string}`,
     currency_code: (r.currency_code as string) ?? 'GBP',
     notes: r.notes as string | null,
-    is_episodic,
-    created_at: r.created_at as string,
-    updated_at: r.updated_at as string,
-    deleted_at: r.deleted_at as string | null,
-    wrapped_at: (r.wrapped_at as string | null) ?? null,
-    archived_at: (r.archived_at as string | null) ?? null,
+    is_episodic: coerceBoolean(r.is_episodic, false),
+    created_at: coerceIsoString(r.created_at),
+    updated_at: coerceIsoString(r.updated_at),
+    deleted_at: r.deleted_at == null ? null : coerceIsoString(r.deleted_at),
+    wrapped_at: r.wrapped_at == null ? null : coerceIsoString(r.wrapped_at),
+    archived_at: r.archived_at == null ? null : coerceIsoString(r.archived_at),
     created_from_template: (r.created_from_template as string | null) ?? null,
   }
 }
@@ -251,7 +250,7 @@ export async function createProduction(
       await executeBatch(batchDb, [
         { sql: 'BEGIN', bindValues: [] },
         {
-          sql: `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 1, $6, $7)`,
+          sql: `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7)`,
           bindValues: [id, data.name, slug, currencyCode, data.notes ?? null, ts, ts],
         },
         epStmt,
@@ -263,7 +262,7 @@ export async function createProduction(
             ...data,
             slug,
             id,
-            is_episodic: 1,
+            is_episodic: true,
             created_at: ts,
             updated_at: ts,
           }),
@@ -337,7 +336,8 @@ export async function createProduction(
 
 export async function updateProduction(
   id: string,
-  data: Partial<Pick<Production, 'name' | 'notes'>>
+  data: Partial<Pick<Production, 'name' | 'notes'>>,
+  options?: { expectedUpdatedAt?: string }
 ): Promise<Production> {
   const existing = await getProductionById(id)
   if (!existing) throw new Error('Production not found')
@@ -347,10 +347,20 @@ export async function updateProduction(
   }
   const db = await getDb()
   const ts = now()
-  await db.execute(
-    `UPDATE ${TABLE} SET name = $1, notes = $2, updated_at = $3 WHERE id = $4`,
-    [data.name ?? existing.name, data.notes ?? null, ts, id]
-  )
+  const bindValues: unknown[] = [data.name ?? existing.name, data.notes ?? null, ts, id]
+  let sql = `UPDATE ${TABLE} SET name = $1, notes = $2, updated_at = $3 WHERE id = $4`
+  if (options?.expectedUpdatedAt) {
+    sql += ' AND updated_at = $5'
+    bindValues.push(options.expectedUpdatedAt)
+  }
+  const result = await db.execute(sql, bindValues)
+  if ((result.rowsAffected ?? 0) === 0 && options?.expectedUpdatedAt) {
+    throw new OptimisticConcurrencyConflictError({
+      entity: TABLE,
+      entityId: id,
+      expectedUpdatedAt: options.expectedUpdatedAt,
+    })
+  }
   await outboxPush(TABLE, id, 'update', JSON.stringify(data))
   return (await getProductionById(id))!
 }

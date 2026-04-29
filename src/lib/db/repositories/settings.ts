@@ -57,8 +57,12 @@ export async function ensureSettingsDefaults(): Promise<void> {
     const db = await getDb()
     const placeholders = entries.map((_, i) => `($${2 * i + 1}, $${2 * i + 2})`).join(', ')
     const values = entries.flatMap(([k, v]) => [k, v])
+    const insertDefaultsSql =
+      db.dialect === 'postgres'
+        ? `INSERT INTO ${TABLE} (key, value) VALUES ${placeholders} ON CONFLICT (key) DO NOTHING`
+        : `INSERT OR IGNORE INTO ${TABLE} (key, value) VALUES ${placeholders}`
     await db.execute(
-      `INSERT OR IGNORE INTO ${TABLE} (key, value) VALUES ${placeholders}`,
+      insertDefaultsSql,
       values
     )
 

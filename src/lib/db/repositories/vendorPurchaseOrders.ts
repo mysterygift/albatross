@@ -1,5 +1,6 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxStatementForRow } from '../outbox'
+import { coerceBoolean, coerceNumber } from '../sqlValueCoercion'
 import type { VendorPurchaseOrder, PurchaseOrderStatus } from '../types'
 
 const TABLE = 'vendor_purchase_orders'
@@ -16,9 +17,9 @@ function rowToVendorPurchaseOrder(r: Record<string, unknown>): VendorPurchaseOrd
     description: (r.description as string | null) ?? null,
     issue_date: (r.issue_date as string | null) ?? null,
     due_date: (r.due_date as string | null) ?? null,
-    amount: r.amount != null ? (r.amount as number) : null,
+    amount: r.amount != null ? coerceNumber(r.amount, 0) : null,
     status: (r.status as PurchaseOrderStatus) ?? 'draft',
-    approval: (r.approval as number) ?? 0,
+    approval: coerceBoolean(r.approval, false) ? 1 : 0,
     notes: (r.notes as string | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
@@ -96,7 +97,7 @@ export async function createVendorPurchaseOrder(
   const id = uuid()
   const ts = now()
   const status = data.status ?? 'draft'
-  const approval = data.approval ?? 0
+  const approval = coerceBoolean(data.approval ?? 0, false)
   const statements: Array<{ sql: string; bindValues: unknown[] }> = [
     { sql: 'BEGIN', bindValues: [] },
     {
@@ -155,7 +156,11 @@ export async function updateVendorPurchaseOrder(
   for (const k of EDITABLE_KEYS) {
     if (patch[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(patch[k])
+      if (k === 'approval') {
+        vals.push(coerceBoolean(patch[k], false))
+      } else {
+        vals.push(patch[k])
+      }
     }
   }
   if (cols.length === 0) {

@@ -1,0 +1,41 @@
+name: PostgreSQL Infrastructure
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  postgres-smoke:
+    runs-on: ubuntu-latest
+    env:
+      PGHOST: ${{ vars.PGHOST || '127.0.0.1' }}
+      PGPORT: ${{ vars.PGPORT || '5432' }}
+      PGDATABASE: ${{ vars.PGDATABASE || 'albatross_ci' }}
+      PGUSER: ${{ vars.PGUSER || 'albatross' }}
+      PGPASSWORD: ${{ secrets.PGPASSWORD || 'albatross' }}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ${{ vars.PGDATABASE || 'albatross_ci' }}
+          POSTGRES_USER: ${{ vars.PGUSER || 'albatross' }}
+          POSTGRES_PASSWORD: ${{ secrets.PGPASSWORD || 'albatross' }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ${{ vars.PGUSER || 'albatross' }} -d ${{ vars.PGDATABASE || 'albatross_ci' }}"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install --yes postgresql-client
+
+      - name: PostgreSQL smoke check
+        run: |
+          psql "host=${PGHOST} port=${PGPORT} dbname=${PGDATABASE} user=${PGUSER} password=${PGPASSWORD}" -c "SELECT 1 AS postgres_up;"

@@ -1,4 +1,5 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { OptimisticConcurrencyConflictError } from '../concurrency'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { Scene, Shot, StripboardStrip, StripStatus, StripType } from '../types'
 import { listScenesByProduction, listShootDaysByProduction, listShotsByProduction } from './schedule'
@@ -506,13 +507,27 @@ export async function listBoneyardStrips(productionId: string): Promise<Stripboa
 }
 
 /** Reorder a strip within the same day/unit (update sort_index only). */
-export async function reorderStrip(stripId: string, toSortIndex: number): Promise<StripboardStrip> {
+export async function reorderStrip(
+  stripId: string,
+  toSortIndex: number,
+  options?: { expectedUpdatedAt?: string }
+): Promise<StripboardStrip> {
   const db = await getDb()
   const ts = now()
-  await db.execute(
-    `UPDATE ${TABLE} SET sort_index = $1, updated_at = $2 WHERE id = $3`,
-    [toSortIndex, ts, stripId]
-  )
+  const bindValues: unknown[] = [toSortIndex, ts, stripId]
+  let sql = `UPDATE ${TABLE} SET sort_index = $1, updated_at = $2 WHERE id = $3`
+  if (options?.expectedUpdatedAt) {
+    sql += ' AND updated_at = $4'
+    bindValues.push(options.expectedUpdatedAt)
+  }
+  const result = await db.execute(sql, bindValues)
+  if ((result.rowsAffected ?? 0) === 0 && options?.expectedUpdatedAt) {
+    throw new OptimisticConcurrencyConflictError({
+      entity: TABLE,
+      entityId: stripId,
+      expectedUpdatedAt: options.expectedUpdatedAt,
+    })
+  }
   await outboxPush(TABLE, stripId, 'update', JSON.stringify({ sort_index: toSortIndex }))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL`, [stripId])
   if (rows.length === 0) throw new Error('Strip not found')
@@ -648,10 +663,21 @@ export type UpdateStripData = {
  * Generic strip metadata update.
  * Includes CALL/WRAP uniqueness + shoot_days call/wrap sync when type/time changes.
  */
-export async function updateStrip(stripId: string, data: UpdateStripData): Promise<StripboardStrip> {
+export async function updateStrip(
+  stripId: string,
+  data: UpdateStripData,
+  options?: { expectedUpdatedAt?: string }
+): Promise<StripboardStrip> {
   const db = await getDb()
   const existing = await getStripByIdRaw(db, stripId)
   if (!existing) throw new Error('Strip not found')
+  if (options?.expectedUpdatedAt && String(existing.updated_at) !== options.expectedUpdatedAt) {
+    throw new OptimisticConcurrencyConflictError({
+      entity: TABLE,
+      entityId: stripId,
+      expectedUpdatedAt: options.expectedUpdatedAt,
+    })
+  }
   const nextType = (data.strip_type ?? (existing.strip_type as StripType))
   const shootDayId = (existing.shoot_day_id as string | null) ?? null
   const shootDayUnitId = (existing.shoot_day_unit_id as string | null) ?? null
@@ -696,6 +722,9 @@ export async function updateStrip(stripId: string, data: UpdateStripData): Promi
   cols.push(`updated_at = $${i++}`)
   vals.push(ts)
   vals.push(stripId)
+  if (options?.expectedUpdatedAt) {
+    vals.push(options.expectedUpdatedAt)
+  }
 
   const touchingCallWrap =
     CALL_WRAP_TYPES.includes(existing.strip_type as StripType) || CALL_WRAP_TYPES.includes(nextType)
@@ -706,7 +735,9 @@ export async function updateStrip(stripId: string, data: UpdateStripData): Promi
       const statements: Array<{ sql: string; bindValues: unknown[] }> = [
         { sql: 'BEGIN', bindValues: [] },
         {
-          sql: `UPDATE ${TABLE} SET ${cols.join(', ')} WHERE id = $${i}`,
+          sql: `UPDATE ${TABLE} SET ${cols.join(', ')} WHERE id = $${i}${
+            options?.expectedUpdatedAt ? ` AND updated_at = $${i + 1}` : ''
+          }`,
           bindValues: vals,
         },
         outboxStatementForRow({
@@ -725,7 +756,22 @@ export async function updateStrip(stripId: string, data: UpdateStripData): Promi
       await executeBatch(conn, statements)
     })
   } else {
-    await db.execute(`UPDATE ${TABLE} SET ${cols.join(', ')} WHERE id = $${i}`, vals)
+    const result = await db.execute(
+      `UPDATE ${TABLE} SET ${cols.join(', ')} WHERE id = $${i}${
+        options?.expectedUpdatedAt ? ` AND updated_at = $${i + 1}` : ''
+      }`,
+      vals
+    )
+    if ((result.rowsAffected ?? 0) === 0) {
+      if (options?.expectedUpdatedAt) {
+        throw new OptimisticConcurrencyConflictError({
+          entity: TABLE,
+          entityId: stripId,
+          expectedUpdatedAt: options.expectedUpdatedAt,
+        })
+      }
+      throw new Error('Strip not found')
+    }
     await outboxPush(TABLE, stripId, 'update', JSON.stringify({
       strip_type: data.strip_type,
       title: nextTitle,

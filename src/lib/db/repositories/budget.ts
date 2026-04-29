@@ -1,5 +1,7 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { OptimisticConcurrencyConflictError } from '../concurrency'
 import { outboxPush, outboxStatementForRow } from '../outbox'
+import { coerceIsoString, coerceNumber } from '../sqlValueCoercion'
 import type { BudgetCategory, BudgetItem, Expense } from '../types'
 import { ensureLegacyFallbackAccounts, getAccountById } from './budgetAccounts'
 import { resolveBudgetRevisionId } from './budgetRevisions'
@@ -30,14 +32,14 @@ function rowToItem(r: Record<string, unknown>): BudgetItem {
     category_id: r.category_id as string | null,
     account_id: r.account_id as string | null,
     description: r.description as string,
-    estimated_cost: (r.estimated_cost as number) ?? 0,
-    actual_cost: (r.actual_cost as number) ?? 0,
+    estimated_cost: coerceNumber(r.estimated_cost, 0),
+    actual_cost: coerceNumber(r.actual_cost, 0),
     vendor: r.vendor as string | null,
     status: (r.status as string) ?? 'draft',
     line_item_type: (r.line_item_type as BudgetItem['line_item_type']) ?? null,
-    created_at: r.created_at as string,
-    updated_at: r.updated_at as string,
-    deleted_at: r.deleted_at as string | null,
+    created_at: coerceIsoString(r.created_at),
+    updated_at: coerceIsoString(r.updated_at),
+    deleted_at: r.deleted_at == null ? null : coerceIsoString(r.deleted_at),
   }
 }
 
@@ -49,14 +51,14 @@ function rowToExpense(r: Record<string, unknown>): Expense {
     account_id: r.account_id as string | null,
     transaction_type: (r.transaction_type as Expense['transaction_type']) ?? null,
     vendor_id: (r.vendor_id as string | null) ?? null,
-    amount: r.amount as number,
-    date: r.date as string,
+    amount: coerceNumber(r.amount, 0),
+    date: coerceIsoString(r.date),
     vendor: r.vendor as string | null,
     notes: r.notes as string | null,
     expense_type: (r.expense_type as Expense['expense_type']) ?? 'other',
-    created_at: r.created_at as string,
-    updated_at: r.updated_at as string,
-    deleted_at: r.deleted_at as string | null,
+    created_at: coerceIsoString(r.created_at),
+    updated_at: coerceIsoString(r.updated_at),
+    deleted_at: r.deleted_at == null ? null : coerceIsoString(r.deleted_at),
   }
 }
 
@@ -211,7 +213,8 @@ export async function createBudgetItem(data: {
 
 export async function updateBudgetItem(
   id: string,
-  data: Partial<Pick<BudgetItem, 'description' | 'estimated_cost' | 'actual_cost' | 'vendor' | 'status' | 'line_item_type'>>
+  data: Partial<Pick<BudgetItem, 'description' | 'estimated_cost' | 'actual_cost' | 'vendor' | 'status' | 'line_item_type'>>,
+  options?: { expectedUpdatedAt?: string }
 ): Promise<BudgetItem> {
   const db = await getDb()
   const ts = now()
@@ -228,9 +231,22 @@ export async function updateBudgetItem(
     const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${ITEM_TABLE} WHERE id = $1 AND deleted_at IS NULL`, [id])
     return rows.length ? rowToItem(rows[0]!) : (await listBudgetItemsByProduction(''))[0]!
   }
-  cols.push(`updated_at = $${i}`)
-  vals.push(ts, id)
-  await db.execute(`UPDATE ${ITEM_TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1}`, vals)
+  cols.push(`updated_at = $${i++}`)
+  vals.push(ts)
+  let whereSql = `id = $${i++}`
+  vals.push(id)
+  if (options?.expectedUpdatedAt) {
+    whereSql += ` AND updated_at = $${i++}`
+    vals.push(options.expectedUpdatedAt)
+  }
+  const result = await db.execute(`UPDATE ${ITEM_TABLE} SET ${cols.join(', ')} WHERE ${whereSql}`, vals)
+  if ((result.rowsAffected ?? 0) === 0 && options?.expectedUpdatedAt) {
+    throw new OptimisticConcurrencyConflictError({
+      entity: ITEM_TABLE,
+      entityId: id,
+      expectedUpdatedAt: options.expectedUpdatedAt,
+    })
+  }
   await outboxPush(ITEM_TABLE, id, 'update', JSON.stringify(data))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${ITEM_TABLE} WHERE id = $1`, [id])
   return rowToItem(rows[0]!)

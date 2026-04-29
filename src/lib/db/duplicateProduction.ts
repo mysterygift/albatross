@@ -17,6 +17,7 @@
  */
 import { BaseDirectory, mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs'
 import { executeBatch, getDb, now, uuid } from './client'
+import { coerceBoolean } from './sqlValueCoercion'
 import { seedDefaultBudgetAccounts } from './repositories/budgetAccounts'
 import { ensureUniqueSlug, slugify, withSlugLock } from './repositories/production'
 
@@ -59,9 +60,7 @@ export async function duplicateProduction(
   const newProdId = newId()
   const currencyCode = (prodRows[0]!.currency_code as string) ?? 'GBP'
   const notes = (prodRows[0]!.notes as string | null) ?? null
-  const isEpisodicRaw = prodRows[0]!.is_episodic
-  const isEpisodic =
-    isEpisodicRaw === undefined || isEpisodicRaw === null ? 0 : Number(isEpisodicRaw) === 1 ? 1 : 0
+  const isEpisodic = coerceBoolean(prodRows[0]!.is_episodic, false)
 
   // Load all source data first (reads only).
   const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs, episodes, shootingBlocs] = await Promise.all([
@@ -160,7 +159,7 @@ export async function duplicateProduction(
     personIdMap.set(r.id as string, id)
     statements.push({
       sql: `INSERT INTO people (id, production_id, name, is_cast, email, phone, department, phases, notes, contributor_form_status, cast_number, agent_name, agent_email, agent_phone, role_name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-      bindValues: [id, newProdId, r.name, r.is_cast ?? 0, r.email, r.phone, r.department, r.phases, r.notes, r.contributor_form_status ?? 'not_requested', r.cast_number ?? null, r.agent_name ?? null, r.agent_email ?? null, r.agent_phone ?? null, r.role_name ?? null, ts, ts],
+      bindValues: [id, newProdId, r.name, coerceBoolean(r.is_cast, false), r.email, r.phone, r.department, r.phases, r.notes, r.contributor_form_status ?? 'not_requested', r.cast_number ?? null, r.agent_name ?? null, r.agent_email ?? null, r.agent_phone ?? null, r.role_name ?? null, ts, ts],
     })
   }
   for (const r of locations) {
@@ -239,7 +238,7 @@ export async function duplicateProduction(
       shootDayUnitIdMap.set(r.id as string, id)
       statements.push({
         sql: `INSERT INTO shoot_day_units (id, shoot_day_id, unit_id, notes, is_locked, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        bindValues: [id, dayId, unitId, r.notes, r.is_locked ?? 0, ts, ts],
+        bindValues: [id, dayId, unitId, r.notes, coerceBoolean(r.is_locked, false), ts, ts],
       })
     }
   }

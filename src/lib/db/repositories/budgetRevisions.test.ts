@@ -235,11 +235,11 @@ describe('budgetRevisions repository', () => {
 
     expect(execute).toHaveBeenCalledWith('BEGIN TRANSACTION', [])
     expect(execute).toHaveBeenCalledWith(
-      expect.stringContaining('SET is_live = 0'),
+      expect.stringContaining('SET is_live = FALSE'),
       ['p1', '2026-01-01T00:00:00.000Z']
     )
     expect(execute).toHaveBeenCalledWith(
-      expect.stringContaining('SET is_live = 1'),
+      expect.stringContaining('SET is_live = TRUE'),
       ['p1', 'rev-next', '2026-01-01T00:00:00.000Z']
     )
     expect(execute).toHaveBeenCalledWith('COMMIT', [])

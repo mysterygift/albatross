@@ -1,5 +1,6 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxPush, outboxStatementForRow, outboxStatementForRows } from '../outbox'
+import { coerceBoolean } from '../sqlValueCoercion'
 import type { ProductionTask } from '../types'
 
 const TABLE = 'production_tasks'
@@ -10,7 +11,7 @@ function rowToTask(r: Record<string, unknown>): ProductionTask {
     id: r.id as string,
     production_id: r.production_id as string,
     description: r.description as string,
-    is_complete: (r.is_complete as number) ?? 0,
+    is_complete: coerceBoolean(r.is_complete, false) ? 1 : 0,
     notes: (r.notes as string | null) ?? null,
     due_date: (r.due_date as string | null) ?? null,
     assigned_department: (r.assigned_department as string | null) ?? null,
@@ -25,18 +26,34 @@ function rowToTask(r: Record<string, unknown>): ProductionTask {
   }
 }
 
-const DEFAULT_ORDER = `
-  is_complete ASC,
-  CASE
-    WHEN is_complete = 1 THEN 1
-    WHEN due_date IS NOT NULL AND due_date < date('now','localtime') THEN 0
-    WHEN due_date IS NOT NULL AND due_date <= date('now','localtime','+7 days') THEN 1
-    ELSE 2
-  END,
-  CASE WHEN priority IS NULL THEN 4 ELSE priority END ASC,
-  due_date ASC,
-  description ASC
-`
+function getDefaultOrderSql(dialect: 'sqlite' | 'postgres' | undefined): string {
+  if (dialect === 'postgres') {
+    return `
+      is_complete ASC,
+      CASE
+        WHEN is_complete = TRUE THEN 1
+        WHEN due_date IS NOT NULL AND due_date < CURRENT_DATE THEN 0
+        WHEN due_date IS NOT NULL AND due_date <= (CURRENT_DATE + INTERVAL '7 days')::date THEN 1
+        ELSE 2
+      END,
+      CASE WHEN priority IS NULL THEN 4 ELSE priority END ASC,
+      due_date ASC,
+      description ASC
+    `
+  }
+  return `
+    is_complete ASC,
+    CASE
+      WHEN is_complete = 1 THEN 1
+      WHEN due_date IS NOT NULL AND due_date < date('now','localtime') THEN 0
+      WHEN due_date IS NOT NULL AND due_date <= date('now','localtime','+7 days') THEN 1
+      ELSE 2
+    END,
+    CASE WHEN priority IS NULL THEN 4 ELSE priority END ASC,
+    due_date ASC,
+    description ASC
+  `
+}
 
 export type TaskFilters = {
   search?: string
@@ -48,8 +65,9 @@ export type TaskFilters = {
 
 export async function listTasksByProduction(productionId: string): Promise<ProductionTask[]> {
   const db = await getDb()
+  const defaultOrder = getDefaultOrderSql(db.dialect)
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY ${DEFAULT_ORDER}`,
+    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY ${defaultOrder}`,
     [productionId]
   )
   return rows.map(rowToTask)
@@ -60,14 +78,25 @@ export async function listTasksByProductionWithFilters(
   filters: TaskFilters
 ): Promise<ProductionTask[]> {
   const db = await getDb()
+  const defaultOrder = getDefaultOrderSql(db.dialect)
+  const incompletePredicate = db.dialect === 'postgres' ? 'is_complete = FALSE' : 'is_complete = 0'
+  const completePredicate = db.dialect === 'postgres' ? 'is_complete = TRUE' : 'is_complete = 1'
+  const overduePredicate =
+    db.dialect === 'postgres'
+      ? 'due_date IS NOT NULL AND due_date < CURRENT_DATE'
+      : "due_date IS NOT NULL AND due_date < date('now','localtime')"
+  const dueSoonPredicate =
+    db.dialect === 'postgres'
+      ? "due_date IS NOT NULL AND due_date >= CURRENT_DATE AND due_date <= (CURRENT_DATE + INTERVAL '7 days')::date"
+      : "due_date IS NOT NULL AND due_date >= date('now','localtime') AND due_date <= date('now','localtime','+7 days')"
   const conditions: string[] = ['production_id = $1', 'deleted_at IS NULL']
   const params: unknown[] = [productionId]
   let i = 2
 
   if (filters.status === 'incomplete') {
-    conditions.push('is_complete = 0')
+    conditions.push(incompletePredicate)
   } else if (filters.status === 'complete') {
-    conditions.push('is_complete = 1')
+    conditions.push(completePredicate)
   }
 
   if (filters.department !== undefined && filters.department !== null) {
@@ -81,11 +110,9 @@ export async function listTasksByProductionWithFilters(
   }
 
   if (filters.dueTiming === 'overdue') {
-    conditions.push("due_date IS NOT NULL AND due_date < date('now','localtime')")
+    conditions.push(overduePredicate)
   } else if (filters.dueTiming === 'due_soon') {
-    conditions.push(
-      "due_date IS NOT NULL AND due_date >= date('now','localtime') AND due_date <= date('now','localtime','+7 days')"
-    )
+    conditions.push(dueSoonPredicate)
   } else if (filters.dueTiming === 'no_due_date') {
     conditions.push('due_date IS NULL')
   }
@@ -99,7 +126,7 @@ export async function listTasksByProductionWithFilters(
 
   const where = conditions.join(' AND ')
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE ${where} ORDER BY ${DEFAULT_ORDER}`,
+    `SELECT * FROM ${TABLE} WHERE ${where} ORDER BY ${defaultOrder}`,
     params
   )
   return rows.map(rowToTask)
@@ -107,13 +134,20 @@ export async function listTasksByProductionWithFilters(
 
 export async function listTasksDueSoonByProduction(productionId: string): Promise<ProductionTask[]> {
   const db = await getDb()
+  const incompletePredicate = db.dialect === 'postgres' ? 'is_complete = FALSE' : 'is_complete = 0'
+  const overdueCase =
+    db.dialect === 'postgres'
+      ? `CASE WHEN due_date IS NOT NULL AND due_date < CURRENT_DATE THEN 0
+             WHEN due_date IS NOT NULL AND due_date <= (CURRENT_DATE + INTERVAL '7 days')::date THEN 1
+             ELSE 2 END`
+      : `CASE WHEN due_date IS NOT NULL AND due_date < date('now','localtime') THEN 0
+             WHEN due_date IS NOT NULL AND due_date <= date('now','localtime','+7 days') THEN 1
+             ELSE 2 END`
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${TABLE}
-     WHERE production_id = $1 AND deleted_at IS NULL AND is_complete = 0
+     WHERE production_id = $1 AND deleted_at IS NULL AND ${incompletePredicate}
      ORDER BY
-       CASE WHEN due_date IS NOT NULL AND due_date < date('now','localtime') THEN 0
-            WHEN due_date IS NOT NULL AND due_date <= date('now','localtime','+7 days') THEN 1
-            ELSE 2 END,
+       ${overdueCase},
        CASE WHEN priority IS NULL THEN 4 ELSE priority END ASC,
        due_date ASC,
        description ASC
@@ -142,7 +176,7 @@ export async function createTask(data: CreateTaskData): Promise<ProductionTask> 
   const db = await getDb()
   const id = uuid()
   const ts = now()
-  const isComplete = data.is_complete ?? 0
+  const isComplete = coerceBoolean(data.is_complete, false)
   await db.execute(
     `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, vendor_invoice_id, equipment_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
@@ -197,7 +231,7 @@ export function buildCreateTaskStatements(
   data: CreateTaskData,
   ts: string
 ): Array<{ sql: string; bindValues: unknown[] }> {
-  const isComplete = data.is_complete ?? 0
+  const isComplete = coerceBoolean(data.is_complete, false)
   const insert = {
     sql: `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, vendor_invoice_id, equipment_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
@@ -315,7 +349,11 @@ export async function updateTask(id: string, patch: UpdateTaskPatch): Promise<Pr
   for (const k of UPDATE_KEYS) {
     if (patch[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(patch[k])
+      if (k === 'is_complete') {
+        vals.push(coerceBoolean(patch[k], false))
+      } else {
+        vals.push(patch[k])
+      }
     }
   }
   if (cols.length === 0) {
@@ -353,7 +391,11 @@ export function buildUpdateTaskStatements(
   for (const k of UPDATE_KEYS) {
     if (patch[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(patch[k])
+      if (k === 'is_complete') {
+        vals.push(coerceBoolean(patch[k], false))
+      } else {
+        vals.push(patch[k])
+      }
     }
   }
   if (cols.length === 0) return []

@@ -1,10 +1,20 @@
-import { getDb, uuid } from '../client'
+import { getDb, now, uuid } from '../client'
 import type { PettyCashFloat } from '../types'
 import { resolveBudgetRevisionId } from './budgetRevisions'
 
 const TABLE = 'floats'
 
 function rowToFloat(r: Record<string, unknown>): PettyCashFloat {
+  const toEpochMs = (value: unknown): number => {
+    if (typeof value === 'number') return value
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value)
+      if (Number.isFinite(parsed)) return parsed
+      const numeric = Number(value)
+      if (Number.isFinite(numeric)) return numeric
+    }
+    return 0
+  }
   return {
     id: r.id as string,
     production_id: r.production_id as string,
@@ -15,9 +25,9 @@ function rowToFloat(r: Record<string, unknown>): PettyCashFloat {
     currency: r.currency as string,
     issued_date: r.issued_date as string,
     notes: (r.notes as string | null) ?? null,
-    created_at: Number(r.created_at),
-    updated_at: Number(r.updated_at),
-    deleted_at: r.deleted_at != null ? Number(r.deleted_at) : null,
+    created_at: toEpochMs(r.created_at),
+    updated_at: toEpochMs(r.updated_at),
+    deleted_at: r.deleted_at != null ? toEpochMs(r.deleted_at) : null,
   }
 }
 
@@ -35,7 +45,7 @@ export type CreateFloatInput = {
 export async function createFloat(input: CreateFloatInput): Promise<void> {
   const db = await getDb()
   const id = uuid()
-  const ts = Date.now()
+  const ts = now()
   const budgetRevisionId = await resolveBudgetRevisionId({
     productionId: input.production_id,
     revisionId: input.revision_id,
@@ -104,7 +114,7 @@ export type UpdateFloatInput = {
 
 export async function updateFloat(input: UpdateFloatInput): Promise<void> {
   const db = await getDb()
-  const ts = Date.now()
+  const ts = now()
   await db.execute(
     `UPDATE ${TABLE} SET amount = $1, notes = $2, updated_at = $3 WHERE id = $4 AND deleted_at IS NULL`,
     [input.amount, input.notes, ts, input.id]
@@ -113,6 +123,6 @@ export async function updateFloat(input: UpdateFloatInput): Promise<void> {
 
 export async function softDeleteFloat(id: string): Promise<void> {
   const db = await getDb()
-  const ts = Date.now()
+  const ts = now()
   await db.execute(`UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`, [ts, ts, id])
 }

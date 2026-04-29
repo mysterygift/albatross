@@ -1,4 +1,5 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { OptimisticConcurrencyConflictError } from '../concurrency'
 import {
   outboxPush,
   outboxStatementForRow,
@@ -268,7 +269,8 @@ const SHOOT_DAY_UPDATE_KEYS = [
 
 export async function updateShootDay(
   id: string,
-  data: Partial<Pick<ShootDay, (typeof SHOOT_DAY_UPDATE_KEYS)[number]>>
+  data: Partial<Pick<ShootDay, (typeof SHOOT_DAY_UPDATE_KEYS)[number]>>,
+  options?: { expectedUpdatedAt?: string }
 ): Promise<ShootDay> {
   const before = await getShootDayById(id)
   const db = await getDb()
@@ -283,9 +285,22 @@ export async function updateShootDay(
     }
   }
   if (cols.length === 0) return (await getShootDayById(id))!
-  cols.push(`updated_at = $${i}`)
-  vals.push(ts, id)
-  await db.execute(`UPDATE ${DAY_TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1}`, vals)
+  cols.push(`updated_at = $${i++}`)
+  vals.push(ts)
+  let whereSql = `id = $${i++}`
+  vals.push(id)
+  if (options?.expectedUpdatedAt) {
+    whereSql += ` AND updated_at = $${i++}`
+    vals.push(options.expectedUpdatedAt)
+  }
+  const result = await db.execute(`UPDATE ${DAY_TABLE} SET ${cols.join(', ')} WHERE ${whereSql}`, vals)
+  if ((result.rowsAffected ?? 0) === 0 && options?.expectedUpdatedAt) {
+    throw new OptimisticConcurrencyConflictError({
+      entity: DAY_TABLE,
+      entityId: id,
+      expectedUpdatedAt: options.expectedUpdatedAt,
+    })
+  }
   await outboxPush(DAY_TABLE, id, 'update', JSON.stringify(data))
   if (data.call_time !== undefined || data.wrap_time !== undefined) {
     await syncMainUnitCallWrapStripsFromShootDay({
@@ -504,7 +519,7 @@ export async function createShootDayWithDefaultMainUnit(args: CreateShootDayWith
       }),
       {
         sql: `INSERT INTO ${SDU_TABLE} (id, shoot_day_id, unit_id, is_locked, created_at, updated_at)
-             VALUES ($1, $2, $3, 0, $4, $5)`,
+             VALUES ($1, $2, $3, FALSE, $4, $5)`,
         bindValues: [shootDayUnitId, shootDayId, mainUnit.id, ts, ts],
       },
       outboxStatementForRow({
@@ -1060,7 +1075,8 @@ const SCENE_UPDATE_KEYS = [
 
 export async function updateScene(
   id: string,
-  data: Partial<Pick<Scene, (typeof SCENE_UPDATE_KEYS)[number]>>
+  data: Partial<Pick<Scene, (typeof SCENE_UPDATE_KEYS)[number]>>,
+  options?: { expectedUpdatedAt?: string }
 ): Promise<Scene> {
   const existing = await getSceneById(id)
   if (!existing) throw new Error('Scene not found')
@@ -1092,9 +1108,22 @@ export async function updateScene(
     }
   }
   if (cols.length === 0) return existing
-  cols.push(`updated_at = $${i}`)
-  vals.push(ts, id)
-  await db.execute(`UPDATE ${SCENE_TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1}`, vals)
+  cols.push(`updated_at = $${i++}`)
+  vals.push(ts)
+  let whereSql = `id = $${i++}`
+  vals.push(id)
+  if (options?.expectedUpdatedAt) {
+    whereSql += ` AND updated_at = $${i++}`
+    vals.push(options.expectedUpdatedAt)
+  }
+  const result = await db.execute(`UPDATE ${SCENE_TABLE} SET ${cols.join(', ')} WHERE ${whereSql}`, vals)
+  if ((result.rowsAffected ?? 0) === 0 && options?.expectedUpdatedAt) {
+    throw new OptimisticConcurrencyConflictError({
+      entity: SCENE_TABLE,
+      entityId: id,
+      expectedUpdatedAt: options.expectedUpdatedAt,
+    })
+  }
   await outboxPush(SCENE_TABLE, id, 'update', JSON.stringify(data))
   return (await getSceneById(id))!
 }
@@ -1455,7 +1484,8 @@ const SHOT_UPDATE_KEYS = [
 
 export async function updateShot(
   id: string,
-  data: Partial<Pick<Shot, (typeof SHOT_UPDATE_KEYS)[number]>>
+  data: Partial<Pick<Shot, (typeof SHOT_UPDATE_KEYS)[number]>>,
+  options?: { expectedUpdatedAt?: string }
 ): Promise<Shot> {
   const existing = await getShotById(id)
   if (!existing) {
@@ -1495,9 +1525,22 @@ export async function updateShot(
     const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${SHOT_TABLE} WHERE id = $1 AND deleted_at IS NULL`, [id])
     return rows.length ? rowToShot(rows[0]!) : (await listShotsByScene(''))[0]!
   }
-  cols.push(`updated_at = $${i}`)
-  vals.push(ts, id)
-  await db.execute(`UPDATE ${SHOT_TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1}`, vals)
+  cols.push(`updated_at = $${i++}`)
+  vals.push(ts)
+  let whereSql = `id = $${i++}`
+  vals.push(id)
+  if (options?.expectedUpdatedAt) {
+    whereSql += ` AND updated_at = $${i++}`
+    vals.push(options.expectedUpdatedAt)
+  }
+  const result = await db.execute(`UPDATE ${SHOT_TABLE} SET ${cols.join(', ')} WHERE ${whereSql}`, vals)
+  if ((result.rowsAffected ?? 0) === 0 && options?.expectedUpdatedAt) {
+    throw new OptimisticConcurrencyConflictError({
+      entity: SHOT_TABLE,
+      entityId: id,
+      expectedUpdatedAt: options.expectedUpdatedAt,
+    })
+  }
   await outboxPush(SHOT_TABLE, id, 'update', JSON.stringify(payload))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${SHOT_TABLE} WHERE id = $1`, [id])
   return rowToShot(rows[0]!)

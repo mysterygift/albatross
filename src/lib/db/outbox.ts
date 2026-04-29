@@ -6,8 +6,8 @@
  * transaction as the primary write (same BEGIN/COMMIT). outboxPush() gets its own connection
  * and is serialized by the global write queue in client.ts.
  */
-import type Database from '@tauri-apps/plugin-sql'
 import { getDb, now, uuid } from './client'
+import type { DatabaseAdapter } from './databaseAdapter'
 
 export type OutboxOperation = 'create' | 'update' | 'delete'
 
@@ -49,7 +49,7 @@ export function outboxStatementForRows(rows: OutboxRow[]): { sql: string; bindVa
 
 /** Insert one outbox row using the given db handle. Use inside a transaction to avoid extra round-trips. */
 export async function outboxInsert(
-  db: Database,
+  db: Pick<DatabaseAdapter, 'execute'>,
   entity: string,
   entityId: string,
   operation: OutboxOperation,
@@ -62,7 +62,10 @@ export async function outboxInsert(
  * Insert many outbox rows in one statement. Use inside a transaction to avoid holding the lock
  * for many round-trips (was causing 8s+ lock waits when moving units with many strips).
  */
-export async function outboxInsertMany(db: Database, rows: OutboxRow[]): Promise<void> {
+export async function outboxInsertMany(
+  db: Pick<DatabaseAdapter, 'execute'>,
+  rows: OutboxRow[]
+): Promise<void> {
   if (rows.length === 0) return
   const ts = now()
   const placeholders: string[] = []

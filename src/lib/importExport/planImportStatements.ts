@@ -1,4 +1,4 @@
-import type Database from '@tauri-apps/plugin-sql'
+import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
 
 import type { ApfTableRow, ApfV1DataFile } from '@/lib/importExport/payload'
 import { APF_V1_TABLE_KEYS, type ApfV1TableKey } from '@/lib/importExport/tableKeys'
@@ -14,13 +14,15 @@ type PragmaColumn = {
   pk: number
 }
 
-function coerceCellValue(value: unknown, sqlType: string): unknown {
+function coerceCellValue(value: unknown, sqlType: string, dialect: DatabaseAdapter['dialect']): unknown {
   if (value === null || value === undefined) return null
+  const effectiveDialect = dialect ?? 'sqlite'
   const t = (sqlType ?? '').toUpperCase()
   if (typeof value === 'boolean') {
-    if (t.includes('INT') || t === 'BOOLEAN') {
+    if (effectiveDialect === 'sqlite' && (t.includes('INT') || t === 'BOOLEAN')) {
       return value ? 1 : 0
     }
+    if (effectiveDialect === 'postgres' && t === 'BOOLEAN') return value
   }
   return value
 }
@@ -101,13 +103,18 @@ function orderRowsForTable(table: ApfV1TableKey, rows: ApfTableRow[]): ApfTableR
   return rows
 }
 
-function buildInsertForRow(table: string, colInfos: PragmaColumn[], row: ApfTableRow): ImportSqlStatement {
+function buildInsertForRow(
+  table: string,
+  colInfos: PragmaColumn[],
+  row: ApfTableRow,
+  dialect: DatabaseAdapter['dialect']
+): ImportSqlStatement {
   const columns: string[] = []
   const bindValues: unknown[] = []
   for (const col of colInfos) {
     if (!Object.prototype.hasOwnProperty.call(row, col.name)) continue
     columns.push(col.name)
-    bindValues.push(coerceCellValue(row[col.name], col.type))
+    bindValues.push(coerceCellValue(row[col.name], col.type, dialect))
   }
   if (columns.length === 0) {
     throw new Error(`import: no insertable columns for ${table} row`)
@@ -127,19 +134,44 @@ export function resetApfImportPragmaCache(): void {
   pragmaCache.clear()
 }
 
-async function getTableColumns(db: Database, table: ApfV1TableKey): Promise<PragmaColumn[]> {
-  let cached = pragmaCache.get(table)
+async function getTableColumns(
+  db: Pick<DatabaseAdapter, 'select' | 'dialect'>,
+  table: ApfV1TableKey
+): Promise<PragmaColumn[]> {
+  const cacheKey = `${db.dialect ?? 'sqlite'}:${table}`
+  let cached = pragmaCache.get(cacheKey)
   if (cached) return cached
-  const rows = await db.select<PragmaColumn[]>(`PRAGMA table_info(${table})`)
-  cached = rows.sort((a, b) => a.cid - b.cid)
-  pragmaCache.set(table, cached)
+  if (db.dialect === 'postgres') {
+    const rows = await db.select<Array<{ ordinal_position: number; column_name: string; data_type: string }>>(
+      `SELECT ordinal_position, column_name, data_type
+       FROM information_schema.columns
+       WHERE table_schema = current_schema() AND table_name = $1
+       ORDER BY ordinal_position`,
+      [table]
+    )
+    cached = rows.map((row, idx) => ({
+      cid: Number(row.ordinal_position) || idx,
+      name: row.column_name,
+      type: row.data_type ?? 'TEXT',
+      notnull: 0,
+      dflt_value: null,
+      pk: row.column_name === 'id' ? 1 : 0,
+    }))
+  } else {
+    const rows = await db.select<PragmaColumn[]>(`PRAGMA table_info(${table})`)
+    cached = rows.sort((a, b) => a.cid - b.cid)
+  }
+  pragmaCache.set(cacheKey, cached)
   return cached
 }
 
 /**
  * Builds INSERT statements in FK-safe table order (see audit §3). Caller wraps with BEGIN/COMMIT + executeBatch.
  */
-export async function planApfImportStatements(db: Database, data: ApfV1DataFile): Promise<ImportSqlStatement[]> {
+export async function planApfImportStatements(
+  db: Pick<DatabaseAdapter, 'select' | 'dialect'>,
+  data: ApfV1DataFile
+): Promise<ImportSqlStatement[]> {
   const statements: ImportSqlStatement[] = []
 
   for (const table of APF_V1_TABLE_KEYS) {
@@ -154,7 +186,7 @@ export async function planApfImportStatements(db: Database, data: ApfV1DataFile)
           filtered[k] = row[k]
         }
       }
-      statements.push(buildInsertForRow(table, colInfos, filtered))
+      statements.push(buildInsertForRow(table, colInfos, filtered, db.dialect))
     }
   }
 

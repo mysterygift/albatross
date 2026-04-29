@@ -16,181 +16,38 @@
  * Foreign key enforcement: we run PRAGMA foreign_keys = ON on every connection.
  * In DEV, all execute/select are timed and logged to db/perf (including errors and retries).
  */
-import Database from '@tauri-apps/plugin-sql'
-import type { QueryResult } from '@tauri-apps/plugin-sql'
-import { recordDbOp, recordRetryAttempt, isLockError, isPerfLoggingEnabled } from './perf'
+import type { DatabaseAdapter, SqlStatement } from './databaseAdapter'
+import {
+  executeBatchCompat,
+  runInSerializedSqliteTransaction,
+  SQLiteDatabaseAdapter,
+} from './sqliteDatabaseAdapter'
 
 const DB_URL = 'sqlite:albatross.db'
-const BUSY_TIMEOUT_MS = 8000
-const RETRY_DELAYS_MS = [50, 150, 350]
-const MAX_RETRIES = 3
 
-let db: Database | null = null
+let db: SQLiteDatabaseAdapter | null = null
 let fkChecked = false
+let testDbOverride: DatabaseAdapter | null = null
 
 /**
- * Re-entrant global serialization for all wrapped `execute()` calls (and `runInSerializedTransaction`).
- * The Tauri SQL plugin may use a connection pool; without this, nested transactions skipped the old
- * queue and concurrent `raw.execute` calls could use different connections → "database is locked".
+ * Test-only adapter override so integration tests can run repositories against non-SQLite adapters.
+ * Do not use in app runtime.
  */
-let executeNestingDepth = 0
-let executeTail = Promise.resolve()
-
-function runSerializedExecute<T>(fn: () => Promise<T>): Promise<T> {
-  if (executeNestingDepth > 0) {
-    executeNestingDepth++
-    return fn().finally(() => {
-      executeNestingDepth--
-    })
-  }
-  const job = executeTail.then(async () => {
-    executeNestingDepth++
-    try {
-      return await fn()
-    } finally {
-      executeNestingDepth--
-    }
-  })
-  executeTail = job.then(
-    () => undefined,
-    () => undefined
-  )
-  return job
+export function setDbAdapterForTests(adapter: DatabaseAdapter | null): void {
+  testDbOverride = adapter
 }
 
-/** Debug: track logical transaction depth to see if something commits between BEGIN and COMMIT. */
-let txnDepth = 0
-
-/**
- * Run a full transaction (BEGIN ... COMMIT/ROLLBACK) with the same execute serialization as
- * `db.execute`. Nested calls run re-entrantly (no deadlock).
- */
 export function runInSerializedTransaction<T>(fn: () => Promise<T>): Promise<T> {
-  return runSerializedExecute(fn)
-}
-
-function sanitizeSql(sql: string, maxLen: number = 120): string {
-  return sql.replace(/\s+/g, ' ').trim().slice(0, maxLen)
-}
-
-function getErrorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message
-  return String(e)
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-/** Run fn with retry on SQLITE_BUSY / database is locked. */
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  sql: string,
-  kind: 'execute' | 'select'
-): Promise<T> {
-  let lastErr: unknown
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      return await fn()
-    } catch (e) {
-      lastErr = e
-      const msg = getErrorMessage(e)
-      if (attempt === MAX_RETRIES || !isLockError(msg)) throw e
-      recordRetryAttempt(sanitizeSql(sql), kind, attempt + 1, msg)
-      await sleep(RETRY_DELAYS_MS[attempt] ?? 350)
-    }
+  if (testDbOverride) {
+    return testDbOverride.runInSerializedTransaction(fn)
   }
-  throw lastErr
+  return runInSerializedSqliteTransaction(fn)
 }
 
-/** Wrap raw Database with timing, error capture, write queue, and retry. */
-function wrapWithPerf(raw: Database): Database {
-  return {
-    ...raw,
-    path: raw.path,
-    async execute(query: string, bindValues?: unknown[]): Promise<QueryResult> {
-      const sql = sanitizeSql(query)
-      const start = performance.now()
-      const upper = query.trim().toUpperCase()
-      const isBegin = upper.startsWith('BEGIN')
-      const isCommit = upper.startsWith('COMMIT')
-      const isRollback = upper.startsWith('ROLLBACK')
-      if (isBegin) txnDepth += 1
-      const run = () =>
-        withRetry(() => raw.execute(query, bindValues), query, 'execute').then((result) => {
-          const durationMs = performance.now() - start
-          if (isCommit || isRollback) txnDepth = Math.max(0, txnDepth - 1)
-          if (isPerfLoggingEnabled()) {
-            recordDbOp({
-              kind: 'execute',
-              sql,
-              durationMs,
-              rowsAffected: result.rowsAffected,
-            })
-          }
-          return result
-        })
-      try {
-        // Inside runInSerializedTransaction (or any holder that bumped executeNestingDepth), run
-        // immediately so we do not schedule a second tail job (would reorder work across awaits).
-        if (executeNestingDepth > 0) return await run()
-        return await runSerializedExecute(run)
-      } catch (e) {
-        const durationMs = performance.now() - start
-        if (isCommit || isRollback) txnDepth = Math.max(0, txnDepth - 1)
-        if (isPerfLoggingEnabled()) {
-          recordDbOp({
-            kind: 'execute',
-            sql,
-            durationMs,
-            error: getErrorMessage(e),
-          })
-        }
-        throw e
-      }
-    },
-    async select<T>(query: string, bindValues?: unknown[]): Promise<T> {
-      const sql = sanitizeSql(query)
-      const start = performance.now()
-      try {
-        const result = await withRetry(() => raw.select<T>(query, bindValues), query, 'select')
-        const durationMs = performance.now() - start
-        if (isPerfLoggingEnabled()) {
-          recordDbOp({
-            kind: 'select',
-            sql,
-            durationMs,
-            rowsReturned: Array.isArray(result) ? result.length : undefined,
-          })
-        }
-        return result
-      } catch (e) {
-        const durationMs = performance.now() - start
-        if (isPerfLoggingEnabled()) {
-          recordDbOp({
-            kind: 'select',
-            sql,
-            durationMs,
-            error: getErrorMessage(e),
-          })
-        }
-        throw e
-      }
-    },
-    close(dbName?: string) {
-      return raw.close(dbName)
-    },
-  } as Database
-}
-
-export async function getDb(): Promise<Database> {
+export async function getDb(): Promise<DatabaseAdapter> {
+  if (testDbOverride) return testDbOverride
   if (db) return db
-  const raw = await Database.load(DB_URL)
-  await raw.execute('PRAGMA foreign_keys = ON')
-  await raw.execute(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`)
-  await raw.execute('PRAGMA journal_mode = WAL')
-  await raw.execute('PRAGMA synchronous = NORMAL')
-  db = wrapWithPerf(raw)
+  db = await SQLiteDatabaseAdapter.load(DB_URL)
   if (import.meta.env.DEV && !fkChecked) {
     try {
       const rows = await db.select<Record<string, unknown>[]>('PRAGMA foreign_keys')
@@ -230,21 +87,12 @@ export function uuid(): string {
  * Placeholders ($1, $2, ...) are renumbered so the combined bind array matches.
  */
 export async function executeBatch(
-  db: Database,
-  statements: Array<{ sql: string; bindValues: unknown[] }>
+  db: Pick<DatabaseAdapter, 'execute' | 'executeBatch'>,
+  statements: SqlStatement[]
 ): Promise<void> {
-  if (statements.length === 0) return
-  let offset = 0
-  const renumbered = statements.map(({ sql, bindValues }) => {
-    const n = bindValues.length
-    let renumberedSql = sql
-    if (n > 0) {
-      renumberedSql = sql.replace(/\$(\d+)/g, (_, num) => '$' + (offset + parseInt(num, 10)))
-    }
-    offset += n
-    return { sql: renumberedSql, bindValues }
-  })
-  const combinedSql = renumbered.map((s) => s.sql.trim()).join(';\n')
-  const combinedBind = renumbered.flatMap((s) => s.bindValues)
-  await db.execute(combinedSql, combinedBind)
+  if (typeof db.executeBatch === 'function') {
+    await db.executeBatch(statements)
+    return
+  }
+  await executeBatchCompat(db, statements)
 }

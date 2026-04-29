@@ -22,6 +22,7 @@ function pragmaColumnsFromSampleRow(row: ApfTableRow): PragmaColumn[] {
 }
 
 export type MockApfImportDbOptions = {
+  dialect?: 'sqlite' | 'postgres'
   /** Production ids that already exist (preflight id conflict). */
   existingProductionIds?: string[]
   /** Active slug already taken by another production. */
@@ -37,7 +38,9 @@ export type MockApfImportDbOptions = {
  * Minimal `Database.select`-shaped mock for `preflightApfImportDb` + `planApfImportStatements`.
  */
 export function createMockApfImportDb(opts: MockApfImportDbOptions = {}) {
+  const dialect = opts.dialect ?? 'sqlite'
   return {
+    dialect,
     async select<T>(sql: string, bind?: unknown[]): Promise<T> {
       const s = sql.trim()
 
@@ -49,6 +52,19 @@ export function createMockApfImportDb(opts: MockApfImportDbOptions = {}) {
           return [] as T
         }
         return pragmaColumnsFromSampleRow(sample) as T
+      }
+
+      if (s.includes('FROM information_schema.columns')) {
+        const table = typeof bind?.[0] === 'string' ? bind[0] : ''
+        const sample = opts.tableSamples?.[table]
+        if (!sample) {
+          return [] as T
+        }
+        return pragmaColumnsFromSampleRow(sample).map((col) => ({
+          ordinal_position: col.cid,
+          column_name: col.name,
+          data_type: 'text',
+        })) as T
       }
 
       if (s.includes('FROM productions WHERE id =') && s.includes('LIMIT 1')) {

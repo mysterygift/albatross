@@ -350,7 +350,7 @@ export async function applyTaskTemplateToProduction(
           ? templateItemIdToTaskId.get(item.parent_template_item_id) ?? null
           : null
       statements.push({
-        sql: `INSERT INTO ${TASKS_TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, created_at, updated_at) VALUES ($1, $2, $3, 0, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        sql: `INSERT INTO ${TASKS_TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, created_at, updated_at) VALUES ($1, $2, $3, FALSE, $4, $5, $6, $7, $8, $9, $10, $11)`,
         bindValues: [
           taskId,
           productionId,

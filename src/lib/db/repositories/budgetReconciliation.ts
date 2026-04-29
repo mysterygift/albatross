@@ -22,7 +22,7 @@ function rowToLink(r: Record<string, unknown>): BudgetItemExpenseLink {
     budget_revision_id: (r.budget_revision_id as string | null) ?? null,
     budget_item_id: r.budget_item_id as string,
     expense_id: r.expense_id as string,
-    matched_amount: (r.matched_amount as number) ?? 0,
+    matched_amount: Number(r.matched_amount ?? 0),
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: (r.deleted_at as string | null) ?? null,

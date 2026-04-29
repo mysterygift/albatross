@@ -1,5 +1,6 @@
 import { getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxPush } from '../outbox'
+import { coerceBoolean } from '../sqlValueCoercion'
 import type { ContingencyRule, FringeRule } from '../types'
 import { resolveBudgetRevisionId } from './budgetRevisions'
 
@@ -20,7 +21,7 @@ function rowToFringeRule(r: Record<string, unknown>): FringeRule {
     rate: r.rate as number,
     base_kind: (r.base_kind as FringeRule['base_kind']) ?? 'budget',
     scope_mode: (r.scope_mode as string) ?? 'include_subtrees',
-    is_enabled: Boolean(r.is_enabled),
+    is_enabled: coerceBoolean(r.is_enabled, true),
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
@@ -36,7 +37,7 @@ function rowToContingencyRule(r: Record<string, unknown>): ContingencyRule {
     rate: r.rate as number,
     base_kind: (r.base_kind as ContingencyRule['base_kind']) ?? 'budget',
     scope_mode: (r.scope_mode as string) ?? 'include_subtrees',
-    is_enabled: Boolean(r.is_enabled),
+    is_enabled: coerceBoolean(r.is_enabled, true),
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
@@ -104,7 +105,7 @@ export async function createFringeRule(
     const db = await getDb()
     await db.execute(
       `INSERT INTO ${FRINGE_TABLE} (id, production_id, budget_revision_id, name, rate, base_kind, scope_mode, is_enabled, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9)`,
       [id, data.production_id, budgetRevisionId, data.name, data.rate, data.base_kind ?? 'budget', data.scope_mode ?? 'include_subtrees', ts, ts]
     )
     for (const accountId of data.scope_account_ids) {
@@ -188,7 +189,7 @@ export async function setFringeRuleEnabled(ruleId: string, enabled: boolean): Pr
   const ts = now()
   await db.execute(
     `UPDATE ${FRINGE_TABLE} SET is_enabled = $1, updated_at = $2 WHERE id = $3`,
-    [enabled ? 1 : 0, ts, ruleId]
+    [enabled, ts, ruleId]
   )
   await outboxPush(FRINGE_TABLE, ruleId, 'update', JSON.stringify({ is_enabled: enabled }))
 }
@@ -243,7 +244,7 @@ export async function createContingencyRule(
     const db = await getDb()
     await db.execute(
       `INSERT INTO ${CONTINGENCY_TABLE} (id, production_id, budget_revision_id, name, rate, base_kind, scope_mode, is_enabled, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9)`,
       [id, data.production_id, budgetRevisionId, data.name, data.rate, data.base_kind ?? 'budget', data.scope_mode ?? 'include_subtrees', ts, ts]
     )
     for (const accountId of data.scope_account_ids) {
@@ -327,7 +328,7 @@ export async function setContingencyRuleEnabled(ruleId: string, enabled: boolean
   const ts = now()
   await db.execute(
     `UPDATE ${CONTINGENCY_TABLE} SET is_enabled = $1, updated_at = $2 WHERE id = $3`,
-    [enabled ? 1 : 0, ts, ruleId]
+    [enabled, ts, ruleId]
   )
   await outboxPush(CONTINGENCY_TABLE, ruleId, 'update', JSON.stringify({ is_enabled: enabled }))
 }

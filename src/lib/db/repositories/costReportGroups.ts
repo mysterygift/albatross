@@ -57,7 +57,7 @@ export async function listCostReportGroups(
   )
   const countByGroup = new Map<string, number>()
   for (const c of counts) {
-    countByGroup.set(c.group_id as string, (c.cnt as number) ?? 0)
+    countByGroup.set(c.group_id as string, Number(c.cnt ?? 0))
   }
   return rows.map((r) => ({
     ...rowToGroup(r),

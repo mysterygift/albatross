@@ -1,5 +1,6 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxPush } from '../outbox'
+import { coerceBoolean } from '../sqlValueCoercion'
 import type { EquipmentList, EquipmentListItem } from '../types'
 
 const LISTS_TABLE = 'equipment_lists'
@@ -25,8 +26,8 @@ function rowToItem(r: Record<string, unknown>): EquipmentListItem {
     equipment_list_id: r.equipment_list_id as string,
     equipment_id: r.equipment_id as string,
     sort_order: (r.sort_order as number) ?? 0,
-    checked_out: (r.checked_out as number) ?? 0,
-    checked_back_in: (r.checked_back_in as number) ?? 0,
+    checked_out: coerceBoolean(r.checked_out, false) ? 1 : 0,
+    checked_back_in: coerceBoolean(r.checked_back_in, false) ? 1 : 0,
     notes: (r.notes as string | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
@@ -145,7 +146,7 @@ export async function addEquipmentItemToList(data: {
   const sortOrder = data.sort_order ?? 0
   await db.execute(
     `INSERT INTO ${ITEMS_TABLE} (id, equipment_list_id, equipment_id, sort_order, checked_out, checked_back_in, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, 0, 0, $5, $6, $7)`,
+     VALUES ($1, $2, $3, $4, FALSE, FALSE, $5, $6, $7)`,
     [id, data.equipment_list_id, data.equipment_id, sortOrder, data.notes ?? null, ts, ts]
   )
   await outboxPush(ITEMS_TABLE, id, 'create', JSON.stringify({ ...data, id }))
@@ -165,7 +166,11 @@ export async function updateEquipmentListItem(
   for (const k of ['sort_order', 'checked_out', 'checked_back_in', 'notes'] as const) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(data[k])
+      if (k === 'checked_out' || k === 'checked_back_in') {
+        vals.push(coerceBoolean(data[k], false))
+      } else {
+        vals.push(data[k])
+      }
     }
   }
   if (cols.length === 0) {

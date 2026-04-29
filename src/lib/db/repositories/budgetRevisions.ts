@@ -1,4 +1,5 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { coerceBoolean, coerceIsoString } from '../sqlValueCoercion'
 import type { SoftDeletable } from '../types'
 
 const TABLE = 'budget_revisions'
@@ -25,11 +26,11 @@ function rowToBudgetRevision(r: Record<string, unknown> | undefined): BudgetRevi
     production_id: r.production_id as string,
     name: r.name as string,
     created_from_revision_id: (r.created_from_revision_id as string | null) ?? null,
-    is_live: Boolean(r.is_live),
+    is_live: coerceBoolean(r.is_live),
     approval,
-    created_at: r.created_at as string,
-    updated_at: r.updated_at as string,
-    deleted_at: (r.deleted_at as string | null) ?? null,
+    created_at: coerceIsoString(r.created_at),
+    updated_at: coerceIsoString(r.updated_at),
+    deleted_at: r.deleted_at == null ? null : coerceIsoString(r.deleted_at),
   }
 }
 
@@ -153,7 +154,7 @@ export async function getLiveBudgetRevisionForProduction(
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${TABLE}
-     WHERE production_id = $1 AND is_live = 1 AND deleted_at IS NULL
+     WHERE production_id = $1 AND is_live = TRUE AND deleted_at IS NULL
      LIMIT 1`,
     [productionId]
   )
@@ -237,7 +238,7 @@ export async function getOrCreateLiveBudgetRevisionIdForProduction(
         { sql: 'BEGIN IMMEDIATE', bindValues: [] },
         {
           sql: `INSERT INTO ${TABLE} (id, production_id, name, created_from_revision_id, is_live, approval, created_at, updated_at, deleted_at)
-              VALUES ($1, $2, $3, NULL, 1, 'unapproved', $4, $5, NULL)`,
+              VALUES ($1, $2, $3, NULL, TRUE, 'unapproved', $4, $5, NULL)`,
           bindValues: [id, productionId, 'Current budget', ts, ts],
         },
       ]
@@ -295,22 +296,36 @@ export async function setLiveBudgetRevisionForProduction(params: {
   const db = await getDb()
   const ts = now()
   await runInSerializedTransaction(async () => {
-    await executeBatch(db, [
-      { sql: 'BEGIN TRANSACTION', bindValues: [] },
-      {
-        sql: `UPDATE ${TABLE}
-              SET is_live = 0, updated_at = $2
-              WHERE production_id = $1 AND deleted_at IS NULL AND is_live = 1`,
-        bindValues: [params.productionId, ts],
-      },
-      {
-        sql: `UPDATE ${TABLE}
-              SET is_live = 1, updated_at = $3
-              WHERE production_id = $1 AND id = $2 AND deleted_at IS NULL`,
-        bindValues: [params.productionId, params.revisionId, ts],
-      },
-      { sql: 'COMMIT', bindValues: [] },
-    ])
+    await db.execute('BEGIN TRANSACTION')
+    try {
+      if (db.dialect === 'postgres') {
+        // Lock revision rows in deterministic order to avoid deadlocks under concurrent live switches.
+        await db.select(
+          `SELECT id
+           FROM ${TABLE}
+           WHERE production_id = $1 AND deleted_at IS NULL
+           ORDER BY id
+           FOR UPDATE`,
+          [params.productionId]
+        )
+      }
+      await db.execute(
+        `UPDATE ${TABLE}
+         SET is_live = FALSE, updated_at = $2
+         WHERE production_id = $1 AND deleted_at IS NULL AND is_live = TRUE`,
+        [params.productionId, ts]
+      )
+      await db.execute(
+        `UPDATE ${TABLE}
+         SET is_live = TRUE, updated_at = $3
+         WHERE production_id = $1 AND id = $2 AND deleted_at IS NULL`,
+        [params.productionId, params.revisionId, ts]
+      )
+      await db.execute('COMMIT')
+    } catch (error) {
+      await db.execute('ROLLBACK')
+      throw error
+    }
   })
 }
 

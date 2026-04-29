@@ -1,5 +1,6 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxStatementForRow } from '../outbox'
+import { coerceNumber } from '../sqlValueCoercion'
 import type { VendorInvoice, VendorInvoiceStatus } from '../types'
 
 const TABLE = 'vendor_invoices'
@@ -16,8 +17,8 @@ function rowToVendorInvoice(r: Record<string, unknown>): VendorInvoice {
     invoice_number: r.invoice_number as string,
     issue_date: (r.issue_date as string | null) ?? null,
     due_date: (r.due_date as string | null) ?? null,
-    amount: r.amount != null ? (r.amount as number) : null,
-    tax: r.tax != null ? (r.tax as number) : null,
+    amount: r.amount != null ? coerceNumber(r.amount, 0) : null,
+    tax: r.tax != null ? coerceNumber(r.tax, 0) : null,
     currency_code: (r.currency_code as string | null) ?? null,
     status: (r.status as VendorInvoiceStatus) ?? 'draft',
     notes: (r.notes as string | null) ?? null,

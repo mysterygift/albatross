@@ -1,5 +1,6 @@
 import { getDb, now, uuid } from '../client'
 import { outboxPush } from '../outbox'
+import { coerceBoolean } from '../sqlValueCoercion'
 import type { BudgetAccount } from '../types'
 
 const TABLE = 'budget_accounts'
@@ -12,7 +13,7 @@ function rowToAccount(r: Record<string, unknown>): BudgetAccount {
     name: r.name as string,
     parent_account_id: r.parent_account_id as string | null,
     sort_order: (r.sort_order as number) ?? 0,
-    is_postable: Boolean(r.is_postable),
+    is_postable: coerceBoolean(r.is_postable, false),
     color_hex: (r.color_hex as string | null) ?? null,
     archived_at: (r.archived_at as string | null) ?? null,
     created_at: r.created_at as string,
@@ -34,8 +35,9 @@ export async function listAccounts(productionId: string): Promise<BudgetAccount[
 /** List only postable (leaf) accounts that are not archived. Used for Add line item and Quick-add spend dropdowns. */
 export async function listPostableAccounts(productionId: string): Promise<BudgetAccount[]> {
   const db = await getDb()
+  const postablePredicate = db.dialect === 'postgres' ? 'is_postable = TRUE' : 'is_postable = 1'
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL AND archived_at IS NULL AND is_postable = 1 ORDER BY CAST(code AS INTEGER) ASC, sort_order ASC, code ASC`,
+    `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL AND archived_at IS NULL AND ${postablePredicate} ORDER BY CAST(code AS INTEGER) ASC, sort_order ASC, code ASC`,
     [productionId]
   )
   return rows.map(rowToAccount)
@@ -88,7 +90,7 @@ export async function createAccount(account: {
   await db.execute(
     `INSERT INTO ${TABLE} (id, production_id, code, name, parent_account_id, sort_order, is_postable, archived_at, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, $9)`,
-    [id, account.production_id, code, name, parentId, account.sort_order ?? 0, isPostable ? 1 : 0, ts, ts]
+    [id, account.production_id, code, name, parentId, account.sort_order ?? 0, isPostable, ts, ts]
   )
   await outboxPush(TABLE, id, 'create', JSON.stringify({ ...account, code, name, id }))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [id])
@@ -160,7 +162,7 @@ async function countChildren(accountId: string): Promise<number> {
     `SELECT COUNT(*) AS cnt FROM ${TABLE} WHERE parent_account_id = $1 AND deleted_at IS NULL`,
     [accountId]
   )
-  return (rows[0]?.cnt as number) ?? 0
+  return Number(rows[0]?.cnt ?? 0)
 }
 
 async function isReferencedInDerivedScopes(accountId: string): Promise<boolean> {

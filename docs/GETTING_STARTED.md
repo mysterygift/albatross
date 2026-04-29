@@ -50,12 +50,12 @@ npm run tauri:dev
 
 This:
 
-1. Starts the Vite dev server (frontend) on **http://localhost:5173**
+1. Starts the Vite dev server (frontend) on **http://localhost:5174**
 2. Launches the Tauri desktop window, which loads that URL in the webview
 
 You should see a native window; the UI is the React app. No internet is required after install.
 
-**Gotcha — port 5173:** Vite is configured with `strictPort: true`. If another process is using 5173, the dev server will fail. Stop the other process or change the port in [vite.config.ts](../vite.config.ts) (and ensure [tauri.conf.json](../src-tauri/tauri.conf.json) `build.devUrl` matches).
+**Gotcha — port 5174:** Vite is configured with `strictPort: true`. If another process is using 5174, the dev server will fail. Stop the other process or change the port in [vite.config.ts](../vite.config.ts) (and ensure [tauri.conf.json](../src-tauri/tauri.conf.json) `build.devUrl` matches).
 
 **Gotcha — DB location:** In dev you use the **same** SQLite database as the “installed” app on this machine. It lives in the app config directory (e.g. macOS: `~/Library/Application Support/com.albatross.app/albatross.db`). To start with a clean DB you can remove that file (and optionally the `attachments/` folder there) while the app is closed.
 
