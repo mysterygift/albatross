@@ -777,6 +777,73 @@ export function SettingsPage() {
         </CardHeader>
       </Card>
 
+      <Card className="mt-2">
+        <CardHeader>
+          <CardTitle>Demo projects</CardTitle>
+          <CardDescription>
+            Regenerate the canonical demo project (slug: {DEMO_SLUG}). Reset only affects demo projects and never deletes user productions.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                setDemoError(null)
+                try {
+                  await ensureDemoData()
+                  queryClient.invalidateQueries({ queryKey: ['productions'] })
+                  queryClient.invalidateQueries({ queryKey: ['crew'] })
+                  queryClient.invalidateQueries({ queryKey: ['people'] })
+                  queryClient.invalidateQueries({ queryKey: ['deliverables'] })
+                  await refetchProductions()
+                  const prod = await getProductionBySlug(DEMO_SLUG)
+                  if (prod) setCurrentProductionId(prod.id)
+                } catch (e) {
+                  setDemoError(e instanceof Error ? e.message : String(e))
+                  setTimeout(() => setDemoError(null), 5000)
+                }
+              }}
+            >
+              Create Demo Production
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                await resetDemoData()
+                queryClient.invalidateQueries({ queryKey: ['productions'] })
+                queryClient.invalidateQueries({ queryKey: ['crew'] })
+                queryClient.invalidateQueries({ queryKey: ['people'] })
+                queryClient.invalidateQueries({ queryKey: ['deliverables'] })
+              }}
+            >
+              Reset Demo Data
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const prod = await getProductionBySlug(DEMO_SLUG)
+                if (prod) {
+                  setCurrentProductionId(prod.id)
+                  refetchProductions()
+                }
+              }}
+            >
+              Open Demo Production
+            </Button>
+          </div>
+          {demoError && (
+            <p className="w-full text-sm text-destructive">
+              {demoError}
+            </p>
+          )}
+          <DemoSeedMeta />
+        </CardContent>
+      </Card>
+
       {import.meta.env.DEV && (
         <Card className="mt-2">
           <CardHeader>
@@ -785,7 +852,7 @@ export function SettingsPage() {
               Developer tools
             </CardTitle>
             <CardDescription>
-              Demo production seed (slug: {DEMO_SLUG}). Only affects this slug; never deletes user productions.
+              Diagnostics and experimental development controls.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -835,59 +902,6 @@ export function SettingsPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  setDemoError(null)
-                  try {
-                    await ensureDemoData()
-                    queryClient.invalidateQueries({ queryKey: ['productions'] })
-                    queryClient.invalidateQueries({ queryKey: ['crew'] })
-                    queryClient.invalidateQueries({ queryKey: ['people'] })
-                    queryClient.invalidateQueries({ queryKey: ['deliverables'] })
-                    await refetchProductions()
-                    const prod = await getProductionBySlug(DEMO_SLUG)
-                    if (prod) setCurrentProductionId(prod.id)
-                  } catch (e) {
-                    setDemoError(e instanceof Error ? e.message : String(e))
-                    setTimeout(() => setDemoError(null), 5000)
-                  }
-                }}
-              >
-                Create Demo Production
-              </Button>
-              {demoError && (
-                <p className="w-full text-sm text-destructive">
-                  {demoError}
-                </p>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  await resetDemoData()
-                  queryClient.invalidateQueries({ queryKey: ['productions'] })
-                  queryClient.invalidateQueries({ queryKey: ['crew'] })
-                  queryClient.invalidateQueries({ queryKey: ['people'] })
-                  queryClient.invalidateQueries({ queryKey: ['deliverables'] })
-                }}
-              >
-                Reset Demo Data
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  const prod = await getProductionBySlug(DEMO_SLUG)
-                  if (prod) {
-                    setCurrentProductionId(prod.id)
-                    refetchProductions()
-                  }
-                }}
-              >
-                Open Demo Production
-              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -947,7 +961,6 @@ export function SettingsPage() {
                 )}
               </p>
             )}
-            <DemoSeedMeta />
           </CardContent>
         </Card>
       )}

@@ -95,11 +95,11 @@ New productions get a unique slug generated from the name; existing rows (before
 A **deterministic demo production** can be created for instant realistic data (budget, stripboard, scenes, cast, locations, documents, call sheets, deliverables, music clearances, etc.).
 
 - **Slug**: Demo data is keyed only by **slug** `demo-production-albatross`. Seed and reset logic **never match by name** and **never delete** productions that do not have this slug.
-- **How to run**: In **development**, open **Settings** and use the **Developer tools** card: **Create Demo Production** (creates the demo production and full dataset if missing), **Reset Demo Data** (removes only the demo production and its related rows and attachment files, then re-runs ensure), **Open Demo Production** (selects the demo production in the app).
+- **How to run**: Open **Settings** and use the **Demo projects** section: **Create Demo Production** (creates the demo production and full dataset if missing), **Reset Demo Data** (removes only the demo production and its related rows and attachment files, then re-runs ensure), **Open Demo Production** (selects the demo production in the app).
 - **Where demo attachments are stored**: Same as other attachments: **`attachments/`** in the app data directory. Demo files use names like `demo-location-release.pdf`, `demo-cue-sheet.pdf`, `demo-doc-4.txt`.
 - **Safety**: Only the production with `slug = demo-production-albatross` is ever deleted or overwritten by reset. All other productions and data are untouched.
 
-Seed metadata (last run time, version) is stored in the **`seed_meta`** table and shown in the Developer tools section.
+Seed metadata (last run time, version) is stored in the **`seed_meta`** table and shown in Settings under **Demo projects**.
 
 ### Episodic (series) productions
 

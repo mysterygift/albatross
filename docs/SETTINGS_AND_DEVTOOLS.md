@@ -20,13 +20,15 @@ The Settings page provides:
 3. **Chart of accounts** — Per-production when a production is selected. Tree view of accounts; add account (code, name, parent, postable); edit name; archive/unarchive; hard delete only when account is unused.
 4. **Episodes & shooting blocs** — Shown only when the selected production is **episodic** (`is_episodic`). Manage episode names/order/archives and shooting-bloc calendars; see [docs/schedule.md](schedule.md) § Episodic productions.
 5. **Data location** — Informational card pointing to app data directory (README paths).
-6. **Developer tools** (dev build only) — Demo production seed, DB perf logging, cascade verification, and experimental toggles.
+6. **Demo projects** — Demo production seed and reset controls (available in both dev and production builds).
+7. **Developer tools** (dev build only) — DB perf logging, cascade verification, and experimental toggles.
 
-### 1.2 Developer tools
+### 1.2 Demo projects and Developer tools
 
-- **Visibility:** The “Developer tools” card is rendered only when `import.meta.env.DEV` is true. It does not appear in production builds.
+- **Demo projects visibility:** The demo seed/reset card is rendered in all builds.
+- **Developer tools visibility:** The diagnostics card is rendered only when `import.meta.env.DEV` is true. It does not appear in production builds.
 - **Location:** Inside the Settings page as the last card (`src/features/settings/page.tsx`).
-- **Purpose:** Demo data, DB performance diagnostics, and experimental options for development and manual verification.
+- **Purpose:** Demo projects regenerate/open the canonical demo slug; Developer tools provide diagnostics and experimental controls.
 
 ---
 
@@ -75,7 +77,8 @@ Defaults are applied by `ensureSettingsDefaults()` in `settings.ts` (called from
 5. **Episodes card** — Only when the selected production has **`is_episodic = 1`**. Add, rename, reorder, archive (soft-delete) episodes; optional hard-delete when eligible. Episodes drive **scene** assignment in Shot Lists and episode badges on the stripboard.
 6. **Shooting blocs card** — Only when the selected production is episodic. Table of blocs with name and **start/end dates**; editing a range may prompt to confirm re-association of **shoot days** whose dates fall in or out of the bloc. Bloc labels appear on the calendar and stripboard; shoot days reference `shooting_bloc_id`.
 7. **Data location card** — Text only: “SQLite database and attachments are stored in the app data directory. See README for paths per platform.”
-8. **Developer tools card** — Only when `import.meta.env.DEV`. See §3.3.
+8. **Demo projects card** — Available in all builds; includes create/reset/open demo and seed metadata.
+9. **Developer tools card** — Only when `import.meta.env.DEV`. See §3.3.
 
 When no production is selected, a message is shown: “Select a production to manage cost report groups, chart of accounts, and other settings.”
 
@@ -87,25 +90,29 @@ When a production is selected but **not** episodic, the Episodes and Shooting bl
 - **Conversion API:** Not in the main Currency card in production; in dev it appears under Developer tools as “Enable Currency Conversion API (Experimental)” with a warning that it may break projects.
 - **Banner:** `conversionBanner` (e.g. “Conversion disabled…”, “Exchange rate unavailable offline…”).
 
-### 3.3 Developer tools card (dev only)
+### 3.3 Demo projects card (all builds) and Developer tools card (dev only)
 
-- **Title:** “Developer tools” (with Wrench icon).
-- **Description:** “Demo production seed (slug: demo-production-albatross). Only affects this slug; never deletes user productions.”
+- **Demo projects title:** “Demo projects”.
+- **Description:** Regenerates the canonical demo slug and never deletes user productions.
 
-**Toggles (in an amber-bordered box):**
+**Demo projects actions:**
+
+- **Create Demo Production** — Calls `ensureDemoData()`, invalidates `['productions']`, refetches productions, switches current production to demo by slug (`DEMO_SLUG`). Errors shown inline for 5s.
+- **Reset Demo Data** — Calls `resetDemoData()`, invalidates `['productions']`, `['crew']`, `['people']`, and `['deliverables']`. Does not delete non-demo productions.
+- **Open Demo Production** — Selects the demo production by slug if it exists (`getProductionBySlug(DEMO_SLUG)`).
+- **Meta:** `DemoSeedMeta` component shows “Last seeded: …” and seed version from `getLastSeededAt()` and `getSeedVersion()` (query keys `['seed-meta', 'last_seeded_at']`, `['seed-meta', 'seed_version']`).
+
+**Developer tools title:** “Developer tools” (with Wrench icon).
+
+**Developer tools toggles (in an amber-bordered box):**
 
 - **DB Perf logging (HUD + Log to console)** — Checkbox; persists to `enable_db_perf_logging` via `setSetting`; also calls `setPerfLoggingEnabled()` from `src/lib/db/perf.ts` so the HUD and console logging turn on/off immediately.
 - **Enable Currency Conversion API (Experimental)** — Checkbox; persists to `enable_currency_conversion_api`; labeled as experimental with “Do not use.”
 
-**Buttons:**
+**Developer tools buttons:**
 
-- **Create Demo Production** — Calls `ensureDemoData()`, invalidates `['productions']`, refetches productions, switches current production to demo by slug (`DEMO_SLUG`). Errors shown inline for 5s.
-- **Reset Demo Data** — Calls `resetDemoData()`, invalidates `['productions']`. Does not delete non-demo productions.
-- **Open Demo Production** — Selects the demo production by slug if it exists (`getProductionBySlug(DEMO_SLUG)`).
 - **Verify Cascades** — Calls `verifyCascades()` from demo seed; shows result (ok/message/details) below the buttons.
 - **Test Currency Conversion (Demo)** — Temporarily sets display currency and API to USD/true, fetches GBP→USD rate, logs sample conversions to console, restores previous settings and invalidates `['settings']`.
-
-**Meta:** `DemoSeedMeta` component shows “Last seeded: …” and seed version from `getLastSeededAt()` and `getSeedVersion()` (query keys `['seed-meta', 'last_seeded_at']`, `['seed-meta', 'seed_version']`).
 
 ---
 
@@ -146,7 +153,7 @@ When adding new settings-backed features, use a key pattern like `['settings', k
 
 ### 5.2 Adding a new Developer tools action
 
-1. **Location** — Add a button or control in the Developer tools card in `src/features/settings/page.tsx` (inside the `{import.meta.env.DEV && ( ... )}` block).
+1. **Location** — Add safe user-facing demo controls in the Demo projects card (always visible). Add diagnostics/experimental controls in the Developer tools card in `src/features/settings/page.tsx` (inside the `{import.meta.env.DEV && ( ... )}` block).
 2. **Side effects** — Invalidate the minimal set of query keys (e.g. `['productions']`, `['settings']`) after async actions.
 3. **Styling** — Keep the amber border and “experimental” tone for risky actions; use `Button variant="outline" size="sm"` for consistency with existing Dev tools buttons.
 
@@ -161,7 +168,7 @@ When adding new settings-backed features, use a key pattern like `['settings', k
 - **Slug:** `DEMO_SLUG = 'demo-production-albatross'` in `src/lib/db/seed/constants.ts`. All demo actions target only this slug.
 - **Seed module:** `src/lib/db/seed/demoProductionSeed.ts` — `ensureDemoData()`, `resetDemoData()`, `getLastSeededAt()`, `getSeedVersion()`, `verifyCascades()`.
 - **Reset behavior:** Does not delete user productions; only the demo production and its related data (by id/slug) are removed or reset. User settings (e.g. display currency, conversion API) are not reset (see comment in demo seed).
-- **Cascade verification:** `verifyCascades()` checks FK/cascade behavior; result shown in Developer tools.
+- **Cascade verification:** `verifyCascades()` checks FK/cascade behavior; result shown in Developer tools (dev build only).
 
 ### 5.5 Cost report groups in Settings
 
@@ -183,6 +190,7 @@ When adding new settings-backed features, use a key pattern like `['settings', k
 | Settings repository | `src/lib/db/repositories/settings.ts` |
 | Settings table migration | `src-tauri/migrations/0009_currency_settings_exchange_rates.sql` |
 | Default setting keys | `DEFAULTS` in `settings.ts`: `display_currency`, `enable_currency_conversion_api` |
+| Demo projects visibility | Always visible in Settings |
 | Dev tools visibility | `import.meta.env.DEV` in Settings page |
 | Demo slug | `DEMO_SLUG` in `src/lib/db/seed/constants.ts` |
 | DB perf module | `src/lib/db/perf.ts`; toggle key `enable_db_perf_logging` |
