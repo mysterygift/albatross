@@ -22,8 +22,16 @@ SCHEDULE
 
 NICE TO HAVES:
 Final Draft Import
+Companion mobile app that talks to same database?
 
 BEFORE V1:
 Encrypt Production DB + User Access Management
 Migrate to PostgreSQL, and pressure test multi-user db read/write.
 Check performance on local server. NB to advise users that at this stage we provide no guarantees RE data storage as this is all being stored on your computer just like any other file.
+
+REFACTOR DB –
+Plan new DB structure & research options that best support local and remote access.
+Migrate to PostgreSQL.
+Multiuser support – speak with JM about how he does this for PWAs.
+Examine mobile version of albatross – how can users access their important documents on the go?
+Security.
