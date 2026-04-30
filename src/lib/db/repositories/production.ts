@@ -225,7 +225,6 @@ export async function createProduction(
   data: Pick<Production, 'name' | 'notes'>,
   options?: CreateProductionOptions
 ): Promise<Production> {
-  const db = await getDb()
   const ts = now()
   const currencyCode = (data as { currency_code?: string }).currency_code ?? 'GBP'
   const skipBudgetSeed = options?.skipBudgetSeed === true
@@ -317,7 +316,7 @@ export async function createProduction(
   }
 
   const id = uuid()
-  const { slug } = await withSlugLock(async () => {
+  await withSlugLock(async () => {
     const s = await ensureUniqueSlug(slugify(data.name))
     await runInSerializedTransaction(async () => {
       const batchDb = await getDb()
@@ -347,7 +346,6 @@ export async function createProduction(
         { sql: 'COMMIT', bindValues: [] },
       ])
     })
-    return { slug: s }
   })
   if (!skipBudgetSeed) {
     await seedDefaultBudgetCategories(id)
@@ -401,6 +399,22 @@ export async function updateProduction(
   }
   await outboxPush(TABLE, id, 'update', JSON.stringify(data))
   return (await getProductionById(id))!
+}
+
+/**
+ * Minimal local production row used when opening a project from the server (same UUID as remote).
+ * Does not write to the outbox. Chart of accounts is not seeded — linked mode reads budget from API.
+ */
+export async function insertShellProductionWithId(args: { id: string; name: string }): Promise<Production> {
+  const db = await getDb()
+  const ts = now()
+  const slug = await withSlugLock(async () => ensureUniqueSlug(slugify(args.name)))
+  await db.execute(
+    `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, is_episodic, created_at, updated_at)
+     VALUES ($1, $2, $3, 'GBP', NULL, 0, $4, $5)`,
+    [args.id, args.name, slug, ts, ts],
+  )
+  return (await getProductionById(args.id))!
 }
 
 /** Soft-delete: set deleted_at so the row is hidden from normal queries. */

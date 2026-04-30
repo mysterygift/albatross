@@ -1,4 +1,10 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { getEffectiveDataSourceForProduction, resolveServerPublishContext } from '@/lib/db/projectDataSource'
+import { remoteListBudgetItems, remoteListExpenses } from '@/lib/server/remote/budgetRemote'
+import { serverRuntimeMutate } from '@/lib/server/serverClient'
+import { ServerRequestError } from '@/lib/server/serverErrors'
+import { enqueueServerOutbox } from '@/lib/server/serverOutboxRepository'
+import { updateLinkedProjectState } from '@/lib/server/linkedProjectRepository'
 import { OptimisticConcurrencyConflictError } from '../concurrency'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import { coerceIsoString, coerceNumber } from '../sqlValueCoercion'
@@ -153,6 +159,16 @@ export async function listBudgetItemsByProduction(
   productionId: string,
   options?: { revisionId?: string | null; categoryId?: string }
 ): Promise<BudgetItem[]> {
+  const rctx = await resolveServerPublishContext(productionId)
+  if (rctx && (await getEffectiveDataSourceForProduction(productionId)) === 'remote_server') {
+    const budgetRevisionId = await resolveBudgetRevisionId({
+      productionId,
+      revisionId: options?.revisionId,
+    })
+    const items = await remoteListBudgetItems(rctx, budgetRevisionId)
+    if (options?.categoryId == null) return items
+    return items.filter((it) => it.category_id === options.categoryId)
+  }
   const db = await getDb()
   const budgetRevisionId = await resolveBudgetRevisionId({
     productionId,
@@ -181,12 +197,62 @@ export async function createBudgetItem(data: {
   vendor?: string | null
   status?: string
 }): Promise<BudgetItem> {
-  const db = await getDb()
-  const id = uuid()
-  const ts = now()
   const budgetRevisionId = await resolveBudgetRevisionId({ productionId: data.production_id, revisionId: data.revision_id })
   const categoryId = data.category_id ?? null
   const accountId = data.account_id ?? null
+  const rctx = await resolveServerPublishContext(data.production_id)
+  if (rctx && (await getEffectiveDataSourceForProduction(data.production_id)) === 'remote_server') {
+    const remoteId = uuid()
+    const ts = now()
+    const body = {
+      id: remoteId,
+      production_id: data.production_id,
+      budget_revision_id: budgetRevisionId,
+      category_id: categoryId,
+      account_id: accountId,
+      description: data.description,
+      estimated_cost: data.estimated_cost ?? 0,
+      actual_cost: data.actual_cost ?? 0,
+      vendor: data.vendor ?? null,
+      status: data.status ?? 'draft',
+      line_item_type: null,
+      created_at: ts,
+      updated_at: ts,
+    }
+    try {
+      const row = await serverRuntimeMutate(
+        rctx.baseUrl,
+        rctx.token,
+        rctx.remoteProjectId,
+        'POST',
+        'budget_items',
+        null,
+        body,
+        null,
+      )
+      return rowToItem(row as Record<string, unknown>)
+    } catch (e) {
+        if (e instanceof ServerRequestError && e.kind === 'network') {
+          await updateLinkedProjectState(data.production_id, 'offline')
+          await enqueueServerOutbox({
+            production_id: data.production_id,
+            entity_table: ITEM_TABLE,
+            entity_id: remoteId,
+            operation: 'create',
+            payload_json: JSON.stringify(body),
+            expected_updated_at: null,
+          })
+        }
+      if (e instanceof ServerRequestError && e.kind === 'conflict') {
+        await updateLinkedProjectState(data.production_id, 'conflict', new Date().toISOString())
+      }
+      throw e
+    }
+  }
+
+  const db = await getDb()
+  const id = uuid()
+  const ts = now()
   await db.execute(
     `INSERT INTO ${ITEM_TABLE} (id, production_id, budget_revision_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
@@ -217,6 +283,60 @@ export async function updateBudgetItem(
   options?: { expectedUpdatedAt?: string }
 ): Promise<BudgetItem> {
   const db = await getDb()
+  const metaRows = await db.select<Array<{ production_id: string; updated_at: string }>>(
+    `SELECT production_id, updated_at FROM ${ITEM_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
+    [id],
+  )
+  const meta = metaRows[0]
+  if (meta) {
+    const rctx = await resolveServerPublishContext(meta.production_id)
+    if (rctx && (await getEffectiveDataSourceForProduction(meta.production_id)) === 'remote_server') {
+      const keys = (['description', 'estimated_cost', 'actual_cost', 'vendor', 'status', 'line_item_type'] as const).filter(
+        (k) => data[k] !== undefined,
+      )
+      if (keys.length === 0) {
+        const rows = await db.select<Record<string, unknown>[]>(
+          `SELECT * FROM ${ITEM_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
+          [id],
+        )
+        if (rows.length) return rowToItem(rows[0]!)
+        const list = await listBudgetItemsByProduction(meta.production_id)
+        if (list[0]) return list[0]!
+        throw new Error('Budget item not found')
+      }
+      const patch = Object.fromEntries(keys.map((k) => [k, data[k]]))
+      try {
+        const row = await serverRuntimeMutate(
+          rctx.baseUrl,
+          rctx.token,
+          rctx.remoteProjectId,
+          'PATCH',
+          'budget_items',
+          id,
+          patch,
+          options?.expectedUpdatedAt ?? meta.updated_at,
+        )
+        return rowToItem(row as Record<string, unknown>)
+      } catch (e) {
+        if (e instanceof ServerRequestError && e.kind === 'network') {
+          await updateLinkedProjectState(meta.production_id, 'offline')
+          await enqueueServerOutbox({
+            production_id: meta.production_id,
+            entity_table: ITEM_TABLE,
+            entity_id: id,
+            operation: 'update',
+            payload_json: JSON.stringify(patch),
+            expected_updated_at: options?.expectedUpdatedAt ?? meta.updated_at,
+          })
+        }
+        if (e instanceof ServerRequestError && e.kind === 'conflict') {
+          await updateLinkedProjectState(meta.production_id, 'conflict', new Date().toISOString())
+        }
+        throw e
+      }
+    }
+  }
+
   const ts = now()
   const cols: string[] = []
   const vals: unknown[] = []
@@ -229,7 +349,13 @@ export async function updateBudgetItem(
   }
   if (cols.length === 0) {
     const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${ITEM_TABLE} WHERE id = $1 AND deleted_at IS NULL`, [id])
-    return rows.length ? rowToItem(rows[0]!) : (await listBudgetItemsByProduction(''))[0]!
+    if (rows.length) return rowToItem(rows[0]!)
+    const pid = meta?.production_id
+    if (pid) {
+      const list = await listBudgetItemsByProduction(pid)
+      if (list[0]) return list[0]!
+    }
+    throw new Error('Budget item not found')
   }
   cols.push(`updated_at = $${i++}`)
   vals.push(ts)
@@ -267,6 +393,12 @@ export async function listExpensesByProduction(
   productionId: string,
   categoryId?: string
 ): Promise<Expense[]> {
+  const rctx = await resolveServerPublishContext(productionId)
+  if (rctx && (await getEffectiveDataSourceForProduction(productionId)) === 'remote_server') {
+    const ex = await remoteListExpenses(rctx)
+    if (categoryId == null) return ex
+    return ex.filter((e) => e.category_id === categoryId)
+  }
   const db = await getDb()
   const sql =
     categoryId == null
@@ -284,6 +416,11 @@ export async function listExpensesByVendorId(
   productionId: string,
   vendorId: string
 ): Promise<Expense[]> {
+  const rctx = await resolveServerPublishContext(productionId)
+  if (rctx && (await getEffectiveDataSourceForProduction(productionId)) === 'remote_server') {
+    const ex = await remoteListExpenses(rctx)
+    return ex.filter((e) => e.vendor_id === vendorId)
+  }
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${EXP_TABLE} WHERE production_id = $1 AND vendor_id = $2 AND deleted_at IS NULL ORDER BY date DESC`,
@@ -304,6 +441,56 @@ export async function createExpense(data: {
   notes?: string | null
   expense_type?: Expense['expense_type']
 }): Promise<Expense> {
+  const rctx = await resolveServerPublishContext(data.production_id)
+  if (rctx && (await getEffectiveDataSourceForProduction(data.production_id)) === 'remote_server') {
+    const remoteId = uuid()
+    const ts = now()
+    const body = {
+      id: remoteId,
+      production_id: data.production_id,
+      category_id: data.category_id ?? null,
+      account_id: data.account_id ?? null,
+      transaction_type: data.transaction_type ?? null,
+      vendor_id: data.vendor_id ?? null,
+      amount: data.amount,
+      date: data.date,
+      vendor: data.vendor ?? null,
+      notes: data.notes ?? null,
+      expense_type: data.expense_type ?? 'other',
+      created_at: ts,
+      updated_at: ts,
+    }
+    try {
+      const row = await serverRuntimeMutate(
+        rctx.baseUrl,
+        rctx.token,
+        rctx.remoteProjectId,
+        'POST',
+        'expenses',
+        null,
+        body,
+        null,
+      )
+      return rowToExpense(row as Record<string, unknown>)
+    } catch (e) {
+        if (e instanceof ServerRequestError && e.kind === 'network') {
+          await updateLinkedProjectState(data.production_id, 'offline')
+          await enqueueServerOutbox({
+            production_id: data.production_id,
+            entity_table: EXP_TABLE,
+            entity_id: remoteId,
+            operation: 'create',
+            payload_json: JSON.stringify(body),
+            expected_updated_at: null,
+          })
+        }
+      if (e instanceof ServerRequestError && e.kind === 'conflict') {
+        await updateLinkedProjectState(data.production_id, 'conflict', new Date().toISOString())
+      }
+      throw e
+    }
+  }
+
   const db = await getDb()
   const id = uuid()
   const ts = now()

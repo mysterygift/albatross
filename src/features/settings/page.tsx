@@ -76,6 +76,8 @@ import {
   verifyCascades,
 } from '@/lib/db/seed/demoProductionSeed'
 import { getProductionBySlug } from '@/lib/db/repositories/production'
+import { ServerPublishingSettingsSection } from '@/features/server/ServerPublishingSettingsSection'
+import { ServerCollabDevTools } from '@/features/server/ServerCollabDevTools'
 import { enableEpisodicProduction } from '@/lib/db/episodicProductionService'
 import { getSetting, setSetting, FIRST_LAUNCH_TUTORIAL_SEEN_KEY, setFirstLaunchTutorialSeen } from '@/lib/db/repositories/settings'
 import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
@@ -731,6 +733,8 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          <ServerPublishingSettingsSection />
         </TabsContent>
 
         <TabsContent value="developer_tools" className="space-y-5 mt-5 outline-none">
@@ -995,6 +999,7 @@ export function SettingsPage() {
                 )}
               </p>
             )}
+            <ServerCollabDevTools />
           </CardContent>
         </Card>
       )}

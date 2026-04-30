@@ -71,10 +71,21 @@ import {
   Download,
   Upload,
   Loader2,
+  Cloud,
+  Unlink,
 } from 'lucide-react'
 import type { Production } from '@/lib/db/types'
 import { useCurrentProduction } from './context'
 import { useApfActions } from '@/features/productions/useApfActions'
+import { useServerPublishEnabled } from '@/hooks/useServerPublishEnabled'
+import { usePublishToServerActions } from '@/features/server/usePublishToServerActions'
+import { ConnectServerDialog } from '@/features/server/ConnectServerDialog'
+import { PreflightPublishSheet } from '@/features/server/PreflightPublishSheet'
+import { listAllLinkedProjects, deleteLinkedProject, getLinkedProjectByProductionId } from '@/lib/server/linkedProjectRepository'
+import { getServerConnectionById } from '@/lib/server/serverConnectionRepository'
+import { getSetting } from '@/lib/db/repositories/settings'
+import { serverSessionTokenSettingKey } from '@/lib/server/constants'
+import { serverUnlinkProject } from '@/lib/server/serverClient'
 
 const templateEnum = z.enum(['blank', 'demo', 'default'])
 const editProductionSchema = z.object({
@@ -177,6 +188,20 @@ export function ProductionsPage() {
       setTimeout(() => setActionToast(null), msg.timeoutMs)
     },
   })
+  const featureServer = useServerPublishEnabled()
+  const publishActions = usePublishToServerActions()
+  const [unlinkTarget, setUnlinkTarget] = useState<Production | null>(null)
+  const [unlinkBusy, setUnlinkBusy] = useState(false)
+
+  const { data: linkMap = new Map<string, { link_state: string }>() } = useQuery({
+    queryKey: ['linked-projects-map'],
+    queryFn: async () => {
+      const rows = await listAllLinkedProjects()
+      return new Map(rows.map((r) => [r.production_id, r]))
+    },
+    enabled: featureServer.data === true,
+  })
+
   const { data: productions = [] } = useQuery({
     queryKey: [
       'productions',
@@ -251,6 +276,22 @@ export function ProductionsPage() {
     return () =>
       window.removeEventListener('albatross-open-new-production-dialog', onOpenNewProjectDialog)
   }, [])
+
+  useEffect(() => {
+    const onPublishMenu = () => {
+      if (!currentProduction) {
+        setActionToast({
+          type: 'error',
+          message: 'Choose a current production from the app header before publishing.',
+        })
+        setTimeout(() => setActionToast(null), 5000)
+        return
+      }
+      void publishActions.beginPublish(currentProduction.id, currentProduction.name)
+    }
+    window.addEventListener('albatross-menu-publish-to-server', onPublishMenu)
+    return () => window.removeEventListener('albatross-menu-publish-to-server', onPublishMenu)
+  }, [currentProduction, publishActions])
 
   const createMutation = useMutation({
     mutationFn: (data: NewProductionForm) =>
@@ -429,6 +470,11 @@ export function ProductionsPage() {
               Episodic
             </span>
           )}
+          {featureServer.data && linkMap.get(row.original.id)?.link_state === 'linked' && (
+            <span className="rounded border border-sky-500/35 bg-sky-500/10 px-1.5 py-0.5 text-xs font-medium text-sky-800 dark:text-sky-200">
+              Linked to Server
+            </span>
+          )}
           {row.original.archived_at && (
             <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-400 text-xs font-medium">
               Archived
@@ -475,6 +521,17 @@ export function ProductionsPage() {
                 disabled={!caps.canEdit}
               >
                 <Copy className="size-4" />
+              </Button>
+            )}
+            {featureServer.data && linkMap.get(row.original.id)?.link_state === 'linked' && caps.canAdmin && (
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Unlink from server"
+                onClick={() => setUnlinkTarget(row.original)}
+                className="text-sky-600 hover:text-sky-700 dark:text-sky-400"
+              >
+                <Unlink className="size-4" />
               </Button>
             )}
             {isArchived ? (
@@ -560,6 +617,21 @@ export function ProductionsPage() {
             )}
             <span className="max-[640px]:sr-only">Export project</span>
           </Button>
+          {featureServer.data === true && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!currentProduction || apfBusy !== null || !!currentProduction?.archived_at}
+              onClick={() =>
+                currentProduction &&
+                void publishActions.beginPublish(currentProduction.id, currentProduction.name)
+              }
+              title="Publish current production to collaboration server"
+            >
+              <Cloud className="mr-2 size-4 shrink-0" aria-hidden />
+              <span className="max-[640px]:sr-only">Publish to Server</span>
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -834,6 +906,82 @@ export function ProductionsPage() {
             >
               Cancel
             </button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      <ConnectServerDialog
+        open={publishActions.connectOpen}
+        onOpenChange={publishActions.setConnectOpen}
+        onConnected={() => {
+          if (currentProduction) {
+            void publishActions.beginPublish(currentProduction.id, currentProduction.name)
+          }
+        }}
+      />
+      {publishActions.preflight && (
+        <PreflightPublishSheet
+          open={publishActions.preflightOpen}
+          onOpenChange={(v) => {
+            publishActions.setPreflightOpen(v)
+            if (!v) publishActions.setPreflight(null)
+          }}
+          productionId={publishActions.preflight.productionId}
+          productionName={publishActions.preflight.productionName}
+          connectionId={publishActions.preflight.connectionId}
+          onDone={() => {
+            void queryClient.invalidateQueries({ queryKey: ['linked-projects-map'] })
+          }}
+        />
+      )}
+
+      <Sheet open={!!unlinkTarget} onOpenChange={(o) => !o && setUnlinkTarget(null)}>
+        <SheetContent side="bottom" className="rounded-t-2xl border-t bg-background">
+          <SheetHeader>
+            <SheetTitle>Unlink from server?</SheetTitle>
+            <p className="text-muted-foreground text-sm">
+              This device will stop syncing with the shared project on the server. The remote project remains available for your team.
+            </p>
+          </SheetHeader>
+          <SheetFooter className="flex flex-row gap-2 sm:justify-end">
+            <Button variant="outline" type="button" onClick={() => setUnlinkTarget(null)} disabled={unlinkBusy}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              type="button"
+              disabled={unlinkBusy}
+              onClick={async () => {
+                if (!unlinkTarget) return
+                setUnlinkBusy(true)
+                try {
+                  const lp = await getLinkedProjectByProductionId(unlinkTarget.id)
+                  if (lp) {
+                    const conn = await getServerConnectionById(lp.connection_id)
+                    const token = conn ? await getSetting(serverSessionTokenSettingKey(lp.connection_id)) : null
+                    if (conn && token) {
+                      await serverUnlinkProject(conn.base_url, token, lp.remote_project_id)
+                    }
+                    await deleteLinkedProject(unlinkTarget.id)
+                  }
+                  setUnlinkTarget(null)
+                  await queryClient.invalidateQueries({ queryKey: ['linked-projects-map'] })
+                  await queryClient.invalidateQueries({ queryKey: ['productions'] })
+                  setActionToast({ type: 'success', message: 'Unlinked from server.' })
+                  setTimeout(() => setActionToast(null), 4000)
+                } catch (e) {
+                  setActionToast({
+                    type: 'error',
+                    message: e instanceof Error ? e.message : 'Unlink failed',
+                  })
+                  setTimeout(() => setActionToast(null), 5000)
+                } finally {
+                  setUnlinkBusy(false)
+                }
+              }}
+            >
+              {unlinkBusy ? 'Unlinking…' : 'Unlink'}
+            </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>

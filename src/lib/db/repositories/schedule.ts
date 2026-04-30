@@ -1,4 +1,18 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { getEffectiveDataSourceForProduction, resolveServerPublishContext } from '@/lib/db/projectDataSource'
+import {
+  remoteGetScene,
+  remoteGetShootDay,
+  remoteGetShot,
+  remoteListScenes,
+  remoteListShootDays,
+  remoteListShotsByProduction,
+  remoteListShotsByScene,
+} from '@/lib/server/remote/scheduleRemote'
+import { serverRuntimeMutate } from '@/lib/server/serverClient'
+import { ServerRequestError } from '@/lib/server/serverErrors'
+import { enqueueServerOutbox } from '@/lib/server/serverOutboxRepository'
+import { updateLinkedProjectState } from '@/lib/server/linkedProjectRepository'
 import { OptimisticConcurrencyConflictError } from '../concurrency'
 import {
   outboxPush,
@@ -199,6 +213,10 @@ export async function getNextShootDayForProduction(productionId: string): Promis
 
 // Shoot days. Order by shoot_date (YYYY-MM-DD string) then id for stable order; no Date parsing to avoid UTC edge cases.
 export async function listShootDaysByProduction(productionId: string): Promise<ShootDay[]> {
+  const ctx = await resolveServerPublishContext(productionId)
+  if (ctx && (await getEffectiveDataSourceForProduction(productionId)) === 'remote_server') {
+    return remoteListShootDays(ctx)
+  }
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${DAY_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY shoot_date ASC, id ASC`,
@@ -213,7 +231,15 @@ export async function getShootDayById(id: string): Promise<ShootDay | null> {
     `SELECT * FROM ${DAY_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
     [id]
   )
-  return rows.length ? rowToShootDay(rows[0]!) : null
+  if (rows.length) {
+    const local = rowToShootDay(rows[0]!)
+    const ctx = await resolveServerPublishContext(local.production_id)
+    if (ctx && (await getEffectiveDataSourceForProduction(local.production_id)) === 'remote_server') {
+      return (await remoteGetShootDay(ctx, id)) ?? local
+    }
+    return local
+  }
+  return null
 }
 
 export async function createShootDay(data: {
@@ -989,6 +1015,10 @@ export async function swapShootDays(shootDayIdA: string, shootDayIdB: string): P
 
 // Scenes
 export async function listScenesByProduction(productionId: string): Promise<Scene[]> {
+  const ctx = await resolveServerPublishContext(productionId)
+  if (ctx && (await getEffectiveDataSourceForProduction(productionId)) === 'remote_server') {
+    return remoteListScenes(ctx)
+  }
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${SCENE_TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY scene_number`,
@@ -997,13 +1027,29 @@ export async function listScenesByProduction(productionId: string): Promise<Scen
   return rows.map(rowToScene)
 }
 
-export async function getSceneById(id: string): Promise<Scene | null> {
+export async function getSceneById(id: string, opts?: { productionId?: string }): Promise<Scene | null> {
+  let productionId = opts?.productionId
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${SCENE_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
     [id]
   )
-  return rows.length ? rowToScene(rows[0]!) : null
+  if (rows.length) {
+    const local = rowToScene(rows[0]!)
+    productionId = productionId ?? local.production_id
+    const ctx = productionId ? await resolveServerPublishContext(productionId) : null
+    if (ctx && productionId && (await getEffectiveDataSourceForProduction(productionId)) === 'remote_server') {
+      return (await remoteGetScene(ctx, id)) ?? local
+    }
+    return local
+  }
+  if (productionId) {
+    const ctx = await resolveServerPublishContext(productionId)
+    if (ctx && (await getEffectiveDataSourceForProduction(productionId)) === 'remote_server') {
+      return remoteGetScene(ctx, id)
+    }
+  }
+  return null
 }
 
 export async function createScene(data: {
@@ -1031,6 +1077,59 @@ export async function createScene(data: {
     episodeId = raw
   } else if (data.episode_id != null && String(data.episode_id).trim() !== '') {
     throw new Error('Episode cannot be set for non-episodic productions.')
+  }
+
+  const rctx = await resolveServerPublishContext(data.production_id)
+  if (rctx && (await getEffectiveDataSourceForProduction(data.production_id)) === 'remote_server') {
+    const remoteId = uuid()
+    const ts = now()
+    const body = {
+      id: remoteId,
+      production_id: data.production_id,
+      scene_number: data.scene_number,
+      heading: data.heading ?? null,
+      description: data.description ?? null,
+      title: data.title ?? null,
+      int_ext: data.int_ext ?? null,
+      day_night: data.day_night ?? null,
+      page_eighths: data.page_eighths ?? null,
+      location_id: data.location_id ?? null,
+      duration_minutes: data.duration_minutes ?? null,
+      episode_id: episodeId,
+      created_at: ts,
+      updated_at: ts,
+    }
+    try {
+      const row = await serverRuntimeMutate(
+        rctx.baseUrl,
+        rctx.token,
+        rctx.remoteProjectId,
+        'POST',
+        'scenes',
+        null,
+        body,
+        null,
+      )
+      return rowToScene(row as Record<string, unknown>)
+    } catch (e) {
+      if (e instanceof ServerRequestError) {
+        if (e.kind === 'network') {
+          await updateLinkedProjectState(data.production_id, 'offline')
+          await enqueueServerOutbox({
+            production_id: data.production_id,
+            entity_table: SCENE_TABLE,
+            entity_id: remoteId,
+            operation: 'create',
+            payload_json: JSON.stringify(body),
+            expected_updated_at: null,
+          })
+        }
+        if (e.kind === 'conflict') {
+          await updateLinkedProjectState(data.production_id, 'conflict', new Date().toISOString())
+        }
+      }
+      throw e
+    }
   }
 
   const db = await getDb()
@@ -1096,6 +1195,44 @@ export async function updateScene(
     }
   }
 
+  const rctx = await resolveServerPublishContext(existing.production_id)
+  if (rctx && (await getEffectiveDataSourceForProduction(existing.production_id)) === 'remote_server') {
+    const keys = SCENE_UPDATE_KEYS.filter((k) => data[k] !== undefined)
+    if (keys.length === 0) return existing
+    const patch = Object.fromEntries(keys.map((k) => [k, data[k]]))
+    try {
+      const row = await serverRuntimeMutate(
+        rctx.baseUrl,
+        rctx.token,
+        rctx.remoteProjectId,
+        'PATCH',
+        'scenes',
+        id,
+        patch,
+        options?.expectedUpdatedAt ?? existing.updated_at,
+      )
+      return rowToScene(row as Record<string, unknown>)
+    } catch (e) {
+      if (e instanceof ServerRequestError) {
+        if (e.kind === 'network') {
+          await updateLinkedProjectState(existing.production_id, 'offline')
+          await enqueueServerOutbox({
+            production_id: existing.production_id,
+            entity_table: SCENE_TABLE,
+            entity_id: id,
+            operation: 'update',
+            payload_json: JSON.stringify({ ...patch }),
+            expected_updated_at: options?.expectedUpdatedAt ?? existing.updated_at,
+          })
+        }
+        if (e.kind === 'conflict') {
+          await updateLinkedProjectState(existing.production_id, 'conflict', new Date().toISOString())
+        }
+      }
+      throw e
+    }
+  }
+
   const db = await getDb()
   const ts = now()
   const cols: string[] = []
@@ -1129,6 +1266,47 @@ export async function updateScene(
 }
 
 export async function deleteScene(id: string): Promise<void> {
+  const existing = await getSceneById(id)
+  const rctx = existing ? await resolveServerPublishContext(existing.production_id) : null
+  if (
+    existing &&
+    rctx &&
+    (await getEffectiveDataSourceForProduction(existing.production_id)) === 'remote_server'
+  ) {
+    try {
+      await serverRuntimeMutate(
+        rctx.baseUrl,
+        rctx.token,
+        rctx.remoteProjectId,
+        'DELETE',
+        'scenes',
+        id,
+        null,
+        existing.updated_at,
+      )
+    } catch (e) {
+      if (e instanceof ServerRequestError) {
+        if (e.kind === 'network') {
+          await updateLinkedProjectState(existing.production_id, 'offline')
+          await enqueueServerOutbox({
+            production_id: existing.production_id,
+            entity_table: SCENE_TABLE,
+            entity_id: id,
+            operation: 'delete',
+            payload_json: null,
+            expected_updated_at: existing.updated_at,
+          })
+        }
+        if (e.kind === 'conflict') {
+          await updateLinkedProjectState(existing.production_id, 'conflict', new Date().toISOString())
+        }
+      }
+      throw e
+    }
+    await cleanupStoryboardImagesForDeletedScene(id)
+    return
+  }
+
   const db = await getDb()
   const ts = now()
   await db.execute(
@@ -1176,7 +1354,14 @@ export async function getShotEpisodeContext(shotId: string): Promise<ShotEpisode
 }
 
 // Shots
-export async function listShotsByScene(sceneId: string): Promise<Shot[]> {
+export async function listShotsByScene(sceneId: string, opts?: { productionId?: string }): Promise<Shot[]> {
+  const scene = opts?.productionId
+    ? await getSceneById(sceneId, { productionId: opts.productionId })
+    : await getSceneById(sceneId)
+  const ctx = scene ? await resolveServerPublishContext(scene.production_id) : null
+  if (scene && ctx && (await getEffectiveDataSourceForProduction(scene.production_id)) === 'remote_server') {
+    return remoteListShotsByScene(ctx, sceneId)
+  }
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${SHOT_TABLE} WHERE scene_id = $1 AND deleted_at IS NULL ORDER BY shot_number`,
@@ -1187,6 +1372,10 @@ export async function listShotsByScene(sceneId: string): Promise<Shot[]> {
 
 /** All shots for a production (for Shot List and stripboard unscheduled). */
 export async function listShotsByProduction(productionId: string): Promise<Shot[]> {
+  const rctx = await resolveServerPublishContext(productionId)
+  if (rctx && (await getEffectiveDataSourceForProduction(productionId)) === 'remote_server') {
+    return remoteListShotsByProduction(rctx)
+  }
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT s.* FROM ${SHOT_TABLE} s INNER JOIN ${SCENE_TABLE} sc ON sc.id = s.scene_id AND sc.production_id = $1 AND sc.deleted_at IS NULL WHERE s.deleted_at IS NULL ORDER BY sc.scene_number, s.shot_number`,
@@ -1195,13 +1384,29 @@ export async function listShotsByProduction(productionId: string): Promise<Shot[
   return rows.map(rowToShot)
 }
 
-export async function getShotById(id: string): Promise<Shot | null> {
+export async function getShotById(id: string, opts?: { productionId?: string }): Promise<Shot | null> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${SHOT_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
     [id]
   )
-  return rows.length ? rowToShot(rows[0]!) : null
+  if (rows.length) {
+    const local = rowToShot(rows[0]!)
+    const scene = await getSceneById(local.scene_id, opts?.productionId ? { productionId: opts.productionId } : undefined)
+    const prodId = scene?.production_id ?? opts?.productionId
+    const ctx = prodId ? await resolveServerPublishContext(prodId) : null
+    if (ctx && prodId && (await getEffectiveDataSourceForProduction(prodId)) === 'remote_server') {
+      return (await remoteGetShot(ctx, id)) ?? local
+    }
+    return local
+  }
+  if (opts?.productionId) {
+    const ctx = await resolveServerPublishContext(opts.productionId)
+    if (ctx && (await getEffectiveDataSourceForProduction(opts.productionId)) === 'remote_server') {
+      return remoteGetShot(ctx, id)
+    }
+  }
+  return null
 }
 
 /** Per-shot estimated minutes (shot.estimated_shoot_minutes). Used for stripboard day totals. */

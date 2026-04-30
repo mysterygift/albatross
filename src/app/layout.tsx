@@ -14,6 +14,7 @@ import { TutorialEntryModal } from '@/features/tutorial/TutorialEntryModal'
 import { ensureAndOpenDemoProductionForTutorial } from '@/features/tutorial/ensureAndOpenDemoProductionForTutorial'
 import { ApfDesktopOpenBridge } from '@/features/productions/ApfDesktopOpenBridge'
 import { ApfMenuEventBridge } from '@/features/productions/ApfMenuEventBridge'
+import { ServerCollabBanner } from '@/features/server/ServerCollabBanner'
 import { useCurrentProduction } from '@/features/productions/context'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
 import { Button } from '@/components/ui/button'
@@ -266,6 +267,7 @@ function AppLayoutShell() {
       <AppSidebar />
       <SidebarInset>
         <TopBar onOpenTutorial={handleOpenTutorialFromHelp} />
+        <ServerCollabBanner />
         <main className="flex-1 overflow-auto p-4">
           <Outlet />
         </main>

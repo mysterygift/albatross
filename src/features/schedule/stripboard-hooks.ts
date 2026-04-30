@@ -57,6 +57,8 @@ import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import { listShootDayUnitsByProduction, setShootDayUnitLocked } from '@/lib/db/repositories/shoot-day-units'
 import { ensureMainUnit } from '@/lib/db/repositories/units'
 import { getCastIdsByShotIds } from '@/lib/db/repositories/shot-cast'
+import { getEffectiveDataSourceForProduction, tanstackDataSourceKey } from '@/lib/db/projectDataSource'
+import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
 
 export const stripboardQueryKeys = {
   all: ['stripboard'] as const,
@@ -88,9 +90,14 @@ export const boneyardStripsQueryKeys = {
 export function useStripboard(productionId: string | null) {
   const queryClient = useQueryClient()
   const authSession = useAuthSession()
+  const { dataSourceKey } = useEffectiveDataSourceForProduction(productionId)
+  const dsPrefix = useMemo(
+    () => tanstackDataSourceKey(productionId, dataSourceKey),
+    [productionId, dataSourceKey],
+  )
 
   const unitsQuery = useQuery({
-    queryKey: stripboardQueryKeys.units(productionId ?? ''),
+    queryKey: [...dsPrefix, ...stripboardQueryKeys.units(productionId ?? '')],
     queryFn: async () => {
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
@@ -104,7 +111,7 @@ export function useStripboard(productionId: string | null) {
   })
 
   const shootDaysQuery = useQuery({
-    queryKey: stripboardQueryKeys.shootDays(productionId ?? ''),
+    queryKey: [...dsPrefix, ...stripboardQueryKeys.shootDays(productionId ?? '')],
     queryFn: async () => {
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
@@ -116,7 +123,7 @@ export function useStripboard(productionId: string | null) {
   })
 
   const dayUnitsQuery = useQuery({
-    queryKey: stripboardQueryKeys.dayUnits(productionId ?? ''),
+    queryKey: [...dsPrefix, ...stripboardQueryKeys.dayUnits(productionId ?? '')],
     queryFn: async () => {
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
@@ -128,7 +135,7 @@ export function useStripboard(productionId: string | null) {
   })
 
   const stripsQuery = useQuery({
-    queryKey: stripboardQueryKeys.strips(productionId ?? ''),
+    queryKey: [...dsPrefix, ...stripboardQueryKeys.strips(productionId ?? '')],
     queryFn: async () => {
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
@@ -140,7 +147,7 @@ export function useStripboard(productionId: string | null) {
   })
 
   const scenesQuery = useQuery({
-    queryKey: stripboardQueryKeys.scenes(productionId ?? ''),
+    queryKey: [...dsPrefix, ...stripboardQueryKeys.scenes(productionId ?? '')],
     queryFn: async () => {
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
@@ -152,7 +159,7 @@ export function useStripboard(productionId: string | null) {
   })
 
   const shotsQuery = useQuery({
-    queryKey: ['shots', productionId ?? ''],
+    queryKey: [...dsPrefix, 'shots', productionId ?? ''],
     queryFn: async () => {
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
@@ -175,7 +182,7 @@ export function useStripboard(productionId: string | null) {
   }, [shotIdsFromStrips])
 
   const estimatedMinutesQuery = useQuery({
-    queryKey: [...stripboardQueryKeys.estimatedMinutes(productionId ?? ''), shotIdsSortedForQueries],
+    queryKey: [...dsPrefix, ...stripboardQueryKeys.estimatedMinutes(productionId ?? ''), shotIdsSortedForQueries],
     queryFn: async () => {
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
@@ -192,7 +199,7 @@ export function useStripboard(productionId: string | null) {
   })
 
   const shotCastIdsQuery = useQuery({
-    queryKey: [...stripboardQueryKeys.all, productionId ?? '', 'shot-cast-by-shot', shotIdsSortedForQueries],
+    queryKey: [...dsPrefix, ...stripboardQueryKeys.all, productionId ?? '', 'shot-cast-by-shot', shotIdsSortedForQueries],
     queryFn: async () => {
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
@@ -248,12 +255,16 @@ export function useStripboard(productionId: string | null) {
   }, [strips])
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: stripboardQueryKeys.all })
-    queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
-    queryClient.invalidateQueries({ queryKey: ['shoot-days'] })
-    queryClient.invalidateQueries({ queryKey: unscheduledShotsQueryKeys.all })
-    queryClient.invalidateQueries({ queryKey: boneyardStripsQueryKeys.all })
-    queryClient.invalidateQueries({ queryKey: ['shots'] })
+    void (async () => {
+      const source = productionId ? await getEffectiveDataSourceForProduction(productionId) : 'local_sqlite'
+      const prefix = tanstackDataSourceKey(productionId, source)
+      await queryClient.invalidateQueries({ queryKey: [...prefix, ...stripboardQueryKeys.all] })
+      await queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
+      await queryClient.invalidateQueries({ queryKey: ['shoot-days'] })
+      await queryClient.invalidateQueries({ queryKey: [...prefix, ...unscheduledShotsQueryKeys.all] })
+      await queryClient.invalidateQueries({ queryKey: [...prefix, ...boneyardStripsQueryKeys.all] })
+      await queryClient.invalidateQueries({ queryKey: [...prefix, 'shots'] })
+    })()
   }
 
   const setLockedMutation = useMutation({
@@ -432,8 +443,13 @@ export function useUnscheduledShots(
 ) {
   const queryClient = useQueryClient()
   const authSession = useAuthSession()
+  const { dataSourceKey } = useEffectiveDataSourceForProduction(productionId)
+  const dsPrefix = useMemo(
+    () => tanstackDataSourceKey(productionId, dataSourceKey),
+    [productionId, dataSourceKey],
+  )
   const query = useQuery({
-    queryKey: unscheduledShotsQueryKeys.list(productionId, filters),
+    queryKey: [...dsPrefix, ...unscheduledShotsQueryKeys.list(productionId, filters)],
     queryFn: async () => {
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
@@ -471,11 +487,14 @@ export function useUnscheduledShots(
             })
           )
         : bulkAssignShotsToDay(productionId!, shotIds, shootDayId, shootDayUnitId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: stripboardQueryKeys.all })
-      queryClient.invalidateQueries({ queryKey: unscheduledShotsQueryKeys.all })
-      queryClient.invalidateQueries({ queryKey: boneyardStripsQueryKeys.all })
-      queryClient.invalidateQueries({ queryKey: ['shots'] })
+    onSuccess: async () => {
+      if (!productionId) return
+      const source = await getEffectiveDataSourceForProduction(productionId)
+      const prefix = tanstackDataSourceKey(productionId, source)
+      await queryClient.invalidateQueries({ queryKey: [...prefix, ...stripboardQueryKeys.all] })
+      await queryClient.invalidateQueries({ queryKey: [...prefix, ...unscheduledShotsQueryKeys.all] })
+      await queryClient.invalidateQueries({ queryKey: [...prefix, ...boneyardStripsQueryKeys.all] })
+      await queryClient.invalidateQueries({ queryKey: [...prefix, 'shots'] })
     },
   })
 
@@ -489,8 +508,13 @@ export function useUnscheduledShots(
 
 export function useBoneyardStrips(productionId: string | null) {
   const authSession = useAuthSession()
+  const { dataSourceKey } = useEffectiveDataSourceForProduction(productionId)
+  const dsPrefix = useMemo(
+    () => tanstackDataSourceKey(productionId, dataSourceKey),
+    [productionId, dataSourceKey],
+  )
   const query = useQuery({
-    queryKey: boneyardStripsQueryKeys.list(productionId ?? ''),
+    queryKey: [...dsPrefix, ...boneyardStripsQueryKeys.list(productionId ?? '')],
     queryFn: async () => {
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()

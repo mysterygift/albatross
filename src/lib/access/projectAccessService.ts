@@ -21,6 +21,7 @@ import {
   duplicateProduction,
   permanentlyDeleteProduction,
 } from '@/lib/db/repositories/production'
+import type { Production } from '@/lib/db/types'
 
 type ProductionRow = {
   id: string
@@ -35,6 +36,23 @@ type ProductionRow = {
   created_at: string
   updated_at: string
   deleted_at: string | null
+}
+
+function productionRowToProduction(r: ProductionRow): Production {
+  return {
+    id: r.id,
+    name: r.name,
+    slug: r.slug ?? `prod-${r.id}`,
+    currency_code: r.currency_code,
+    notes: r.notes,
+    is_episodic: r.is_episodic,
+    wrapped_at: r.wrapped_at,
+    archived_at: r.archived_at,
+    created_from_template: r.created_from_template,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    deleted_at: r.deleted_at,
+  }
 }
 
 function nowIso(): string {
@@ -171,19 +189,23 @@ export async function listVisibleProjectsForActor(
   db: DatabaseAdapter,
   actor: AuthenticatedUser,
   options?: { includeArchived?: boolean }
-): Promise<ProductionRow[]> {
+): Promise<Production[]> {
   const role = await assertActorEnabled(db, actor)
   const includeArchived = options?.includeArchived === true
   if (role === 'admin') {
     const where = includeArchived
       ? 'deleted_at IS NULL'
       : 'deleted_at IS NULL AND archived_at IS NULL'
-    return db.select<ProductionRow[]>(`SELECT * FROM productions WHERE ${where} ORDER BY archived_at IS NOT NULL, name`, [])
+    const rows = await db.select<ProductionRow[]>(
+      `SELECT * FROM productions WHERE ${where} ORDER BY archived_at IS NOT NULL, name`,
+      [],
+    )
+    return rows.map(productionRowToProduction)
   }
   const where = includeArchived
     ? 'p.deleted_at IS NULL'
     : 'p.deleted_at IS NULL AND p.archived_at IS NULL'
-  return db.select<ProductionRow[]>(
+  const rows = await db.select<ProductionRow[]>(
     `SELECT p.*
      FROM productions p
      INNER JOIN project_memberships pm
@@ -192,15 +214,16 @@ export async function listVisibleProjectsForActor(
       AND pm.revoked_at IS NULL
      WHERE ${where}
      ORDER BY p.archived_at IS NOT NULL, p.name`,
-    [actor.id]
+    [actor.id],
   )
+  return rows.map(productionRowToProduction)
 }
 
 export async function getProjectForActor(
   db: DatabaseAdapter,
   actor: AuthenticatedUser,
   productionId: string
-): Promise<ProductionRow | null> {
+): Promise<Production | null> {
   const project = await getProductionByIdRow(db, productionId)
   if (!project) return null
   try {
@@ -208,7 +231,7 @@ export async function getProjectForActor(
   } catch {
     return null
   }
-  return project
+  return productionRowToProduction(project)
 }
 
 export async function assertCanEditProject(

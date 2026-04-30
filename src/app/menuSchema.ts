@@ -16,6 +16,7 @@ export const globalMenuCommands: MenuCommandSpec[] = [
   { id: 'new_project', accelerator: 'CmdOrCtrl+N' },
   { id: 'import_project', accelerator: 'CmdOrCtrl+O' },
   { id: 'export_project', accelerator: 'CmdOrCtrl+Shift+E' },
+  { id: 'publish_to_server' },
   { id: 'file_logout' },
   { id: 'app_settings', accelerator: 'CmdOrCtrl+,' },
   { id: 'view_go_dashboard', accelerator: 'CmdOrCtrl+1' },

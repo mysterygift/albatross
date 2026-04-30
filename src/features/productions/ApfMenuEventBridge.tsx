@@ -69,6 +69,7 @@ export function ApfMenuEventBridge() {
     let unlistenOpenSettings: (() => void) | undefined
     let unlistenLogout: (() => void) | undefined
     let unlistenDuplicateLiveAsDraft: (() => void) | undefined
+    let unlistenPublishToServer: (() => void) | undefined
     const unlistenCommands: Array<() => void> = []
     const pendingUnlisten: Array<() => void> = []
     let onBrowserDuplicateLiveAsDraft: ((event: Event) => void) | undefined
@@ -134,6 +135,12 @@ export function ApfMenuEventBridge() {
         })
         unlistenDuplicateLiveAsDraft = await registerListener('albatross-menu-duplicate-live-as-draft', async () => {
           await runDuplicateAction()
+        })
+        unlistenPublishToServer = await registerListener('albatross-menu-publish-to-server', () => {
+          navigate('/productions')
+          window.requestAnimationFrame(() => {
+            window.dispatchEvent(new Event('albatross-menu-publish-to-server'))
+          })
         })
 
         const bindNavigateCommand = async (eventName: string, to: string) => {
@@ -245,6 +252,7 @@ export function ApfMenuEventBridge() {
       unlistenOpenSettings?.()
       unlistenLogout?.()
       unlistenDuplicateLiveAsDraft?.()
+      unlistenPublishToServer?.()
       unlistenCommands.forEach((u) => u())
       pendingUnlisten.forEach((u) => u())
       if (onBrowserDuplicateLiveAsDraft) {

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { BaseDirectory, readFile } from '@tauri-apps/plugin-fs'
 
 import type { PublishAssetManifestEntry } from '@/lib/publish/types'
@@ -12,8 +11,9 @@ function sanitizeName(name: string): string {
   return name.trim().replace(/[^\w.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'file'
 }
 
-function hashBytes(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex')
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource)
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 export async function collectPublishAssets(params: {
@@ -43,7 +43,7 @@ export async function collectPublishAssets(params: {
         sourceRowId: rowId,
         fileName,
         archivePath,
-        sha256: hashBytes(bytes),
+        sha256: await sha256Hex(bytes),
         sizeBytes: bytes.byteLength,
       })
     } catch {
@@ -67,7 +67,7 @@ export async function collectPublishAssets(params: {
         sourceRowId: rowId,
         fileName,
         archivePath,
-        sha256: hashBytes(bytes),
+        sha256: await sha256Hex(bytes),
         sizeBytes: bytes.byteLength,
       })
     } catch {

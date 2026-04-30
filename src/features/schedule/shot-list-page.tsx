@@ -382,7 +382,10 @@ export function ShotListPage() {
           sceneId: selectedSceneId,
         })
       }
-      return listShotsByScene(selectedSceneId)
+      return listShotsByScene(
+        selectedSceneId,
+        currentProductionId ? { productionId: currentProductionId } : undefined,
+      )
     },
     enabled: !!selectedSceneId,
   })

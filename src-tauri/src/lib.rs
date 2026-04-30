@@ -85,6 +85,9 @@ fn rebuild_menu(
         .accelerator("CmdOrCtrl+Shift+E")
         .build(app)
         .map_err(|err| err.to_string())?;
+    let publish_server_item = MenuItemBuilder::with_id("publish_to_server", "Publish to Server…")
+        .build(app)
+        .map_err(|err| err.to_string())?;
     let new_project_item = MenuItemBuilder::with_id("new_project", "New Project...")
         .accelerator("CmdOrCtrl+N")
         .build(app)
@@ -126,6 +129,7 @@ fn rebuild_menu(
         .separator()
         .item(&import_item)
         .item(&export_item)
+        .item(&publish_server_item)
         .separator()
         .item(&open_recent_menu)
         .separator()
@@ -813,6 +817,12 @@ pub fn run() {
             sql: include_str!("../migrations/0066_project_memberships.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 67,
+            description: "server_collab",
+            sql: include_str!("../migrations/0067_server_collab.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
@@ -862,6 +872,9 @@ pub fn run() {
                 }
                 "export_project" => {
                     let _ = app_handle.emit("albatross-menu-export-project", ());
+                }
+                "publish_to_server" => {
+                    let _ = app_handle.emit("albatross-menu-publish-to-server", ());
                 }
                 "new_project" => {
                     let _ = app_handle.emit("albatross-menu-new-project", ());

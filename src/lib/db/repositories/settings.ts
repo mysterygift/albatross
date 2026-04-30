@@ -9,6 +9,8 @@ const DEFAULTS: Record<string, string> = {
   display_currency: 'GBP',
   enable_currency_conversion_api: 'true',
   enable_api_call_tracking: 'false',
+  /** When true, shows Server publishing (Beta) and related flows. */
+  feature_server_publish_enabled: 'false',
 }
 
 export const FIRST_LAUNCH_TUTORIAL_SEEN_KEY = 'first_launch_tutorial_seen'
