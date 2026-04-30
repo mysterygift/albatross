@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { completeAndArchiveProductionForActor, getActorProductionActionCaps } from '@/lib/access/projectAccessService'
+import { getDb } from '@/lib/db/client'
 import { completeAndArchiveProduction } from '@/lib/db/repositories/production'
 import { useCurrency } from '@/hooks/useCurrency'
 import { listBudgetItemsByProduction, listExpensesByProduction } from '@/lib/db/repositories/budget'
@@ -147,6 +150,7 @@ function DeliverableWrapStatusBadge({ status }: { status: DeliverableWrapStatus 
 export function WrapProductionPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const authSession = useAuthSession()
   const { currentProduction, currentProductionId, setCurrentProductionId } = useCurrentProduction()
   const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
   const revisionId = workingBudgetRevision?.id
@@ -298,8 +302,36 @@ export function WrapProductionPage() {
   const floatUnreturnedCurrency =
     wrapFloatReminders.reminders[0]?.currency ?? productionCurrency
 
+  const wrapCompleteCapsQuery = useQuery({
+    queryKey: ['wrap-complete-caps', currentProductionId, authSession.currentUser?.id],
+    enabled: Boolean(currentProductionId && authSession.authSupported && authSession.currentUser),
+    queryFn: async () => {
+      const db = await getDb()
+      return getActorProductionActionCaps(db, authSession.currentUser!, currentProductionId!)
+    },
+  })
+
+  const canCompleteArchiveAsProjectAdmin =
+    !authSession.authSupported || !authSession.currentUser
+      ? true
+      : (wrapCompleteCapsQuery.data?.canAdmin ?? false)
+  const wrapCompleteCapsLoading =
+    Boolean(
+      currentProductionId &&
+        authSession.authSupported &&
+        authSession.currentUser &&
+        wrapCompleteCapsQuery.isFetching
+    )
+
   const completeAndArchiveMutation = useMutation({
-    mutationFn: (productionId: string) => completeAndArchiveProduction(productionId),
+    mutationFn: async (productionId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        await completeAndArchiveProductionForActor(db, authSession.currentUser, productionId)
+        return
+      }
+      await completeAndArchiveProduction(productionId)
+    },
     onSuccess: () => {
       setCurrentProductionId(null)
       queryClient.invalidateQueries({ queryKey: ['productions'] })
@@ -859,7 +891,12 @@ export function WrapProductionPage() {
           <Button
             variant="destructive"
             size="lg"
-            disabled={!currentProductionId || completeAndArchiveMutation.isPending}
+            disabled={
+              !currentProductionId ||
+              completeAndArchiveMutation.isPending ||
+              wrapCompleteCapsLoading ||
+              !canCompleteArchiveAsProjectAdmin
+            }
             onClick={() => setConfirmOpen(true)}
           >
             {completeAndArchiveMutation.isPending ? (
@@ -875,6 +912,16 @@ export function WrapProductionPage() {
             Resolve or review outstanding budget, petty cash floats, schedule, and deliverables checks
             before completing this production.
           </p>
+          {authSession.authSupported &&
+            authSession.currentUser &&
+            !wrapCompleteCapsLoading &&
+            wrapCompleteCapsQuery.data &&
+            !wrapCompleteCapsQuery.data.canAdmin && (
+              <p className="text-muted-foreground text-sm">
+                Only a project <strong>administrator</strong> (or an instance admin) can complete and archive this
+                production.
+              </p>
+            )}
         </div>
       </footer>
 
@@ -994,7 +1041,12 @@ export function WrapProductionPage() {
             <Button
               variant="destructive"
               onClick={() => currentProductionId && completeAndArchiveMutation.mutate(currentProductionId)}
-              disabled={!currentProductionId || completeAndArchiveMutation.isPending}
+              disabled={
+                !currentProductionId ||
+                completeAndArchiveMutation.isPending ||
+                wrapCompleteCapsLoading ||
+                !canCompleteArchiveAsProjectAdmin
+              }
             >
               {completeAndArchiveMutation.isPending ? (
                 <>

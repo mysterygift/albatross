@@ -21,6 +21,15 @@ import {
 import { useCurrentProduction } from '@/features/productions/context'
 import { useStripboard, stripboardQueryKeys, useUnscheduledShots, useBoneyardStrips } from './stripboard-hooks'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
+import {
+  createShootDayWithDefaultMainUnitForActor,
+  getOrCreateShootDayUnitForActor,
+  listEpisodesByProductionForActor,
+  listLocationsByProductionForActor,
+  listShootingBlocsByProductionForActor,
+} from '@/lib/access/projectDomainService'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { getOrCreateShootDayUnit } from '@/lib/db/repositories/shoot-day-units'
 import { SORT_GAP, type CreateStripData } from '@/lib/db/repositories/stripboard-strips'
@@ -246,6 +255,7 @@ function AddStripPopover({
 
 export function StripboardPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
+  const authSession = useAuthSession()
   const queryClient = useQueryClient()
   const isEpisodicProduction = currentProduction?.is_episodic === true
 
@@ -278,19 +288,38 @@ export function StripboardPage() {
 
   const { data: locations = [] } = useQuery({
     queryKey: ['locations', currentProductionId],
-    queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listLocationsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listLocationsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: shootingBlocs = [] } = useQuery({
     queryKey: ['shooting-blocs', currentProductionId],
-    queryFn: () => listShootingBlocsByProduction(currentProductionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootingBlocsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listShootingBlocsByProduction(currentProductionId!)
+    },
     enabled: !!currentProductionId && isEpisodicProduction,
   })
 
   const { data: episodes = [] } = useQuery({
     queryKey: ['episodes', currentProductionId],
-    queryFn: () => listEpisodesByProduction(currentProductionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listEpisodesByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listEpisodesByProduction(currentProductionId!)
+    },
     enabled: !!currentProductionId && isEpisodicProduction,
   })
 
@@ -348,10 +377,15 @@ export function StripboardPage() {
         throw new Error('Shoot date is required')
       }
       setNewDayError(null)
-      return createShootDayWithDefaultMainUnit({
-        productionId: currentProductionId,
-        shootDate,
-      })
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return createShootDayWithDefaultMainUnitForActor({
+          db,
+          actor: authSession.currentUser,
+          data: { productionId: currentProductionId, shootDate },
+        })
+      }
+      return createShootDayWithDefaultMainUnit({ productionId: currentProductionId, shootDate })
     },
     onSuccess: (result) => {
       setNewDayOpen(false)
@@ -380,13 +414,18 @@ export function StripboardPage() {
     const run = async () => {
       for (const day of shootDays) {
         if (cancelled) return
-        await getOrCreateShootDayUnit(day.id, mainUnit.id)
+        if (authSession.authSupported && authSession.currentUser) {
+          const db = await getDb()
+          await getOrCreateShootDayUnitForActor({ db, actor: authSession.currentUser, shootDayId: day.id, unitId: mainUnit.id })
+        } else {
+          await getOrCreateShootDayUnit(day.id, mainUnit.id)
+        }
       }
       if (!cancelled) queryClient.invalidateQueries({ queryKey: stripboardQueryKeys.all })
     }
     run()
     return () => { cancelled = true }
-  }, [currentProductionId, mainUnit?.id, shootDays.length, queryClient])
+  }, [authSession.authSupported, authSession.currentUser, currentProductionId, mainUnit?.id, shootDays.length, queryClient])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),

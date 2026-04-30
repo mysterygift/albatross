@@ -1,6 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
+import {
+  getCastIdsBySceneIdsForActor,
+  getScheduledSceneIdsByShootDayForActor,
+  listAvailabilityByProductionForActor,
+  listCastForActor,
+  listShootDaysByProductionForActor,
+} from '@/lib/access/projectDomainService'
 import { listCast } from '@/lib/db/repositories/person'
 import { listShootDaysByProduction } from '@/lib/db/repositories/schedule'
 import { getScheduledSceneIdsByShootDay } from '@/lib/db/repositories/stripboard-strips'
@@ -44,24 +53,46 @@ interface DoodRow {
 
 export function DayOutOfDaysPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
+  const authSession = useAuthSession()
   const [search, setSearch] = useState('')
   const [onlyWithClashes, setOnlyWithClashes] = useState(false)
 
   const { data: cast = [] } = useQuery({
     queryKey: ['cast', currentProductionId],
-    queryFn: () => listCast(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCastForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listCast(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: shootDays = [] } = useQuery({
     queryKey: ['shoot-days', currentProductionId],
-    queryFn: () => listShootDaysByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDaysByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listShootDaysByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: sceneIdsByDay = new Map<string, string[]>() } = useQuery({
     queryKey: ['dood-scenes-by-day', currentProductionId],
-    queryFn: () => getScheduledSceneIdsByShootDay(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return new Map<string, string[]>()
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getScheduledSceneIdsByShootDayForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return getScheduledSceneIdsByShootDay(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -75,13 +106,31 @@ export function DayOutOfDaysPage() {
 
   const { data: castBySceneId = new Map<string, string[]>() } = useQuery({
     queryKey: ['cast-by-scene', allSceneIds.join(',')],
-    queryFn: () => getCastIdsBySceneIds(allSceneIds),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser && currentProductionId) {
+        const db = await getDb()
+        return getCastIdsBySceneIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          sceneIds: allSceneIds,
+        })
+      }
+      return getCastIdsBySceneIds(allSceneIds)
+    },
     enabled: allSceneIds.length > 0,
   })
 
   const { data: availabilityList = [] } = useQuery({
     queryKey: ['cast-availability', currentProductionId],
-    queryFn: () => listAvailabilityByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listAvailabilityByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listAvailabilityByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 

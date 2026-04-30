@@ -9,6 +9,7 @@ import { seedDefaultBudgetCategories } from './budget'
 import { listAccounts, seedDefaultBudgetAccounts } from './budgetAccounts'
 import { createContingencyRule } from './budgetDerived'
 import { listDocumentsByProduction } from './document'
+import { projectMembershipInsertStatement } from './projectMemberships'
 
 const ATTACHMENTS_PREFIX = 'attachments/'
 
@@ -216,6 +217,8 @@ export type CreateProductionOptions = {
    * When non-empty after trim, inserts production with `is_episodic = 1` and first episode in one transaction.
    */
   episodicInitialEpisodeName?: string
+  /** Optional: grant creator project administrator membership at create time. */
+  creatorUserId?: string
 }
 
 export async function createProduction(
@@ -227,6 +230,7 @@ export async function createProduction(
   const currencyCode = (data as { currency_code?: string }).currency_code ?? 'GBP'
   const skipBudgetSeed = options?.skipBudgetSeed === true
   const rawEpisodic = options?.episodicInitialEpisodeName
+  const creatorUserId = options?.creatorUserId
   const episodicName = rawEpisodic !== undefined ? rawEpisodic.trim() : ''
   const asEpisodic = rawEpisodic !== undefined && episodicName.length > 0
 
@@ -253,6 +257,17 @@ export async function createProduction(
           sql: `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7)`,
           bindValues: [id, data.name, slug, currencyCode, data.notes ?? null, ts, ts],
         },
+        ...(creatorUserId
+          ? [
+              projectMembershipInsertStatement({
+                id: uuid(),
+                productionId: id,
+                userId: creatorUserId,
+                accessLevel: 'administrator',
+                ts,
+              }),
+            ]
+          : []),
         epStmt,
         outboxStatementForRow({
           entity: TABLE,
@@ -304,13 +319,36 @@ export async function createProduction(
   const id = uuid()
   const { slug } = await withSlugLock(async () => {
     const s = await ensureUniqueSlug(slugify(data.name))
-    await db.execute(
-      `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [id, data.name, s, currencyCode, data.notes ?? null, ts, ts]
-    )
+    await runInSerializedTransaction(async () => {
+      const batchDb = await getDb()
+      await executeBatch(batchDb, [
+        { sql: 'BEGIN', bindValues: [] },
+        {
+          sql: `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          bindValues: [id, data.name, s, currencyCode, data.notes ?? null, ts, ts],
+        },
+        ...(creatorUserId
+          ? [
+              projectMembershipInsertStatement({
+                id: uuid(),
+                productionId: id,
+                userId: creatorUserId,
+                accessLevel: 'administrator',
+                ts,
+              }),
+            ]
+          : []),
+        outboxStatementForRow({
+          entity: TABLE,
+          entityId: id,
+          operation: 'create',
+          payloadJson: JSON.stringify({ ...data, slug: s, id, created_at: ts, updated_at: ts }),
+        }),
+        { sql: 'COMMIT', bindValues: [] },
+      ])
+    })
     return { slug: s }
   })
-  await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, slug, id, created_at: ts, updated_at: ts }))
   if (!skipBudgetSeed) {
     await seedDefaultBudgetCategories(id)
     await seedDefaultBudgetAccounts(id)

@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, Navigate } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
 import { getPersonById, updatePerson } from '@/lib/db/repositories/person'
 import { listCrew } from '@/lib/db/repositories/person'
 import { listBookingsByPerson } from '@/lib/db/repositories/booking'
@@ -24,6 +26,16 @@ import {
   getHodResponsibilitySummary,
   getTaskSummaryForCrewDepartment,
 } from '@/lib/people/crewTaskIntegration'
+import {
+  getPersonByIdForActor,
+  listBookingsByPersonForActor,
+  listCrewForActor,
+  listShootDaysByProductionForActor,
+  listShootDayUnitsByProductionForActor,
+  listTasksByProductionForActor,
+  listUnitsByProductionForActor,
+  updatePersonForActor,
+} from '@/lib/access/projectDomainService'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -52,24 +64,57 @@ const defaultCrewHierarchy = getDefaultCrewHierarchyConfig()
 export function CrewDetailPage() {
   const { personId } = useParams<{ personId: string }>()
   const { currentProductionId } = useCurrentProduction()
+  const authSession = useAuthSession()
   const queryClient = useQueryClient()
   const [editOpen, setEditOpen] = useState(false)
 
   const { data: person, isLoading: personLoading } = useQuery({
     queryKey: ['person', personId],
-    queryFn: () => getPersonById(personId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getPersonByIdForActor({
+          db,
+          actor: authSession.currentUser,
+          personId: personId!,
+        })
+      }
+      return getPersonById(personId!)
+    },
     enabled: !!personId,
   })
 
   const { data: crew = [] } = useQuery({
     queryKey: ['crew', currentProductionId],
-    queryFn: () => listCrew(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCrewForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listCrew(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: tasks = [] } = useQuery({
     queryKey: ['tasks', currentProductionId],
-    queryFn: () => listTasksByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listTasksByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listTasksByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -81,25 +126,68 @@ export function CrewDetailPage() {
 
   const { data: bookings = [] } = useQuery({
     queryKey: ['bookings-by-person', personId],
-    queryFn: () => listBookingsByPerson(personId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listBookingsByPersonForActor({
+          db,
+          actor: authSession.currentUser,
+          personId: personId!,
+        })
+      }
+      return listBookingsByPerson(personId!)
+    },
     enabled: !!personId,
   })
 
   const { data: shootDays = [] } = useQuery({
     queryKey: ['shoot-days', currentProductionId],
-    queryFn: () => listShootDaysByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDaysByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listShootDaysByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: shootDayUnits = [] } = useQuery({
     queryKey: ['shoot-day-units', currentProductionId],
-    queryFn: () => listShootDayUnitsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDayUnitsByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listShootDayUnitsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: units = [] } = useQuery({
     queryKey: ['units', currentProductionId],
-    queryFn: () => listUnitsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listUnitsByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listUnitsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -182,8 +270,8 @@ export function CrewDetailPage() {
   }, [bookingsEnriched])
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: CrewFormValues }) =>
-      updatePerson(id, {
+    mutationFn: async ({ id, data }: { id: string; data: CrewFormValues }) => {
+      const payload = {
         name: data.name.trim(),
         department: data.department?.trim() ?? null,
         role_name: data.role_name?.trim() ?? null,
@@ -191,7 +279,18 @@ export function CrewDetailPage() {
         phone: data.phone?.trim() || null,
         phases: data.phases?.trim() || null,
         notes: data.notes?.trim() || null,
-      }),
+      }
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return updatePersonForActor({
+          db,
+          actor: authSession.currentUser,
+          personId: id,
+          data: payload,
+        })
+      }
+      return updatePerson(id, payload)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['person', personId] })
       queryClient.invalidateQueries({ queryKey: ['crew', currentProductionId] })

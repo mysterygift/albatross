@@ -1,7 +1,11 @@
 import { readFile } from 'node:fs/promises'
 
+import type { AuthenticatedUser } from '@/lib/auth/authService'
 import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
-import { exportProductionForPostgresPublish } from '@/lib/publish/exportPublishPackage'
+import {
+  exportProductionForPostgresPublish,
+  exportProductionForPostgresPublishForActor,
+} from '@/lib/publish/exportPublishPackage'
 import { createFilesystemAssetStorage } from '@/lib/publish/filesystemAssetStorage'
 import { importPublishPackageToPostgres } from '@/lib/publish/postgresImport'
 import type { ExportPublishResult, ImportPublishResult, PostgresImportProgress } from '@/lib/publish/types'
@@ -13,11 +17,21 @@ export async function exportProductionForServerPublish(
   return exportProductionForPostgresPublish(productionId, outputPath)
 }
 
+export async function exportProductionForServerPublishForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  outputPath: string
+}): Promise<ExportPublishResult> {
+  return exportProductionForPostgresPublishForActor(args)
+}
+
 export async function importPublishPackageFileToPostgres(params: {
   packagePath: string
   postgresAdapter: DatabaseAdapter
   serverAssetRoot: string
   importingUserId?: string
+  authenticatedUserId?: string
   onAssignAdministrator?: (args: { productionId: string; userId: string }) => Promise<void>
   onProgress?: (progress: PostgresImportProgress) => void
 }): Promise<ImportPublishResult> {
@@ -27,6 +41,7 @@ export async function importPublishPackageFileToPostgres(params: {
     adapter: params.postgresAdapter,
     assetStorage: createFilesystemAssetStorage(params.serverAssetRoot),
     importingUserId: params.importingUserId,
+    authenticatedUserId: params.authenticatedUserId,
     onAssignAdministrator: params.onAssignAdministrator,
     onProgress: params.onProgress,
   })

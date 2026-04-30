@@ -109,6 +109,15 @@ async function createSqliteAdapter(db: Database): Promise<DatabaseAdapter> {
   }
 }
 
+async function ensureImportUserExists(adapter: DatabaseAdapter, userId: string): Promise<void> {
+  await adapter.execute(
+    `INSERT INTO users (id, username, password_hash, role)
+     VALUES ($1, $2, $3, 'admin')
+     ON CONFLICT (id) DO NOTHING`,
+    [userId, `importer-${userId.slice(0, 8)}`, '$argon2id$v=19$m=4096,t=3,p=1$abc$def']
+  )
+}
+
 describe('sqlite -> postgres publish package', () => {
   let workDir = ''
   let connectionError: string | null = null
@@ -268,10 +277,13 @@ describe('sqlite -> postgres publish package', () => {
 
     const harness = await createPostgresRepoHarness('pg_publish_types')
     try {
+      await ensureImportUserExists(harness.adapter, 'user-1')
       await importPublishPackageFileToPostgres({
         packagePath,
         postgresAdapter: harness.adapter,
         serverAssetRoot: join(workDir, 'server-assets-types'),
+        importingUserId: 'user-1',
+        authenticatedUserId: 'user-1',
       })
 
       const prodType = await harness.adapter.select<Array<{ t: string; v: boolean }>>(
@@ -334,11 +346,13 @@ describe('sqlite -> postgres publish package', () => {
     const serverRoot = join(workDir, 'server-assets')
     let aclAssigned: { productionId: string; userId: string } | null = null
     try {
+      await ensureImportUserExists(harness.adapter, 'user-1')
       const imported = await importPublishPackageFileToPostgres({
         packagePath,
         postgresAdapter: harness.adapter,
         serverAssetRoot: serverRoot,
         importingUserId: 'user-1',
+        authenticatedUserId: 'user-1',
         onAssignAdministrator: async (args) => {
           aclAssigned = args
         },
@@ -592,11 +606,14 @@ describe('sqlite -> postgres publish package', () => {
     const harness = await createPostgresRepoHarness('pg_publish_cleanup')
     const serverRoot = join(workDir, 'server-assets-cleanup')
     try {
+      await ensureImportUserExists(harness.adapter, 'user-1')
       await expect(
         importPublishPackageFileToPostgres({
           packagePath: corruptedPath,
           postgresAdapter: harness.adapter,
           serverAssetRoot: serverRoot,
+          importingUserId: 'user-1',
+          authenticatedUserId: 'user-1',
         })
       ).rejects.toThrow(/Missing bundled asset bytes/)
 

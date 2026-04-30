@@ -1,6 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState, useEffect, type SetStateAction } from 'react'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
+import {
+  createBookingForActor,
+  deleteBookingForActor,
+  getBookingCoverageByShootDayForActor,
+  listBookingsByProductionForActor,
+  listPeopleByProductionForActor,
+  listShootDayUnitsByProductionForActor,
+  listShootDaysByProductionForActor,
+  listUnitsByProductionForActor,
+  updateBookingForActor,
+} from '@/lib/access/projectDomainService'
 import { listBookingsByProduction } from '@/lib/db/repositories/booking'
 import { listPeopleByProduction } from '@/lib/db/repositories/person'
 import { listShootDaysByProduction } from '@/lib/db/repositories/schedule'
@@ -75,6 +88,7 @@ function setStoredView(view: ViewMode) {
 
 export function BookingsPage() {
   const { currentProductionId } = useCurrentProduction()
+  const authSession = useAuthSession()
   const [view, setView] = useState<ViewMode>(getStoredView)
   const [open, setOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
@@ -95,37 +109,78 @@ export function BookingsPage() {
 
   const { data: bookings = [] } = useQuery({
     queryKey: ['bookings', currentProductionId],
-    queryFn: () => listBookingsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listBookingsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listBookingsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: people = [] } = useQuery({
     queryKey: ['people', currentProductionId],
-    queryFn: () => listPeopleByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listPeopleByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listPeopleByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: shootDays = [] } = useQuery({
     queryKey: ['shoot-days', currentProductionId],
-    queryFn: () => listShootDaysByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDaysByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listShootDaysByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: units = [] } = useQuery({
     queryKey: ['units', currentProductionId],
-    queryFn: () => listUnitsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listUnitsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listUnitsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: shootDayUnits = [] } = useQuery({
     queryKey: ['shoot-day-units', currentProductionId],
-    queryFn: () => listShootDayUnitsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDayUnitsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listShootDayUnitsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: bookingIntelligence } = useQuery({
     queryKey: ['booking-intelligence', currentProductionId],
-    queryFn: () => getBookingCoverageByShootDay(currentProductionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getBookingCoverageByShootDayForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return getBookingCoverageByShootDay(currentProductionId!)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -180,14 +235,27 @@ export function BookingsPage() {
   }, [bookings, filterUnit, filterDepartment, filterCastCrew, shootDayUnits, personById])
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      createBooking({
+    mutationFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return createBookingForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId!,
+          personId,
+          shootDayId: shootDayId || null,
+          role: role.trim() || null,
+          notes: notes.trim() || null,
+        })
+      }
+      return createBooking({
         production_id: currentProductionId!,
         person_id: personId,
         shoot_day_id: shootDayId || null,
         role: role.trim() || null,
         notes: notes.trim() || null,
-      }),
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
       queryClient.invalidateQueries({ queryKey: ['booking-intelligence', currentProductionId] })
@@ -215,14 +283,19 @@ export function BookingsPage() {
   }, [])
 
   const updateMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!editingBooking) return Promise.reject(new Error('No booking to update'))
-      return updateBooking(editingBooking.id, {
+      const data = {
         person_id: personId,
         shoot_day_id: shootDayId || null,
         role: role.trim() || null,
         notes: notes.trim() || null,
-      })
+      }
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return updateBookingForActor({ db, actor: authSession.currentUser, bookingId: editingBooking.id, data })
+      }
+      return updateBooking(editingBooking.id, data)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
@@ -238,7 +311,13 @@ export function BookingsPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: deleteBooking,
+    mutationFn: async (bookingId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return deleteBookingForActor({ db, actor: authSession.currentUser, bookingId })
+      }
+      return deleteBooking(bookingId)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
       queryClient.invalidateQueries({ queryKey: ['booking-intelligence', currentProductionId] })

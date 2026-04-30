@@ -2,6 +2,29 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
+import {
+  getCastIdsBySceneIdsForActor,
+  getCastIdsByShotIdsForActor,
+  getProductionByIdForActor,
+  getShootDayByIdForActor,
+  listBookingsByShootDayForActor,
+  listCastForActor,
+  listCrewForActor,
+  listEpisodesByProductionForActor,
+  listKeyContactsByProductionForActor,
+  listLocationsByProductionForActor,
+  listScenesByProductionForActor,
+  listShootDaysByProductionForActor,
+  listShootDayUnitsByProductionForActor,
+  listShootDayUnitsByShootDayForActor,
+  listShotsByProductionForActor,
+  listShootingBlocsByProductionForActor,
+  listStripsByProductionForActor,
+  listStripsByShootDayForActor,
+  listUnitsByProductionForActor,
+} from '@/lib/access/projectDomainService'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { callSheetsTutorialSteps } from '@/features/tutorial/sections/callSheetsTutorial'
@@ -85,6 +108,7 @@ const defaultCrewHierarchy = getDefaultCrewHierarchyConfig()
 export function CallSheetsPage() {
   const queryClient = useQueryClient()
   const { currentProductionId } = useCurrentProduction()
+  const authSession = useAuthSession()
   const { progress, updateProgress } = useFirstLaunchTutorial()
   const [shootDayId, setShootDayId] = useState<string | null>(null)
   const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
@@ -113,19 +137,37 @@ export function CallSheetsPage() {
 
   const { data: production } = useQuery({
     queryKey: ['production', currentProductionId],
-    queryFn: () => getProductionById(currentProductionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getProductionByIdForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return getProductionById(currentProductionId!)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: episodesForProduction = [] } = useQuery({
     queryKey: ['episodes-callsheet', currentProductionId],
-    queryFn: () => listEpisodesByProduction(currentProductionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listEpisodesByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listEpisodesByProduction(currentProductionId!)
+    },
     enabled: !!currentProductionId && production?.is_episodic === true,
   })
 
   const { data: shootingBlocsForProduction = [] } = useQuery({
     queryKey: ['shooting-blocs-callsheet', currentProductionId],
-    queryFn: () => listShootingBlocsByProduction(currentProductionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootingBlocsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listShootingBlocsByProduction(currentProductionId!)
+    },
     enabled: !!currentProductionId && production?.is_episodic === true,
   })
 
@@ -154,49 +196,102 @@ export function CallSheetsPage() {
 
   const { data: shootDays = [] } = useQuery({
     queryKey: ['shoot-days', currentProductionId],
-    queryFn: () => listShootDaysByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDaysByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listShootDaysByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: shootDay } = useQuery({
     queryKey: ['shoot-day', shootDayId],
-    queryFn: () => getShootDayById(shootDayId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getShootDayByIdForActor({ db, actor: authSession.currentUser, shootDayId: shootDayId! })
+      }
+      return getShootDayById(shootDayId!)
+    },
     enabled: !!shootDayId,
   })
 
   const { data: dayUnits = [] } = useQuery({
     queryKey: ['shoot-day-units', shootDayId],
-    queryFn: () => listShootDayUnitsByShootDay(shootDayId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDayUnitsByShootDayForActor({ db, actor: authSession.currentUser, shootDayId: shootDayId! })
+      }
+      return listShootDayUnitsByShootDay(shootDayId!)
+    },
     enabled: !!shootDayId,
   })
 
   const { data: strips = [] } = useQuery({
     queryKey: ['strips', shootDayId],
-    queryFn: () => listStripsByShootDay(shootDayId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listStripsByShootDayForActor({ db, actor: authSession.currentUser, shootDayId: shootDayId! })
+      }
+      return listStripsByShootDay(shootDayId!)
+    },
     enabled: !!shootDayId,
   })
 
   const { data: scenes = [] } = useQuery({
     queryKey: ['scenes', currentProductionId],
-    queryFn: () => listScenesByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listScenesByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listScenesByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: shots = [] } = useQuery({
     queryKey: ['shots', currentProductionId],
-    queryFn: () => listShotsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShotsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listShotsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: locations = [] } = useQuery({
     queryKey: ['locations', currentProductionId],
-    queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listLocationsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listLocationsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: keyContacts = [] } = useQuery({
     queryKey: ['key-contacts', currentProductionId],
-    queryFn: () => listKeyContactsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listKeyContactsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listKeyContactsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -209,31 +304,64 @@ export function CallSheetsPage() {
 
   const { data: cast = [] } = useQuery({
     queryKey: ['cast', currentProductionId],
-    queryFn: () => listCast(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCastForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listCast(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: crew = [] } = useQuery({
     queryKey: ['crew', currentProductionId],
-    queryFn: () => listCrew(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCrewForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listCrew(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: units = [] } = useQuery({
     queryKey: ['units', currentProductionId],
-    queryFn: () => listUnitsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listUnitsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listUnitsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: allProductionStrips = [] } = useQuery({
     queryKey: ['strips-production-callsheet', currentProductionId],
-    queryFn: () => listStripsByProduction(currentProductionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listStripsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listStripsByProduction(currentProductionId!)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: allShootDayUnits = [] } = useQuery({
     queryKey: ['shoot-day-units-production', currentProductionId],
-    queryFn: () => listShootDayUnitsByProduction(currentProductionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDayUnitsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listShootDayUnitsByProduction(currentProductionId!)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -247,13 +375,35 @@ export function CallSheetsPage() {
 
   const { data: castBySceneId = new Map<string, string[]>() } = useQuery({
     queryKey: ['cast-by-scene-callsheet', sceneIdsScheduled.join(',')],
-    queryFn: () => getCastIdsBySceneIds(sceneIdsScheduled),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser && currentProductionId) {
+        const db = await getDb()
+        return getCastIdsBySceneIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          sceneIds: sceneIdsScheduled,
+        })
+      }
+      return getCastIdsBySceneIds(sceneIdsScheduled)
+    },
     enabled: sceneIdsScheduled.length > 0,
   })
 
   const { data: castByShotId = new Map<string, string[]>() } = useQuery({
     queryKey: ['cast-by-shot-callsheet', shotIdsScheduled.join(',')],
-    queryFn: () => getCastIdsByShotIds(shotIdsScheduled),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser && currentProductionId) {
+        const db = await getDb()
+        return getCastIdsByShotIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          shotIds: shotIdsScheduled,
+        })
+      }
+      return getCastIdsByShotIds(shotIdsScheduled)
+    },
     enabled: shotIdsScheduled.length > 0,
   })
 
@@ -288,13 +438,35 @@ export function CallSheetsPage() {
 
   const { data: advCastBySceneId = new Map<string, string[]>() } = useQuery({
     queryKey: ['adv-cast-scenes-callsheet', [...advancedSceneIds].sort().join(',')],
-    queryFn: () => getCastIdsBySceneIds(advancedSceneIds),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser && currentProductionId) {
+        const db = await getDb()
+        return getCastIdsBySceneIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          sceneIds: advancedSceneIds,
+        })
+      }
+      return getCastIdsBySceneIds(advancedSceneIds)
+    },
     enabled: advancedSceneIds.length > 0,
   })
 
   const { data: advCastByShotId = new Map<string, string[]>() } = useQuery({
     queryKey: ['adv-cast-shots-callsheet', [...advancedShotIds].sort().join(',')],
-    queryFn: () => getCastIdsByShotIds(advancedShotIds),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser && currentProductionId) {
+        const db = await getDb()
+        return getCastIdsByShotIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          shotIds: advancedShotIds,
+        })
+      }
+      return getCastIdsByShotIds(advancedShotIds)
+    },
     enabled: advancedShotIds.length > 0,
   })
 
@@ -312,7 +484,13 @@ export function CallSheetsPage() {
 
   const { data: bookingsForDay = [] } = useQuery({
     queryKey: ['bookings-by-shoot-day', shootDayId],
-    queryFn: () => listBookingsByShootDay(shootDayId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listBookingsByShootDayForActor({ db, actor: authSession.currentUser, shootDayId: shootDayId! })
+      }
+      return listBookingsByShootDay(shootDayId!)
+    },
     enabled: !!shootDayId,
   })
 

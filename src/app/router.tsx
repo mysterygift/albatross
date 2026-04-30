@@ -24,6 +24,8 @@ import { ReadinessPage } from '@/features/readiness/page'
 import { DeliverablesPage } from '@/features/deliverables/page'
 import { MusicClearancePage } from '@/features/music-clearance/page'
 import { SettingsPage } from '@/features/settings/page'
+import { AdminOnlyUserManagementRoute } from '@/features/admin/UserManagementPage'
+import { ProjectAccessRoute } from '@/features/admin/ProjectAccessPage'
 import { WrapProductionPage } from '@/features/wrap-production/page'
 import { VendorsIndexPage } from '@/features/budget/vendors/VendorsIndexPage'
 import { VendorDetailPage } from '@/features/budget/vendors/VendorDetailPage'
@@ -62,6 +64,8 @@ export const router = createBrowserRouter([
       { path: 'deliverables', element: <DeliverablesPage /> },
       { path: 'music-clearance', element: <MusicClearancePage /> },
       { path: 'settings', element: <SettingsPage /> },
+      { path: 'settings/users', element: <AdminOnlyUserManagementRoute /> },
+      { path: 'settings/project-access', element: <ProjectAccessRoute /> },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },

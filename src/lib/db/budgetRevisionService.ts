@@ -1,4 +1,7 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from './client'
+import type { AuthenticatedUser } from '@/lib/auth/authService'
+import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
+import { requireProjectEditAccess } from '@/lib/access/projectAccessService'
 import type { BudgetRevision } from './repositories/budgetRevisions'
 import {
   getLiveBudgetRevisionForProduction,
@@ -465,5 +468,44 @@ export async function duplicateLiveBudgetRevisionAsDraft(params: {
     productionId: params.productionId,
     sourceRevisionId: live.id,
     newRevisionName,
+  })
+}
+
+export async function createBlankBudgetRevisionForActor(params: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  name: string
+}): Promise<BudgetRevision> {
+  await requireProjectEditAccess(params.db, params.actor, params.productionId)
+  return createBlankBudgetRevision({
+    productionId: params.productionId,
+    name: params.name,
+  })
+}
+
+export async function createBudgetRevisionFromExistingForActor(params: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  sourceRevisionId: string
+  newRevisionName: string
+}): Promise<BudgetRevision> {
+  await requireProjectEditAccess(params.db, params.actor, params.productionId)
+  return createBudgetRevisionFromExisting({
+    productionId: params.productionId,
+    sourceRevisionId: params.sourceRevisionId,
+    newRevisionName: params.newRevisionName,
+  })
+}
+
+export async function duplicateLiveBudgetRevisionAsDraftForActor(params: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+}): Promise<BudgetRevision> {
+  await requireProjectEditAccess(params.db, params.actor, params.productionId)
+  return duplicateLiveBudgetRevisionAsDraft({
+    productionId: params.productionId,
   })
 }

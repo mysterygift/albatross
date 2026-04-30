@@ -98,28 +98,6 @@ export async function getFileUrl(relativePath: string): Promise<string> {
   const full = await resolveAppDataPath(relativePath)
   const decodedPath = full.startsWith('file://') ? decodeURIComponent(full.slice(7)) : full
   const url = convertFileSrc(decodedPath)
-  if (relativePath.startsWith('storyboards/')) {
-    // #region agent log
-    fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
-      body: JSON.stringify({
-        sessionId: '72cc09',
-        runId: 'pre-fix',
-        hypothesisId: 'H11',
-        location: 'src/lib/files/index.ts:getFileUrl',
-        message: 'Generated storyboard file URL',
-        data: {
-          relativePath,
-          url,
-          hasWhitespace: /\s/.test(url),
-          usesConvertFileSrc: true,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-    // #endregion
-  }
   return url
 }
 

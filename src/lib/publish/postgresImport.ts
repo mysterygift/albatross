@@ -19,6 +19,7 @@ export type ImportPublishToPostgresParams = {
   adapter: DatabaseAdapter
   assetStorage: PublishAssetStorage
   importingUserId?: string
+  authenticatedUserId?: string
   onAssignAdministrator?: (args: { productionId: string; userId: string }) => Promise<void>
   onProgress?: (progress: PostgresImportProgress) => void
 }
@@ -111,6 +112,19 @@ async function ensureNoProductionCollision(adapter: DatabaseAdapter, productionI
   }
 }
 
+async function ensureImportingUserCanReceiveProject(adapter: DatabaseAdapter, userId: string): Promise<void> {
+  const rows = await adapter.select<Array<{ id: string; disabled_at: string | null }>>(
+    `SELECT id, disabled_at FROM users WHERE id = $1 LIMIT 1`,
+    [userId]
+  )
+  if (!rows[0]) {
+    throw new PublishImportError('acl', `Importing user ${userId} not found`)
+  }
+  if (rows[0].disabled_at) {
+    throw new PublishImportError('acl', `Importing user ${userId} is disabled`)
+  }
+}
+
 function resolveStorageKeyForAsset(productionId: string, entry: { kind: string; sourceRowId: string; fileName: string }): string {
   const fileName = sanitizeName(entry.fileName)
   if (entry.kind === 'document') {
@@ -178,6 +192,13 @@ export async function importPublishPackageToPostgres(
   const productionId = getProductionId(parsed.manifest, parsed.dataFile.tables)
   progress(params, 'validate', 'Validating package and collisions')
   await ensureNoProductionCollision(params.adapter, productionId)
+  if (!params.importingUserId) {
+    throw new PublishImportError('acl', 'Importing user is required for publish import')
+  }
+  if (params.authenticatedUserId && params.authenticatedUserId !== params.importingUserId) {
+    throw new PublishImportError('acl', 'Importing user does not match authenticated session user')
+  }
+  await ensureImportingUserCanReceiveProject(params.adapter, params.importingUserId)
 
   const storageMap = new Map<string, string>()
   const writtenAssets: string[] = []
@@ -204,13 +225,21 @@ export async function importPublishPackageToPostgres(
       tables: rewrittenTables,
       columnMap,
     })
+    const membershipId = crypto.randomUUID()
+    const ts = new Date().toISOString()
+    statements.push({
+      sql: `INSERT INTO project_memberships
+            (id, production_id, user_id, access_level, created_at, updated_at)
+            VALUES ($1, $2, $3, 'administrator', $4, $4)`,
+      bindValues: [membershipId, productionId, params.importingUserId, ts],
+    })
     await params.adapter.executeBatch([
       { sql: 'BEGIN', bindValues: [] },
       ...statements,
       { sql: 'COMMIT', bindValues: [] },
     ])
 
-    if (params.importingUserId && params.onAssignAdministrator) {
+    if (params.onAssignAdministrator) {
       progress(params, 'acl', 'Assigning administrator role for importing user')
       phase = 'acl'
       await params.onAssignAdministrator({

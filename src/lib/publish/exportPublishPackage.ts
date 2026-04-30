@@ -1,5 +1,8 @@
 import { writeFile } from '@tauri-apps/plugin-fs'
 
+import type { AuthenticatedUser } from '@/lib/auth/authService'
+import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
+import { requireProjectEditAccess } from '@/lib/access/projectAccessService'
 import { getProductionById } from '@/lib/db/repositories/production'
 import { CURRENT_PUBLISH_FORMAT_VERSION, PUBLISH_DATA_ENTRY_PATH, PUBLISH_FILES_ENTRY_PREFIX, PUBLISH_PACKAGE_KIND } from '@/lib/publish/constants'
 import { collectPublishAssets } from '@/lib/publish/collectPublishAssets'
@@ -78,4 +81,14 @@ export async function exportProductionForPostgresPublish(
     tableRowCounts,
     assetCount: assets.manifestEntries.length,
   }
+}
+
+export async function exportProductionForPostgresPublishForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  outputPath: string
+}): Promise<ExportPublishResult> {
+  await requireProjectEditAccess(args.db, args.actor, args.productionId)
+  return exportProductionForPostgresPublish(args.productionId, args.outputPath)
 }

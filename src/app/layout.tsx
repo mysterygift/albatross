@@ -16,10 +16,104 @@ import { ApfDesktopOpenBridge } from '@/features/productions/ApfDesktopOpenBridg
 import { ApfMenuEventBridge } from '@/features/productions/ApfMenuEventBridge'
 import { useCurrentProduction } from '@/features/productions/context'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
+import { Button } from '@/components/ui/button'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { AuthGateScreen } from '@/features/auth/AuthGateScreen'
 
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 
 export function AppLayout() {
+  const authSession = useAuthSession()
+  const queryClient = useQueryClient()
+  const showAuthGate = authSession.authSupported && !authSession.isAuthenticated
+
+  if (authSession.status === 'pending') {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background px-6 text-center">
+        <p className="text-sm font-medium text-foreground">Connecting…</p>
+        <p className="text-xs text-muted-foreground">Loading local database session</p>
+      </div>
+    )
+  }
+
+  if (authSession.isError) {
+    const rawErr: unknown = authSession.error
+    const errText =
+      rawErr instanceof Error
+        ? rawErr.message
+        : typeof rawErr === 'string'
+          ? rawErr
+          : 'Unknown error'
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background p-6 text-center">
+        <p className="text-sm text-muted-foreground">
+          Could not connect for sign-in. Check the database and try again.
+        </p>
+        <p className="max-w-md break-words font-mono text-xs text-muted-foreground">{errText.slice(0, 400)}</p>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => void queryClient.invalidateQueries({ queryKey: ['auth-session'] })}
+        >
+          Try again
+        </Button>
+      </div>
+    )
+  }
+
+  if (authSession.status === 'success' && !authSession.authSupported) {
+    const d = authSession.authDbDialect
+    if (d === 'sqlite') {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+          <div className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-6 text-card-foreground shadow-sm">
+            <h1 className="text-lg font-semibold">Sign-in is not available on this database yet</h1>
+            <p className="text-sm text-muted-foreground">
+              The local SQLite file has no <code className="rounded bg-muted px-1 py-0.5 font-mono text-foreground">users</code>{' '}
+              table, so the app hides the login screen. That usually means the desktop migrations have not been applied
+              to this build or database.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Quit the app, run a fresh <code className="rounded bg-muted px-1 py-0.5 font-mono text-foreground">npm run tauri:dev</code>{' '}
+              so Rust picks up migration <span className="font-mono text-foreground">0065_uam1_auth_foundation</span>, then open the{' '}
+              <strong>Albatross</strong> window again (not a separate browser tab to the dev URL).
+            </p>
+          </div>
+        </div>
+      )
+    }
+    if (d === 'postgres') {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+          <div className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-6 text-card-foreground shadow-sm">
+            <h1 className="text-lg font-semibold">Sign-in is not available on this Postgres database</h1>
+            <p className="text-sm text-muted-foreground">
+              The <code className="rounded bg-muted px-1 font-mono text-foreground">users</code> table is missing.
+              Apply migration <code className="rounded bg-muted px-1 font-mono text-foreground">0003_uam1_auth_foundation.sql</code>{' '}
+              (or a later bundle) to this database, then reload.
+            </p>
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+        <p className="max-w-md text-center text-sm text-muted-foreground">
+          Authentication state is incomplete. Try a full page reload. If this persists, check the browser console for
+          errors.
+        </p>
+      </div>
+    )
+  }
+
+  if (showAuthGate) {
+    return <AuthGateScreen loadingAuthState={false} />
+  }
+
+  return <AppLayoutShell />
+}
+
+function AppLayoutShell() {
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()

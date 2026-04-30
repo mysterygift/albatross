@@ -2,10 +2,17 @@ import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { castTutorialSteps } from '@/features/tutorial/sections/castTutorial'
 import { listCast, createPerson, updatePerson } from '@/lib/db/repositories/person'
+import {
+  createPersonForActor,
+  listCastForActor,
+  updatePersonForActor,
+} from '@/lib/access/projectDomainService'
 import {
   Table,
   TableBody,
@@ -68,6 +75,7 @@ function trimOrNull(s: string | undefined): string | null {
 
 export function CastManagerPage() {
   const { currentProductionId } = useCurrentProduction()
+  const authSession = useAuthSession()
   const queryClient = useQueryClient()
   const { progress, updateProgress } = useFirstLaunchTutorial()
   const [search, setSearch] = useState('')
@@ -85,7 +93,18 @@ export function CastManagerPage() {
 
   const { data: cast = [] } = useQuery({
     queryKey: ['cast', currentProductionId],
-    queryFn: () => listCast(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCastForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listCast(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -123,11 +142,11 @@ export function CastManagerPage() {
   }, [cast, search, contributorFilter, missingFilter])
 
   const createMutation = useMutation({
-    mutationFn: (d: CastFormValues) =>
-      createPerson({
+    mutationFn: async (d: CastFormValues) => {
+      const data = {
         production_id: currentProductionId!,
         name: d.name.trim(),
-        is_cast: 1,
+        is_cast: 1 as const,
         cast_number: trimOrNull(d.cast_number),
         role_name: trimOrNull(d.role_name),
         email: trimOrNull(d.email),
@@ -138,7 +157,18 @@ export function CastManagerPage() {
         contributor_form_status: d.contributor_form_status,
         notes: trimOrNull(d.notes),
         phases: trimOrNull(d.phases),
-      }),
+      }
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return createPersonForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId!,
+          data,
+        })
+      }
+      return createPerson(data)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cast'] })
       queryClient.invalidateQueries({ queryKey: ['people'] })
@@ -147,8 +177,8 @@ export function CastManagerPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: CastFormValues }) =>
-      updatePerson(id, {
+    mutationFn: async ({ id, data }: { id: string; data: CastFormValues }) => {
+      const payload = {
         name: data.name.trim(),
         cast_number: trimOrNull(data.cast_number),
         role_name: trimOrNull(data.role_name),
@@ -160,7 +190,18 @@ export function CastManagerPage() {
         contributor_form_status: data.contributor_form_status,
         notes: trimOrNull(data.notes),
         phases: trimOrNull(data.phases),
-      }),
+      }
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return updatePersonForActor({
+          db,
+          actor: authSession.currentUser,
+          personId: id,
+          data: payload,
+        })
+      }
+      return updatePerson(id, payload)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cast'] })
       queryClient.invalidateQueries({ queryKey: ['people'] })

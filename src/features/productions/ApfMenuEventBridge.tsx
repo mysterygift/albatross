@@ -14,6 +14,8 @@ import {
 } from '@/features/productions/budgetMenuActions'
 import { listBudgetRevisionsByProduction } from '@/lib/db/repositories/budgetRevisions'
 import { getAcceleratorConflicts, resolveMenuSectionForPath } from '@/app/menuSchema'
+import { clearPersistedAuthSession } from '@/lib/auth/authService'
+import { getDb } from '@/lib/db/client'
 
 export function ApfMenuEventBridge() {
   const navigate = useNavigate()
@@ -65,6 +67,7 @@ export function ApfMenuEventBridge() {
     let unlistenExport: (() => void) | undefined
     let unlistenNewProject: (() => void) | undefined
     let unlistenOpenSettings: (() => void) | undefined
+    let unlistenLogout: (() => void) | undefined
     let unlistenDuplicateLiveAsDraft: (() => void) | undefined
     const unlistenCommands: Array<() => void> = []
     const pendingUnlisten: Array<() => void> = []
@@ -123,6 +126,11 @@ export function ApfMenuEventBridge() {
         })
         unlistenOpenSettings = await registerListener('albatross-menu-open-settings', () => {
           navigate('/settings')
+        })
+        unlistenLogout = await registerListener('albatross-menu-logout', async () => {
+          const db = await getDb()
+          await clearPersistedAuthSession(db)
+          await queryClient.invalidateQueries({ queryKey: ['auth-session'] })
         })
         unlistenDuplicateLiveAsDraft = await registerListener('albatross-menu-duplicate-live-as-draft', async () => {
           await runDuplicateAction()
@@ -235,6 +243,7 @@ export function ApfMenuEventBridge() {
       unlistenExport?.()
       unlistenNewProject?.()
       unlistenOpenSettings?.()
+      unlistenLogout?.()
       unlistenDuplicateLiveAsDraft?.()
       unlistenCommands.forEach((u) => u())
       pendingUnlisten.forEach((u) => u())

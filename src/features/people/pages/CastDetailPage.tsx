@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
 import { getPersonById, updatePerson } from '@/lib/db/repositories/person'
 import { listBookingsByPerson } from '@/lib/db/repositories/booking'
 import { listAvailabilityByPerson } from '@/lib/db/repositories/cast-availability'
@@ -30,6 +32,28 @@ import {
 } from '@/lib/db/repositories/personActivity'
 import { listShootDayUnitsByProduction } from '@/lib/db/repositories/shoot-day-units'
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
+import {
+  addSceneCastForActor,
+  addShotCastForActor,
+  getCastIdsBySceneIdsForActor,
+  getPersonByIdForActor,
+  getSceneByIdForActor,
+  getScheduledSceneIdsByShootDayForActor,
+  listAvailabilityByPersonForActor,
+  listBookingsByPersonForActor,
+  listLocationsByProductionForActor,
+  listRecentPersonActivityForActor,
+  listSceneCastByPersonForActor,
+  listScenesByProductionForActor,
+  listShootDayUnitsByProductionForActor,
+  listShootDaysByProductionForActor,
+  listShotCastByPersonInProductionForActor,
+  listShotsByProductionForActor,
+  listUnitsByProductionForActor,
+  removeSceneCastForActor,
+  removeShotCastForActor,
+  updatePersonForActor,
+} from '@/lib/access/projectDomainService'
 import { PersonForm, type PersonFormValues } from '@/features/people/components/PersonForm'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -60,6 +84,7 @@ const CONTRIBUTOR_FORM_LABELS: Record<Person['contributor_form_status'], string>
 export function CastDetailPage() {
   const { personId } = useParams<{ personId: string }>()
   const { currentProductionId } = useCurrentProduction()
+  const authSession = useAuthSession()
   const queryClient = useQueryClient()
   const [editOpen, setEditOpen] = useState(false)
   const [addScenesOpen, setAddScenesOpen] = useState(false)
@@ -71,7 +96,17 @@ export function CastDetailPage() {
 
   const { data: person, isLoading: personLoading } = useQuery({
     queryKey: ['person', personId],
-    queryFn: () => getPersonById(personId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getPersonByIdForActor({
+          db,
+          actor: authSession.currentUser,
+          personId: personId!,
+        })
+      }
+      return getPersonById(personId!)
+    },
     enabled: !!personId,
   })
 
@@ -83,43 +118,117 @@ export function CastDetailPage() {
 
   const { data: bookings = [] } = useQuery({
     queryKey: ['bookings-by-person', personId],
-    queryFn: () => listBookingsByPerson(personId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listBookingsByPersonForActor({
+          db,
+          actor: authSession.currentUser,
+          personId: personId!,
+        })
+      }
+      return listBookingsByPerson(personId!)
+    },
     enabled: !!personId,
   })
 
   const { data: availability = [] } = useQuery({
     queryKey: ['availability-by-person', personId],
-    queryFn: () => listAvailabilityByPerson(personId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listAvailabilityByPersonForActor({
+          db,
+          actor: authSession.currentUser,
+          personId: personId!,
+        })
+      }
+      return listAvailabilityByPerson(personId!)
+    },
     enabled: !!personId,
   })
 
   const { data: sceneCastList = [] } = useQuery({
     queryKey: ['scene-cast-by-person', personId],
-    queryFn: () => listSceneCastByPerson(personId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listSceneCastByPersonForActor({
+          db,
+          actor: authSession.currentUser,
+          personId: personId!,
+        })
+      }
+      return listSceneCastByPerson(personId!)
+    },
     enabled: !!personId,
   })
 
   const { data: shotCastList = [] } = useQuery({
     queryKey: ['shot-cast-by-person', currentProductionId, personId],
-    queryFn: () => listShotCastByPersonInProduction(currentProductionId!, personId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShotCastByPersonInProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId!,
+          personId: personId!,
+        })
+      }
+      return listShotCastByPersonInProduction(currentProductionId!, personId!)
+    },
     enabled: !!currentProductionId && !!personId,
   })
 
   const { data: allShots = [] } = useQuery({
     queryKey: ['shots-by-production', currentProductionId],
-    queryFn: () => listShotsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShotsByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listShotsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId && (addShotsOpen || shotCastList.length > 0),
   })
 
   const { data: shootDays = [] } = useQuery({
     queryKey: ['shoot-days', currentProductionId],
-    queryFn: () => listShootDaysByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDaysByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listShootDaysByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: sceneIdsByDay = new Map<string, string[]>() } = useQuery({
     queryKey: ['dood-scenes-by-day', currentProductionId],
-    queryFn: () => getScheduledSceneIdsByShootDay(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return new Map<string, string[]>()
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getScheduledSceneIdsByShootDayForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return getScheduledSceneIdsByShootDay(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -133,7 +242,19 @@ export function CastDetailPage() {
 
   const { data: castBySceneId = new Map<string, string[]>() } = useQuery({
     queryKey: ['cast-by-scene', allSceneIds.join(',')],
-    queryFn: () => getCastIdsBySceneIds(allSceneIds),
+    queryFn: async () => {
+      if (!currentProductionId) return new Map<string, string[]>()
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getCastIdsBySceneIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          sceneIds: allSceneIds,
+        })
+      }
+      return getCastIdsBySceneIds(allSceneIds)
+    },
     enabled: allSceneIds.length > 0,
   })
 
@@ -167,7 +288,19 @@ export function CastDetailPage() {
 
   const { data: recentActivity = [] } = useQuery({
     queryKey: personRecentActivityQueryKey(currentProductionId ?? '', personId ?? ''),
-    queryFn: () => listRecentPersonActivity(currentProductionId!, personId!, 8),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listRecentPersonActivityForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId!,
+          personId: personId!,
+          limit: 8,
+        })
+      }
+      return listRecentPersonActivity(currentProductionId!, personId!, 8)
+    },
     enabled: !!currentProductionId && !!personId,
   })
 
@@ -179,13 +312,35 @@ export function CastDetailPage() {
 
   const { data: shootDayUnits = [] } = useQuery({
     queryKey: ['shoot-day-units', currentProductionId],
-    queryFn: () => listShootDayUnitsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDayUnitsByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listShootDayUnitsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: units = [] } = useQuery({
     queryKey: ['units', currentProductionId],
-    queryFn: () => listUnitsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listUnitsByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listUnitsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -224,13 +379,35 @@ export function CastDetailPage() {
 
   const { data: allScenes = [] } = useQuery({
     queryKey: ['scenes', currentProductionId],
-    queryFn: () => listScenesByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listScenesByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listScenesByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId && !!person?.is_cast,
   })
 
   const { data: locations = [] } = useQuery({
     queryKey: ['locations', currentProductionId],
-    queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listLocationsByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listLocationsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -246,7 +423,17 @@ export function CastDetailPage() {
     queryFn: async () => {
       const map = new Map<string, Scene>()
       for (const id of allSceneIdsForQuery) {
-        const scene = await getSceneById(id)
+        const scene =
+          authSession.authSupported && authSession.currentUser
+            ? await (async () => {
+                const db = await getDb()
+                return getSceneByIdForActor({
+                  db,
+                  actor: authSession.currentUser!,
+                  sceneId: id,
+                })
+              })()
+            : await getSceneById(id)
         if (scene) map.set(id, scene)
       }
       return map
@@ -304,11 +491,24 @@ export function CastDetailPage() {
     mutationFn: async (sceneIds: string[]) => {
       if (!currentProductionId || !personId) return
       for (const sceneId of sceneIds) {
-        await addSceneCast({
-          production_id: currentProductionId,
-          scene_id: sceneId,
-          person_id: personId,
-        })
+        if (authSession.authSupported && authSession.currentUser) {
+          const db = await getDb()
+          await addSceneCastForActor({
+            db,
+            actor: authSession.currentUser,
+            data: {
+              production_id: currentProductionId,
+              scene_id: sceneId,
+              person_id: personId,
+            },
+          })
+        } else {
+          await addSceneCast({
+            production_id: currentProductionId,
+            scene_id: sceneId,
+            person_id: personId,
+          })
+        }
       }
     },
     onSuccess: () => {
@@ -322,7 +522,17 @@ export function CastDetailPage() {
   })
 
   const removeSceneCastMutation = useMutation({
-    mutationFn: (sceneCastId: string) => removeSceneCast(sceneCastId),
+    mutationFn: async (sceneCastId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return removeSceneCastForActor({
+          db,
+          actor: authSession.currentUser,
+          sceneCastId,
+        })
+      }
+      return removeSceneCast(sceneCastId)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person', personId] })
       queryClient.invalidateQueries({ queryKey: personRecentActivityQueryKey(currentProductionId!, personId!) })
@@ -335,11 +545,24 @@ export function CastDetailPage() {
     mutationFn: async (shotIds: string[]) => {
       if (!currentProductionId || !personId) return
       for (const shotId of shotIds) {
-        await addShotCast({
-          production_id: currentProductionId,
-          shot_id: shotId,
-          person_id: personId,
-        })
+        if (authSession.authSupported && authSession.currentUser) {
+          const db = await getDb()
+          await addShotCastForActor({
+            db,
+            actor: authSession.currentUser,
+            data: {
+              production_id: currentProductionId,
+              shot_id: shotId,
+              person_id: personId,
+            },
+          })
+        } else {
+          await addShotCast({
+            production_id: currentProductionId,
+            shot_id: shotId,
+            person_id: personId,
+          })
+        }
       }
     },
     onSuccess: () => {
@@ -353,7 +576,17 @@ export function CastDetailPage() {
   })
 
   const removeShotCastMutation = useMutation({
-    mutationFn: (shotCastId: string) => removeShotCast(shotCastId),
+    mutationFn: async (shotCastId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return removeShotCastForActor({
+          db,
+          actor: authSession.currentUser,
+          shotCastId,
+        })
+      }
+      return removeShotCast(shotCastId)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shot-cast-by-person', currentProductionId, personId] })
       queryClient.invalidateQueries({ queryKey: personRecentActivityQueryKey(currentProductionId!, personId!) })
@@ -362,15 +595,26 @@ export function CastDetailPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: Partial<PersonFormValues>) =>
-      updatePerson(personId!, {
+    mutationFn: async (data: Partial<PersonFormValues>) => {
+      const payload = {
         ...data,
         is_cast: data.is_cast !== undefined ? (data.is_cast ? 1 : 0) : undefined,
         cast_number: data.cast_number !== undefined ? (data.cast_number?.trim() || null) : undefined,
         agent_name: data.agent_name !== undefined ? (data.agent_name?.trim() || null) : undefined,
         agent_email: data.agent_email !== undefined ? (data.agent_email?.trim() || null) : undefined,
         agent_phone: data.agent_phone !== undefined ? (data.agent_phone?.trim() || null) : undefined,
-      }),
+      }
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return updatePersonForActor({
+          db,
+          actor: authSession.currentUser,
+          personId: personId!,
+          data: payload,
+        })
+      }
+      return updatePerson(personId!, payload)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['person', personId] })
       queryClient.invalidateQueries({ queryKey: ['people', currentProductionId] })

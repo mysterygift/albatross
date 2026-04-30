@@ -87,7 +87,7 @@ export { collectApfDocumentBundledEntries, type ApfBundledZipEntry } from '@/lib
 
 export { loadApfV1ProductionTables } from '@/lib/importExport/exportLoadProductionData'
 
-export { exportProductionAsApf } from '@/lib/importExport/exportProduction'
+export { exportProductionAsApf, exportProductionAsApfForActor } from '@/lib/importExport/exportProduction'
 
 export { importProductionFromApf } from '@/lib/importExport/importProduction'
 

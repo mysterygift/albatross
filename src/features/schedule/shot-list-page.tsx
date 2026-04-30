@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
 import {
   listScenesByProduction,
   listShotsByScene,
@@ -27,6 +29,27 @@ import {
   listEquipmentTermsByProductionAndType,
   upsertEquipmentTerm,
 } from '@/lib/db/repositories/equipment-terms'
+import {
+  addSceneCastForActor,
+  addShotCastForActor,
+  createSceneForActor,
+  createShotForActor,
+  deleteShotForActor,
+  getEpisodeByIdForProductionIncludeArchivedForActor,
+  listCastForActor,
+  listEpisodesByProductionForActor,
+  listEquipmentTermsByProductionAndTypeForActor,
+  listLocationsByProductionForActor,
+  listSceneCastBySceneForActor,
+  listScenesByProductionForActor,
+  listShotsBySceneForActor,
+  listShotCastByShotIdsForActor,
+  removeSceneCastForActor,
+  removeShotCastForActor,
+  updateSceneForActor,
+  updateShotForActor,
+  upsertEquipmentTermForActor,
+} from '@/lib/access/projectDomainService'
 import type { Shot, Scene, ShotCast } from '@/lib/db/types'
 import { SHOT_SIZE_VALUES, CAMERA_MOVEMENT_VALUES } from '@/lib/db/types'
 import {
@@ -231,6 +254,7 @@ function messageForUpdateShotError(error: unknown): string {
 export function ShotListPage() {
   const queryClient = useQueryClient()
   const { currentProductionId, currentProduction } = useCurrentProduction()
+  const authSession = useAuthSession()
   const isEpisodicProduction = currentProduction?.is_episodic === true
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
@@ -331,32 +355,87 @@ export function ShotListPage() {
 
   const { data: scenes = [] } = useQuery({
     queryKey: ['scenes', currentProductionId],
-    queryFn: () => listScenesByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listScenesByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listScenesByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: shots = [] } = useQuery({
     queryKey: ['shots', selectedSceneId],
-    queryFn: () => listShotsByScene(selectedSceneId!),
+    queryFn: async () => {
+      if (!selectedSceneId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShotsBySceneForActor({
+          db,
+          actor: authSession.currentUser,
+          sceneId: selectedSceneId,
+        })
+      }
+      return listShotsByScene(selectedSceneId)
+    },
     enabled: !!selectedSceneId,
   })
 
   const { data: locations = [] } = useQuery({
     queryKey: ['locations', currentProductionId],
-    queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listLocationsByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listLocationsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: activeEpisodes = [] } = useQuery({
     queryKey: ['episodes', currentProductionId],
-    queryFn: () => listEpisodesByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listEpisodesByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listEpisodesByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId && isEpisodicProduction,
   })
 
   const { data: editArchivedEpisode } = useQuery({
     queryKey: ['episode-include-archived', currentProductionId, editSceneEpisodeId],
-    queryFn: () =>
-      getEpisodeByIdForProductionIncludeArchived(currentProductionId!, editSceneEpisodeId),
+    queryFn: async () => {
+      if (!currentProductionId) return null
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getEpisodeByIdForProductionIncludeArchivedForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          episodeId: editSceneEpisodeId,
+        })
+      }
+      return getEpisodeByIdForProductionIncludeArchived(currentProductionId, editSceneEpisodeId)
+    },
     enabled:
       !!currentProductionId &&
       isEpisodicProduction &&
@@ -367,20 +446,53 @@ export function ShotListPage() {
 
   const { data: sceneCastList = [] } = useQuery({
     queryKey: ['scene-cast-by-scene', selectedSceneId],
-    queryFn: () => listSceneCastByScene(selectedSceneId!),
+    queryFn: async () => {
+      if (!selectedSceneId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listSceneCastBySceneForActor({
+          db,
+          actor: authSession.currentUser,
+          sceneId: selectedSceneId,
+        })
+      }
+      return listSceneCastByScene(selectedSceneId)
+    },
     enabled: !!selectedSceneId,
   })
 
   const { data: cast = [] } = useQuery({
     queryKey: ['cast', currentProductionId],
-    queryFn: () => listCast(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCastForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listCast(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const shotIds = useMemo(() => shots.map((s) => s.id), [shots])
   const { data: shotCastByShotId = new Map<string, ShotCast[]>() } = useQuery({
     queryKey: ['shot-cast-by-shot-ids', shotIds.join(',')],
-    queryFn: () => listShotCastByShotIds(shotIds),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser && currentProductionId) {
+        const db = await getDb()
+        return listShotCastByShotIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          shotIds,
+        })
+      }
+      return listShotCastByShotIds(shotIds)
+    },
     enabled: shotIds.length > 0,
   })
 
@@ -398,11 +510,24 @@ export function ShotListPage() {
     mutationFn: async (personIds: string[]) => {
       if (!currentProductionId || !selectedSceneId) return
       for (const personId of personIds) {
-        await addSceneCast({
-          production_id: currentProductionId,
-          scene_id: selectedSceneId,
-          person_id: personId,
-        })
+        if (authSession.authSupported && authSession.currentUser) {
+          const db = await getDb()
+          await addSceneCastForActor({
+            db,
+            actor: authSession.currentUser,
+            data: {
+              production_id: currentProductionId,
+              scene_id: selectedSceneId,
+              person_id: personId,
+            },
+          })
+        } else {
+          await addSceneCast({
+            production_id: currentProductionId,
+            scene_id: selectedSceneId,
+            person_id: personId,
+          })
+        }
       }
     },
     onSuccess: () => {
@@ -415,7 +540,17 @@ export function ShotListPage() {
   })
 
   const removeCastMutation = useMutation({
-    mutationFn: (sceneCastId: string) => removeSceneCast(sceneCastId),
+    mutationFn: async (sceneCastId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return removeSceneCastForActor({
+          db,
+          actor: authSession.currentUser,
+          sceneCastId,
+        })
+      }
+      return removeSceneCast(sceneCastId)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scene-cast-by-scene', selectedSceneId] })
       queryClient.invalidateQueries({ queryKey: ['cast-by-scene'] })
@@ -427,11 +562,24 @@ export function ShotListPage() {
   const addShotCastMutation = useMutation({
     mutationFn: async ({ shotId, personId }: { shotId: string; personId: string }) => {
       if (!currentProductionId) return
-      await addShotCast({
-        production_id: currentProductionId,
-        shot_id: shotId,
-        person_id: personId,
-      })
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        await addShotCastForActor({
+          db,
+          actor: authSession.currentUser,
+          data: {
+            production_id: currentProductionId,
+            shot_id: shotId,
+            person_id: personId,
+          },
+        })
+      } else {
+        await addShotCast({
+          production_id: currentProductionId,
+          shot_id: shotId,
+          person_id: personId,
+        })
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shot-cast-by-shot-ids'] })
@@ -442,7 +590,17 @@ export function ShotListPage() {
   })
 
   const removeShotCastMutation = useMutation({
-    mutationFn: (shotCastId: string) => removeShotCast(shotCastId),
+    mutationFn: async (shotCastId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return removeShotCastForActor({
+          db,
+          actor: authSession.currentUser,
+          shotCastId,
+        })
+      }
+      return removeShotCast(shotCastId)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shot-cast-by-shot-ids'] })
       queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
@@ -462,7 +620,7 @@ export function ShotListPage() {
         throw new Error('Episode is required')
       }
       setCreateSceneError(null)
-      const scene = await createScene({
+      const payload = {
         production_id: currentProductionId,
         scene_number: sceneNumber,
         heading: newSceneHeading.trim() || null,
@@ -471,7 +629,18 @@ export function ShotListPage() {
         day_night: newSceneDayNight ?? null,
         location_id: newSceneLocationId ?? null,
         ...(isEpisodicProduction ? { episode_id: newSceneEpisodeId.trim() } : {}),
-      })
+      }
+      const scene =
+        authSession.authSupported && authSession.currentUser
+          ? await (async () => {
+              const db = await getDb()
+              return createSceneForActor({
+                db,
+                actor: authSession.currentUser!,
+                data: payload,
+              })
+            })()
+          : await createScene(payload)
       return scene
     },
     onSuccess: (scene) => {
@@ -525,15 +694,27 @@ export function ShotListPage() {
         throw new Error('Episode is required')
       }
       setEditSceneError(null)
-      const scene = await updateScene(selectedSceneId, {
+      const payload = {
         scene_number: sceneNumber,
-      heading: editSceneHeading.trim() || null,
-      title: editSceneTitle.trim() || null,
+        heading: editSceneHeading.trim() || null,
+        title: editSceneTitle.trim() || null,
         int_ext: editSceneIntExt ?? null,
         day_night: editSceneDayNight ?? null,
         location_id: editSceneLocationId ?? null,
         ...(isEpisodicProduction ? { episode_id: editSceneEpisodeId.trim() } : {}),
-      })
+      }
+      const scene =
+        authSession.authSupported && authSession.currentUser
+          ? await (async () => {
+              const db = await getDb()
+              return updateSceneForActor({
+                db,
+                actor: authSession.currentUser!,
+                sceneId: selectedSceneId,
+                data: payload,
+              })
+            })()
+          : await updateScene(selectedSceneId, payload)
       return scene
     },
     onSuccess: () => {
@@ -567,19 +748,53 @@ export function ShotListPage() {
 
   const { data: lensTerms = [] } = useQuery({
     queryKey: ['equipment-terms', currentProductionId, 'LENS'],
-    queryFn: () => listEquipmentTermsByProductionAndType(currentProductionId!, 'LENS'),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listEquipmentTermsByProductionAndTypeForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          type: 'LENS',
+        })
+      }
+      return listEquipmentTermsByProductionAndType(currentProductionId, 'LENS')
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: supportTerms = [] } = useQuery({
     queryKey: ['equipment-terms', currentProductionId, 'SUPPORT'],
-    queryFn: () => listEquipmentTermsByProductionAndType(currentProductionId!, 'SUPPORT'),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listEquipmentTermsByProductionAndTypeForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          type: 'SUPPORT',
+        })
+      }
+      return listEquipmentTermsByProductionAndType(currentProductionId, 'SUPPORT')
+    },
     enabled: !!currentProductionId,
   })
 
   const updateShotMutation = useMutation({
-    mutationFn: ({ shotId, data }: { shotId: string; data: Partial<Shot> }) =>
-      updateShot(shotId, data),
+    mutationFn: async ({ shotId, data }: { shotId: string; data: Partial<Shot> }) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return updateShotForActor({
+          db,
+          actor: authSession.currentUser,
+          shotId,
+          data,
+        })
+      }
+      return updateShot(shotId, data)
+    },
     onSuccess: () => {
       setEditingCell(null)
       setSaveError(null)
@@ -617,10 +832,44 @@ export function ShotListPage() {
       const lensStr = form.lens.trim()
       const supportStr = form.support.trim()
       if (productionId) {
-        if (lensStr) await upsertEquipmentTerm(productionId, 'LENS', lensStr)
-        if (supportStr) await upsertEquipmentTerm(productionId, 'SUPPORT', supportStr)
+        if (lensStr) {
+          if (authSession.authSupported && authSession.currentUser) {
+            const db = await getDb()
+            await upsertEquipmentTermForActor({
+              db,
+              actor: authSession.currentUser,
+              productionId,
+              type: 'LENS',
+              value: lensStr,
+            })
+          } else {
+            await upsertEquipmentTerm(productionId, 'LENS', lensStr)
+          }
+        }
+        if (supportStr) {
+          if (authSession.authSupported && authSession.currentUser) {
+            const db = await getDb()
+            await upsertEquipmentTermForActor({
+              db,
+              actor: authSession.currentUser,
+              productionId,
+              type: 'SUPPORT',
+              value: supportStr,
+            })
+          } else {
+            await upsertEquipmentTerm(productionId, 'SUPPORT', supportStr)
+          }
+        }
       }
 
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return createShotForActor({
+          db,
+          actor: authSession.currentUser,
+          data: buildCreateShotInput(sceneId, form),
+        })
+      }
       return createShot(buildCreateShotInput(sceneId, form))
     },
     onSuccess: (_result, variables) => {
@@ -649,6 +898,15 @@ export function ShotListPage() {
 
   const deleteShotMutation = useMutation({
     mutationFn: async (args: { shotId: string; sceneId: string }) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        await deleteShotForActor({
+          db,
+          actor: authSession.currentUser,
+          shotId: args.shotId,
+        })
+        return
+      }
       await deleteShot(args.shotId)
     },
     onSuccess: (_void, variables) => {
@@ -729,9 +987,25 @@ export function ShotListPage() {
     if (field === 'lens') {
       const str = typeof value === 'string' ? value.trim() : ''
       if (str && currentProductionId) {
-        upsertEquipmentTerm(currentProductionId, 'LENS', str).then(() => {
-          updateShotMutation.mutate({ shotId, data: { lens: str } })
-        })
+        if (authSession.authSupported && authSession.currentUser) {
+          getDb()
+            .then((db) =>
+              upsertEquipmentTermForActor({
+                db,
+                actor: authSession.currentUser!,
+                productionId: currentProductionId,
+                type: 'LENS',
+                value: str,
+              })
+            )
+            .then(() => {
+              updateShotMutation.mutate({ shotId, data: { lens: str } })
+            })
+        } else {
+          upsertEquipmentTerm(currentProductionId, 'LENS', str).then(() => {
+            updateShotMutation.mutate({ shotId, data: { lens: str } })
+          })
+        }
       } else {
         updateShotMutation.mutate({ shotId, data: { lens: null } })
       }
@@ -740,9 +1014,25 @@ export function ShotListPage() {
     if (field === 'support') {
       const str = typeof value === 'string' ? value.trim() : ''
       if (str && currentProductionId) {
-        upsertEquipmentTerm(currentProductionId, 'SUPPORT', str).then(() => {
-          updateShotMutation.mutate({ shotId, data: { support: str } })
-        })
+        if (authSession.authSupported && authSession.currentUser) {
+          getDb()
+            .then((db) =>
+              upsertEquipmentTermForActor({
+                db,
+                actor: authSession.currentUser!,
+                productionId: currentProductionId,
+                type: 'SUPPORT',
+                value: str,
+              })
+            )
+            .then(() => {
+              updateShotMutation.mutate({ shotId, data: { support: str } })
+            })
+        } else {
+          upsertEquipmentTerm(currentProductionId, 'SUPPORT', str).then(() => {
+            updateShotMutation.mutate({ shotId, data: { support: str } })
+          })
+        }
       } else {
         updateShotMutation.mutate({ shotId, data: { support: null } })
       }

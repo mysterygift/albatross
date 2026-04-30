@@ -4,6 +4,15 @@ import { listBookingsByProduction } from '@/lib/db/repositories/booking'
 import { listPeopleByProduction } from '@/lib/db/repositories/person'
 import { listShootDaysByProduction } from '@/lib/db/repositories/schedule'
 import { createBooking, deleteBooking } from '@/lib/db/repositories/booking'
+import { getDb } from '@/lib/db/client'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import {
+  createBookingForActor,
+  deleteBookingForActor,
+  listBookingsByProductionForActor,
+  listPeopleByProductionForActor,
+  listShootDaysByProductionForActor,
+} from '@/lib/access/projectDomainService'
 import {
   Table,
   TableBody,
@@ -34,6 +43,7 @@ import { useState } from 'react'
 
 export function BookingsPage() {
   const { currentProductionId } = useCurrentProduction()
+  const authSession = useAuthSession()
   const [open, setOpen] = useState(false)
   const [personId, setPersonId] = useState('')
   const [shootDayId, setShootDayId] = useState('')
@@ -41,29 +51,73 @@ export function BookingsPage() {
 
   const { data: bookings = [] } = useQuery({
     queryKey: ['bookings', currentProductionId],
-    queryFn: () => listBookingsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listBookingsByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listBookingsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: people = [] } = useQuery({
     queryKey: ['people', currentProductionId],
-    queryFn: () => listPeopleByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listPeopleByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listPeopleByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const { data: shootDays = [] } = useQuery({
     queryKey: ['shoot-days', currentProductionId],
-    queryFn: () => listShootDaysByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDaysByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listShootDaysByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      createBooking({
+    mutationFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return createBookingForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId!,
+          personId,
+          shootDayId: shootDayId || null,
+        })
+      }
+      return createBooking({
         production_id: currentProductionId!,
         person_id: personId,
         shoot_day_id: shootDayId || null,
-      }),
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
       setOpen(false)
@@ -73,7 +127,17 @@ export function BookingsPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: deleteBooking,
+    mutationFn: async (bookingId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return deleteBookingForActor({
+          db,
+          actor: authSession.currentUser,
+          bookingId,
+        })
+      }
+      return deleteBooking(bookingId)
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bookings'] }),
   })
 

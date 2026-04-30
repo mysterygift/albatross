@@ -3,6 +3,12 @@ import { useCurrentProduction } from '@/features/productions/context'
 import { listDocumentsByProduction } from '@/lib/db/repositories/document'
 import { pickAndSaveAttachment } from '@/lib/files'
 import { createDocument } from '@/lib/db/repositories/document'
+import { getDb } from '@/lib/db/client'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import {
+  createDocumentForActor,
+  listDocumentsByProductionForActor,
+} from '@/lib/access/projectDomainService'
 import { resolveAppDataPath } from '@/lib/files'
 import {
   Table,
@@ -19,11 +25,23 @@ import { useEffect } from 'react'
 
 export function DocumentsPage() {
   const { currentProductionId } = useCurrentProduction()
+  const authSession = useAuthSession()
   const queryClient = useQueryClient()
 
   const { data: documents = [] } = useQuery({
     queryKey: ['documents', currentProductionId],
-    queryFn: () => listDocumentsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listDocumentsByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listDocumentsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -31,6 +49,16 @@ export function DocumentsPage() {
     mutationFn: async () => {
       const result = await pickAndSaveAttachment()
       if (!result || !currentProductionId) return
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return createDocumentForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          fileName: result.fileName,
+          filePath: result.relativePath,
+        })
+      }
       return createDocument({
         production_id: currentProductionId,
         entity_type: null,

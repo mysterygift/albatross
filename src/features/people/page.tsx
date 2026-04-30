@@ -1,6 +1,14 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
+import {
+  createPersonForActor,
+  deletePersonForActor,
+  listPeopleByProductionForActor,
+  updatePersonForActor,
+} from '@/lib/access/projectDomainService'
 import {
   listPeopleByProduction,
   createPerson,
@@ -42,6 +50,7 @@ import { PersonForm, type PersonFormValues } from '@/features/people/components/
 
 export function PeoplePage() {
   const { currentProductionId } = useCurrentProduction()
+  const authSession = useAuthSession()
   const [filter, setFilter] = useState<'all' | 'crew' | 'cast'>('all')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
@@ -49,7 +58,14 @@ export function PeoplePage() {
 
   const { data: people = [] } = useQuery({
     queryKey: ['people', currentProductionId],
-    queryFn: () => listPeopleByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listPeopleByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listPeopleByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
 
@@ -61,8 +77,8 @@ export function PeoplePage() {
         : people
 
   const createMutation = useMutation({
-    mutationFn: (d: PersonFormValues) =>
-      createPerson({
+    mutationFn: async (d: PersonFormValues) => {
+      const data = {
         production_id: currentProductionId!,
         name: d.name,
         is_cast: d.is_cast ? 1 : 0,
@@ -77,7 +93,13 @@ export function PeoplePage() {
         agent_email: d.agent_email?.trim() || null,
         agent_phone: d.agent_phone?.trim() || null,
         role_name: d.role_name?.trim() || null,
-      }),
+      }
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return createPersonForActor({ db, actor: authSession.currentUser, productionId: currentProductionId!, data })
+      }
+      return createPerson(data)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['people'] })
       setOpen(false)
@@ -85,8 +107,8 @@ export function PeoplePage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<PersonFormValues> }) =>
-      updatePerson(id, {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<PersonFormValues> }) => {
+      const payload = {
         ...data,
         is_cast: data.is_cast !== undefined ? (data.is_cast ? 1 : 0) : undefined,
         cast_number: data.cast_number !== undefined ? (data.cast_number?.trim() || null) : undefined,
@@ -94,7 +116,13 @@ export function PeoplePage() {
         agent_email: data.agent_email !== undefined ? (data.agent_email?.trim() || null) : undefined,
         agent_phone: data.agent_phone !== undefined ? (data.agent_phone?.trim() || null) : undefined,
         role_name: data.role_name !== undefined ? (data.role_name?.trim() || null) : undefined,
-      }),
+      }
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return updatePersonForActor({ db, actor: authSession.currentUser, personId: id, data: payload })
+      }
+      return updatePerson(id, payload)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['people'] })
       setEditingId(null)
@@ -102,7 +130,13 @@ export function PeoplePage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: deletePerson,
+    mutationFn: async (personId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return deletePersonForActor({ db, actor: authSession.currentUser, personId })
+      }
+      return deletePerson(personId)
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['people'] }),
   })
 

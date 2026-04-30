@@ -103,6 +103,10 @@ fn rebuild_menu(
         .build()
         .map_err(|err| err.to_string())?;
 
+    let file_logout_item = MenuItemBuilder::with_id("file_logout", "Log Out")
+        .build(app)
+        .map_err(|err| err.to_string())?;
+
     let app_submenu = SubmenuBuilder::new(app, "Albatross")
         .item(&PredefinedMenuItem::about(app, None, None).map_err(|err| err.to_string())?)
         .item(&app_settings_item)
@@ -124,6 +128,8 @@ fn rebuild_menu(
         .item(&export_item)
         .separator()
         .item(&open_recent_menu)
+        .separator()
+        .item(&file_logout_item)
         .build()
         .map_err(|err| err.to_string())?;
 
@@ -795,6 +801,18 @@ pub fn run() {
             sql: include_str!("../migrations/0064_storyboard_foundation.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 65,
+            description: "uam1_auth_foundation",
+            sql: include_str!("../migrations/0065_uam1_auth_foundation.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 66,
+            description: "project_memberships",
+            sql: include_str!("../migrations/0066_project_memberships.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
@@ -850,6 +868,9 @@ pub fn run() {
                 }
                 "app_settings" => {
                     let _ = app_handle.emit("albatross-menu-open-settings", ());
+                }
+                "file_logout" => {
+                    let _ = app_handle.emit("albatross-menu-logout", ());
                 }
                 "view_go_dashboard" => {
                     let _ = app_handle.emit("albatross-menu-view-go-dashboard", ());

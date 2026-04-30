@@ -19,6 +19,8 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { scheduleTutorialSteps } from '@/features/tutorial/sections/scheduleTutorial'
@@ -49,6 +51,25 @@ import {
 } from '@/lib/schedule/episodicScheduleDisplay'
 import { getCastIdsBySceneIds } from '@/lib/db/repositories/scene-cast'
 import { getCastIdsByShotIds } from '@/lib/db/repositories/shot-cast'
+import {
+  ensureCallWrapStripsForProductionForActor,
+  getCastIdsBySceneIdsForActor,
+  getCastIdsByShotIdsForActor,
+  listBookingsByProductionForActor,
+  listCalendarShootDayEventsForActor,
+  listCastForActor,
+  listEpisodesByProductionForActor,
+  listLocationsByProductionForActor,
+  listScenesByProductionForActor,
+  listShootDaysByProductionForActor,
+  listShotsByProductionForActor,
+  listShootingBlocsByProductionForActor,
+  listStripsByProductionForActor,
+  listCrewForActor,
+  moveShootDayToDateForActor,
+  swapShootDaysForActor,
+  updateShootDayForActor,
+} from '@/lib/access/projectDomainService'
 import { getCallSheetCastRequirements } from '@/lib/call-sheets/castRequirements'
 import { getCallSheetCrewRequirements } from '@/lib/call-sheets/crewRequirements'
 import {
@@ -1010,6 +1031,7 @@ function DaySummaryDrawer({
 export function ScheduleCalendarPage() {
   const queryClient = useQueryClient()
   const { currentProductionId, currentProduction } = useCurrentProduction()
+  const authSession = useAuthSession()
   const isEpisodicProduction = currentProduction?.is_episodic === true
   const [viewDate, setViewDate] = useState(() => new Date())
   const [calendarBlocFilter, setCalendarBlocFilter] = useState<ShootingBlocViewFilter>('all')
@@ -1053,11 +1075,28 @@ export function ScheduleCalendarPage() {
   )
 
   const moveMutation = useMutation({
-    mutationFn: (vars: { shootDayId: string; newDate: string }) =>
-      moveShootDayToDate(vars.shootDayId, vars.newDate),
+    mutationFn: async (vars: { shootDayId: string; newDate: string }) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return moveShootDayToDateForActor({
+          db,
+          actor: authSession.currentUser,
+          shootDayId: vars.shootDayId,
+          newDate: vars.newDate,
+        })
+      }
+      return moveShootDayToDate(vars.shootDayId, vars.newDate)
+    },
   })
   const ensureCallWrapStripsMutation = useMutation({
-    mutationFn: (productionId: string) => ensureCallWrapStripsForProduction(productionId),
+    mutationFn: async (productionId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        await ensureCallWrapStripsForProductionForActor({ db, actor: authSession.currentUser, productionId })
+      } else {
+        await ensureCallWrapStripsForProduction(productionId)
+      }
+    },
     onSuccess: () => {
       invalidateScheduleQueries()
     },
@@ -1071,12 +1110,27 @@ export function ScheduleCalendarPage() {
       callTime: string | null
       wrapTime: string | null
       notes: string | null
-    }) =>
-      updateShootDay(vars.shootDayId, {
+    }) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        return getDb().then((db) =>
+          updateShootDayForActor({
+            db,
+            actor: authSession.currentUser!,
+            shootDayId: vars.shootDayId,
+            data: {
+              call_time: vars.callTime,
+              wrap_time: vars.wrapTime,
+              notes: vars.notes,
+            },
+          })
+        )
+      }
+      return updateShootDay(vars.shootDayId, {
         call_time: vars.callTime,
         wrap_time: vars.wrapTime,
         notes: vars.notes,
-      }),
+      })
+    },
   })
 
   const handleDragStart = (ev: DragStartEvent) => {
@@ -1125,13 +1179,25 @@ export function ScheduleCalendarPage() {
 
   const { data: shootingBlocs = [] } = useQuery({
     queryKey: ['shooting-blocs', currentProductionId],
-    queryFn: () => listShootingBlocsByProduction(currentProductionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootingBlocsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listShootingBlocsByProduction(currentProductionId!)
+    },
     enabled: !!currentProductionId && isEpisodicProduction,
   })
 
   const { data: episodes = [] } = useQuery({
     queryKey: ['episodes', currentProductionId],
-    queryFn: () => listEpisodesByProduction(currentProductionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listEpisodesByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listEpisodesByProduction(currentProductionId!)
+    },
     enabled: !!currentProductionId && isEpisodicProduction,
   })
 
@@ -1143,45 +1209,106 @@ export function ScheduleCalendarPage() {
       dateRange.end,
       isEpisodicProduction ? calendarBlocFilter : 'all',
     ],
-    queryFn: () =>
-      listCalendarShootDayEvents(currentProductionId ?? '', dateRange, {
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCalendarShootDayEventsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          dateRange,
+          filters: { shootingBlocFilter: isEpisodicProduction ? calendarBlocFilter : 'all' },
+        })
+      }
+      return listCalendarShootDayEvents(currentProductionId, dateRange, {
         shootingBlocFilter: isEpisodicProduction ? calendarBlocFilter : 'all',
-      }),
+      })
+    },
     enabled: !!currentProductionId,
   })
   const { data: strips = [] } = useQuery({
     queryKey: stripboardQueryKeys.strips(currentProductionId ?? ''),
-    queryFn: () => listStripsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listStripsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listStripsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
   const { data: scenes = [] } = useQuery({
     queryKey: stripboardQueryKeys.scenes(currentProductionId ?? ''),
-    queryFn: () => listScenesByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listScenesByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listScenesByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
   const { data: shots = [] } = useQuery({
     queryKey: ['shots', currentProductionId ?? ''],
-    queryFn: () => listShotsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShotsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listShotsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
   const { data: shootDays = [] } = useQuery({
     queryKey: ['shoot-days', currentProductionId ?? ''],
-    queryFn: () => listShootDaysByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDaysByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listShootDaysByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
   const { data: bookings = [] } = useQuery({
     queryKey: ['bookings', currentProductionId ?? ''],
-    queryFn: () => listBookingsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listBookingsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listBookingsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
   const { data: cast = [] } = useQuery({
     queryKey: ['cast', currentProductionId ?? ''],
-    queryFn: () => listCast(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCastForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listCast(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
   const { data: crew = [] } = useQuery({
     queryKey: ['crew', currentProductionId ?? ''],
-    queryFn: () => listCrew(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCrewForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listCrew(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
   const { data: hierarchyData } = useQuery({
@@ -1191,7 +1318,14 @@ export function ScheduleCalendarPage() {
   })
   const { data: locations = [] } = useQuery({
     queryKey: ['locations', currentProductionId ?? ''],
-    queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listLocationsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listLocationsByProduction(currentProductionId)
+    },
     enabled: !!currentProductionId,
   })
   const { data: orsApiKeySetting = '' } = useQuery({
@@ -1242,13 +1376,35 @@ export function ScheduleCalendarPage() {
 
   const { data: castBySceneId = new Map<string, string[]>() } = useQuery({
     queryKey: ['cast-by-scene-calendar-drawer', scheduledSceneIdsForSelectedUnit.join(',')],
-    queryFn: () => getCastIdsBySceneIds(scheduledSceneIdsForSelectedUnit),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser && currentProductionId) {
+        const db = await getDb()
+        return getCastIdsBySceneIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          sceneIds: scheduledSceneIdsForSelectedUnit,
+        })
+      }
+      return getCastIdsBySceneIds(scheduledSceneIdsForSelectedUnit)
+    },
     enabled: scheduledSceneIdsForSelectedUnit.length > 0,
   })
 
   const { data: castByShotId = new Map<string, string[]>() } = useQuery({
     queryKey: ['cast-by-shot-calendar-drawer', scheduledShotIdsForSelectedUnit.join(',')],
-    queryFn: () => getCastIdsByShotIds(scheduledShotIdsForSelectedUnit),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser && currentProductionId) {
+        const db = await getDb()
+        return getCastIdsByShotIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          shotIds: scheduledShotIdsForSelectedUnit,
+        })
+      }
+      return getCastIdsByShotIds(scheduledShotIdsForSelectedUnit)
+    },
     enabled: scheduledShotIdsForSelectedUnit.length > 0,
   })
 
@@ -1580,7 +1736,16 @@ export function ScheduleCalendarPage() {
               variant="outline"
               onClick={() => {
                 if (!conflictModal) return
-                swapShootDays(conflictModal.sourceShootDayId, conflictModal.existingShootDayId)
+                ;(authSession.authSupported && authSession.currentUser
+                  ? getDb().then((db) =>
+                      swapShootDaysForActor({
+                        db,
+                        actor: authSession.currentUser!,
+                        sourceShootDayId: conflictModal.sourceShootDayId,
+                        targetShootDayId: conflictModal.existingShootDayId,
+                      })
+                    )
+                  : swapShootDays(conflictModal.sourceShootDayId, conflictModal.existingShootDayId))
                   .then(() => {
                     invalidateScheduleQueries()
                     setConflictModal(null)

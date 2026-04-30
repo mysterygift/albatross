@@ -4,6 +4,8 @@ import { getDb } from '@/lib/db/client'
 import { API_CALL_TRACKING_SETTING_KEY, setApiCallTrackingEnabled } from '@/lib/dev/apiCallTracker'
 import { ensureSettingsDefaults, getSetting } from '@/lib/db/repositories/settings'
 import { listProductions } from '@/lib/db/repositories/production'
+import { listVisibleProjectsForActor } from '@/lib/access/projectAccessService'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
 import type { Production } from '@/lib/db/types'
 
 type ProductionContextValue = {
@@ -22,6 +24,7 @@ const ProductionContext = createContext<ProductionContextValue | null>(null)
 let settingsDefaultsEnsured = false
 
 export function ProductionProvider({ children }: { children: ReactNode }) {
+  const authSession = useAuthSession()
   const [currentProductionId, setCurrentProductionId] = useState<string | null>(null)
   const [selectedBudgetRevisionByProduction, setSelectedBudgetRevisionByProduction] = useState<Record<string, string>>({})
 
@@ -36,8 +39,23 @@ export function ProductionProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const { data: productions = [], refetch: refetchProductions } = useQuery({
-    queryKey: ['productions', { includeArchived: false }],
-    queryFn: () => listProductions({ includeArchived: false }),
+    queryKey: [
+      'productions',
+      {
+        includeArchived: false,
+        authSupported: authSession.authSupported,
+        actorId: authSession.currentUser?.id ?? null,
+      },
+    ],
+    queryFn: async () => {
+      if (authSession.isLoading) return []
+      const user = authSession.currentUser
+      if (authSession.authSupported && user) {
+        const db = await getDb()
+        return listVisibleProjectsForActor(db, user, { includeArchived: false })
+      }
+      return listProductions({ includeArchived: false })
+    },
   })
 
   // If current production was archived (or deleted), it won't be in the active list; clear selection to avoid stale state.

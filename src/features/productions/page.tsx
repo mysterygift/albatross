@@ -6,11 +6,21 @@ import {
   permanentlyDeleteProduction,
   duplicateProduction,
   deleteProduction,
-  archiveProduction,
-  unarchiveProduction,
   findExistingDemoTemplateProduction,
 } from '@/lib/db/repositories/production'
 import { createProductionFromTemplate } from '@/lib/db/createProductionFromTemplate'
+import { getDb } from '@/lib/db/client'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { canAdminProject, canEditProject } from '@/lib/access/projectAccess'
+import {
+  archiveProjectForActor,
+  duplicateProductionForActor,
+  listVisibleProjectsForActor,
+  permanentlyDeleteProductionForActor,
+  unarchiveProjectForActor,
+  updateProjectMetadataForActor,
+} from '@/lib/access/projectAccessService'
+import { getProjectAccessLevelsForUserOnProductions } from '@/lib/db/repositories/projectMemberships'
 import {
   useReactTable,
   getCoreRowModel,
@@ -134,6 +144,7 @@ const TEMPLATE_OPTIONS: {
 const VISIBLE_TEMPLATE_OPTIONS = TEMPLATE_OPTIONS.filter((opt) => opt.value !== 'demo')
 
 export function ProductionsPage() {
+  const authSession = useAuthSession()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [productionToHardDelete, setProductionToHardDelete] = useState<Production | null>(null)
@@ -167,9 +178,56 @@ export function ProductionsPage() {
     },
   })
   const { data: productions = [] } = useQuery({
-    queryKey: ['productions', { includeArchived: showArchived }],
-    queryFn: () => listProductions({ includeArchived: showArchived }),
+    queryKey: [
+      'productions',
+      {
+        includeArchived: showArchived,
+        authSupported: authSession.authSupported,
+        actorId: authSession.currentUser?.id ?? null,
+      },
+    ],
+    queryFn: async () => {
+      if (authSession.isLoading) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listVisibleProjectsForActor(db, authSession.currentUser, { includeArchived: showArchived })
+      }
+      return listProductions({ includeArchived: showArchived })
+    },
   })
+
+  const productionIds = productions.map((p) => p.id)
+  const memberAccessMapEnabled =
+    authSession.authSupported &&
+    Boolean(authSession.currentUser) &&
+    !authSession.isInstanceAdmin &&
+    productionIds.length > 0
+
+  const { data: memberAccessMap, isFetching: memberAccessFetching } = useQuery({
+    queryKey: ['production-row-member-access', authSession.currentUser?.id, productionIds.join('|')],
+    enabled: memberAccessMapEnabled,
+    queryFn: async () => {
+      const db = await getDb()
+      return getProjectAccessLevelsForUserOnProductions(db, authSession.currentUser!.id, productionIds)
+    },
+  })
+
+  const rowActionCaps = (productionId: string) => {
+    if (!authSession.authSupported || !authSession.currentUser) {
+      return { canEdit: true, canAdmin: true }
+    }
+    if (authSession.isInstanceAdmin) {
+      return { canEdit: true, canAdmin: true }
+    }
+    if (memberAccessMapEnabled && memberAccessFetching) {
+      return { canEdit: false, canAdmin: false }
+    }
+    const level = memberAccessMap?.get(productionId) ?? null
+    return {
+      canEdit: canEditProject(level, false),
+      canAdmin: canAdminProject(level, false),
+    }
+  }
 
   function toggleShowArchived() {
     const next = !showArchived
@@ -215,8 +273,20 @@ export function ProductionsPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: EditProductionForm }) =>
-      updateProduction(id, data),
+    mutationFn: async ({ id, data }: { id: string; data: EditProductionForm }) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        await updateProjectMetadataForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: id,
+          name: data.name,
+          notes: data.notes ?? null,
+        })
+        return
+      }
+      return updateProduction(id, data)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       setEditingId(null)
@@ -224,7 +294,14 @@ export function ProductionsPage() {
   })
 
   const hardDeleteMutation = useMutation({
-    mutationFn: permanentlyDeleteProduction,
+    mutationFn: async (productionId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        await permanentlyDeleteProductionForActor(db, authSession.currentUser, productionId)
+        return
+      }
+      return permanentlyDeleteProduction(productionId)
+    },
     onSuccess: (_, id) => {
       if (currentProductionId === id) setCurrentProductionId(null)
       queryClient.invalidateQueries({ queryKey: ['productions'] })
@@ -240,7 +317,14 @@ export function ProductionsPage() {
   })
 
   const archiveMutation = useMutation({
-    mutationFn: archiveProduction,
+    mutationFn: async (productionId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        await archiveProjectForActor(db, authSession.currentUser, productionId)
+        return
+      }
+      return import('@/lib/db/repositories/production').then((m) => m.archiveProduction(productionId))
+    },
     onSuccess: (_, id) => {
       if (currentProductionId === id) setCurrentProductionId(null)
       queryClient.invalidateQueries({ queryKey: ['productions'] })
@@ -255,7 +339,14 @@ export function ProductionsPage() {
   })
 
   const unarchiveMutation = useMutation({
-    mutationFn: unarchiveProduction,
+    mutationFn: async (productionId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        await unarchiveProjectForActor(db, authSession.currentUser, productionId)
+        return
+      }
+      return import('@/lib/db/repositories/production').then((m) => m.unarchiveProduction(productionId))
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
@@ -302,8 +393,13 @@ export function ProductionsPage() {
   }
 
   const duplicateMutation = useMutation({
-    mutationFn: ({ sourceId, newName }: { sourceId: string; newName: string }) =>
-      duplicateProduction(sourceId, newName),
+    mutationFn: async ({ sourceId, newName }: { sourceId: string; newName: string }) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return duplicateProductionForActor(db, authSession.currentUser, sourceId, newName)
+      }
+      return duplicateProduction(sourceId, newName)
+    },
     onSuccess: (result) => {
       setDuplicateError(null)
       queryClient.invalidateQueries({ queryKey: ['productions'] })
@@ -354,6 +450,7 @@ export function ProductionsPage() {
       id: 'actions',
       cell: ({ row }) => {
         const isArchived = !!row.original.archived_at
+        const caps = rowActionCaps(row.original.id)
         return (
           <div className="flex gap-2">
             <Button
@@ -361,6 +458,7 @@ export function ProductionsPage() {
               size="icon"
               onClick={() => setEditingId(row.original.id)}
               title="Edit"
+              disabled={!caps.canEdit}
             >
               <Pencil className="size-4" />
             </Button>
@@ -374,6 +472,7 @@ export function ProductionsPage() {
                   setDuplicateError(null)
                 }}
                 title="Duplicate production"
+                disabled={!caps.canEdit}
               >
                 <Copy className="size-4" />
               </Button>
@@ -383,7 +482,7 @@ export function ProductionsPage() {
                 variant="ghost"
                 size="icon"
                 onClick={() => unarchiveMutation.mutate(row.original.id)}
-                disabled={unarchiveMutation.isPending}
+                disabled={unarchiveMutation.isPending || !caps.canAdmin}
                 title="Unarchive project"
                 className="text-mint-600 hover:bg-mint-500/10 hover:text-mint-700 dark:text-mint-400 dark:hover:text-mint-300"
               >
@@ -394,7 +493,7 @@ export function ProductionsPage() {
                 variant="ghost"
                 size="icon"
                 onClick={() => archiveMutation.mutate(row.original.id)}
-                disabled={archiveMutation.isPending}
+                disabled={archiveMutation.isPending || !caps.canAdmin}
                 title="Archive project"
                 className="text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
               >
@@ -406,6 +505,7 @@ export function ProductionsPage() {
               size="icon"
               onClick={() => setProductionToHardDelete(row.original)}
               title="Delete permanently"
+              disabled={!caps.canAdmin}
             >
               <Trash2 className="size-4 text-destructive" />
             </Button>
@@ -547,7 +647,16 @@ export function ProductionsPage() {
                     setDemoOverrideError(null)
                     setOverrideDeletePending(true)
                     try {
-                      await permanentlyDeleteProduction(demoOverrideTarget.production.id)
+                      if (authSession.authSupported && authSession.currentUser) {
+                        const db = await getDb()
+                        await permanentlyDeleteProductionForActor(
+                          db,
+                          authSession.currentUser,
+                          demoOverrideTarget.production.id
+                        )
+                      } else {
+                        await permanentlyDeleteProduction(demoOverrideTarget.production.id)
+                      }
                       if (currentProductionId === demoOverrideTarget.production.id) {
                         setCurrentProductionId(null)
                       }

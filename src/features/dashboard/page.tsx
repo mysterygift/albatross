@@ -25,6 +25,9 @@ import { getOutstandingFloatReminders } from '@/lib/budget/floatReminders'
 import { listFloatsByProduction } from '@/lib/db/repositories/floats'
 import { listFloatExpenseLinksByProduction } from '@/lib/db/repositories/floatReconciliation'
 import { listPeopleByProduction } from '@/lib/db/repositories/person'
+import { getDb } from '@/lib/db/client'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { listPeopleByProductionForActor } from '@/lib/access/projectDomainService'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -952,6 +955,7 @@ function DeliverablesCard({
 }
 
 export function DashboardPage() {
+  const authSession = useAuthSession()
   const location = useLocation()
   const navigate = useNavigate()
   const { currentProduction, currentProductionId } = useCurrentProduction()
@@ -1059,7 +1063,17 @@ export function DashboardPage() {
     isError: dashPeopleError,
   } = useQuery({
     queryKey: ['people', currentProductionId],
-    queryFn: () => listPeopleByProduction(currentProductionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listPeopleByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId!,
+        })
+      }
+      return listPeopleByProduction(currentProductionId!)
+    },
     enabled: !!currentProductionId,
   })
 

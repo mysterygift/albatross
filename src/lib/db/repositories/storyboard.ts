@@ -629,26 +629,6 @@ export async function applyAthenaImportToStoryboard(args: {
     const maxSort = current.reduce((max, img) => Math.max(max, img.sort_order), -1)
     sortCursorByShot.set(shotId, maxSort + 1)
   }
-
-  // #region agent log
-  fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
-    body: JSON.stringify({
-      sessionId: '72cc09',
-      runId: 'pre-fix',
-      hypothesisId: 'H9',
-      location: 'src/lib/db/repositories/storyboard.ts:applyAthenaImportToStoryboard:beforeTx',
-      message: 'Applying Athena import in repository',
-      data: {
-        sourceImportId: args.source_import_id,
-        itemCount: args.items.length,
-        shotCount: shotIds.length,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {})
-  // #endregion
   await runInSerializedTransaction(async () => {
     const conn = await getDb()
     const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN', bindValues: [] }]
@@ -729,24 +709,6 @@ export async function applyAthenaImportToStoryboard(args: {
     statements.push({ sql: 'COMMIT', bindValues: [] })
     await executeBatch(conn, statements)
   })
-  // #region agent log
-  fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '72cc09' },
-    body: JSON.stringify({
-      sessionId: '72cc09',
-      runId: 'pre-fix',
-      hypothesisId: 'H9',
-      location: 'src/lib/db/repositories/storyboard.ts:applyAthenaImportToStoryboard:afterTx',
-      message: 'Applied Athena import transaction successfully',
-      data: {
-        sourceImportId: args.source_import_id,
-        appliedCount: args.items.length,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {})
-  // #endregion
 
   return { appliedCount: args.items.length }
 }

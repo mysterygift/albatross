@@ -4,6 +4,32 @@
  */
 import { useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
+import {
+  bulkAssignShotsToDayForActor,
+  createShotStripForActor,
+  createStripForActor,
+  deleteStripForActor,
+  getCastIdsByShotIdsForActor,
+  getEstimatedShootMinutesByShotIdsForActor,
+  listBoneyardStripsForActor,
+  listScenesByProductionForActor,
+  listShootDayUnitsByProductionForActor,
+  listShotsByProductionForActor,
+  listStripsByProductionForActor,
+  listUnitsByProductionForActor,
+  listUnscheduledShotsForActor,
+  moveStripForActor,
+  moveStripToBoneyardForActor,
+  moveStripToUnscheduledForActor,
+  reorderStripForActor,
+  setShootDayUnitLockedForActor,
+  listShootDaysByProductionForActor,
+  ensureMainUnitForActor,
+  updateStripEstimatedMinutesForActor,
+  updateCallWrapStripTimeForActor,
+} from '@/lib/access/projectDomainService'
 import {
   listShootDaysByProduction,
   listScenesByProduction,
@@ -61,10 +87,16 @@ export const boneyardStripsQueryKeys = {
 /** Full stripboard data for a production: days, units, day-units, strips grouped by day/unit, scenes, estimated minutes. */
 export function useStripboard(productionId: string | null) {
   const queryClient = useQueryClient()
+  const authSession = useAuthSession()
 
   const unitsQuery = useQuery({
     queryKey: stripboardQueryKeys.units(productionId ?? ''),
     queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        await ensureMainUnitForActor({ db, actor: authSession.currentUser, productionId: productionId! })
+        return listUnitsByProductionForActor({ db, actor: authSession.currentUser, productionId: productionId! })
+      }
       await ensureMainUnit(productionId!)
       return listUnitsByProduction(productionId!)
     },
@@ -73,31 +105,61 @@ export function useStripboard(productionId: string | null) {
 
   const shootDaysQuery = useQuery({
     queryKey: stripboardQueryKeys.shootDays(productionId ?? ''),
-    queryFn: () => listShootDaysByProduction(productionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDaysByProductionForActor({ db, actor: authSession.currentUser, productionId: productionId! })
+      }
+      return listShootDaysByProduction(productionId!)
+    },
     enabled: !!productionId,
   })
 
   const dayUnitsQuery = useQuery({
     queryKey: stripboardQueryKeys.dayUnits(productionId ?? ''),
-    queryFn: () => listShootDayUnitsByProduction(productionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDayUnitsByProductionForActor({ db, actor: authSession.currentUser, productionId: productionId! })
+      }
+      return listShootDayUnitsByProduction(productionId!)
+    },
     enabled: !!productionId,
   })
 
   const stripsQuery = useQuery({
     queryKey: stripboardQueryKeys.strips(productionId ?? ''),
-    queryFn: () => listStripsByProduction(productionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listStripsByProductionForActor({ db, actor: authSession.currentUser, productionId: productionId! })
+      }
+      return listStripsByProduction(productionId!)
+    },
     enabled: !!productionId,
   })
 
   const scenesQuery = useQuery({
     queryKey: stripboardQueryKeys.scenes(productionId ?? ''),
-    queryFn: () => listScenesByProduction(productionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listScenesByProductionForActor({ db, actor: authSession.currentUser, productionId: productionId! })
+      }
+      return listScenesByProduction(productionId!)
+    },
     enabled: !!productionId,
   })
 
   const shotsQuery = useQuery({
     queryKey: ['shots', productionId ?? ''],
-    queryFn: () => listShotsByProduction(productionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShotsByProductionForActor({ db, actor: authSession.currentUser, productionId: productionId! })
+      }
+      return listShotsByProduction(productionId!)
+    },
     enabled: !!productionId,
   })
 
@@ -114,13 +176,35 @@ export function useStripboard(productionId: string | null) {
 
   const estimatedMinutesQuery = useQuery({
     queryKey: [...stripboardQueryKeys.estimatedMinutes(productionId ?? ''), shotIdsSortedForQueries],
-    queryFn: () => getEstimatedShootMinutesByShotIds(shotIdsSortedForQueries),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getEstimatedShootMinutesByShotIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: productionId!,
+          shotIds: shotIdsSortedForQueries,
+        })
+      }
+      return getEstimatedShootMinutesByShotIds(shotIdsSortedForQueries)
+    },
     enabled: !!productionId,
   })
 
   const shotCastIdsQuery = useQuery({
     queryKey: [...stripboardQueryKeys.all, productionId ?? '', 'shot-cast-by-shot', shotIdsSortedForQueries],
-    queryFn: () => getCastIdsByShotIds(shotIdsSortedForQueries),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getCastIdsByShotIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: productionId!,
+          shotIds: shotIdsSortedForQueries,
+        })
+      }
+      return getCastIdsByShotIds(shotIdsSortedForQueries)
+    },
     enabled: !!productionId && shotIdsSortedForQueries.length > 0,
   })
 
@@ -174,37 +258,63 @@ export function useStripboard(productionId: string | null) {
 
   const setLockedMutation = useMutation({
     mutationFn: ({ shootDayUnitId, isLocked }: { shootDayUnitId: string; isLocked: boolean }) =>
-      setShootDayUnitLocked(shootDayUnitId, isLocked),
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) =>
+            setShootDayUnitLockedForActor({ db, actor: authSession.currentUser!, shootDayUnitId, isLocked })
+          )
+        : setShootDayUnitLocked(shootDayUnitId, isLocked),
     onSuccess: () => invalidate(),
   })
 
   const updateEstimatedMutation = useMutation({
     mutationFn: ({ stripId, minutes }: { stripId: string; minutes: number | null }) =>
-      updateStripEstimatedMinutes(stripId, minutes),
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) =>
+            updateStripEstimatedMinutesForActor({
+              db,
+              actor: authSession.currentUser!,
+              stripId,
+              estimatedMinutes: minutes,
+            })
+          )
+        : updateStripEstimatedMinutes(stripId, minutes),
     onSuccess: () => invalidate(),
   })
 
   const updateCallWrapTimeMutation = useMutation({
     mutationFn: ({ stripId, time }: { stripId: string; time: string }) =>
-      updateCallWrapStripTime(stripId, time),
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) =>
+            updateCallWrapStripTimeForActor({ db, actor: authSession.currentUser!, stripId, time })
+          )
+        : updateCallWrapStripTime(stripId, time),
     onSuccess: () => invalidate(),
   })
 
   /** Move a single strip from the board to Unscheduled. Does not delete; strip remains in DB. */
   const moveToUnscheduledMutation = useMutation({
-    mutationFn: (stripId: string) => moveStripToUnscheduled(stripId),
+    mutationFn: (stripId: string) =>
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) => moveStripToUnscheduledForActor({ db, actor: authSession.currentUser!, stripId }))
+        : moveStripToUnscheduled(stripId),
     onSuccess: () => invalidate(),
   })
 
   /** Move a single strip to Boneyard (discarded). Does not delete; strip can be recovered or deleted from Boneyard. */
   const moveToBoneyardMutation = useMutation({
-    mutationFn: (stripId: string) => moveStripToBoneyard(stripId),
+    mutationFn: (stripId: string) =>
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) => moveStripToBoneyardForActor({ db, actor: authSession.currentUser!, stripId }))
+        : moveStripToBoneyard(stripId),
     onSuccess: () => invalidate(),
   })
 
   /** Permanently soft-delete a strip. Only for Boneyard delete action. */
   const deleteStripMutation = useMutation({
-    mutationFn: (stripId: string) => deleteStrip(stripId),
+    mutationFn: (stripId: string) =>
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) => deleteStripForActor({ db, actor: authSession.currentUser!, stripId }))
+        : deleteStrip(stripId),
     onSuccess: () => invalidate(),
   })
 
@@ -219,18 +329,37 @@ export function useStripboard(productionId: string | null) {
       toShootDayId: string
       toShootDayUnitId: string
       toSortIndex: number
-    }) => moveStrip(stripId, toShootDayId, toShootDayUnitId, toSortIndex),
+    }) =>
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) =>
+            moveStripForActor({
+              db,
+              actor: authSession.currentUser!,
+              stripId,
+              toShootDayId,
+              toShootDayUnitId,
+              toSortIndex,
+            })
+          )
+        : moveStrip(stripId, toShootDayId, toShootDayUnitId, toSortIndex),
     onSuccess: () => invalidate(),
   })
 
   const reorderStripMutation = useMutation({
     mutationFn: ({ stripId, toSortIndex }: { stripId: string; toSortIndex: number }) =>
-      reorderStrip(stripId, toSortIndex),
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) =>
+            reorderStripForActor({ db, actor: authSession.currentUser!, stripId, toSortIndex })
+          )
+        : reorderStrip(stripId, toSortIndex),
     onSuccess: () => invalidate(),
   })
 
   const createStripMutation = useMutation({
-    mutationFn: (data: CreateStripData) => createStrip(data),
+    mutationFn: (data: CreateStripData) =>
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) => createStripForActor({ db, actor: authSession.currentUser!, data }))
+        : createStrip(data),
     onSuccess: () => invalidate(),
   })
 
@@ -247,7 +376,20 @@ export function useStripboard(productionId: string | null) {
       shootDayId: string
       shootDayUnitId: string
       toSortIndex?: number
-    }) => createShotStrip(productionId, shotId, shootDayId, shootDayUnitId, toSortIndex),
+    }) =>
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) =>
+            createShotStripForActor({
+              db,
+              actor: authSession.currentUser!,
+              productionId,
+              shotId,
+              shootDayId,
+              shootDayUnitId,
+              toSortIndex,
+            })
+          )
+        : createShotStrip(productionId, shotId, shootDayId, shootDayUnitId, toSortIndex),
     onSuccess: () => invalidate(),
   })
 
@@ -289,9 +431,21 @@ export function useUnscheduledShots(
   filters?: UnscheduledShotsFilters
 ) {
   const queryClient = useQueryClient()
+  const authSession = useAuthSession()
   const query = useQuery({
     queryKey: unscheduledShotsQueryKeys.list(productionId, filters),
-    queryFn: () => listUnscheduledShots(productionId!, filters),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listUnscheduledShotsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: productionId!,
+          filters,
+        })
+      }
+      return listUnscheduledShots(productionId!, filters)
+    },
     enabled: !!productionId,
   })
 
@@ -305,7 +459,18 @@ export function useUnscheduledShots(
       shootDayId: string
       shootDayUnitId: string
     }) =>
-      bulkAssignShotsToDay(productionId!, shotIds, shootDayId, shootDayUnitId),
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) =>
+            bulkAssignShotsToDayForActor({
+              db,
+              actor: authSession.currentUser!,
+              productionId: productionId!,
+              shotIds,
+              shootDayId,
+              shootDayUnitId,
+            })
+          )
+        : bulkAssignShotsToDay(productionId!, shotIds, shootDayId, shootDayUnitId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: stripboardQueryKeys.all })
       queryClient.invalidateQueries({ queryKey: unscheduledShotsQueryKeys.all })
@@ -323,9 +488,16 @@ export function useUnscheduledShots(
 }
 
 export function useBoneyardStrips(productionId: string | null) {
+  const authSession = useAuthSession()
   const query = useQuery({
     queryKey: boneyardStripsQueryKeys.list(productionId ?? ''),
-    queryFn: () => listBoneyardStrips(productionId!),
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listBoneyardStripsForActor({ db, actor: authSession.currentUser, productionId: productionId! })
+      }
+      return listBoneyardStrips(productionId!)
+    },
     enabled: !!productionId,
   })
   return {

@@ -1,4 +1,10 @@
 import type { Episode } from './types'
+import type { AuthenticatedUser } from '@/lib/auth/authService'
+import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
+import {
+  requireProjectEditAccess,
+  requireProjectViewAccess,
+} from '@/lib/access/projectAccessService'
 import { getProductionById } from './repositories/production'
 import {
   archiveEpisodeForProduction,
@@ -107,4 +113,64 @@ export async function deleteEpisodeClearingReferences(productionId: string, epis
 
 export async function hardDeleteArchivedEpisode(productionId: string, episodeId: string): Promise<void> {
   await deleteEpisodeClearingReferences(productionId, episodeId)
+}
+
+export async function loadEpisodesForSettingsForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+}): Promise<Episode[]> {
+  await requireProjectViewAccess(args.db, args.actor, args.productionId)
+  return loadEpisodesForSettings(args.productionId)
+}
+
+export async function appendEpisodeForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  rawName: string
+}): Promise<Episode> {
+  await requireProjectEditAccess(args.db, args.actor, args.productionId)
+  return appendEpisode(args.productionId, args.rawName)
+}
+
+export async function renameEpisodeForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  episodeId: string
+  rawName: string
+}): Promise<Episode> {
+  await requireProjectEditAccess(args.db, args.actor, args.productionId)
+  return renameEpisode(args.productionId, args.episodeId, args.rawName)
+}
+
+export async function reorderEpisodesForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  activeIdsInOrder: string[]
+}): Promise<void> {
+  await requireProjectEditAccess(args.db, args.actor, args.productionId)
+  return reorderEpisodes(args.productionId, args.activeIdsInOrder)
+}
+
+export async function archiveEpisodeForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  episodeId: string
+}): Promise<void> {
+  await requireProjectEditAccess(args.db, args.actor, args.productionId)
+  return archiveEpisode(args.productionId, args.episodeId)
+}
+
+export async function deleteEpisodeClearingReferencesForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  episodeId: string
+}): Promise<void> {
+  await requireProjectEditAccess(args.db, args.actor, args.productionId)
+  return deleteEpisodeClearingReferences(args.productionId, args.episodeId)
 }

@@ -4,11 +4,14 @@ import { useQueryClient } from '@tanstack/react-query'
 import { pickApfFileForImport, pickApfSavePath } from '@/lib/files'
 import {
   exportProductionAsApf,
+  exportProductionAsApfForActor,
   userMessageForExportFailure,
   userMessageForImportFailure,
 } from '@/lib/importExport'
 import { runApfImportWithUiFollowUp } from '@/features/productions/apfImportFlow'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
 
 export type ApfActionMessage = { type: 'success' | 'error'; message: string; timeoutMs: number }
 
@@ -18,6 +21,7 @@ type UseApfActionsOptions = {
 
 export function useApfActions(options: UseApfActionsOptions = {}) {
   const { onMessage } = options
+  const authSession = useAuthSession()
   const queryClient = useQueryClient()
   const { currentProduction, setCurrentProductionId, refetchProductions } = useCurrentProduction()
   const [apfBusy, setApfBusy] = useState<'export' | 'import' | null>(null)
@@ -71,7 +75,17 @@ export function useApfActions(options: UseApfActionsOptions = {}) {
     try {
       const path = await pickApfSavePath(currentProduction.name)
       if (path == null) return
-      await exportProductionAsApf(currentProduction.id, path)
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        await exportProductionAsApfForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProduction.id,
+          outputPath: path,
+        })
+      } else {
+        await exportProductionAsApf(currentProduction.id, path)
+      }
       const baseName = path.split(/[/\\]/).pop() ?? 'file.apf'
       notify('success', `Project exported as "${baseName}".`, 5000)
     } catch (e) {

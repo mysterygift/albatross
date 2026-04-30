@@ -3,6 +3,9 @@
  */
 import { writeFile } from '@tauri-apps/plugin-fs'
 
+import type { AuthenticatedUser } from '@/lib/auth/authService'
+import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
+import { requireProjectViewAccess } from '@/lib/access/projectAccessService'
 import { getProductionById } from '@/lib/db/repositories/production'
 import { buildApfZipBytes } from '@/lib/importExport/buildApfArchive'
 import { buildApfExportManifest } from '@/lib/importExport/buildExportManifest'
@@ -62,4 +65,14 @@ export async function exportProductionAsApf(productionId: string, outputPath: st
   const zipBytes = buildApfZipBytes(manifest, dataFile, entries)
 
   await writeFile(outputPath, zipBytes)
+}
+
+export async function exportProductionAsApfForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  outputPath: string
+}): Promise<void> {
+  await requireProjectViewAccess(args.db, args.actor, args.productionId)
+  await exportProductionAsApf(args.productionId, args.outputPath)
 }

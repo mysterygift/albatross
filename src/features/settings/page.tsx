@@ -93,6 +93,7 @@ import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { getRate } from '@/lib/money/exchangeRates'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
 import type { BudgetAccount } from '@/lib/db/types'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
 
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 const OPENROUTESERVICE_API_KEY_SETTING = 'openrouteservice_api_key'
@@ -161,6 +162,7 @@ export function SettingsPage() {
   const [episodicEnableOpen, setEpisodicEnableOpen] = useState(false)
   const [episodicInitialEpisode, setEpisodicInitialEpisode] = useState('')
   const [episodicEnableError, setEpisodicEnableError] = useState<string | null>(null)
+  const authSession = useAuthSession()
 
   const toggleAccountExpanded = useCallback((accountId: string) => {
     setExpandedAccountIds((prev) => {
@@ -732,6 +734,38 @@ export function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="developer_tools" className="space-y-5 mt-5 outline-none">
+      {authSession.authSupported && authSession.isAuthenticated && authSession.isInstanceAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>User Management</CardTitle>
+            <CardDescription>
+              Manage server users (create, disable, reset password, and role changes).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex items-center gap-2">
+            <Button type="button" onClick={() => navigate('/settings/users')}>
+              Open User Management
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {authSession.authSupported && authSession.isAuthenticated && currentProductionId && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Project Access</CardTitle>
+            <CardDescription>
+              Manage which users can access the selected project and set viewer/editor/administrator levels.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex items-center gap-2">
+            <Button type="button" variant="outline" onClick={() => navigate('/settings/project-access')}>
+              Open Project Access
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Onboarding tutorial</CardTitle>
