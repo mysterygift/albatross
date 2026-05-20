@@ -1,9 +1,27 @@
-import { getDb, now, uuid } from '../client'
+import { getDb, now, runInSerializedTransaction, uuid } from '../client'
+import type { DatabaseAdapter } from '../databaseAdapter'
+import { backfillPeopleIsCastIntegerIfNeeded } from '../migrations/backfillPeopleIsCastInteger'
 import { outboxPush } from '../outbox'
 import { coerceBoolean } from '../sqlValueCoercion'
 import type { Person } from '../types'
 
 const TABLE = 'people'
+
+let isCastBackfillPromise: Promise<void> | null = null
+
+async function ensurePeopleIsCastNormalized(db: DatabaseAdapter): Promise<void> {
+  if (db.dialect !== 'sqlite') return
+  if (!isCastBackfillPromise) {
+    isCastBackfillPromise = backfillPeopleIsCastIntegerIfNeeded(db).then(() => undefined)
+  }
+  await isCastBackfillPromise
+}
+
+/** SQLite INTEGER columns expect 0/1; boolean binds can break `is_cast = 0` list filters. */
+function bindIsCast(db: DatabaseAdapter, isCast: unknown): boolean | 0 | 1 {
+  const bool = coerceBoolean(isCast, false)
+  return db.dialect === 'postgres' ? bool : bool ? 1 : 0
+}
 
 function rowToPerson(r: Record<string, unknown>): Person {
   return {
@@ -30,6 +48,7 @@ function rowToPerson(r: Record<string, unknown>): Person {
 
 export async function listPeopleByProduction(productionId: string): Promise<Person[]> {
   const db = await getDb()
+  await ensurePeopleIsCastNormalized(db)
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY name`,
     [productionId]
@@ -39,6 +58,7 @@ export async function listPeopleByProduction(productionId: string): Promise<Pers
 
 export async function listCast(productionId: string): Promise<Person[]> {
   const db = await getDb()
+  await ensurePeopleIsCastNormalized(db)
   const castPredicate = db.dialect === 'postgres' ? 'is_cast = TRUE' : 'is_cast = 1'
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${TABLE} WHERE production_id = $1 AND ${castPredicate} AND deleted_at IS NULL ORDER BY name`,
@@ -49,6 +69,7 @@ export async function listCast(productionId: string): Promise<Person[]> {
 
 export async function listCrew(productionId: string): Promise<Person[]> {
   const db = await getDb()
+  await ensurePeopleIsCastNormalized(db)
   const crewPredicate = db.dialect === 'postgres' ? 'is_cast = FALSE' : 'is_cast = 0'
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${TABLE} WHERE production_id = $1 AND ${crewPredicate} AND deleted_at IS NULL ORDER BY name`,
@@ -80,7 +101,7 @@ export async function createPerson(data: PersonInsert): Promise<Person> {
       id,
       data.production_id,
       data.name,
-      coerceBoolean(data.is_cast, false),
+      bindIsCast(db, data.is_cast),
       data.email ?? null,
       data.phone ?? null,
       data.department ?? null,
@@ -114,7 +135,7 @@ export async function updatePerson(
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
       if (k === 'is_cast') {
-        vals.push(coerceBoolean(data[k], false))
+        vals.push(bindIsCast(db, data[k]))
       } else {
         vals.push(data[k])
       }
@@ -132,12 +153,43 @@ export async function updatePerson(
   return (await getPersonById(id))!
 }
 
+const PERSON_ASSOCIATION_TABLES = [
+  'scene_cast',
+  'shot_cast',
+  'cast_availability',
+  'bookings',
+  'floats',
+] as const
+
+async function softDeletePersonAssociations(
+  db: DatabaseAdapter,
+  personId: string,
+  ts: string
+): Promise<void> {
+  for (const table of PERSON_ASSOCIATION_TABLES) {
+    const rows = await db.select<Array<{ id: string }>>(
+      `SELECT id FROM ${table} WHERE person_id = $1 AND deleted_at IS NULL`,
+      [personId]
+    )
+    for (const row of rows) {
+      await db.execute(
+        `UPDATE ${table} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+        [ts, ts, row.id]
+      )
+      await outboxPush(table, row.id, 'delete', null)
+    }
+  }
+}
+
 export async function deletePerson(id: string): Promise<void> {
-  const db = await getDb()
-  const ts = now()
-  await db.execute(
-    `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
-    [ts, ts, id]
-  )
-  await outboxPush(TABLE, id, 'delete', null)
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const ts = now()
+    await softDeletePersonAssociations(db, id, ts)
+    await db.execute(
+      `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+      [ts, ts, id]
+    )
+    await outboxPush(TABLE, id, 'delete', null)
+  })
 }

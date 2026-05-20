@@ -1,4 +1,4 @@
-import { closeDb, getDb, isDbUnlocked, openDbWithFileKey, openPlainDbIfExists } from '@/lib/db/client'
+import { closeDb, isDbUnlocked, openDbWithFileKey, openPlainDbIfExists } from '@/lib/db/client'
 import {
   deriveSqlCipherPassphraseFromPassword,
   generateInstanceKdfSaltHex,
@@ -46,7 +46,6 @@ export async function unlockLocalDatabaseWithPassword(
     await writeDbEncryptionMeta({ version: 1, kdf_salt: instanceKdfSalt })
     await closeDb()
     await openDbWithFileKey(passphrase)
-    const db = await getDb()
     await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '1')
     return
   }

@@ -242,6 +242,8 @@ describe('Settings enable episodic dialog', () => {
       slug: 'feature',
       currency_code: 'GBP',
       notes: null,
+      client_id: null,
+      delivery_date: null,
       is_episodic: false,
       wrapped_at: null,
       archived_at: null,

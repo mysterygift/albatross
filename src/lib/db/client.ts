@@ -33,7 +33,6 @@ let db: SQLiteDatabaseAdapter | null = null
 let fkChecked = false
 let testDbOverride: DatabaseAdapter | null = null
 let dbUnlocked = false
-let activeSqlCipherPassphrase: string | null = null
 
 export class DatabaseLockedError extends Error {
   constructor(message = 'Local database is locked. Sign in to unlock.') {
@@ -70,7 +69,6 @@ export async function openDbWithFileKey(passphrase: string): Promise<DatabaseAda
   }
   db = await SQLiteDatabaseAdapter.load(DB_URL, { sqlCipherPassphrase: passphrase })
   dbUnlocked = true
-  activeSqlCipherPassphrase = passphrase
   fkChecked = false
   return db
 }
@@ -84,7 +82,6 @@ export async function openPlainDbIfExists(): Promise<DatabaseAdapter> {
   }
   db = await SQLiteDatabaseAdapter.load(DB_URL)
   dbUnlocked = true
-  activeSqlCipherPassphrase = null
   fkChecked = false
   return db
 }
@@ -104,12 +101,11 @@ export async function closeDb(): Promise<void> {
     db = null
   }
   dbUnlocked = false
-  activeSqlCipherPassphrase = null
   fkChecked = false
 }
 
 export function clearDbFileKey(): void {
-  activeSqlCipherPassphrase = null
+  // No-op: passphrase is held on SQLiteDatabaseAdapter after openDbWithFileKey.
 }
 
 export async function ensureForeignKeysChecked(adapter: DatabaseAdapter): Promise<void> {

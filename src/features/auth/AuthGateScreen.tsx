@@ -12,6 +12,7 @@ import { login, setupInitialAdmin } from '@/lib/auth/authService'
 import { AUTH_SESSION_TOKEN_SETTING_KEY } from '@/lib/auth/useAuthSession'
 import { setSetting } from '@/lib/db/repositories/settings'
 import { backfillClientEncryptionIfNeeded } from '@/lib/db/migrations/backfillClientEncryption'
+import { backfillPeopleIsCastIntegerIfNeeded } from '@/lib/db/migrations/backfillPeopleIsCastInteger'
 import { establishDataEncryptionKey } from '@/lib/security/dataEncryptionContext'
 import { getLocalDbStatus } from '@/lib/security/dbFileEncryption'
 
@@ -51,7 +52,6 @@ export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }:
   const hasExistingAdmin = (adminsCountQuery.data ?? 0) > 0
 
   const persistSessionAndRefresh = async (sessionToken: string) => {
-    const db = await getDb()
     await setSetting(AUTH_SESSION_TOKEN_SETTING_KEY, sessionToken)
     await queryClient.refetchQueries({ queryKey: ['auth-session'] })
     await queryClient.invalidateQueries({ queryKey: ['productions'] })
@@ -70,7 +70,12 @@ export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }:
       })
       await establishDataEncryptionKey(db, result.user.id, loginPassword)
       await backfillClientEncryptionIfNeeded(db)
+      const repairedPeople = await backfillPeopleIsCastIntegerIfNeeded(db)
       await persistSessionAndRefresh(result.sessionToken)
+      if (repairedPeople > 0) {
+        await queryClient.invalidateQueries({ queryKey: ['crew'] })
+        await queryClient.invalidateQueries({ queryKey: ['people'] })
+      }
     } catch (authError) {
       await closeDb()
       setError(
@@ -98,7 +103,12 @@ export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }:
       })
       await establishDataEncryptionKey(db, result.user.id, bootstrapPassword)
       await backfillClientEncryptionIfNeeded(db)
+      const repairedPeople = await backfillPeopleIsCastIntegerIfNeeded(db)
       await persistSessionAndRefresh(result.sessionToken)
+      if (repairedPeople > 0) {
+        await queryClient.invalidateQueries({ queryKey: ['crew'] })
+        await queryClient.invalidateQueries({ queryKey: ['people'] })
+      }
     } catch (bootstrapError) {
       await closeDb()
       setError(bootstrapError instanceof Error ? bootstrapError.message : 'Admin setup failed')

@@ -46,6 +46,8 @@ describe('exportProductionAsApf', () => {
       slug: 'fixture-prod',
       currency_code: 'GBP',
       notes: null,
+      client_id: null,
+      delivery_date: null,
       is_episodic: false,
       created_at: '2025-01-01T00:00:00.000Z',
       updated_at: '2025-01-01T00:00:00.000Z',

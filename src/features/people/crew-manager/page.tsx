@@ -9,10 +9,11 @@ import { getDb } from '@/lib/db/client'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { crewTutorialSteps } from '@/features/tutorial/sections/crewTutorial'
-import { listCrew, createPerson, updatePerson } from '@/lib/db/repositories/person'
+import { listCrew, createPerson, updatePerson, deletePerson } from '@/lib/db/repositories/person'
 import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import {
   createPersonForActor,
+  deletePersonForActor,
   listCrewForActor,
   listTasksByProductionForActor,
   updatePersonForActor,
@@ -53,8 +54,9 @@ import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog'
-import { Search, Plus, Pencil, Eye } from 'lucide-react'
+import { Search, Plus, Pencil, Eye, Trash2 } from 'lucide-react'
 import { CrewForm, type CrewFormValues } from '@/features/people/components/CrewForm'
+import { PersonDeleteConfirmDialog } from '@/features/people/components/PersonDeleteConfirmDialog'
 import { CrewSetupWizard } from '@/features/people/crew-manager/CrewSetupWizard'
 
 function getCanonicalDepartment(
@@ -118,6 +120,7 @@ export function CrewManagerPage() {
   const [missingFilter, setMissingFilter] = useState<MissingFilter>('all')
   const [addOpen, setAddOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [personToDelete, setPersonToDelete] = useState<Person | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const hasAutoOpenedWizardRef = useRef(false)
   const [tutorialOpen, setTutorialOpen] = useState(false)
@@ -226,6 +229,33 @@ export function CrewManagerPage() {
       queryClient.invalidateQueries({ queryKey: ['crew', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['people'] })
       setEditingId(null)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (personId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return deletePersonForActor({
+          db,
+          actor: authSession.currentUser,
+          personId,
+        })
+      }
+      return deletePerson(personId)
+    },
+    onSuccess: (_data, personId) => {
+      queryClient.invalidateQueries({ queryKey: ['crew', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['people'] })
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['booking-intelligence'] })
+      queryClient.invalidateQueries({ queryKey: ['person-booking-need'] })
+      queryClient.invalidateQueries({ queryKey: ['tasks', currentProductionId] })
+      setPersonToDelete(null)
+      if (editingId === personId) {
+        setEditingId(null)
+        setAddOpen(false)
+      }
     },
   })
 
@@ -652,6 +682,14 @@ export function CrewManagerPage() {
                         >
                           <Pencil className="size-4" />
                         </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setPersonToDelete(p)}
+                          aria-label="Delete"
+                        >
+                          <Trash2 className="size-4 text-destructive" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -661,6 +699,19 @@ export function CrewManagerPage() {
           )}
         </CardContent>
       </Card>
+
+      <PersonDeleteConfirmDialog
+        open={personToDelete != null}
+        person={personToDelete}
+        kind="crew"
+        onOpenChange={(open) => {
+          if (!open) setPersonToDelete(null)
+        }}
+        onConfirm={() => {
+          if (personToDelete) deleteMutation.mutate(personToDelete.id)
+        }}
+        isPending={deleteMutation.isPending}
+      />
 
       <Dialog
         open={addOpen || !!editingId}

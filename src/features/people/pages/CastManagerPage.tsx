@@ -7,9 +7,10 @@ import { getDb } from '@/lib/db/client'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { castTutorialSteps } from '@/features/tutorial/sections/castTutorial'
-import { listCast, createPerson, updatePerson } from '@/lib/db/repositories/person'
+import { listCast, createPerson, updatePerson, deletePerson } from '@/lib/db/repositories/person'
 import {
   createPersonForActor,
+  deletePersonForActor,
   listCastForActor,
   updatePersonForActor,
 } from '@/lib/access/projectDomainService'
@@ -35,9 +36,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, Plus, Pencil, Eye } from 'lucide-react'
+import { Search, Plus, Pencil, Eye, Trash2 } from 'lucide-react'
 import type { Person } from '@/lib/db/types'
 import { CastForm, type CastFormValues } from '@/features/people/components/CastForm'
+import { PersonDeleteConfirmDialog } from '@/features/people/components/PersonDeleteConfirmDialog'
 
 const CONTRIBUTOR_FORM_LABELS: Record<Person['contributor_form_status'], string> = {
   not_requested: 'Not requested',
@@ -83,6 +85,7 @@ export function CastManagerPage() {
   const [missingFilter, setMissingFilter] = useState<MissingFilter>('all')
   const [addOpen, setAddOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [personToDelete, setPersonToDelete] = useState<Person | null>(null)
   const [tutorialOpen, setTutorialOpen] = useState(false)
 
   useEffect(() => {
@@ -206,6 +209,35 @@ export function CastManagerPage() {
       queryClient.invalidateQueries({ queryKey: ['cast'] })
       queryClient.invalidateQueries({ queryKey: ['people'] })
       setEditingId(null)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (personId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return deletePersonForActor({
+          db,
+          actor: authSession.currentUser,
+          personId,
+        })
+      }
+      return deletePerson(personId)
+    },
+    onSuccess: (_data, personId) => {
+      queryClient.invalidateQueries({ queryKey: ['cast'] })
+      queryClient.invalidateQueries({ queryKey: ['people'] })
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['booking-intelligence'] })
+      queryClient.invalidateQueries({ queryKey: ['cast-by-scene'] })
+      queryClient.invalidateQueries({ queryKey: ['shot-cast-by-shot-ids'] })
+      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
+      queryClient.invalidateQueries({ queryKey: ['dood-scenes-by-day', currentProductionId] })
+      setPersonToDelete(null)
+      if (editingId === personId) {
+        setEditingId(null)
+        setAddOpen(false)
+      }
     },
   })
 
@@ -376,6 +408,14 @@ export function CastManagerPage() {
                         >
                           <Pencil className="size-4" />
                         </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setPersonToDelete(p)}
+                          aria-label="Delete"
+                        >
+                          <Trash2 className="size-4 text-destructive" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -385,6 +425,19 @@ export function CastManagerPage() {
           )}
         </CardContent>
       </Card>
+
+      <PersonDeleteConfirmDialog
+        open={personToDelete != null}
+        person={personToDelete}
+        kind="cast"
+        onOpenChange={(open) => {
+          if (!open) setPersonToDelete(null)
+        }}
+        onConfirm={() => {
+          if (personToDelete) deleteMutation.mutate(personToDelete.id)
+        }}
+        isPending={deleteMutation.isPending}
+      />
 
       {/* Add / Edit cast dialog */}
       <Dialog

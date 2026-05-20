@@ -114,7 +114,10 @@ export function CrewSetupWizard({
     }
   }
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
+    if (rowsToCreate.length > 0) {
+      await handleAddHods()
+    }
     setStep('intro')
     setSelectedDepartments(new Set())
     setHodRows(new Map())
@@ -257,21 +260,16 @@ export function CrewSetupWizard({
               >
                 Back
               </Button>
-              {rowsToCreate.length > 0 && (
-                <Button
-                  onClick={handleAddHods}
-                  disabled={isSubmitting}
-                  className="bg-primary/90 hover:bg-primary"
-                >
-                  {isSubmitting ? 'Adding…' : 'Add selected HODs'}
-                </Button>
-              )}
               <Button
                 onClick={handleFinish}
                 disabled={isSubmitting}
                 className="bg-primary/90 hover:bg-primary"
               >
-                Finish
+                {isSubmitting
+                  ? 'Adding…'
+                  : rowsToCreate.length > 0
+                    ? 'Add HODs and finish'
+                    : 'Finish'}
               </Button>
             </DialogFooter>
           </>

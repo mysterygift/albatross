@@ -4,6 +4,9 @@ import {
   hasDataEncryptionKey,
 } from './dataEncryptionContext'
 
+/** Raw SQLite row; fields may be absent before coercion. */
+export type ClientContactRow = Record<string, unknown>
+
 export type PlainClientContactFields = {
   name: string
   email: string | null
@@ -26,11 +29,11 @@ export function isEncryptedClientField(value: string | null | undefined): boolea
 }
 
 async function importAesGcmKey(dek: Uint8Array): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', dek, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+  return crypto.subtle.importKey('raw', dek as BufferSource, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
 }
 
 async function importHmacKey(dek: Uint8Array): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', dek, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  return crypto.subtle.importKey('raw', dek as BufferSource, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
 }
 
 function encodePayload(iv: Uint8Array, ciphertext: Uint8Array): string {
@@ -77,7 +80,11 @@ export async function decryptClientField(
   if (!isEncryptedClientField(stored)) return stored
   const key = await importAesGcmKey(dek)
   const { iv, ciphertext } = decodePayload(stored)
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)
+  const plain = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: iv as BufferSource },
+    key,
+    ciphertext as BufferSource
+  )
   return new TextDecoder().decode(plain)
 }
 
@@ -103,11 +110,7 @@ export async function encryptClientFieldsForStorage(
   return { name: name!, email, phone, name_sort_key }
 }
 
-export async function decryptClientRowFields(row: {
-  name: unknown
-  email: unknown
-  phone: unknown
-}): Promise<PlainClientContactFields> {
+export async function decryptClientRowFields(row: ClientContactRow): Promise<PlainClientContactFields> {
   const dek = getDataEncryptionKey()
   const nameStored = row.name == null ? '' : String(row.name)
   const [name, email, phone] = await Promise.all([
@@ -123,11 +126,7 @@ export async function decryptClientRowFields(row: {
 }
 
 /** Legacy plaintext row (pre-encryption); readable only when encryption is off or during backfill. */
-export function readLegacyClientRowFields(row: {
-  name: unknown
-  email: unknown
-  phone: unknown
-}): PlainClientContactFields {
+export function readLegacyClientRowFields(row: ClientContactRow): PlainClientContactFields {
   return {
     name: row.name == null ? '' : String(row.name),
     email: row.email == null ? null : String(row.email),
@@ -135,7 +134,7 @@ export function readLegacyClientRowFields(row: {
   }
 }
 
-export function rowNeedsClientEncryption(row: { name: unknown }): boolean {
+export function rowNeedsClientEncryption(row: ClientContactRow): boolean {
   const name = row.name == null ? '' : String(row.name)
   return name.length > 0 && !isEncryptedClientField(name)
 }

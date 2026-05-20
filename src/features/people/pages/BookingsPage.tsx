@@ -86,6 +86,15 @@ function setStoredView(view: ViewMode) {
   }
 }
 
+function formatPersonBookingLabel(person: Person): string {
+  const meta = [
+    person.is_cast ? 'Cast' : 'Crew',
+    person.department?.trim(),
+    person.role_name?.trim(),
+  ].filter(Boolean)
+  return meta.length > 0 ? `${person.name} · ${meta.join(' · ')}` : person.name
+}
+
 export function BookingsPage() {
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
@@ -414,7 +423,7 @@ export function BookingsPage() {
                     <SelectContent>
                       {people.map((p) => (
                         <SelectItem key={p.id} value={p.id}>
-                          {p.name}
+                          {formatPersonBookingLabel(p)}
                         </SelectItem>
                       ))}
                     </SelectContent>

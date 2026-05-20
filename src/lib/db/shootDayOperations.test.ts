@@ -111,7 +111,7 @@ describe('shoot day operations', () => {
     const shot = await createShot({ scene_id: scene.id, shot_number: '1A' })
     const shotStrip = await createShotStrip(
       production.id,
-      shot.id,
+      shot.shot.id,
       shootDay.id,
       shootDayUnitId
     )

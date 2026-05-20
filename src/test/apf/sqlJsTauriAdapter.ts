@@ -1,4 +1,5 @@
 import type { Database } from 'sql.js'
+import type { QueryResult } from '@tauri-apps/plugin-sql'
 
 import type { DatabaseAdapter, SqlStatement } from '@/lib/db/databaseAdapter'
 import { executeBatchCompat } from '@/lib/db/sqliteDatabaseAdapter'
@@ -41,7 +42,7 @@ export function createSqlJsTauriAdapter(raw: Database): DatabaseAdapter & TauriL
         stmt.free()
       }
     },
-    async execute(sql: string, bindValues?: unknown[]): Promise<void> {
+    async execute(sql: string, bindValues?: unknown[]): Promise<QueryResult> {
       const statements = sql
         .split(';')
         .map((part) => part.trim())
@@ -56,6 +57,7 @@ export function createSqlJsTauriAdapter(raw: Database): DatabaseAdapter & TauriL
           stmt.free()
         }
       }
+      return { rowsAffected: 0, lastInsertId: 0 }
     },
     async executeBatch(statements: SqlStatement[]): Promise<void> {
       await executeBatchCompat(adapter, statements)
