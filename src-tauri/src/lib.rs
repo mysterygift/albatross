@@ -1,5 +1,8 @@
 mod apf_desktop;
+mod db_encryption;
 mod open_route_service;
+mod sqlite_load;
+mod sqlite_paths;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{Emitter, Manager};
@@ -829,6 +832,12 @@ pub fn run() {
             sql: include_str!("../migrations/0068_clients_and_production_delivery.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 69,
+            description: "client_field_encryption",
+            sql: include_str!("../migrations/0069_client_field_encryption.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
@@ -841,18 +850,23 @@ pub fn run() {
     }
 
     builder
+        .manage(sqlite_load::AlbatrossSqlMigrations(migrations))
         .plugin(tauri_plugin_opener::init())
-        .plugin(
-            tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:albatross.db", migrations)
-                .build(),
-        )
+        .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             apf_desktop::pop_pending_apf_open_paths,
             apf_desktop::grant_read_access_for_apf,
+            db_encryption::get_local_db_status,
+            db_encryption::get_pre_sqlcipher_backup_status,
+            db_encryption::restore_sqlite_from_pre_sqlcipher_backup,
+            db_encryption::probe_sqlcipher_passphrase,
+            db_encryption::migrate_plain_db_to_sqlcipher,
+            db_encryption::sqlcipher_self_test,
+            sqlite_load::load_sqlite_with_passphrase,
+            sqlite_load::run_sqlite_migrations,
             open_route_service::get_driving_travel_time_minutes,
             open_route_service::get_route_summary,
             open_route_service::geocode_location_to_lat_lng,

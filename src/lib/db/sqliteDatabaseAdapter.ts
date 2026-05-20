@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import Database from '@tauri-apps/plugin-sql'
 import type { QueryResult } from '@tauri-apps/plugin-sql'
 
@@ -92,21 +93,65 @@ export async function executeBatchCompat(
   await db.execute(combinedSql, combinedBind)
 }
 
+export type SqliteLoadOptions = {
+  /** Hex passphrase for SQLCipher. Must be applied before other pragmas. */
+  sqlCipherPassphrase?: string
+}
+
+function escapeSqlStringLiteral(value: string): string {
+  return value.replace(/'/g, "''")
+}
+
+async function applySqlCipherKey(raw: Database, passphrase: string): Promise<void> {
+  const escaped = escapeSqlStringLiteral(passphrase)
+  await raw.execute(`PRAGMA key = '${escaped}'`)
+}
+
 export class SQLiteDatabaseAdapter implements DatabaseAdapter {
   readonly dialect = 'sqlite' as const
   private readonly raw: Database
+  private readonly sqlCipherPassphrase: string | undefined
 
-  constructor(raw: Database) {
+  constructor(raw: Database, sqlCipherPassphrase?: string) {
     this.raw = raw
+    this.sqlCipherPassphrase = sqlCipherPassphrase
   }
 
-  static async load(dbUrl: string): Promise<SQLiteDatabaseAdapter> {
-    const raw = await Database.load(dbUrl)
-    await raw.execute('PRAGMA foreign_keys = ON')
-    await raw.execute(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`)
-    await raw.execute('PRAGMA journal_mode = WAL')
-    await raw.execute('PRAGMA synchronous = NORMAL')
-    return new SQLiteDatabaseAdapter(raw)
+  private async ensureSqlCipherKeyOnConnection(): Promise<void> {
+    if (this.sqlCipherPassphrase) {
+      await applySqlCipherKey(this.raw, this.sqlCipherPassphrase)
+    }
+  }
+
+  static async load(dbUrl: string, options?: SqliteLoadOptions): Promise<SQLiteDatabaseAdapter> {
+    let raw: Database
+    if (options?.sqlCipherPassphrase) {
+      await invoke('load_sqlite_with_passphrase', {
+        db: dbUrl,
+        passphrase: options.sqlCipherPassphrase,
+      })
+      raw = Database.get(dbUrl)
+    } else {
+      raw = await Database.load(dbUrl)
+      await invoke('run_sqlite_migrations', { db: dbUrl })
+    }
+    const adapter = new SQLiteDatabaseAdapter(raw, options?.sqlCipherPassphrase)
+    if (options?.sqlCipherPassphrase) {
+      const escaped = escapeSqlStringLiteral(options.sqlCipherPassphrase)
+      await raw.execute(
+        `PRAGMA key = '${escaped}';
+         PRAGMA foreign_keys = ON;
+         PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};
+         PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;`
+      )
+    } else {
+      await raw.execute('PRAGMA foreign_keys = ON')
+      await raw.execute(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`)
+      await raw.execute('PRAGMA journal_mode = WAL')
+      await raw.execute('PRAGMA synchronous = NORMAL')
+    }
+    return adapter
   }
 
   async execute(query: string, bindValues?: unknown[]): Promise<QueryResult> {
@@ -118,7 +163,10 @@ export class SQLiteDatabaseAdapter implements DatabaseAdapter {
     const isRollback = upper.startsWith('ROLLBACK')
     if (isBegin) txnDepth += 1
     const run = () =>
-      withRetry(() => this.raw.execute(query, bindValues), query, 'execute').then((result) => {
+      withRetry(async () => {
+        await this.ensureSqlCipherKeyOnConnection()
+        return this.raw.execute(query, bindValues)
+      }, query, 'execute').then((result) => {
         const durationMs = performance.now() - start
         if (isCommit || isRollback) txnDepth = Math.max(0, txnDepth - 1)
         if (isPerfLoggingEnabled()) {
@@ -153,7 +201,10 @@ export class SQLiteDatabaseAdapter implements DatabaseAdapter {
     const sql = sanitizeSql(query)
     const start = performance.now()
     try {
-      const result = await withRetry(() => this.raw.select<T>(query, bindValues), query, 'select')
+      const result = await withRetry(async () => {
+        await this.ensureSqlCipherKeyOnConnection()
+        return this.raw.select<T>(query, bindValues)
+      }, query, 'select')
       const durationMs = performance.now() - start
       if (isPerfLoggingEnabled()) {
         recordDbOp({

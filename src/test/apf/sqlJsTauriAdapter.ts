@@ -1,5 +1,7 @@
 import type { Database } from 'sql.js'
 
+import type { DatabaseAdapter, SqlStatement } from '@/lib/db/databaseAdapter'
+import { executeBatchCompat } from '@/lib/db/sqliteDatabaseAdapter'
 import type { TauriLikeSqlDb } from '@/test/apf/sqlJsApfE2eContext'
 
 /**
@@ -22,8 +24,9 @@ export function tauriSqlAndBindsForSqlJs(
   return { sql: out, binds }
 }
 
-export function createSqlJsTauriAdapter(raw: Database): TauriLikeSqlDb {
-  return {
+export function createSqlJsTauriAdapter(raw: Database): DatabaseAdapter & TauriLikeSqlDb {
+  const adapter: DatabaseAdapter = {
+    dialect: 'sqlite',
     async select<T>(sql: string, bindValues?: unknown[]): Promise<T> {
       const { sql: ssql, binds } = tauriSqlAndBindsForSqlJs(sql, bindValues)
       const stmt = raw.prepare(ssql)
@@ -54,5 +57,12 @@ export function createSqlJsTauriAdapter(raw: Database): TauriLikeSqlDb {
         }
       }
     },
+    async executeBatch(statements: SqlStatement[]): Promise<void> {
+      await executeBatchCompat(adapter, statements)
+    },
+    runInSerializedTransaction<T>(fn: () => Promise<T>): Promise<T> {
+      return fn()
+    },
   }
+  return adapter
 }

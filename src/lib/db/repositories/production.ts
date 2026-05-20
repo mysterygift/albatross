@@ -5,7 +5,7 @@ import { outboxPush, outboxStatementForRow } from '../outbox'
 import { coerceBoolean, coerceIsoString } from '../sqlValueCoercion'
 import type { Production } from '../types'
 import {
-  clientInsertStatement,
+  clientInsertStatementForPlain,
   getClientById,
   type CreateClientData,
 } from './clients'
@@ -83,7 +83,7 @@ async function resolveClientForCreate(
     const phone = newClient.phone?.trim() ? newClient.phone.trim() : null
     return {
       clientId: id,
-      preamble: [clientInsertStatement({ id, name, email, phone, ts })],
+      preamble: [await clientInsertStatementForPlain({ id, name, email, phone, ts })],
     }
   }
   if (clientId) {

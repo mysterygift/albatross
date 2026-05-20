@@ -9,6 +9,7 @@ import {
   CLIENT_PHONE_MAX_DIGITS,
   type ClientDraftForm,
 } from '@/lib/clients/clientFieldValidation'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
 import {
   createClient,
   listClientsWithProjectCounts,
@@ -16,6 +17,10 @@ import {
   updateClient,
   type ClientWithProjectCount,
 } from '@/lib/db/repositories/clients'
+import {
+  canFetchSensitiveClientData,
+  encryptionKeyUnavailableMessage,
+} from '@/lib/security/sensitiveDataAccess'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -133,15 +138,22 @@ function clientToDraft(c: ClientWithProjectCount): ClientDraftForm {
 }
 
 export function ClientsSettingsSection() {
+  const authSession = useAuthSession()
   const queryClient = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
   const [editClient, setEditClient] = useState<ClientWithProjectCount | null>(null)
   const [deleteClient, setDeleteClient] = useState<ClientWithProjectCount | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const { data: clients = [], isLoading } = useQuery({
+  const {
+    data: clients = [],
+    isLoading,
+    isError,
+    error: clientsQueryError,
+  } = useQuery({
     queryKey: ['clients'],
     queryFn: listClientsWithProjectCounts,
+    enabled: canFetchSensitiveClientData(authSession.authSupported, authSession.isAuthenticated),
   })
 
   const invalidate = () => {
@@ -156,7 +168,7 @@ export function ClientsSettingsSection() {
       setFormError(null)
     },
     onError: (err: unknown) => {
-      setFormError(err instanceof Error ? err.message : 'Could not create client')
+      setFormError(encryptionKeyUnavailableMessage(err) || (err instanceof Error ? err.message : 'Could not create client'))
     },
   })
 
@@ -169,7 +181,7 @@ export function ClientsSettingsSection() {
       setFormError(null)
     },
     onError: (err: unknown) => {
-      setFormError(err instanceof Error ? err.message : 'Could not update client')
+      setFormError(encryptionKeyUnavailableMessage(err) || (err instanceof Error ? err.message : 'Could not update client'))
     },
   })
 
@@ -180,7 +192,7 @@ export function ClientsSettingsSection() {
       setDeleteClient(null)
     },
     onError: (err: unknown) => {
-      setFormError(err instanceof Error ? err.message : 'Could not delete client')
+      setFormError(encryptionKeyUnavailableMessage(err) || (err instanceof Error ? err.message : 'Could not delete client'))
     },
   })
 
@@ -200,7 +212,9 @@ export function ClientsSettingsSection() {
           </Button>
         </div>
 
-        {isLoading ? (
+        {isError ? (
+          <p className="text-destructive text-sm">{encryptionKeyUnavailableMessage(clientsQueryError)}</p>
+        ) : isLoading ? (
           <p className="text-muted-foreground text-sm">Loading clients…</p>
         ) : clients.length === 0 ? (
           <p className="text-muted-foreground text-sm">No clients yet. Add one or create a client when editing a project.</p>

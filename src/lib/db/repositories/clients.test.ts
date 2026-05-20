@@ -41,7 +41,11 @@ vi.mock('@/lib/db/client', async (importOriginal) => {
   }
 })
 
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
+import { isEncryptedClientField } from '@/lib/security/clientFieldCrypto'
+import { backfillClientEncryptionIfNeeded } from '@/lib/db/migrations/backfillClientEncryption'
 import {
+  clientExistsById,
   countProductionsForClient,
   createClient,
   getClientById,
@@ -50,6 +54,8 @@ import {
   softDeleteClient,
   updateClient,
 } from '@/lib/db/repositories/clients'
+import { EncryptionKeyUnavailableError } from '@/lib/security/sensitiveDataAccess'
+import { clearDataEncryptionKey } from '@/lib/security/dataEncryptionContext'
 import { createProduction, getProductionById, updateProduction } from '@/lib/db/repositories/production'
 
 function applyAllMigrations(db: Database): void {
@@ -67,9 +73,16 @@ async function makeDb(): Promise<Database> {
   return db
 }
 
+function installTestDek(): void {
+  const key = new Uint8Array(32)
+  crypto.getRandomValues(key)
+  setTestDataEncryptionKeyForTests(key)
+}
+
 describe('clients repository', () => {
   beforeEach(async () => {
     await makeDb()
+    installTestDek()
   })
 
   it('createClient and listClients', async () => {
@@ -81,6 +94,38 @@ describe('clients repository', () => {
     expect(c.name).toBe('Acme Corp')
     const listed = await listClients()
     expect(listed.some((x) => x.id === c.id)).toBe(true)
+    const raw = await dbAdapter.select<Record<string, unknown>[]>(
+      `SELECT name FROM clients WHERE id = $1`,
+      [c.id]
+    )
+    expect(isEncryptedClientField(String(raw[0]?.name))).toBe(true)
+  })
+
+  it('backfill encrypts legacy plaintext rows', async () => {
+    const ts = new Date().toISOString()
+    const id = 'legacy-client-id'
+    await dbAdapter.execute(
+      `INSERT INTO clients (id, name, email, phone, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, 'Legacy Co', 'old@test.com', '+15550100999', ts, ts]
+    )
+    const updated = await backfillClientEncryptionIfNeeded()
+    expect(updated).toBeGreaterThanOrEqual(1)
+    const c = await getClientById(id)
+    expect(c?.name).toBe('Legacy Co')
+    const raw = await dbAdapter.select<Record<string, unknown>[]>(
+      `SELECT name FROM clients WHERE id = $1`,
+      [id]
+    )
+    expect(isEncryptedClientField(String(raw[0]?.name))).toBe(true)
+  })
+
+  it('clientExistsById does not require DEK', async () => {
+    const c = await createClient({ name: 'Exists Check' })
+    clearDataEncryptionKey()
+    setTestDataEncryptionKeyForTests(null)
+    expect(await clientExistsById(c.id)).toBe(true)
+    expect(await clientExistsById('00000000-0000-0000-0000-000000000099')).toBe(false)
+    await expect(getClientById(c.id)).rejects.toBeInstanceOf(EncryptionKeyUnavailableError)
   })
 
   it('updateClient changes fields', async () => {
@@ -124,6 +169,7 @@ describe('clients repository', () => {
 describe('createProduction with client and delivery date', () => {
   beforeEach(async () => {
     await makeDb()
+    installTestDek()
   })
 
   it('creates production linked to existing client', async () => {

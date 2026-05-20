@@ -26,13 +26,16 @@ const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 export function AppLayout() {
   const authSession = useAuthSession()
   const queryClient = useQueryClient()
-  const showAuthGate = authSession.authSupported && !authSession.isAuthenticated
+  const showAuthGate =
+    authSession.authSupported && (!authSession.isAuthenticated || authSession.dbLocked)
 
   if (authSession.status === 'pending') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background px-6 text-center">
         <p className="text-sm font-medium text-foreground">Connecting…</p>
-        <p className="text-xs text-muted-foreground">Loading local database session</p>
+        <p className="text-xs text-muted-foreground">
+          {authSession.dbLocked ? 'Local database is locked' : 'Loading local database session'}
+        </p>
       </div>
     )
   }

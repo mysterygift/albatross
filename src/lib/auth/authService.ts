@@ -8,6 +8,9 @@ import {
   type RateLimitRule,
 } from '@/lib/security/rateLimiter'
 
+import { clearDbFileKey, closeDb } from '@/lib/db/client'
+import { clearDataEncryptionKey } from '@/lib/security/dataEncryptionContext'
+
 import { sqlAdminUsersCount, sqlTotalUsersCount } from './authSql'
 import { generateSessionToken, hashSessionToken } from './sessionToken'
 
@@ -331,6 +334,9 @@ export async function clearPersistedAuthSession(db: DatabaseAdapter): Promise<vo
     }
   }
   await setSetting(AUTH_SESSION_TOKEN_SETTING_KEY, '')
+  clearDataEncryptionKey()
+  clearDbFileKey()
+  await closeDb()
 }
 
 export async function resolveAuthenticatedUserFromSessionToken(

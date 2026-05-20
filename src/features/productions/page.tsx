@@ -11,6 +11,10 @@ import {
 import { createProductionFromTemplate } from '@/lib/db/createProductionFromTemplate'
 import { createClient, listClients } from '@/lib/db/repositories/clients'
 import {
+  canFetchSensitiveClientData,
+  encryptionKeyUnavailableMessage,
+} from '@/lib/security/sensitiveDataAccess'
+import {
   CLIENT_PHONE_MAX_DIGITS,
   clientDraftSchema,
   clientDraftToRepoFields,
@@ -500,9 +504,14 @@ export function ProductionsPage() {
     enabled: featureServer.data === true,
   })
 
-  const { data: clients = [] } = useQuery({
+  const {
+    data: clients = [],
+    isError: clientsLoadFailed,
+    error: clientsLoadError,
+  } = useQuery({
     queryKey: ['clients'],
     queryFn: listClients,
+    enabled: canFetchSensitiveClientData(authSession.authSupported, authSession.isAuthenticated),
   })
 
   const clientNameById = useMemo(
@@ -812,6 +821,13 @@ export function ProductionsPage() {
       id: 'client',
       header: 'Client',
       cell: ({ row }) => {
+        if (clientsLoadFailed && row.original.client_id) {
+          return (
+            <span className="text-destructive text-xs" title={encryptionKeyUnavailableMessage(clientsLoadError)}>
+              Unavailable
+            </span>
+          )
+        }
         const name = row.original.client_id
           ? clientNameById.get(row.original.client_id) ?? '—'
           : '—'
@@ -1362,9 +1378,11 @@ function ProductionFormDialog({
   error?: string | null
   onDismissError?: () => void
 }) {
+  const authSession = useAuthSession()
   const { data: clients = [], isLoading: clientsLoading } = useQuery({
     queryKey: ['clients'],
     queryFn: listClients,
+    enabled: canFetchSensitiveClientData(authSession.authSupported, authSession.isAuthenticated),
   })
   const form = useForm<NewProductionForm>({
     resolver: zodResolver(newProductionFormSchema),

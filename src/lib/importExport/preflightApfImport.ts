@@ -1,4 +1,5 @@
 import { getDb } from '@/lib/db/client'
+import { clientExistsById } from '@/lib/db/repositories/clients'
 import {
   ApfImportConflictError,
   ApfImportPreflightError,
@@ -43,11 +44,8 @@ export async function preflightApfImportDb(params: {
         ? rawClientId.trim()
         : String(rawClientId).trim()
   if (clientIdStr) {
-    const clientRows = await db.select<{ id: string }[]>(
-      `SELECT id FROM clients WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
-      [clientIdStr]
-    )
-    if (clientRows.length === 0) {
+    const exists = await clientExistsById(clientIdStr)
+    if (!exists) {
       prod.client_id = null
     }
   } else if ('client_id' in prod) {

@@ -1,7 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import type { DatabaseAdapter, SqlDialect } from '@/lib/db/databaseAdapter'
-import { getDb } from '@/lib/db/client'
+import { clearDbFileKey, closeDb, getDb, isDbUnlocked } from '@/lib/db/client'
+import { clearDataEncryptionKey } from '@/lib/security/dataEncryptionContext'
+import { isLocalDatabaseLocked } from '@/lib/db/dbUnlock'
+import { getLocalDbStatus } from '@/lib/security/dbFileEncryption'
 import { getSetting, setSetting } from '@/lib/db/repositories/settings'
 
 import { clearPersistedAuthSession, resolveAuthenticatedUserFromSessionToken } from './authService'
@@ -14,6 +17,7 @@ let clearedPersistedSessionThisRuntime = false
 export type AuthSessionState = {
   supported: boolean
   dbDialect: SqlDialect
+  dbLocked: boolean
   sessionToken: string | null
   user: { id: string; username: string; role: 'user' | 'admin' } | null
 }
@@ -43,12 +47,30 @@ async function isAuthSupportedForDb(db: DatabaseAdapter): Promise<boolean> {
 }
 
 async function fetchAuthSessionState(): Promise<AuthSessionState> {
+  const locked = await isLocalDatabaseLocked()
+  if (locked) {
+    // DB not open yet — cannot clear settings here. Mark cold-start handled so the first
+    // unlocked fetch after sign-in does not wipe the token we just persisted.
+    if (!clearedPersistedSessionThisRuntime) {
+      clearedPersistedSessionThisRuntime = true
+    }
+    const status = await getLocalDbStatus()
+    const supported = status.encryptionMetaExists || status.dbFileExists
+    return {
+      supported,
+      dbDialect: 'sqlite',
+      dbLocked: true,
+      sessionToken: null,
+      user: null,
+    }
+  }
+
   const db = await getDb()
   const dbDialect: SqlDialect = db.dialect === 'postgres' ? 'postgres' : 'sqlite'
   try {
     const supported = await isAuthSupportedForDb(db)
     if (!supported) {
-      return { supported: false, dbDialect, sessionToken: null, user: null }
+      return { supported: false, dbDialect, dbLocked: false, sessionToken: null, user: null }
     }
     if (!clearedPersistedSessionThisRuntime) {
       await setSetting(AUTH_SESSION_TOKEN_SETTING_KEY, '')
@@ -56,16 +78,17 @@ async function fetchAuthSessionState(): Promise<AuthSessionState> {
     }
     const sessionToken = await getSetting(AUTH_SESSION_TOKEN_SETTING_KEY)
     if (!sessionToken) {
-      return { supported: true, dbDialect, sessionToken: null, user: null }
+      return { supported: true, dbDialect, dbLocked: false, sessionToken: null, user: null }
     }
     const resolved = await resolveAuthenticatedUserFromSessionToken(db, sessionToken)
     if (!resolved) {
       await setSetting(AUTH_SESSION_TOKEN_SETTING_KEY, '')
-      return { supported: true, dbDialect, sessionToken: null, user: null }
+      return { supported: true, dbDialect, dbLocked: false, sessionToken: null, user: null }
     }
     return {
       supported: true,
       dbDialect,
+      dbLocked: false,
       sessionToken,
       user: {
         id: resolved.user.id,
@@ -89,12 +112,19 @@ export function useAuthSession() {
     ...query,
     authSupported: query.data?.supported ?? false,
     authDbDialect: query.data?.dbDialect ?? null,
+    dbLocked: query.data?.dbLocked ?? false,
     isAuthenticated: query.data?.user != null,
     isInstanceAdmin: query.data?.user?.role === 'admin',
     currentUser: query.data?.user ?? null,
     clearSession: async () => {
-      const db = await getDb()
-      await clearPersistedAuthSession(db)
+      if (isDbUnlocked()) {
+        const db = await getDb()
+        await clearPersistedAuthSession(db)
+      } else {
+        clearDataEncryptionKey()
+        clearDbFileKey()
+        await closeDb()
+      }
       await queryClient.invalidateQueries({ queryKey: ['auth-session'] })
     },
   }

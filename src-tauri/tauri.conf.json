@@ -22,7 +22,7 @@
     "security": { "csp": null }
   },
   "plugins": {
-    "sql": { "preload": ["sqlite:albatross.db"] }
+    "sql": {}
   },
   "bundle": {
     "active": true,

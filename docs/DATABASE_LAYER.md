@@ -82,6 +82,16 @@ One-off INSERT/UPDATE/DELETE: call `db.execute(...)` as usual. It is automatical
 - Only **one** write? → Use **db.execute(...)** (queued automatically).
 - **Init / "ensure defaults"**? → Prefer one batched write (e.g. INSERT OR IGNORE for multiple rows) inside `runInSerializedTransaction` to avoid interleaving with other writes.
 
-## 10. Known legacy exception
+## 10. Client PII encryption
+
+When UAM1 auth tables exist, `clients.name` / `email` / `phone` are encrypted at rest. Decrypted reads/writes require an in-memory DEK from sign-in via [`requireSensitiveDataAccess()`](../src/lib/security/sensitiveDataAccess.ts). ID-only checks use `clientExistsById`. See [DATA_ENCRYPTION.md](DATA_ENCRYPTION.md) and [SQLCIPHER_SPIKE.md](SQLCIPHER_SPIKE.md).
+
+## 11. SQLCipher (local file)
+
+- `albatross.db` is **not** preloaded at app startup ([`tauri.conf.json`](../src-tauri/tauri.conf.json)).
+- When `albatross.db.meta.json` exists, unlock via [`openDbWithFileKey`](../src/lib/db/client.ts) after sign-in; `getDb()` throws `DatabaseLockedError` while locked.
+- Logout must call `closeDb()` ([`clearPersistedAuthSession`](../src/lib/auth/authService.ts)).
+
+## 12. Known legacy exception
 
 **production.ts** (`src/lib/db/repositories/production.ts`): `reserveSlugAndInsertProduction` still uses `db.execute('BEGIN TRANSACTION')` then `db.execute(INSERT...)` in two calls. It is not used by duplicateProduction anymore (duplicate uses executeBatch). If anything else ever calls it, it should be refactored to a single executeBatch(BEGIN, INSERT, COMMIT) or removed. Do not copy this pattern.
