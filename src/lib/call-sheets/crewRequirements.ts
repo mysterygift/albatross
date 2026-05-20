@@ -94,7 +94,7 @@ export function getCallSheetCrewRequirements(
   crew: Person[]
 ): CallSheetCrewGroup[] {
   const bookedPersonIds = new Set(bookings.map((b) => b.person_id))
-  const bookedCrew = crew.filter((p) => bookedPersonIds.has(p.id))
+  const bookedCrew = crew.filter((p) => p.is_cast !== 1 && bookedPersonIds.has(p.id))
   if (bookedCrew.length === 0) return []
 
   const byDepartment = new Map<string, Person[]>()

@@ -1,5 +1,6 @@
-import type { Person } from '@/lib/db/types'
+import type { Person, StripboardStrip } from '@/lib/db/types'
 import type { CallSheetStrip } from '@/lib/pdf/callSheet'
+import { resolveSceneIdForStrip } from '@/lib/schedule/episodicScheduleDisplay'
 
 /** INT/EXT + D/N in a compact call-sheet cell (no fabricated values). */
 export function formatScheduleDnColumn(
@@ -56,6 +57,25 @@ export type BuildScheduleStripContext = {
   castBySceneId: Map<string, string[]>
   castByShotId: Map<string, string[]>
   castPeople: Person[]
+}
+
+/** Resolve parent scene for stripboard rows (SHOT strips often omit scene_id). */
+export function resolveSceneAndShotForStripboardStrip<
+  TScene extends SceneLike,
+  TShot extends ShotLike,
+>(
+  strip: Pick<StripboardStrip, 'strip_type' | 'scene_id' | 'shot_id'>,
+  scenes: TScene[],
+  shots: TShot[],
+  sceneById?: Map<string, TScene>,
+): { scene: TScene | null; shot: TShot | null } {
+  const shotById = new Map(shots.map((h) => [h.id, h]))
+  const shot = strip.shot_id ? (shotById.get(strip.shot_id) ?? null) : null
+  const sceneId = resolveSceneIdForStrip(strip, shotById)
+  const scene = sceneId
+    ? (sceneById?.get(sceneId) ?? scenes.find((c) => c.id === sceneId) ?? null)
+    : null
+  return { scene, shot }
 }
 
 /**
@@ -191,9 +211,17 @@ export function buildCallSheetStripFromStripboard(
 
   const castCompact = compactCastForScheduleRow(castIds, castPeople)
 
-  const noteParts = [strip.description, shot?.notes, shot?.shot_description, shot?.description].filter(
-    (x): x is string => typeof x === 'string' && x.trim().length > 0,
-  )
+  const shotDescription =
+    shot?.shot_description?.trim() || shot?.description?.trim() || null
+
+  const noteParts =
+    st === 'SHOT'
+      ? [strip.description, shot?.notes].filter(
+          (x): x is string => typeof x === 'string' && x.trim().length > 0,
+        )
+      : [strip.description, shot?.notes, shot?.shot_description, shot?.description].filter(
+          (x): x is string => typeof x === 'string' && x.trim().length > 0,
+        )
   const rowNotes = noteParts.length ? noteParts.join(' · ').slice(0, 200) : null
 
   return {
@@ -206,6 +234,7 @@ export function buildCallSheetStripFromStripboard(
     day_night: scene.day_night,
     page_eighths: scene.page_eighths,
     shot_number: shot?.shot_number ?? null,
+    shot_description: shotDescription,
     title: strip.title,
     description: strip.description,
     locLabel,
@@ -214,4 +243,28 @@ export function buildCallSheetStripFromStripboard(
     rowNotes,
     ifTimePermits,
   }
+}
+
+/** SHOT DESCRIPTION column: scene title (or heading) then shot description on the next line. */
+export function formatCallSheetSynopsis(s: CallSheetStrip): string {
+  if (s.strip_type === 'SHOT') {
+    const sceneLine = (s.scene_title?.trim() || s.scene_heading?.trim() || '') || ''
+    const shotLine = s.shot_description?.trim() || ''
+    if (sceneLine && shotLine) return `${sceneLine}\n${shotLine}`
+    if (shotLine) return shotLine
+    if (sceneLine) return sceneLine
+    const fallback = [s.title, s.description].filter(
+      (x): x is string => typeof x === 'string' && x.trim().length > 0,
+    )
+    return fallback.length ? fallback.join(' · ') : '—'
+  }
+
+  const parts = [s.scene_heading, s.scene_title, s.scene_description].filter(
+    (x): x is string => typeof x === 'string' && x.trim().length > 0,
+  )
+  if (parts.length) return parts.join(' · ')
+  const fallback = [s.title, s.description].filter(
+    (x): x is string => typeof x === 'string' && x.trim().length > 0,
+  )
+  return fallback.length ? fallback.join(' · ') : '—'
 }

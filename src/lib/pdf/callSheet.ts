@@ -11,7 +11,7 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import type { CallSheetCastRow } from '@/lib/call-sheets/castRequirements'
 import type { CallSheetCrewGroup, CallSheetCrewRow } from '@/lib/call-sheets/crewRequirements'
 import { primaryContactShowsEmail } from '@/lib/call-sheets/primaryContacts'
-import { formatScheduleDnColumn } from '@/lib/call-sheets/scheduleStripRow'
+import { formatCallSheetSynopsis, formatScheduleDnColumn } from '@/lib/call-sheets/scheduleStripRow'
 import {
   buildMainScheduleColumns,
   buildAdvancedScheduleColumns,
@@ -29,6 +29,8 @@ export interface CallSheetStrip {
   day_night?: string | null
   page_eighths?: number | null
   shot_number?: string | null
+  /** Shot list description; shown under scene title in SHOT DESCRIPTION for SHOT rows. */
+  shot_description?: string | null
   title?: string | null
   description?: string | null
   /** Location shorthand for LOC column; omit when locDitto. */
@@ -160,7 +162,9 @@ const FONT_SECTION = 10
 const FONT_BODY = 8.5
 const FONT_TABLE = 8
 const ROW_HEIGHT = 10
-const FONT_SCHED = 7.25
+const FONT_SCHED = 6
+/** Shot description in SHOT DESCRIPTION column (scene title stays FONT_SCHED bold). */
+const FONT_SCHED_SHOT_DESC = FONT_SCHED - 0.5
 const SCHED_LINE_STEP = 7.5
 const FONT_RUN_TITLE = 9
 const FONT_RUN_SUB = 7.5
@@ -177,6 +181,24 @@ const ROW_SUPPORT = 8
 const SUPPORT_SEP = 6
 
 type Page = ReturnType<PDFDocument['getPages']>[0]
+
+/** StandardFonts use WinAnsi; strip bidi/zero-width controls and unmapped code points. */
+export function textForPdf(text: string): string {
+  return text
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, '')
+    .replace(/\u2013|\u2014/g, '-')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[^\t\n\r\x20-\x7E\xA0-\xFF]/g, '')
+}
+
+function drawPdfText(
+  page: Page,
+  text: string,
+  options: Parameters<Page['drawText']>[1]
+): void {
+  page.drawText(textForPdf(text), options)
+}
 
 function drawRule(
   page: Page,
@@ -254,8 +276,9 @@ function drawTextRight(
   font: Awaited<ReturnType<PDFDocument['embedFont']>>,
   xRight: number
 ): void {
-  const w = font.widthOfTextAtSize(text, size)
-  page.drawText(text, { x: Math.max(MARGIN, xRight - w), y, size, font })
+  const safe = textForPdf(text)
+  const w = font.widthOfTextAtSize(safe, size)
+  drawPdfText(page, safe, { x: Math.max(MARGIN, xRight - w), y, size, font })
 }
 
 function wrapLines(
@@ -264,19 +287,22 @@ function wrapLines(
   font: Awaited<ReturnType<PDFDocument['embedFont']>>,
   size: number
 ): string[] {
-  const words = text.trim().split(/\s+/).filter(Boolean)
-  if (words.length === 0) return []
+  const paragraphs = textForPdf(text).trim().split(/\n+/)
   const lines: string[] = []
-  let line = ''
-  for (const w of words) {
-    const next = line ? `${line} ${w}` : w
-    if (font.widthOfTextAtSize(next, size) <= maxWidth) line = next
-    else {
-      if (line) lines.push(line)
-      line = w
+  for (const paragraph of paragraphs) {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean)
+    if (words.length === 0) continue
+    let line = ''
+    for (const w of words) {
+      const next = line ? `${line} ${w}` : w
+      if (font.widthOfTextAtSize(next, size) <= maxWidth) line = next
+      else {
+        if (line) lines.push(line)
+        line = w
+      }
     }
+    if (line) lines.push(line)
   }
-  if (line) lines.push(line)
   return lines
 }
 
@@ -305,17 +331,6 @@ function scheduleStripIsSpecial(stripType: CallSheetStrip['strip_type']): boolea
   return stripType === 'CALL' || stripType === 'LUNCH' || stripType === 'WRAP' || stripType === 'NOTE' || stripType === 'MOVE'
 }
 
-function setSynopsisSource(s: CallSheetStrip): string {
-  const parts = [s.scene_heading, s.scene_title, s.scene_description].filter(
-    (x): x is string => typeof x === 'string' && x.trim().length > 0
-  )
-  if (parts.length) return parts.join(' · ')
-  const fallback = [s.title, s.description].filter(
-    (x): x is string => typeof x === 'string' && x.trim().length > 0
-  )
-  return fallback.length ? fallback.join(' · ') : '—'
-}
-
 function specialScheduleSetLine(s: CallSheetStrip): string {
   const tag = s.strip_type
   const body =
@@ -342,11 +357,11 @@ function drawRunningHeader(
   continued: boolean
 ): void {
   const title = continued ? "CALL SHEET (cont'd)" : 'CALL SHEET'
-  page.drawText(title, { x: MARGIN, y: y.current, size: FONT_RUN_TITLE, font: bold })
+  drawPdfText(page, title, { x: MARGIN, y: y.current, size: FONT_RUN_TITLE, font: bold })
   y.current -= 10
-  page.drawText(data.productionName.slice(0, 84), { x: MARGIN, y: y.current, size: FONT_RUN_SUB, font: bold })
+  drawPdfText(page, data.productionName.slice(0, 84), { x: MARGIN, y: y.current, size: FONT_RUN_SUB, font: bold })
   y.current -= 9
-  page.drawText(formatShootDate(data.shootDate), { x: MARGIN, y: y.current, size: FONT_RUN_SUB, font })
+  drawPdfText(page, formatShootDate(data.shootDate), { x: MARGIN, y: y.current, size: FONT_RUN_SUB, font })
   y.current -= 10
   drawRule(page, y.current, MARGIN, PAGE_WIDTH - MARGIN)
   y.current -= 5
@@ -367,7 +382,7 @@ function drawConfidentialFooterOnPage(
   const lines = wrapLines(full, maxW, font, FONT_CONF)
   let yLine = 22
   if (includeGenerated) {
-    page.drawText(`Generated: ${new Date().toLocaleString()}`.slice(0, 95), {
+    drawPdfText(page, `Generated: ${new Date().toLocaleString()}`.slice(0, 95), {
       x: MARGIN,
       y: yLine,
       size: 6.5,
@@ -377,7 +392,7 @@ function drawConfidentialFooterOnPage(
     yLine += 8
   }
   for (const ln of lines) {
-    page.drawText(ln.slice(0, 120), {
+    drawPdfText(page, ln.slice(0, 120), {
       x: MARGIN,
       y: yLine,
       size: FONT_CONF,
@@ -426,7 +441,7 @@ function drawShootingScheduleTable(
     refs.y.current -= ROW_HEIGHT
     let xh = x0
     for (const c of cols) {
-      pg.drawText(c.label, { x: xh + pad, y: refs.y.current, size: FONT_SCHED, font: bold })
+      drawPdfText(pg, c.label, { x: xh + pad, y: refs.y.current, size: FONT_SCHED, font: bold })
       xh += c.w
     }
     refs.y.current -= ROW_HEIGHT
@@ -441,7 +456,7 @@ function drawShootingScheduleTable(
     refs.page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
     refs.y.current = PAGE_HEIGHT - MARGIN
     drawRunningHeader(refs.page, font, bold, data, refs.y, true)
-    refs.page.drawText('SHOOTING SCHEDULE', {
+    drawPdfText(refs.page, 'SHOOTING SCHEDULE', {
       x: MARGIN,
       y: refs.y.current,
       size: FONT_SECTION + 0.5,
@@ -450,7 +465,7 @@ function drawShootingScheduleTable(
     refs.y.current -= LINE_BODY + 2
     if (repeatHeader) drawHeader()
     if (itpMode) {
-      refs.page.drawText('IF TIME PERMITS', {
+      drawPdfText(refs.page, 'IF TIME PERMITS', {
         x: MARGIN,
         y: refs.y.current,
         size: FONT_TABLE,
@@ -466,7 +481,7 @@ function drawShootingScheduleTable(
   const itpStrips = data.schedule.filter((s) => s.ifTimePermits)
 
   ensureSpace(52, false)
-  refs.page.drawText('SHOOTING SCHEDULE', {
+  drawPdfText(refs.page, 'SHOOTING SCHEDULE', {
     x: MARGIN,
     y: refs.y.current,
     size: FONT_SECTION + 0.5,
@@ -492,7 +507,7 @@ function drawShootingScheduleTable(
     let yy = yTop
     const toDraw = lines.length ? lines : ['']
     for (const line of toDraw) {
-      refs.page.drawText(line.slice(0, 100), {
+      drawPdfText(refs.page, line.slice(0, 100), {
         x,
         y: yy,
         size: FONT_SCHED,
@@ -534,7 +549,7 @@ function drawShootingScheduleTable(
       const sh = s.shot_number?.trim()
       if (sn && sh) ScSh = `${sn} · ${sh}`
       else ScSh = sn ?? sh ?? ''
-      setLines = wrapLinesLimited(setSynopsisSource(s), setW, font, FONT_SCHED, 2)
+      setLines = wrapLinesLimited(formatCallSheetSynopsis(s), setW, font, FONT_SCHED, 2)
       dn = formatScheduleDnColumn(s.int_ext, s.day_night)
       pgs = s.page_eighths != null ? `${s.page_eighths}/8` : ''
       castStr = s.castCompact ?? ''
@@ -542,7 +557,25 @@ function drawShootingScheduleTable(
       notesLines = noteSrc ? wrapLinesLimited(noteSrc, notesW, font, FONT_SCHED, 2) : ['']
     }
 
-    const nLines = Math.max(setLines.length, notesLines.length, 1)
+    const shotSynopsisStyled =
+      !isSpecial && s.strip_type === 'SHOT' && !!s.shot_description?.trim()
+    let synopsisLineCount = setLines.length
+    if (shotSynopsisStyled) {
+      const sceneLine = (s.scene_title?.trim() || s.scene_heading?.trim() || '') || ''
+      const shotLine = s.shot_description!.trim()
+      let budget = 2
+      synopsisLineCount = 0
+      if (sceneLine) {
+        const sceneLines = wrapLinesLimited(sceneLine, setW, bold, FONT_SCHED, 1)
+        synopsisLineCount += sceneLines.length
+        budget -= sceneLines.length
+      }
+      if (shotLine && budget > 0) {
+        synopsisLineCount += wrapLinesLimited(shotLine, setW, font, FONT_SCHED_SHOT_DESC, budget).length
+      }
+    }
+
+    const nLines = Math.max(synopsisLineCount, notesLines.length, 1)
     const rowH = 2 + nLines * SCHED_LINE_STEP
 
     ensureSpace(rowH + 6, true)
@@ -572,9 +605,43 @@ function drawShootingScheduleTable(
         case 'scsh':
           drawColumnText(ci, [ScSh], font, yTop)
           break
-        case 'synopsis':
-          drawColumnText(ci, setLines, setFont, yTop)
+        case 'synopsis': {
+          if (shotSynopsisStyled) {
+            const x = xStarts[ci]! + pad
+            let yy = yTop
+            const sceneLine = (s.scene_title?.trim() || s.scene_heading?.trim() || '') || ''
+            const shotLine = s.shot_description!.trim()
+            let lineBudget = 2
+            if (sceneLine) {
+              for (const line of wrapLinesLimited(sceneLine, setW, bold, FONT_SCHED, 1)) {
+                drawPdfText(refs.page, line.slice(0, 100), {
+                  x,
+                  y: yy,
+                  size: FONT_SCHED,
+                  font: bold,
+                  color: rgb(0, 0, 0),
+                })
+                yy -= SCHED_LINE_STEP
+                lineBudget--
+              }
+            }
+            if (shotLine && lineBudget > 0) {
+              for (const line of wrapLinesLimited(shotLine, setW, font, FONT_SCHED_SHOT_DESC, lineBudget)) {
+                drawPdfText(refs.page, line.slice(0, 100), {
+                  x,
+                  y: yy,
+                  size: FONT_SCHED_SHOT_DESC,
+                  font,
+                  color: rgb(0, 0, 0),
+                })
+                yy -= SCHED_LINE_STEP
+              }
+            }
+          } else {
+            drawColumnText(ci, setLines, setFont, yTop)
+          }
           break
+        }
         case 'dn':
           drawColumnText(ci, [dn], font, yTop)
           break
@@ -604,7 +671,7 @@ function drawShootingScheduleTable(
 
   if (itpStrips.length > 0) {
     ensureSpace(LINE_BODY + SCHED_LINE_STEP * 2 + 14, true)
-    refs.page.drawText('IF TIME PERMITS', {
+    drawPdfText(refs.page, 'IF TIME PERMITS', {
       x: MARGIN,
       y: refs.y.current,
       size: FONT_TABLE,
@@ -672,7 +739,7 @@ function principalCastCell(r: CallSheetCastRow, key: string): string {
     case 'id':
       return r.cast_number?.trim() ?? ''
     case 'cast':
-      return r.name.trim()
+      return (r.name ?? '').trim()
     case 'char':
       return r.character_name?.trim() ?? ''
     case 'onset':
@@ -727,7 +794,7 @@ function drawPrincipalCastCallsGrid(
     for (let i = 0; i < cols.length; i++) {
       const c = cols[i]!
       const x = xStarts[i]! + pad
-      refs.page.drawText(c.label, { x, y: refs.y.current, size: FONT_CAST, font: bold })
+      drawPdfText(refs.page, c.label, { x, y: refs.y.current, size: FONT_CAST, font: bold })
     }
     refs.y.current -= CAST_ROW_H
     drawRule(refs.page, refs.y.current, x0, x0 + tableW)
@@ -738,7 +805,7 @@ function drawPrincipalCastCallsGrid(
     refs.page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
     refs.y.current = PAGE_HEIGHT - MARGIN
     drawRunningHeader(refs.page, font, bold, data, refs.y, true)
-    refs.page.drawText('PRINCIPAL CAST CALLS', {
+    drawPdfText(refs.page, 'PRINCIPAL CAST CALLS', {
       x: MARGIN,
       y: refs.y.current,
       size: FONT_SECTION + 0.5,
@@ -751,7 +818,7 @@ function drawPrincipalCastCallsGrid(
   }
 
   refs.y.current -= 6
-  refs.page.drawText('PRINCIPAL CAST CALLS', {
+  drawPdfText(refs.page, 'PRINCIPAL CAST CALLS', {
     x: MARGIN,
     y: refs.y.current,
     size: FONT_SECTION + 0.5,
@@ -788,14 +855,14 @@ function drawPrincipalCastCallsGrid(
         if (c.center && lineIdx === 0 && text) {
           const tw = font.widthOfTextAtSize(text, FONT_CAST)
           const cx = xStarts[i]! + (c.width - tw) / 2
-          refs.page.drawText(text, {
+          drawPdfText(refs.page, text, {
             x: Math.max(xStarts[i]! + pad, cx),
             y: yy,
             size: FONT_CAST,
             font,
           })
         } else if (!c.center) {
-          refs.page.drawText(text, {
+          drawPdfText(refs.page, text, {
             x: xStarts[i]! + pad,
             y: yy,
             size: FONT_CAST,
@@ -827,7 +894,7 @@ function drawSectionHeading(
   title: string,
   y: { current: number }
 ): void {
-  page.drawText(title.toUpperCase(), { x: MARGIN, y: y.current, size: FONT_SECTION, font: bold })
+  drawPdfText(page, title.toUpperCase(), { x: MARGIN, y: y.current, size: FONT_SECTION, font: bold })
   y.current -= LINE_BODY + 1
   drawRule(page, y.current, MARGIN, PAGE_WIDTH - MARGIN)
   y.current -= LINE_BODY + 2
@@ -845,7 +912,7 @@ function drawParagraphLines(
   const lines = wrapLines(text, maxWidth, font, size)
   for (const ln of lines) {
     if (y.current < Y_MIN) return
-    page.drawText(ln.slice(0, 120), { x: MARGIN, y: y.current, size, font, color })
+    drawPdfText(page, ln.slice(0, 120), { x: MARGIN, y: y.current, size, font, color })
     y.current -= LINE_BODY
   }
 }
@@ -859,24 +926,24 @@ function drawMasthead(
 ): void {
   const contentW = PAGE_WIDTH - 2 * MARGIN
   const dateStr = formatShootDate(data.shootDate)
-  page.drawText('CALL SHEET', { x: MARGIN, y: y.current, size: FONT_MASTHEAD, font: bold })
+  drawPdfText(page, 'CALL SHEET', { x: MARGIN, y: y.current, size: FONT_MASTHEAD, font: bold })
   drawTextRight(page, dateStr, y.current, FONT_BODY, bold, PAGE_WIDTH - MARGIN)
   y.current -= LINE_SECTION + 2
 
   const prodLines = wrapLines(data.productionName, contentW, bold, FONT_PRODUCTION)
   for (const ln of prodLines) {
-    page.drawText(ln, { x: MARGIN, y: y.current, size: FONT_PRODUCTION, font: bold })
+    drawPdfText(page, ln, { x: MARGIN, y: y.current, size: FONT_PRODUCTION, font: bold })
     y.current -= LINE_SECTION
   }
 
   const idParts: string[] = []
   if (data.dayNumber != null) idParts.push(`Day ${data.dayNumber}`)
   idParts.push(`Unit: ${data.unitName}`)
-  page.drawText(idParts.join('  ·  ').slice(0, 95), { x: MARGIN, y: y.current, size: FONT_BODY, font })
+  drawPdfText(page, idParts.join('  ·  ').slice(0, 95), { x: MARGIN, y: y.current, size: FONT_BODY, font })
   y.current -= LINE_BODY
   const bloc = data.shootingBlocMastheadLabel?.trim()
   if (bloc) {
-    page.drawText(`Shooting bloc: ${bloc}`.slice(0, 95), { x: MARGIN, y: y.current, size: FONT_BODY, font })
+    drawPdfText(page, `Shooting bloc: ${bloc}`.slice(0, 95), { x: MARGIN, y: y.current, size: FONT_BODY, font })
     y.current -= LINE_BODY
   }
   /** Unit call / wrap live under Essential times (structured); avoid repeating them here. */
@@ -895,8 +962,8 @@ function drawLabelValueColumn(
   let y = yStart
   for (const { label, value } of pairs) {
     if (value == null || value === '') continue
-    page.drawText(label, { x, y, size: FONT_TABLE, font: bold })
-    page.drawText(value.slice(0, 42), { x: x + labelColW, y, size: FONT_TABLE, font })
+    drawPdfText(page, label, { x, y, size: FONT_TABLE, font: bold })
+    drawPdfText(page, value.slice(0, 42), { x: x + labelColW, y, size: FONT_TABLE, font })
     y -= ROW_HEIGHT
   }
   return y
@@ -911,17 +978,17 @@ function drawPrimaryContactsColumn(
   yStart: number
 ): number {
   let y = yStart
-  page.drawText('Primary contacts', { x, y, size: FONT_TABLE, font: bold })
+  drawPdfText(page, 'Primary contacts', { x, y, size: FONT_TABLE, font: bold })
   y -= ROW_HEIGHT + 1
   for (const c of contacts) {
     if (y < Y_MIN) break
-    page.drawText(c.department.slice(0, 22), { x, y, size: FONT_TABLE, font: bold })
+    drawPdfText(page, c.department.slice(0, 22), { x, y, size: FONT_TABLE, font: bold })
     y -= ROW_HEIGHT - 1
     const namePhone = `${c.name ?? '—'} · ${c.phone ?? '—'}`
-    page.drawText(namePhone.slice(0, 38), { x, y, size: FONT_TABLE, font })
+    drawPdfText(page, namePhone.slice(0, 38), { x, y, size: FONT_TABLE, font })
     y -= ROW_HEIGHT - 1
     if (primaryContactShowsEmail(c.department) && c.email?.trim()) {
-      page.drawText(c.email.slice(0, 38), { x, y, size: 7.5, font, color: GRAY })
+      drawPdfText(page, c.email.slice(0, 38), { x, y, size: 7.5, font, color: GRAY })
       y -= ROW_HEIGHT - 1
     }
     y -= 1
@@ -1008,7 +1075,7 @@ function drawEnvironmentAndSafety(
   }
 
   if (data.weatherManual?.trim()) {
-    page.drawText('Weather (manual)', { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
+    drawPdfText(page, 'Weather (manual)', { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
     y.current -= LINE_BODY
     drawParagraphLines(page, font, data.weatherManual.trim(), y, PAGE_WIDTH - 2 * MARGIN, FONT_TABLE)
     y.current -= 2
@@ -1021,7 +1088,7 @@ function drawEnvironmentAndSafety(
 
   for (const nb of noteBlocks) {
     if (y.current < Y_MIN) return
-    page.drawText(nb.title, { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
+    drawPdfText(page, nb.title, { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
     y.current -= LINE_BODY
     drawParagraphLines(page, font, nb.body, y, PAGE_WIDTH - 2 * MARGIN, FONT_TABLE)
     y.current -= 2
@@ -1029,7 +1096,7 @@ function drawEnvironmentAndSafety(
 
   if (data.hospitalName || data.hospitalAddress) {
     if (y.current < Y_MIN) return
-    page.drawText('Hospital', { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
+    drawPdfText(page, 'Hospital', { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
     y.current -= LINE_BODY
     const hospitalLine = [data.hospitalName, data.hospitalAddress].filter(Boolean).join(' — ')
     drawParagraphLines(page, font, hospitalLine, y, PAGE_WIDTH - 2 * MARGIN, FONT_TABLE)
@@ -1037,7 +1104,7 @@ function drawEnvironmentAndSafety(
   }
   if (data.policeStationName || data.policeStationAddress) {
     if (y.current < Y_MIN) return
-    page.drawText('Police / emergency', { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
+    drawPdfText(page, 'Police / emergency', { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
     y.current -= LINE_BODY
     const policeLine = [data.policeStationName, data.policeStationAddress].filter(Boolean).join(' — ')
     drawParagraphLines(page, font, policeLine, y, PAGE_WIDTH - 2 * MARGIN, FONT_TABLE)
@@ -1061,14 +1128,14 @@ function drawBaseAndLocations(
   drawSectionHeading(page, bold, 'Base & locations', y)
 
   if (data.parkingBaseAddress?.trim()) {
-    page.drawText('Unit base / crew parking', { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
+    drawPdfText(page, 'Unit base / crew parking', { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
     y.current -= LINE_BODY
     drawParagraphLines(page, font, data.parkingBaseAddress.trim(), y, PAGE_WIDTH - 2 * MARGIN, FONT_TABLE)
     y.current -= 2
   }
 
   if (data.locations.length > 0) {
-    page.drawText('Shooting location(s)', { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
+    drawPdfText(page, 'Shooting location(s)', { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
     y.current -= LINE_BODY
     const seen = new Set<string>()
     for (const l of data.locations) {
@@ -1079,7 +1146,7 @@ function drawBaseAndLocations(
       const head = l.address?.trim() ? `${l.name} — ${l.address}` : l.name
       drawParagraphLines(page, font, head, y, PAGE_WIDTH - 2 * MARGIN - 8, FONT_TABLE)
       if (l.what3words?.trim()) {
-        page.drawText(`what3words: ${l.what3words}`.slice(0, 70), {
+        drawPdfText(page, `what3words: ${l.what3words}`.slice(0, 70), {
           x: MARGIN + 6,
           y: y.current,
           size: FONT_TABLE,
@@ -1235,7 +1302,7 @@ function drawSupportContinuationHeader(
   y: { current: number }
 ): void {
   drawRunningHeader(page, font, bold, data, y, true)
-  page.drawText('Operational support', {
+  drawPdfText(page, 'Operational support', {
     x: MARGIN,
     y: y.current,
     size: FONT_SUPPORT,
@@ -1253,7 +1320,7 @@ function drawSupportMajorHeading(
   y: { current: number }
 ): void {
   const label = continued ? `${titleUpper} (cont'd)` : titleUpper
-  page.drawText(label, { x: MARGIN, y: y.current, size: FONT_SUPPORT_HEAD, font: bold })
+  drawPdfText(page, label, { x: MARGIN, y: y.current, size: FONT_SUPPORT_HEAD, font: bold })
   y.current -= ROW_SUPPORT
   drawRule(page, y.current, MARGIN, PAGE_WIDTH - MARGIN)
   y.current -= ROW_SUPPORT
@@ -1288,10 +1355,10 @@ function drawCompactCrewTableHeader(
 ): void {
   drawRule(page, y.current, x0, x0 + tableW)
   y.current -= ROW_SUPPORT
-  page.drawText('Name', { x: x0 + 2, y: y.current, size: FONT_SUPPORT, font: bold })
-  page.drawText('Role', { x: x0 + nameW + 2, y: y.current, size: FONT_SUPPORT, font: bold })
+  drawPdfText(page, 'Name', { x: x0 + 2, y: y.current, size: FONT_SUPPORT, font: bold })
+  drawPdfText(page, 'Role', { x: x0 + nameW + 2, y: y.current, size: FONT_SUPPORT, font: bold })
   if (hasPhone) {
-    page.drawText('Phone', { x: x0 + nameW + roleW + 2, y: y.current, size: FONT_SUPPORT, font: bold })
+    drawPdfText(page, 'Phone', { x: x0 + nameW + roleW + 2, y: y.current, size: FONT_SUPPORT, font: bold })
   }
   y.current -= ROW_SUPPORT
   drawRule(page, y.current, x0, x0 + tableW)
@@ -1337,20 +1404,20 @@ function drawCompactCrewRows(
       })
     }
     const roleCell = [r.role_name?.trim() ?? '', r.is_hod ? 'HOD' : ''].filter(Boolean).join(' · ')
-    refs.page.drawText((r.name ?? '').slice(0, maxName), {
+    drawPdfText(refs.page, (r.name ?? '').slice(0, maxName), {
       x: x0 + 2,
       y: refs.y.current,
       size: FONT_SUPPORT,
       font,
     })
-    refs.page.drawText(roleCell.slice(0, maxRole), {
+    drawPdfText(refs.page, roleCell.slice(0, maxRole), {
       x: x0 + nameW + 2,
       y: refs.y.current,
       size: FONT_SUPPORT,
       font,
     })
     if (hasPhone) {
-      refs.page.drawText((r.phone?.trim() ?? '').slice(0, maxPh), {
+      drawPdfText(refs.page, (r.phone?.trim() ?? '').slice(0, maxPh), {
         x: x0 + nameW + roleW + 2,
         y: refs.y.current,
         size: FONT_SUPPORT,
@@ -1384,14 +1451,14 @@ function drawKeyContactLines(
       if (refs.y.current - ROW_SUPPORT < Y_MIN) {
         breakSupportSubsectionPage(doc, refs, data, font, bold, redrawSubsectionContinued)
       }
-      refs.page.drawText(head.slice(0, 72), { x: xBase, y: refs.y.current, size: FONT_SUPPORT, font: bold })
+      drawPdfText(refs.page, head.slice(0, 72), { x: xBase, y: refs.y.current, size: FONT_SUPPORT, font: bold })
       refs.y.current -= ROW_SUPPORT
     }
     if (c.email?.trim()) {
       if (refs.y.current - ROW_SUPPORT < Y_MIN) {
         breakSupportSubsectionPage(doc, refs, data, font, bold, redrawSubsectionContinued)
       }
-      refs.page.drawText(c.email.trim().slice(0, 72), {
+      drawPdfText(refs.page, c.email.trim().slice(0, 72), {
         x: xBase,
         y: refs.y.current,
         size: FONT_SUPPORT - 0.5,
@@ -1406,7 +1473,7 @@ function drawKeyContactLines(
         if (refs.y.current - ROW_SUPPORT < Y_MIN) {
           breakSupportSubsectionPage(doc, refs, data, font, bold, redrawSubsectionContinued)
         }
-        refs.page.drawText(ln.slice(0, 100), {
+        drawPdfText(refs.page, ln.slice(0, 100), {
           x: xBase,
           y: refs.y.current,
           size: FONT_SUPPORT - 0.5,
@@ -1444,7 +1511,7 @@ function drawDepartmentalRequirementsSection(
       sectionHeadingDrawn = true
     }
 
-    refs.page.drawText(block.department.toUpperCase(), {
+    drawPdfText(refs.page, block.department.toUpperCase(), {
       x: MARGIN,
       y: refs.y.current,
       size: FONT_SUPPORT,
@@ -1456,7 +1523,7 @@ function drawDepartmentalRequirementsSection(
 
     const redrawSubsectionContinued = () => {
       drawSupportMajorHeading(refs.page, bold, 'DEPARTMENTAL REQUIREMENTS', true, refs.y)
-      refs.page.drawText(block.department.toUpperCase(), {
+      drawPdfText(refs.page, block.department.toUpperCase(), {
         x: MARGIN,
         y: refs.y.current,
         size: FONT_SUPPORT,
@@ -1506,7 +1573,7 @@ function drawHealthSafetyStuntsSection(
       sectionHeadingDrawn = true
     }
 
-    refs.page.drawText(block.department.toUpperCase(), {
+    drawPdfText(refs.page, block.department.toUpperCase(), {
       x: MARGIN,
       y: refs.y.current,
       size: FONT_SUPPORT,
@@ -1518,7 +1585,7 @@ function drawHealthSafetyStuntsSection(
 
     const redrawSubsectionContinued = () => {
       drawSupportMajorHeading(refs.page, bold, 'HEALTH, SAFETY & STUNTS', true, refs.y)
-      refs.page.drawText(block.department.toUpperCase(), {
+      drawPdfText(refs.page, block.department.toUpperCase(), {
         x: MARGIN,
         y: refs.y.current,
         size: FONT_SUPPORT,
@@ -1563,8 +1630,8 @@ function drawCateringMealsSection(
   const x0 = MARGIN
   drawRule(refs.page, refs.y.current, x0, x0 + tw)
   refs.y.current -= ROW_SUPPORT
-  refs.page.drawText('Meal', { x: x0 + 2, y: refs.y.current, size: FONT_SUPPORT, font: bold })
-  refs.page.drawText('Time', { x: x0 + mealW + 2, y: refs.y.current, size: FONT_SUPPORT, font: bold })
+  drawPdfText(refs.page, 'Meal', { x: x0 + 2, y: refs.y.current, size: FONT_SUPPORT, font: bold })
+  drawPdfText(refs.page, 'Time', { x: x0 + mealW + 2, y: refs.y.current, size: FONT_SUPPORT, font: bold })
   refs.y.current -= ROW_SUPPORT
   drawRule(refs.page, refs.y.current, x0, x0 + tw)
   refs.y.current -= 2
@@ -1577,20 +1644,20 @@ function drawCateringMealsSection(
         drawSupportMajorHeading(refs.page, bold, 'CATERING / MEALS', true, refs.y)
         drawRule(refs.page, refs.y.current, x0, x0 + tw)
         refs.y.current -= ROW_SUPPORT
-        refs.page.drawText('Meal', { x: x0 + 2, y: refs.y.current, size: FONT_SUPPORT, font: bold })
-        refs.page.drawText('Time', { x: x0 + mealW + 2, y: refs.y.current, size: FONT_SUPPORT, font: bold })
+        drawPdfText(refs.page, 'Meal', { x: x0 + 2, y: refs.y.current, size: FONT_SUPPORT, font: bold })
+        drawPdfText(refs.page, 'Time', { x: x0 + mealW + 2, y: refs.y.current, size: FONT_SUPPORT, font: bold })
         refs.y.current -= ROW_SUPPORT
         drawRule(refs.page, refs.y.current, x0, x0 + tw)
         refs.y.current -= 2
       }
     }
-    refs.page.drawText(m.name.trim().slice(0, 36), {
+    drawPdfText(refs.page, m.name.trim().slice(0, 36), {
       x: x0 + 2,
       y: refs.y.current,
       size: FONT_SUPPORT,
       font,
     })
-    refs.page.drawText(m.time.trim().slice(0, 16), {
+    drawPdfText(refs.page, m.time.trim().slice(0, 16), {
       x: x0 + mealW + 2,
       y: refs.y.current,
       size: FONT_SUPPORT,
@@ -1632,7 +1699,7 @@ function drawRadioChannelsSection(
       sectionHeadingDrawn = true
     }
     const line = `${r.channel.trim()} — ${r.purpose.trim()}`
-    refs.page.drawText(line.slice(0, 88), {
+    drawPdfText(refs.page, line.slice(0, 88), {
       x: MARGIN + 2,
       y: refs.y.current,
       size: FONT_SUPPORT,
@@ -1677,7 +1744,7 @@ function drawTransportRequirementsSection(
     refs.y.current -= ROW_SUPPORT
     let x = x0 + 2
     for (const c of activeCols) {
-      refs.page.drawText(c.label, { x, y: refs.y.current, size: FONT_SUPPORT, font: bold })
+      drawPdfText(refs.page, c.label, { x, y: refs.y.current, size: FONT_SUPPORT, font: bold })
       x += c.width
     }
     refs.y.current -= ROW_SUPPORT
@@ -1709,7 +1776,7 @@ function drawTransportRequirementsSection(
     for (const c of activeCols) {
       const cell = String(row[c.key] ?? '').trim()
       const mw = Math.max(4, Math.floor(c.width / 4.2))
-      refs.page.drawText(cell.slice(0, mw), { x, y: refs.y.current, size: FONT_SUPPORT, font })
+      drawPdfText(refs.page, cell.slice(0, mw), { x, y: refs.y.current, size: FONT_SUPPORT, font })
       x += c.width
     }
     refs.y.current -= ROW_SUPPORT
@@ -1734,13 +1801,13 @@ function drawAdvancedScheduleSection(
 
   const drawDayMeta = (day: CallSheetAdvancedDay, contd: boolean): void => {
     const head = `${formatShootDate(day.shootDate)}${contd ? " (cont'd)" : ''}`
-    refs.page.drawText(head, { x: MARGIN, y: refs.y.current, size: FONT_SUPPORT, font: bold })
+    drawPdfText(refs.page, head, { x: MARGIN, y: refs.y.current, size: FONT_SUPPORT, font: bold })
     refs.y.current -= ROW_SUPPORT
     const idParts: string[] = []
     if (day.dayNumber != null) idParts.push(`Day ${day.dayNumber}`)
     if (day.callTime?.trim()) idParts.push(`Unit call ${day.callTime.trim()}`)
     if (idParts.length) {
-      refs.page.drawText(idParts.join('  ·  ').slice(0, 92), {
+      drawPdfText(refs.page, idParts.join('  ·  ').slice(0, 92), {
         x: MARGIN,
         y: refs.y.current,
         size: FONT_SUPPORT - 0.5,
@@ -1749,7 +1816,7 @@ function drawAdvancedScheduleSection(
       refs.y.current -= ROW_SUPPORT - 1
     }
     if (day.parkingBaseAddress?.trim()) {
-      refs.page.drawText(`Base: ${day.parkingBaseAddress.trim()}`.slice(0, 92), {
+      drawPdfText(refs.page, `Base: ${day.parkingBaseAddress.trim()}`.slice(0, 92), {
         x: MARGIN,
         y: refs.y.current,
         size: FONT_SUPPORT - 0.5,
@@ -1758,7 +1825,7 @@ function drawAdvancedScheduleSection(
       refs.y.current -= ROW_SUPPORT - 1
     }
     if (day.locationSummary?.trim()) {
-      refs.page.drawText(`Locations: ${day.locationSummary.trim()}`.slice(0, 92), {
+      drawPdfText(refs.page, `Locations: ${day.locationSummary.trim()}`.slice(0, 92), {
         x: MARGIN,
         y: refs.y.current,
         size: FONT_SUPPORT - 0.5,
@@ -1817,7 +1884,7 @@ function drawAdvancedScheduleSection(
         refs.y.current -= ROW_SUPPORT
         let xh = x0
         for (const c of cols) {
-          refs.page.drawText(c.label, { x: xh + pad, y: refs.y.current, size: FONT_ADV, font: bold })
+          drawPdfText(refs.page, c.label, { x: xh + pad, y: refs.y.current, size: FONT_ADV, font: bold })
           xh += c.w
         }
         refs.y.current -= ROW_SUPPORT
@@ -1833,7 +1900,7 @@ function drawAdvancedScheduleSection(
         drawSupportMajorHeading(refs.page, bold, 'ADVANCED SCHEDULE', true, refs.y)
         drawDayMeta(day, true)
         if (showItpBanner) {
-          refs.page.drawText('IF TIME PERMITS', {
+          drawPdfText(refs.page, 'IF TIME PERMITS', {
             x: MARGIN,
             y: refs.y.current,
             size: FONT_TABLE,
@@ -1877,7 +1944,7 @@ function drawAdvancedScheduleSection(
           const sh = s.shot_number?.trim()
           if (sn && sh) ScSh = `${sn} · ${sh}`
           else ScSh = sn ?? sh ?? ''
-          setLines = wrapLinesLimited(setSynopsisSource(s), synopsisW, font, FONT_ADV, 1)
+          setLines = wrapLinesLimited(formatCallSheetSynopsis(s), synopsisW, font, FONT_ADV, 1)
           dn = formatScheduleDnColumn(s.int_ext, s.day_night)
           pgs = s.page_eighths != null ? `${s.page_eighths}/8` : ''
           castStr = s.castCompact ?? ''
@@ -1899,7 +1966,7 @@ function drawAdvancedScheduleSection(
 
         const yTop = refs.y.current
         const drawCell = (ci: number, text: string, useBold: boolean): void => {
-          refs.page.drawText(text.slice(0, 48), {
+          drawPdfText(refs.page, text.slice(0, 48), {
             x: xStarts[ci]! + pad,
             y: yTop,
             size: FONT_ADV,
@@ -1951,7 +2018,7 @@ function drawAdvancedScheduleSection(
         drawSupportMajorHeading(refs.page, bold, 'ADVANCED SCHEDULE', true, refs.y)
         drawDayMeta(day, true)
       }
-      refs.page.drawText('IF TIME PERMITS', {
+      drawPdfText(refs.page, 'IF TIME PERMITS', {
         x: MARGIN,
         y: refs.y.current,
         size: FONT_TABLE,

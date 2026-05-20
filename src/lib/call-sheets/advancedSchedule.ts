@@ -1,9 +1,11 @@
 import type { Episode, Location, Person, Scene, ShootDay, ShootDayUnit, Shot, StripboardStrip } from '@/lib/db/types'
+import { resolveSceneIdForStrip } from '@/lib/schedule/episodicScheduleDisplay'
 import type { CallSheetAdvancedDay, CallSheetStrip } from '@/lib/pdf/callSheet'
 import { enrichCallSheetStripEpisodeLabel } from '@/lib/call-sheets/callSheetEpisodic'
 import {
   buildCallSheetStripFromStripboard,
   castPersonIdsForStrip,
+  resolveSceneAndShotForStripboardStrip,
   type BuildScheduleStripContext,
 } from '@/lib/call-sheets/scheduleStripRow'
 
@@ -28,12 +30,15 @@ export type BuildAdvancedScheduleInput = {
 function locationSummaryForStrips(
   strips: StripboardStrip[],
   scenes: Scene[],
+  shots: Shot[],
   locations: Location[],
 ): string | null {
+  const shotById = new Map(shots.map((h) => [h.id, h]))
   const locIds = new Set<string>()
   for (const s of strips) {
-    if (!s.scene_id) continue
-    const sc = scenes.find((c) => c.id === s.scene_id)
+    const sceneId = resolveSceneIdForStrip(s, shotById)
+    if (!sceneId) continue
+    const sc = scenes.find((c) => c.id === sceneId)
     if (sc?.location_id) locIds.add(sc.location_id)
   }
   if (locIds.size === 0) return null
@@ -94,13 +99,17 @@ export function buildAdvancedScheduleForCallSheet(input: BuildAdvancedScheduleIn
 
     const locState = { lastLocationId: null as string | null }
     const strips: CallSheetStrip[] = unitStrips.map((s) => {
-      const scene = s.scene_id ? input.scenes.find((c) => c.id === s.scene_id) ?? null : null
-      const shot = s.shot_id ? input.shots.find((h) => h.id === s.shot_id) ?? null : null
+      const { scene, shot } = resolveSceneAndShotForStripboardStrip(
+        s,
+        input.scenes,
+        input.shots,
+        sceneById,
+      )
       const locName =
         scene?.location_id != null
           ? (input.locations.find((l) => l.id === scene.location_id)?.name ?? null)
           : null
-      const castIds = castPersonIdsForStrip(s, shot?.scene_id ?? null, ctx)
+      const castIds = castPersonIdsForStrip(s, shot?.scene_id ?? scene?.id ?? null, ctx)
       const row = buildCallSheetStripFromStripboard(s, scene, shot, locName, locState, castIds, input.castPeople)
       if (!includeEp || !episodeById) return row
       const ep = enrichCallSheetStripEpisodeLabel({
@@ -118,7 +127,7 @@ export function buildAdvancedScheduleForCallSheet(input: BuildAdvancedScheduleIn
       dayNumber: day.day_number ?? null,
       callTime: day.call_time ?? null,
       parkingBaseAddress: day.parking_base_address ?? null,
-      locationSummary: locationSummaryForStrips(unitStrips, input.scenes, input.locations),
+      locationSummary: locationSummaryForStrips(unitStrips, input.scenes, input.shots, input.locations),
       strips,
     })
   }

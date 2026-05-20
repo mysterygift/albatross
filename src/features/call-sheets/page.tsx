@@ -65,6 +65,7 @@ import { selectPrimaryCallSheetContacts } from '@/lib/call-sheets/primaryContact
 import {
   buildCallSheetStripFromStripboard,
   castPersonIdsForStrip,
+  resolveSceneAndShotForStripboardStrip,
   type BuildScheduleStripContext,
 } from '@/lib/call-sheets/scheduleStripRow'
 import { bookingStartSortKey, formatBookingTimeWindow } from '@/lib/call-sheets/bookingCallTimes'
@@ -127,6 +128,7 @@ export function CallSheetsPage() {
   const [distributionExportSuccessMessage, setDistributionExportSuccessMessage] = useState<
     string | null
   >(null)
+  const [generateError, setGenerateError] = useState<string | null>(null)
   const [tutorialOpen, setTutorialOpen] = useState(false)
 
   useEffect(() => {
@@ -529,7 +531,7 @@ export function CallSheetsPage() {
       const na = a.cast_number?.trim() ?? ''
       const nb = b.cast_number?.trim() ?? ''
       if (na !== nb) return na.localeCompare(nb, undefined, { numeric: true })
-      return a.name.localeCompare(b.name)
+      return (a.name ?? '').localeCompare(b.name ?? '')
     })
     return enriched
   }, [castResult.castRows, cast, bookingsForDay])
@@ -542,15 +544,18 @@ export function CallSheetsPage() {
   )
 
   const locationIdsUsed = useMemo(() => {
+    const shotById = new Map(shots.map((h) => [h.id, h]))
     const set = new Set<string>()
     for (const s of unitStrips) {
-      if (s.scene_id) {
-        const scene = scenes.find((c) => c.id === s.scene_id)
-        if (scene?.location_id) set.add(scene.location_id)
-      }
+      const sceneId =
+        s.scene_id ??
+        (s.shot_id ? (shotById.get(s.shot_id)?.scene_id ?? null) : null)
+      if (!sceneId) continue
+      const scene = scenes.find((c) => c.id === sceneId)
+      if (scene?.location_id) set.add(scene.location_id)
     }
     return Array.from(set)
-  }, [unitStrips, scenes])
+  }, [unitStrips, scenes, shots])
   const locationsForDay = useMemo(
     () => locations.filter((l) => locationIdsUsed.includes(l.id)),
     [locations, locationIdsUsed]
@@ -621,13 +626,12 @@ export function CallSheetsPage() {
     }
     const locState = { lastLocationId: null as string | null }
     const schedule = unitStrips.map((s) => {
-      const scene = s.scene_id ? scenes.find((c) => c.id === s.scene_id) ?? null : null
-      const shot = s.shot_id ? shots.find((h) => h.id === s.shot_id) ?? null : null
+      const { scene, shot } = resolveSceneAndShotForStripboardStrip(s, scenes, shots, sceneById)
       const locName =
         scene?.location_id != null
           ? (locations.find((l) => l.id === scene.location_id)?.name ?? null)
           : null
-      const castIds = castPersonIdsForStrip(s, shot?.scene_id ?? null, scheduleCtx)
+      const castIds = castPersonIdsForStrip(s, shot?.scene_id ?? scene?.id ?? null, scheduleCtx)
       const row = buildCallSheetStripFromStripboard(s, scene, shot, locName, locState, castIds, cast)
       if (!includeEpisodesInSchedule) return row
       const ep = enrichCallSheetStripEpisodeLabel({
@@ -830,7 +834,11 @@ export function CallSheetsPage() {
       }
       return { bytes, weatherFallback: usedFallback }
     },
+    onError: (err) => {
+      setGenerateError(err instanceof Error ? err.message : String(err))
+    },
     onSuccess: (result) => {
+      setGenerateError(null)
       if (result.bytes) {
         const blob = new Blob([result.bytes], { type: 'application/pdf' })
         const url = URL.createObjectURL(blob)
@@ -849,6 +857,7 @@ export function CallSheetsPage() {
     const baseData = buildCallSheetData
     if (!baseData || !shootDay) return
     setDistributionExportSuccessMessage(null)
+    setGenerateError(null)
     setWeatherFallbackMessage(null)
     const locationQuery =
       locationsForDay.length > 0
@@ -1081,6 +1090,12 @@ export function CallSheetsPage() {
                   )}
                 </div>
               </>
+            )}
+            {generateError && (
+              <Alert variant="destructive" className="py-2">
+                <AlertTitle>Call sheet generation failed</AlertTitle>
+                <AlertDescription>{generateError}</AlertDescription>
+              </Alert>
             )}
             <div className="flex flex-wrap gap-2">
               <Button
