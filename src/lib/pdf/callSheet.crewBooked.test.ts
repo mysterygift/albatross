@@ -94,4 +94,17 @@ describe('generateCallSheetPdf with booked crew', () => {
     )
     expect(bytes.length).toBeGreaterThan(1000)
   })
+
+  it('generates PDF when shot description wraps to many lines', async () => {
+    const longDesc = Array(24).fill('description').join(' ')
+    const shortBytes = await generateCallSheetPdf(
+      minimalData({ schedule: [{ ...minimalData().schedule[0]!, shot_description: 'Wide' }] }),
+    )
+    const longBytes = await generateCallSheetPdf(
+      minimalData({
+        schedule: [{ ...minimalData().schedule[0]!, shot_description: longDesc }],
+      }),
+    )
+    expect(longBytes.length).toBeGreaterThan(shortBytes.length)
+  })
 })

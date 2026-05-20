@@ -326,6 +326,31 @@ function wrapLinesLimited(
   return out
 }
 
+type PdfFont = Awaited<ReturnType<PDFDocument['embedFont']>>
+
+type ShotSynopsisLayout = { sceneLines: string[]; shotLines: string[] }
+
+function layoutShotSynopsis(
+  s: CallSheetStrip,
+  maxWidth: number,
+  font: PdfFont,
+  bold: PdfFont,
+  sceneSize: number,
+  shotSize: number
+): ShotSynopsisLayout {
+  const sceneLine = (s.scene_title?.trim() || s.scene_heading?.trim() || '') || ''
+  const shotLine = s.shot_description?.trim() || ''
+  return {
+    sceneLines: sceneLine ? wrapLines(sceneLine, maxWidth, bold, sceneSize) : [],
+    shotLines: shotLine ? wrapLines(shotLine, maxWidth, font, shotSize) : [],
+  }
+}
+
+function shotSynopsisLineCount(layout: ShotSynopsisLayout): number {
+  const n = layout.sceneLines.length + layout.shotLines.length
+  return n > 0 ? n : 1
+}
+
 // We consider a strip to be special if it is a call, lunch, wrap, note, or move – these are manually added to the schedule and are not part of the shooting schedule table.
 function scheduleStripIsSpecial(stripType: CallSheetStrip['strip_type']): boolean {
   return stripType === 'CALL' || stripType === 'LUNCH' || stripType === 'WRAP' || stripType === 'NOTE' || stripType === 'MOVE'
@@ -559,21 +584,12 @@ function drawShootingScheduleTable(
 
     const shotSynopsisStyled =
       !isSpecial && s.strip_type === 'SHOT' && !!s.shot_description?.trim()
-    let synopsisLineCount = setLines.length
-    if (shotSynopsisStyled) {
-      const sceneLine = (s.scene_title?.trim() || s.scene_heading?.trim() || '') || ''
-      const shotLine = s.shot_description!.trim()
-      let budget = 2
-      synopsisLineCount = 0
-      if (sceneLine) {
-        const sceneLines = wrapLinesLimited(sceneLine, setW, bold, FONT_SCHED, 1)
-        synopsisLineCount += sceneLines.length
-        budget -= sceneLines.length
-      }
-      if (shotLine && budget > 0) {
-        synopsisLineCount += wrapLinesLimited(shotLine, setW, font, FONT_SCHED_SHOT_DESC, budget).length
-      }
-    }
+    const shotSynopsis = shotSynopsisStyled
+      ? layoutShotSynopsis(s, setW, font, bold, FONT_SCHED, FONT_SCHED_SHOT_DESC)
+      : null
+    const synopsisLineCount = shotSynopsis
+      ? shotSynopsisLineCount(shotSynopsis)
+      : setLines.length
 
     const nLines = Math.max(synopsisLineCount, notesLines.length, 1)
     const rowH = 2 + nLines * SCHED_LINE_STEP
@@ -606,36 +622,28 @@ function drawShootingScheduleTable(
           drawColumnText(ci, [ScSh], font, yTop)
           break
         case 'synopsis': {
-          if (shotSynopsisStyled) {
+          if (shotSynopsis) {
             const x = xStarts[ci]! + pad
             let yy = yTop
-            const sceneLine = (s.scene_title?.trim() || s.scene_heading?.trim() || '') || ''
-            const shotLine = s.shot_description!.trim()
-            let lineBudget = 2
-            if (sceneLine) {
-              for (const line of wrapLinesLimited(sceneLine, setW, bold, FONT_SCHED, 1)) {
-                drawPdfText(refs.page, line.slice(0, 100), {
-                  x,
-                  y: yy,
-                  size: FONT_SCHED,
-                  font: bold,
-                  color: rgb(0, 0, 0),
-                })
-                yy -= SCHED_LINE_STEP
-                lineBudget--
-              }
+            for (const line of shotSynopsis.sceneLines) {
+              drawPdfText(refs.page, line.slice(0, 100), {
+                x,
+                y: yy,
+                size: FONT_SCHED,
+                font: bold,
+                color: rgb(0, 0, 0),
+              })
+              yy -= SCHED_LINE_STEP
             }
-            if (shotLine && lineBudget > 0) {
-              for (const line of wrapLinesLimited(shotLine, setW, font, FONT_SCHED_SHOT_DESC, lineBudget)) {
-                drawPdfText(refs.page, line.slice(0, 100), {
-                  x,
-                  y: yy,
-                  size: FONT_SCHED_SHOT_DESC,
-                  font,
-                  color: rgb(0, 0, 0),
-                })
-                yy -= SCHED_LINE_STEP
-              }
+            for (const line of shotSynopsis.shotLines) {
+              drawPdfText(refs.page, line.slice(0, 100), {
+                x,
+                y: yy,
+                size: FONT_SCHED_SHOT_DESC,
+                font,
+                color: rgb(0, 0, 0),
+              })
+              yy -= SCHED_LINE_STEP
             }
           } else {
             drawColumnText(ci, setLines, setFont, yTop)
@@ -1786,6 +1794,7 @@ function drawTransportRequirementsSection(
 }
 
 const FONT_ADV = 6.75
+const FONT_ADV_SHOT_DESC = FONT_ADV - 0.5
 const ADV_LINE_STEP = 7
 
 // Advanced Schedule Logic & layout
@@ -1950,7 +1959,14 @@ function drawAdvancedScheduleSection(
           castStr = s.castCompact ?? ''
         }
 
-        const rowH = 2 + ADV_LINE_STEP
+        const shotSynopsisStyled =
+          !isSpecial && s.strip_type === 'SHOT' && !!s.shot_description?.trim()
+        const shotSynopsis = shotSynopsisStyled
+          ? layoutShotSynopsis(s, synopsisW, font, bold, FONT_ADV, FONT_ADV_SHOT_DESC)
+          : null
+        const synopsisLineCount = shotSynopsis ? shotSynopsisLineCount(shotSynopsis) : setLines.length
+        const nAdvLines = Math.max(synopsisLineCount, 1)
+        const rowH = 2 + nAdvLines * ADV_LINE_STEP
 
         ensure(rowH + 6, true)
 
@@ -1987,7 +2003,30 @@ function drawAdvancedScheduleSection(
               drawCell(ci, ScSh, false)
               break
             case 'synopsis':
-              drawCell(ci, setLines[0] ?? '', true)
+              if (shotSynopsis) {
+                const x = xStarts[ci]! + pad
+                let yy = yTop
+                for (const line of shotSynopsis.sceneLines) {
+                  drawPdfText(refs.page, line.slice(0, 100), {
+                    x,
+                    y: yy,
+                    size: FONT_ADV,
+                    font: bold,
+                  })
+                  yy -= ADV_LINE_STEP
+                }
+                for (const line of shotSynopsis.shotLines) {
+                  drawPdfText(refs.page, line.slice(0, 100), {
+                    x,
+                    y: yy,
+                    size: FONT_ADV_SHOT_DESC,
+                    font,
+                  })
+                  yy -= ADV_LINE_STEP
+                }
+              } else {
+                drawCell(ci, setLines[0] ?? '', true)
+              }
               break
             case 'dn':
               drawCell(ci, dn, false)
@@ -1995,9 +2034,16 @@ function drawAdvancedScheduleSection(
             case 'pgs':
               drawCell(ci, pgs, false)
               break
-            case 'cast':
-              drawCell(ci, wrapLinesLimited(castStr, castW, font, FONT_ADV, 1)[0] ?? '', false)
+            case 'cast': {
+              const castLines = wrapLinesLimited(castStr, castW, font, FONT_ADV, nAdvLines)
+              const x = xStarts[ci]! + pad
+              let yy = yTop
+              for (const line of castLines.length ? castLines : ['']) {
+                drawPdfText(refs.page, line.slice(0, 48), { x, y: yy, size: FONT_ADV, font })
+                yy -= ADV_LINE_STEP
+              }
               break
+            }
           }
         }
 
