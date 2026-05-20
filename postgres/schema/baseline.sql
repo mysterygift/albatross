@@ -894,6 +894,8 @@ CREATE TABLE stripboard_strips (
   sort_index NUMERIC NOT NULL DEFAULT 0,
   color_tag TEXT,
   strip_status TEXT NOT NULL DEFAULT 'SCHEDULED',
+  origin_location_id UUID,
+  destination_location_id UUID,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   deleted_at TIMESTAMPTZ,
@@ -904,7 +906,9 @@ CREATE TABLE stripboard_strips (
   CONSTRAINT fk_stripboard_strips_2_scene_id FOREIGN KEY (scene_id) REFERENCES scenes(id) ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT fk_stripboard_strips_3_shoot_day_unit_id FOREIGN KEY (shoot_day_unit_id) REFERENCES shoot_day_units(id) ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT fk_stripboard_strips_4_shoot_day_id FOREIGN KEY (shoot_day_id) REFERENCES shoot_days(id) ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT fk_stripboard_strips_5_production_id FOREIGN KEY (production_id) REFERENCES productions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+  CONSTRAINT fk_stripboard_strips_5_production_id FOREIGN KEY (production_id) REFERENCES productions(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT fk_stripboard_strips_6_origin_location_id FOREIGN KEY (origin_location_id) REFERENCES locations(id) ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT fk_stripboard_strips_7_destination_location_id FOREIGN KEY (destination_location_id) REFERENCES locations(id) ON UPDATE NO ACTION ON DELETE SET NULL
 );
 
 CREATE TABLE task_template_items (

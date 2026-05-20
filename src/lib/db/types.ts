@@ -435,6 +435,10 @@ export type StripboardStrip = {
   sort_index: number
   color_tag: string | null
   strip_status: StripStatus
+  /** MOVE strips only: optional origin for travel routing. */
+  origin_location_id: string | null
+  /** MOVE strips only: optional destination for travel routing. */
+  destination_location_id: string | null
 } & SoftDeletable
 
 export type Scene = {

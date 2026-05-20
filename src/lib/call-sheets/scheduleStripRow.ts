@@ -103,8 +103,26 @@ type StripboardStripLike = {
   shot_id: string | null
   title: string | null
   description: string | null
+  origin_location_id?: string | null
+  destination_location_id?: string | null
   /** When set (e.g. otp / itp), row may be grouped under IF TIME PERMITS on call sheets. */
   color_tag?: string | null
+}
+
+function moveStripLocLabel(
+  strip: Pick<StripboardStripLike, 'origin_location_id' | 'destination_location_id' | 'title'>,
+  locationNameById: ReadonlyMap<string, string>
+): string | null {
+  const originName = strip.origin_location_id
+    ? locationNameById.get(strip.origin_location_id) ?? null
+    : null
+  const destName = strip.destination_location_id
+    ? locationNameById.get(strip.destination_location_id) ?? null
+    : null
+  if (originName && destName) return `${originName} → ${destName}`
+  if (originName) return originName
+  if (destName) return destName
+  return strip.title?.trim() || null
 }
 
 /** Clear signal from existing strip fields only (no invented flags). */
@@ -147,6 +165,7 @@ export function buildCallSheetStripFromStripboard(
   locState: { lastLocationId: string | null },
   castIds: string[],
   castPeople: Person[],
+  locationNameById: ReadonlyMap<string, string> = new Map(),
 ): CallSheetStrip {
   const st = strip.strip_type
   const ifTimePermits = stripboardStripSuggestsIfTimePermits(strip)
@@ -155,11 +174,12 @@ export function buildCallSheetStripFromStripboard(
     const noteParts = [strip.title, strip.description].filter(
       (x): x is string => typeof x === 'string' && x.trim().length > 0,
     )
+    const moveLoc = st === 'MOVE' ? moveStripLocLabel(strip, locationNameById) : null
     return {
       strip_type: st as CallSheetStrip['strip_type'],
       title: strip.title,
       description: strip.description,
-      locLabel: null,
+      locLabel: moveLoc,
       locDitto: false,
       castCompact: null,
       rowNotes: noteParts.length ? noteParts.join(' — ').slice(0, 200) : null,

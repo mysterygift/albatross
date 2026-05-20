@@ -41,6 +41,10 @@ import { listStripsByProduction } from '@/lib/db/repositories/stripboard-strips'
 import { listBookingsByProduction } from '@/lib/db/repositories/booking'
 import { listCast, listCrew } from '@/lib/db/repositories/person'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
+import {
+  getOrderedLocationStackForDayUnit,
+  type OrderedLocationStackEntry,
+} from '@/lib/schedule/orderedLocationStack'
 import { getSetting } from '@/lib/db/repositories/settings'
 import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
 import { listShootingBlocsByProduction } from '@/lib/db/repositories/shootingBlocs'
@@ -170,13 +174,7 @@ type DaySummaryStats = {
   crewBooked: number
 }
 
-type DaySummaryLocationStackEntry = {
-  locationId: string
-  name: string
-  address: string | null
-  lat: number | null
-  lng: number | null
-}
+type DaySummaryLocationStackEntry = OrderedLocationStackEntry
 
 type DaySummaryLocationStack = {
   orderedLocations: DaySummaryLocationStackEntry[]
@@ -197,62 +195,6 @@ type DayTurnaroundSummary = {
   allCastCrewAffected: boolean
   belowThreshold: boolean
   reasonUnavailable?: string
-}
-
-function getOrderedLocationStackForDayUnit(args: {
-  strips: Array<{
-    sort_index: number
-    strip_type: string
-    scene_id: string | null
-    shot_id: string | null
-  }>
-  shotsById: Map<string, { scene_id: string }>
-  scenesById: Map<string, { location_id: string | null }>
-  locationsById: Map<string, { name: string; address: string | null; lat: number | null; lng: number | null }>
-}): DaySummaryLocationStack {
-  const { strips, shotsById, scenesById, locationsById } = args
-  const ordered = [...strips].sort((a, b) => a.sort_index - b.sort_index)
-  const seenLocationIds = new Set<string>()
-  const orderedLocations: DaySummaryLocationStackEntry[] = []
-  const missingLocationSceneIds = new Set<string>()
-
-  for (const strip of ordered) {
-    if (strip.strip_type !== 'SHOT' && strip.strip_type !== 'SCENE') continue
-
-    let sceneId: string | null = strip.scene_id
-    if (!sceneId && strip.shot_id) {
-      sceneId = shotsById.get(strip.shot_id)?.scene_id ?? null
-    }
-    if (!sceneId) continue
-
-    const locationId = scenesById.get(sceneId)?.location_id ?? null
-    if (!locationId) {
-      missingLocationSceneIds.add(sceneId)
-      continue
-    }
-
-    const location = locationsById.get(locationId)
-    if (!location) {
-      missingLocationSceneIds.add(sceneId)
-      continue
-    }
-    if (seenLocationIds.has(locationId)) continue
-
-    seenLocationIds.add(locationId)
-    orderedLocations.push({
-      locationId,
-      name: location.name,
-      address: location.address ?? null,
-      lat: location.lat,
-      lng: location.lng,
-    })
-  }
-
-  return { orderedLocations, missingLocationSceneCount: missingLocationSceneIds.size }
-}
-
-function toNullableCoordinate(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 function formatNamesSummary(names: string[]): string {
@@ -1483,30 +1425,11 @@ export function ScheduleCalendarPage() {
 
   const daySummaryLocationStack = useMemo<DaySummaryLocationStack>(() => {
     if (!selectedEvent) return { orderedLocations: [], missingLocationSceneCount: 0 }
-    const shotsById = new Map(shots.map((shot) => [shot.id, { scene_id: shot.scene_id }]))
-    const scenesById = new Map(scenes.map((scene) => [scene.id, { location_id: scene.location_id }]))
-    const locationsById = new Map(
-      locations.map((location) => [
-        location.id,
-        {
-          name: location.name,
-          address: location.address ?? null,
-          lat: toNullableCoordinate(
-            (location as unknown as Record<string, unknown>).latitude ??
-              (location as unknown as Record<string, unknown>).lat
-          ),
-          lng: toNullableCoordinate(
-            (location as unknown as Record<string, unknown>).longitude ??
-              (location as unknown as Record<string, unknown>).lng
-          ),
-        },
-      ])
-    )
     return getOrderedLocationStackForDayUnit({
       strips: selectedUnitScheduledStrips,
-      shotsById,
-      scenesById,
-      locationsById,
+      scenes,
+      shots,
+      locations,
     })
   }, [selectedEvent, selectedUnitScheduledStrips, shots, scenes, locations])
 

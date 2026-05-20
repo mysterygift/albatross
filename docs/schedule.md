@@ -77,7 +77,7 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 - **New shoot day:** Header action "New shoot day" opens a lightweight dialog to enter a shoot date. Creates an empty shoot day for the current production with Main Unit by default (no Second Unit, no strips). After creation the stripboard refreshes, the new day scrolls into view, and a brief "Shoot day created." message is shown.
 - **Unscheduled Shots:** Shots not yet on the stripboard. Search, filter by location, multi-select, "Assign to Day" (shoot day + unit). Can drag shots onto a column or **onto a specific strip**; the new shot strip is inserted **above or below** that strip depending on where you release (not only at the bottom of the column).
 - **Day columns:** One column per (shoot_day, shoot_day_unit). Strips show scene/shot info, estimated minutes. Drag strips between columns to move or reorder **up and down** within a column; drop target resolution uses the hovered strip and release position (before/after). Lock toggle per unit.
-- **Strip types:** SHOT (from Shot List), SCENE (legacy), MOVE, CALL, LUNCH, WRAP, NOTE. "Add strip" popover for non-SHOT types.
+- **Strip types:** SHOT (from Shot List), SCENE (legacy), MOVE, CALL, LUNCH, WRAP, NOTE. "Add strip" popover for non-SHOT types. **MOVE** strips can optionally set **origin** and **destination** locations (from the production Locations list); these waypoints feed the ordered location stack used by Movement Orders and the calendar day summary travel segments.
 - **Boneyard:** Discarded strips. Drag from board or from Boneyard back to Unscheduled/column. Strips in Boneyard can be permanently deleted.
 - **Day totals:** Estimated runtime per column; warning if > 10h 30min.
 - **Unit lock:** Prevents accidental drops when locked.
@@ -220,7 +220,7 @@ src/
 - **ShootDayUnit:** id, shoot_day_id, unit_id, is_locked. Links a unit (Main, Second) to a shoot day.
 - **Scene:** id, production_id, scene_number, heading, title, int_ext, day_night, location_id, duration_minutes, optional **`episode_id`** → `episodes` (required in UI when `is_episodic = 1`), etc.
 - **Shot:** id, scene_id, **shot_number** (unique among non-deleted shots in the same scene; enforced in `createShot` / `updateShot`), description, estimated_shoot_minutes, shot_size, camera_movement, etc.
-- **StripboardStrip:** id, production_id, shoot_day_id, shoot_day_unit_id, strip_type (SHOT|SCENE|MOVE|CALL|LUNCH|WRAP|NOTE), shot_id, scene_id, strip_status (SCHEDULED|UNSCHEDULED|BONEYARD), sort_index, estimated_minutes.
+- **StripboardStrip:** id, production_id, shoot_day_id, shoot_day_unit_id, strip_type (SHOT|SCENE|MOVE|CALL|LUNCH|WRAP|NOTE), shot_id, scene_id, strip_status (SCHEDULED|UNSCHEDULED|BONEYARD), sort_index, estimated_minutes, origin_location_id, destination_location_id (MOVE strips only; optional FKs to locations).
 - **Unit:** id, production_id, name (e.g. "Main Unit", "Second Unit").
 
 ### 4. Data flow and dependencies

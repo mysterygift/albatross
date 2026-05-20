@@ -102,6 +102,8 @@ const stripRow = {
   sort_index: 0,
   color_tag: null,
   strip_status: 'SCHEDULED' as const,
+  origin_location_id: null,
+  destination_location_id: null,
   ...soft,
 }
 

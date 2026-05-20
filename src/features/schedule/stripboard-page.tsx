@@ -82,12 +82,14 @@ const STRIP_TYPES: { type: StripType; label: string }[] = [
 ]
 
 const PAGE_EIGHTHS_TARGET = 48
+const SELECT_NONE = '__none__'
 
 function AddStripPopover({
   productionId,
   shootDays,
   dayUnits,
   units,
+  locations,
   onCreate,
   stripsByDayUnitKey,
   isPending,
@@ -98,6 +100,7 @@ function AddStripPopover({
   shootDays: { id: string; shoot_date: string; day_number: number | null }[]
   dayUnits: { id: string; shoot_day_id: string; unit_id: string }[]
   units: { id: string; name: string }[]
+  locations: { id: string; name: string }[]
   onCreate: (data: CreateStripData) => void
   stripsByDayUnitKey: Map<string, StripboardStrip[]>
   isPending: boolean
@@ -109,6 +112,8 @@ function AddStripPopover({
   const [unitId, setUnitId] = useState<string>('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [originLocationId, setOriginLocationId] = useState(SELECT_NONE)
+  const [destinationLocationId, setDestinationLocationId] = useState(SELECT_NONE)
   const [time, setTime] = useState('')
   const [timeError, setTimeError] = useState<string | null>(null)
 
@@ -153,9 +158,15 @@ function AddStripPopover({
       strip_type: stripType,
       title: title.trim() || null,
       description: description.trim() || null,
+      origin_location_id:
+        stripType === 'MOVE' && originLocationId !== SELECT_NONE ? originLocationId : null,
+      destination_location_id:
+        stripType === 'MOVE' && destinationLocationId !== SELECT_NONE ? destinationLocationId : null,
     })
     setTitle('')
     setDescription('')
+    setOriginLocationId(SELECT_NONE)
+    setDestinationLocationId(SELECT_NONE)
   }
 
   return (
@@ -228,6 +239,38 @@ function AddStripPopover({
             </>
           ) : (
             <>
+              {stripType === 'MOVE' && (
+                <>
+                  <Label>Origin (optional)</Label>
+                  <Select value={originLocationId} onValueChange={setOriginLocationId}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={SELECT_NONE}>None</SelectItem>
+                      {locations.map((l) => (
+                        <SelectItem key={l.id} value={l.id}>
+                          {l.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Label>Destination (optional)</Label>
+                  <Select value={destinationLocationId} onValueChange={setDestinationLocationId}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={SELECT_NONE}>None</SelectItem>
+                      {locations.map((l) => (
+                        <SelectItem key={l.id} value={l.id}>
+                          {l.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
               <Label>Title (optional)</Label>
               <Input
                 value={title}
@@ -358,6 +401,7 @@ export function StripboardPage() {
     setLockedMutation,
     updateEstimatedMutation,
     updateCallWrapTimeMutation,
+    updateStripMutation,
     moveToUnscheduledMutation,
     moveToBoneyardMutation,
     deleteStripMutation,
@@ -744,6 +788,7 @@ export function StripboardPage() {
             shootDays={visibleShootDays}
             dayUnits={dayUnits}
             units={units}
+            locations={locations}
             onCreate={(data) => createStripMutation.mutate(data)}
             stripsByDayUnitKey={stripsByDayUnit}
             isPending={createStripMutation.isPending}
@@ -967,6 +1012,10 @@ export function StripboardPage() {
                       onUpdateCallWrapTime={(stripId, time) =>
                         updateCallWrapTimeMutation.mutate({ stripId, time })
                       }
+                      onUpdateMoveStrip={(stripId, data) =>
+                        updateStripMutation.mutate({ stripId, data })
+                      }
+                      locations={locations}
                       columnId={columnId}
                       isLocked={false}
                       pageEighthsTarget={PAGE_EIGHTHS_TARGET}
@@ -1029,6 +1078,7 @@ export function StripboardPage() {
                 strip={activeData.strip}
                 scenes={scenes}
                 shots={shots}
+                locations={locations}
                 estimatedMinutesDefault={
                   activeData.strip.strip_type === 'SHOT' && activeData.strip.shot_id
                     ? estimatedShootMinutesByShotId.get(activeData.strip.shot_id) ?? 0

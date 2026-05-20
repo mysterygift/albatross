@@ -29,6 +29,8 @@ function rowToStrip(r: Record<string, unknown>): StripboardStrip {
     sort_index: Number(r.sort_index ?? 0),
     color_tag: (r.color_tag as string | null) ?? null,
     strip_status: (r.strip_status as StripStatus) ?? 'SCHEDULED',
+    origin_location_id: (r.origin_location_id as string | null) ?? null,
+    destination_location_id: (r.destination_location_id as string | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: (r.deleted_at as string | null) ?? null,
@@ -253,6 +255,8 @@ export type CreateStripData = {
   description?: string | null
   estimated_minutes?: number | null
   color_tag?: string | null
+  origin_location_id?: string | null
+  destination_location_id?: string | null
 }
 
 /** Create a strip at the end of the day/unit. Returns the new strip. */
@@ -297,12 +301,13 @@ export async function createStrip(data: CreateStripData): Promise<StripboardStri
       const statements: Array<{ sql: string; bindValues: unknown[] }> = [
         { sql: 'BEGIN', bindValues: [] },
         {
-          sql: `INSERT INTO ${TABLE} (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'SCHEDULED', $13, $14)`,
+          sql: `INSERT INTO ${TABLE} (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, origin_location_id, destination_location_id, strip_status, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'SCHEDULED', $15, $16)`,
           bindValues: [
             id, data.production_id, data.shoot_day_id, data.shoot_day_unit_id ?? null,
             data.strip_type, data.scene_id ?? null, data.shot_id ?? null, persistedTitle, null,
-            data.estimated_minutes ?? null, sortIndex, data.color_tag ?? null, ts, ts,
+            data.estimated_minutes ?? null, sortIndex, data.color_tag ?? null,
+            data.origin_location_id ?? null, data.destination_location_id ?? null, ts, ts,
           ],
         },
         outboxStatementForRow({
@@ -324,12 +329,13 @@ export async function createStrip(data: CreateStripData): Promise<StripboardStri
     })
   } else {
     await db.execute(
-      `INSERT INTO ${TABLE} (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'SCHEDULED', $13, $14)`,
+      `INSERT INTO ${TABLE} (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, origin_location_id, destination_location_id, strip_status, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'SCHEDULED', $15, $16)`,
       [
         id, data.production_id, data.shoot_day_id, data.shoot_day_unit_id ?? null,
         data.strip_type, data.scene_id ?? null, data.shot_id ?? null, persistedTitle, data.description ?? null,
-        data.estimated_minutes ?? null, sortIndex, data.color_tag ?? null, ts, ts,
+        data.estimated_minutes ?? null, sortIndex, data.color_tag ?? null,
+        data.origin_location_id ?? null, data.destination_location_id ?? null, ts, ts,
       ]
     )
     await outboxPush(TABLE, id, 'create', JSON.stringify(payload))
@@ -658,6 +664,8 @@ export type UpdateStripData = {
   strip_type?: StripType
   title?: string | null
   description?: string | null
+  origin_location_id?: string | null
+  destination_location_id?: string | null
 }
 
 /**
@@ -715,6 +723,14 @@ export async function updateStrip(
     cols.push(`description = $${i++}`)
     vals.push(nextDescription)
   }
+  if (data.origin_location_id !== undefined) {
+    cols.push(`origin_location_id = $${i++}`)
+    vals.push(data.origin_location_id)
+  }
+  if (data.destination_location_id !== undefined) {
+    cols.push(`destination_location_id = $${i++}`)
+    vals.push(data.destination_location_id)
+  }
   if (cols.length === 0) {
     const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL`, [stripId])
     if (rows.length === 0) throw new Error('Strip not found')
@@ -749,6 +765,8 @@ export async function updateStrip(
             strip_type: data.strip_type,
             title: nextTitle,
             description: nextDescription,
+            origin_location_id: data.origin_location_id,
+            destination_location_id: data.destination_location_id,
           }),
         }),
       ]
@@ -777,6 +795,8 @@ export async function updateStrip(
       strip_type: data.strip_type,
       title: nextTitle,
       description: nextDescription,
+      origin_location_id: data.origin_location_id,
+      destination_location_id: data.destination_location_id,
     }))
   }
 

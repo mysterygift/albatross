@@ -198,6 +198,8 @@ describe('episodic schedule UI', () => {
       sort_index: 0,
       color_tag: null,
       strip_status: 'SCHEDULED',
+      origin_location_id: null,
+      destination_location_id: null,
       ...soft,
     }
     const episodeById = new Map<string, Episode>([[ep.id, ep]])
@@ -317,6 +319,8 @@ describe('episodic schedule UI', () => {
         sort_index: 0,
         color_tag: null,
         strip_status: 'SCHEDULED',
+        origin_location_id: null,
+        destination_location_id: null,
         ...soft,
       },
       {
@@ -333,6 +337,8 @@ describe('episodic schedule UI', () => {
         sort_index: 1,
         color_tag: null,
         strip_status: 'SCHEDULED',
+        origin_location_id: null,
+        destination_location_id: null,
         ...soft,
       },
     ]

@@ -30,6 +30,7 @@ import {
   ensureMainUnitForActor,
   updateStripEstimatedMinutesForActor,
   updateCallWrapStripTimeForActor,
+  updateStripForActor,
 } from '@/lib/access/projectDomainService'
 import {
   listShootDaysByProduction,
@@ -52,7 +53,9 @@ import {
   reorderStrip,
   updateStripEstimatedMinutes,
   updateCallWrapStripTime,
+  updateStrip,
   type CreateStripData,
+  type UpdateStripData,
   type UnscheduledShotsFilters,
 } from '@/lib/db/repositories/stripboard-strips'
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
@@ -310,6 +313,16 @@ export function useStripboard(productionId: string | null) {
     onSuccess: () => invalidate(),
   })
 
+  const updateStripMutation = useMutation({
+    mutationFn: ({ stripId, data }: { stripId: string; data: UpdateStripData }) =>
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) =>
+            updateStripForActor({ db, actor: authSession.currentUser!, stripId, data })
+          )
+        : updateStrip(stripId, data),
+    onSuccess: () => invalidate(),
+  })
+
   /** Move a single strip from the board to Unscheduled. Does not delete; strip remains in DB. */
   const moveToUnscheduledMutation = useMutation({
     mutationFn: (stripId: string) =>
@@ -449,6 +462,7 @@ export function useStripboard(productionId: string | null) {
     setLockedMutation,
     updateEstimatedMutation,
     updateCallWrapTimeMutation,
+    updateStripMutation,
     moveToUnscheduledMutation,
     moveToBoneyardMutation,
     deleteStripMutation,

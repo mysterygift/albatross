@@ -838,6 +838,18 @@ pub fn run() {
             sql: include_str!("../migrations/0069_client_field_encryption.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 70,
+            description: "people_is_cast_integer_normalize",
+            sql: include_str!("../migrations/0070_people_is_cast_integer_normalize.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 71,
+            description: "stripboard_strips_move_locations",
+            sql: include_str!("../migrations/0071_stripboard_strips_move_locations.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

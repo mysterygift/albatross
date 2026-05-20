@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,35 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { X, Film, Truck, Megaphone, Utensils, Moon, StickyNote, Clock, Skull, Trash2 } from 'lucide-react'
+import { X, Film, Truck, Megaphone, Utensils, Moon, StickyNote, Clock, Skull, Trash2, MapPin } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
+import type { Location } from '@/lib/db/types'
+import type { UpdateStripData } from '@/lib/db/repositories/stripboard-strips'
+
+const SELECT_NONE = '__none__'
+
+export function formatMoveStripRouteLabel(
+  strip: Pick<StripboardStrip, 'origin_location_id' | 'destination_location_id' | 'title'>,
+  locationById: Map<string, string>
+): string | null {
+  const originName = strip.origin_location_id
+    ? locationById.get(strip.origin_location_id) ?? null
+    : null
+  const destName = strip.destination_location_id
+    ? locationById.get(strip.destination_location_id) ?? null
+    : null
+  if (originName && destName) return `${originName} → ${destName}`
+  if (originName) return originName
+  if (destName) return destName
+  return strip.title?.trim() || null
+}
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { StripboardStrip, StripType, Episode } from '@/lib/db/types'
 import type { Scene, Shot } from '@/lib/db/types'
@@ -36,6 +64,8 @@ export function StripItem({
   estimatedMinutesDefault,
   onUpdateEstimatedMinutes,
   onUpdateCallWrapTime,
+  onUpdateMoveStrip,
+  locations = [],
   isOverlay,
   onRemove,
   onSendToBoneyard,
@@ -53,6 +83,8 @@ export function StripItem({
   estimatedMinutesDefault?: number
   onUpdateEstimatedMinutes?: (stripId: string, minutes: number | null) => void
   onUpdateCallWrapTime?: (stripId: string, time: string) => void
+  onUpdateMoveStrip?: (stripId: string, data: UpdateStripData) => void
+  locations?: Location[]
   isOverlay?: boolean
   /** Boneyard: permanent delete. Only in Boneyard panel. */
   onRemove?: (strip: StripboardStrip) => void
@@ -72,6 +104,14 @@ export function StripItem({
   const shot = strip.shot_id ? shots.find((sh) => sh.id === strip.shot_id) : null
   const scene = shot ? scenes.find((s) => s.id === shot.scene_id) : (strip.scene_id ? scenes.find((s) => s.id === strip.scene_id) : null)
   const Icon = STRIP_ICONS[strip.strip_type]
+  const locationById = useMemo(
+    () => new Map(locations.map((l) => [l.id, l.name])),
+    [locations]
+  )
+  const moveRouteLabel =
+    strip.strip_type === 'MOVE'
+      ? formatMoveStripRouteLabel(strip, locationById)
+      : null
   const episodeStripLabel =
     isEpisodic &&
     episodeById &&
@@ -123,6 +163,15 @@ export function StripItem({
               {scene.page_eighths != null && <Badge variant="outline" className="text-[10px]">{scene.page_eighths}/8</Badge>}
             </div>
           </>
+        ) : strip.strip_type === 'MOVE' ? (
+          <>
+            <span className="font-medium shrink-0">MOVE</span>
+            {moveRouteLabel && (
+              <span className="text-muted-foreground text-sm min-w-0 truncate" title={moveRouteLabel}>
+                {moveRouteLabel}
+              </span>
+            )}
+          </>
         ) : (
           <>
             <span className="font-medium shrink-0">{strip.strip_type}</span>
@@ -156,6 +205,8 @@ export function StripItem({
       estimatedMinutesDefault={estimatedMinutesDefault}
       onUpdateEstimatedMinutes={onUpdateEstimatedMinutes}
       onUpdateCallWrapTime={onUpdateCallWrapTime}
+      onUpdateMoveStrip={onUpdateMoveStrip}
+      locations={locations}
       disabled={disabled}
       onRemove={onRemove}
       onSendToBoneyard={onSendToBoneyard}
@@ -175,6 +226,8 @@ function SortableStripInner({
   estimatedMinutesDefault,
   onUpdateEstimatedMinutes,
   onUpdateCallWrapTime,
+  onUpdateMoveStrip,
+  locations = [],
   disabled,
   onRemove,
   onSendToBoneyard,
@@ -188,6 +241,8 @@ function SortableStripInner({
   estimatedMinutesDefault?: number
   onUpdateEstimatedMinutes?: (stripId: string, minutes: number | null) => void
   onUpdateCallWrapTime?: (stripId: string, time: string) => void
+  onUpdateMoveStrip?: (stripId: string, data: UpdateStripData) => void
+  locations?: Location[]
   disabled?: boolean
   onRemove?: (strip: StripboardStrip) => void
   onSendToBoneyard?: (strip: StripboardStrip) => void
@@ -240,6 +295,11 @@ function SortableStripInner({
     onUpdateEstimatedMinutes &&
     !disabled
   const showCallWrapTimeEditor = isCallWrap && onUpdateCallWrapTime && !disabled
+  const showMoveEditor = strip.strip_type === 'MOVE' && onUpdateMoveStrip && !disabled
+  const [localOriginId, setLocalOriginId] = useState(strip.origin_location_id ?? SELECT_NONE)
+  const [localDestId, setLocalDestId] = useState(strip.destination_location_id ?? SELECT_NONE)
+  const [localTitle, setLocalTitle] = useState(strip.title ?? '')
+  const [localDescription, setLocalDescription] = useState(strip.description ?? '')
 
   const commitEstMin = () => {
     if (!onUpdateEstimatedMinutes) return
@@ -266,6 +326,16 @@ function SortableStripInner({
     }
     setTimeError(null)
     onUpdateCallWrapTime(strip.id, normalized)
+  }
+
+  const commitMoveStrip = () => {
+    if (!onUpdateMoveStrip) return
+    onUpdateMoveStrip(strip.id, {
+      title: localTitle.trim() || null,
+      description: localDescription.trim() || null,
+      origin_location_id: localOriginId === SELECT_NONE ? null : localOriginId,
+      destination_location_id: localDestId === SELECT_NONE ? null : localDestId,
+    })
   }
 
   return (
@@ -381,6 +451,97 @@ function SortableStripInner({
                 placeholder="HH:MM"
               />
               {timeError && <p className="text-xs text-destructive">{timeError}</p>}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
+      {showMoveEditor && (
+        <Popover
+          onOpenChange={(open) => {
+            if (open) {
+              setLocalOriginId(strip.origin_location_id ?? SELECT_NONE)
+              setLocalDestId(strip.destination_location_id ?? SELECT_NONE)
+              setLocalTitle(strip.title ?? '')
+              setLocalDescription(strip.description ?? '')
+            } else {
+              commitMoveStrip()
+            }
+          }}
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0 h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <MapPin className="size-3.5" />
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="left">Edit move / setup</TooltipContent>
+          </Tooltip>
+          <PopoverContent
+            align="end"
+            className="w-72"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Move / setup</p>
+              <div className="space-y-1">
+                <Label className="text-xs">Origin</Label>
+                <Select value={localOriginId} onValueChange={setLocalOriginId}>
+                  <SelectTrigger className="h-8">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={SELECT_NONE}>None</SelectItem>
+                    {locations.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Destination</Label>
+                <Select value={localDestId} onValueChange={setLocalDestId}>
+                  <SelectTrigger className="h-8">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={SELECT_NONE}>None</SelectItem>
+                    {locations.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Title (optional)</Label>
+                <Input
+                  className="h-8 text-sm"
+                  value={localTitle}
+                  onChange={(e) => setLocalTitle(e.target.value)}
+                  placeholder="e.g. Company move"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Notes (optional)</Label>
+                <Input
+                  className="h-8 text-sm"
+                  value={localDescription}
+                  onChange={(e) => setLocalDescription(e.target.value)}
+                  placeholder="Optional notes"
+                />
+              </div>
             </div>
           </PopoverContent>
         </Popover>

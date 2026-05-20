@@ -84,7 +84,9 @@ import {
   moveStripToUnscheduled,
   reorderStrip,
   updateCallWrapStripTime,
+  updateStrip,
   updateStripEstimatedMinutes,
+  type UpdateStripData,
   type CreateStripData,
   type UnscheduledShotsFilters,
 } from '@/lib/db/repositories/stripboard-strips'
@@ -994,6 +996,17 @@ export async function updateStripEstimatedMinutesForActor(args: {
   const productionId = await resolveProductionIdForStrip(args.db, args.stripId)
   await requireProjectEditAccess(args.db, args.actor, productionId)
   return updateStripEstimatedMinutes(args.stripId, args.estimatedMinutes)
+}
+
+export async function updateStripForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  stripId: string
+  data: UpdateStripData
+}) {
+  const productionId = await resolveProductionIdForStrip(args.db, args.stripId)
+  await requireProjectEditAccess(args.db, args.actor, productionId)
+  return updateStrip(args.stripId, args.data)
 }
 
 export async function updateCallWrapStripTimeForActor(args: {

@@ -624,6 +624,7 @@ export function CallSheetsPage() {
       castByShotId: castByShotMerged,
       castPeople: cast,
     }
+    const locationNameById = new Map(locations.map((l) => [l.id, l.name]))
     const locState = { lastLocationId: null as string | null }
     const schedule = unitStrips.map((s) => {
       const { scene, shot } = resolveSceneAndShotForStripboardStrip(s, scenes, shots, sceneById)
@@ -632,7 +633,16 @@ export function CallSheetsPage() {
           ? (locations.find((l) => l.id === scene.location_id)?.name ?? null)
           : null
       const castIds = castPersonIdsForStrip(s, shot?.scene_id ?? scene?.id ?? null, scheduleCtx)
-      const row = buildCallSheetStripFromStripboard(s, scene, shot, locName, locState, castIds, cast)
+      const row = buildCallSheetStripFromStripboard(
+        s,
+        scene,
+        shot,
+        locName,
+        locState,
+        castIds,
+        cast,
+        locationNameById
+      )
       if (!includeEpisodesInSchedule) return row
       const ep = enrichCallSheetStripEpisodeLabel({
         strip: s,

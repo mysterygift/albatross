@@ -10,7 +10,8 @@ import type { ShootDay } from '@/lib/db/types'
 import type { Unit } from '@/lib/db/types'
 import type { ShootDayUnit } from '@/lib/db/types'
 import type { StripboardStrip } from '@/lib/db/types'
-import type { Scene, Shot, Episode } from '@/lib/db/types'
+import type { Scene, Shot, Episode, Location } from '@/lib/db/types'
+import type { UpdateStripData } from '@/lib/db/repositories/stripboard-strips'
 
 export type ColumnFilter = { int: boolean; ext: boolean; day: boolean; night: boolean }
 
@@ -25,6 +26,8 @@ export function StripboardDayColumn({
   estimatedShootMinutesByShotId,
   onUpdateStripEstimatedMinutes,
   onUpdateCallWrapTime,
+  onUpdateMoveStrip,
+  locations = [],
   columnId,
   pageEighthsTarget,
   onSendToBoneyard,
@@ -46,6 +49,8 @@ export function StripboardDayColumn({
   estimatedShootMinutesByShotId: Map<string, number>
   onUpdateStripEstimatedMinutes?: (stripId: string, minutes: number | null) => void
   onUpdateCallWrapTime?: (stripId: string, time: string) => void
+  onUpdateMoveStrip?: (stripId: string, data: UpdateStripData) => void
+  locations?: Location[]
   columnId: (shootDayId: string, shootDayUnitId: string) => string
   isLocked: boolean
   pageEighthsTarget: number
@@ -120,6 +125,8 @@ export function StripboardDayColumn({
             estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
             onUpdateStripEstimatedMinutes={onUpdateStripEstimatedMinutes}
             onUpdateCallWrapTime={onUpdateCallWrapTime}
+            onUpdateMoveStrip={onUpdateMoveStrip}
+            locations={locations}
             columnId={columnId(day.id, shootDayUnit.id)}
             isLocked={shootDayUnit.is_locked !== 0}
             pageEighthsTarget={pageEighthsTarget}
@@ -154,6 +161,8 @@ function UnitColumn({
   estimatedShootMinutesByShotId,
   onUpdateStripEstimatedMinutes,
   onUpdateCallWrapTime,
+  onUpdateMoveStrip,
+  locations = [],
   columnId: colId,
   isLocked,
   pageEighthsTarget,
@@ -176,6 +185,8 @@ function UnitColumn({
   estimatedShootMinutesByShotId: Map<string, number>
   onUpdateStripEstimatedMinutes?: (stripId: string, minutes: number | null) => void
   onUpdateCallWrapTime?: (stripId: string, time: string) => void
+  onUpdateMoveStrip?: (stripId: string, data: UpdateStripData) => void
+  locations?: Location[]
   columnId: string
   isLocked: boolean
   pageEighthsTarget: number
@@ -359,6 +370,8 @@ function UnitColumn({
                 }
                 onUpdateEstimatedMinutes={onUpdateStripEstimatedMinutes}
                 onUpdateCallWrapTime={onUpdateCallWrapTime}
+                onUpdateMoveStrip={onUpdateMoveStrip}
+                locations={locations}
                 onSendToBoneyard={onSendToBoneyard}
                 onDeleteStrip={onDeleteStrip}
                 scheduledCallCountOnDay={scheduledCallCountOnDay}
