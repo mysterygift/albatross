@@ -14,11 +14,11 @@ import {
   type CreateShotInput,
 } from '@/lib/db/repositories/schedule'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
-import { listSceneCastByScene, addSceneCast, removeSceneCast } from '@/lib/db/repositories/scene-cast'
 import {
   listShotCastByShotIds,
   addShotCast,
   removeShotCast,
+  clearShotCastForScene,
 } from '@/lib/db/repositories/shot-cast'
 import { listCast } from '@/lib/db/repositories/person'
 import {
@@ -30,8 +30,8 @@ import {
   upsertEquipmentTerm,
 } from '@/lib/db/repositories/equipment-terms'
 import {
-  addSceneCastForActor,
   addShotCastForActor,
+  clearShotCastForSceneForActor,
   createSceneForActor,
   createShotForActor,
   deleteShotForActor,
@@ -40,11 +40,9 @@ import {
   listEpisodesByProductionForActor,
   listEquipmentTermsByProductionAndTypeForActor,
   listLocationsByProductionForActor,
-  listSceneCastBySceneForActor,
   listScenesByProductionForActor,
   listShotsBySceneForActor,
   listShotCastByShotIdsForActor,
-  removeSceneCastForActor,
   removeShotCastForActor,
   updateSceneForActor,
   updateShotForActor,
@@ -90,7 +88,7 @@ import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog'
-import { Pencil, Check, Plus, Trash2 } from 'lucide-react'
+import { Pencil, Check, Plus, Trash2, Copy, UsersRound } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 
@@ -106,6 +104,7 @@ import {
   shotDurationSecondsSchema,
 } from './shot-list-validation'
 import { invalidateStripboardCaches } from './stripboard-hooks'
+import { nextShotNumberForDuplicate } from '@/lib/schedule/shotNumberDuplicate'
 
 function formatSceneLabel(scene: Scene, locationName: string | null): string {
   const intExt = scene.int_ext ?? '—'
@@ -210,6 +209,29 @@ function buildCreateShotInput(sceneId: string, form: AddShotModalForm): CreateSh
   }
 }
 
+function buildDuplicateShotInput(
+  source: Shot,
+  newShotNumber: string,
+  castPersonIds: string[]
+): CreateShotInput {
+  return {
+    scene_id: source.scene_id,
+    shot_number: newShotNumber,
+    description: source.description,
+    shot_description: source.shot_description,
+    subject: source.subject,
+    action_description: source.action_description,
+    shot_size: source.shot_size ?? undefined,
+    support: source.support,
+    lens: source.lens,
+    duration_seconds: source.duration_seconds,
+    estimated_shoot_minutes: source.estimated_shoot_minutes,
+    camera_movement: source.camera_movement ?? undefined,
+    notes: source.notes,
+    ...(castPersonIds.length > 0 ? { person_ids: castPersonIds } : {}),
+  }
+}
+
 function messageForCreateShotError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error)
   if (raw === 'NO_SCENE') return 'Select a scene before adding a shot.'
@@ -262,7 +284,6 @@ export function ShotListPage() {
   const [editingCell, setEditingCell] = useState<{ shotId: string; field: EditableField } | null>(null)
   const [localValue, setLocalValue] = useState<string>('')
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [addCastOpen, setAddCastOpen] = useState(false)
   const [addShotCastShotId, setAddShotCastShotId] = useState<string | null>(null)
   const [createSceneOpen, setCreateSceneOpen] = useState(false)
   const [createSceneError, setCreateSceneError] = useState<string | null>(null)
@@ -294,6 +315,10 @@ export function ShotListPage() {
   } | null>(null)
   const [deleteShotError, setDeleteShotError] = useState<string | null>(null)
   const deleteDialogResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [resetCastDialogOpen, setResetCastDialogOpen] = useState(false)
+  const [resetCastError, setResetCastError] = useState<string | null>(null)
+  const resetCastDialogResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const clearAddShotDialogResetTimer = useCallback(() => {
     if (addShotDialogResetTimerRef.current != null) {
@@ -345,6 +370,31 @@ export function ShotListPage() {
       }
     },
     [scheduleDeleteDialogReset]
+  )
+
+  const clearResetCastDialogResetTimer = useCallback(() => {
+    if (resetCastDialogResetTimerRef.current != null) {
+      clearTimeout(resetCastDialogResetTimerRef.current)
+      resetCastDialogResetTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleResetCastDialogReset = useCallback(() => {
+    clearResetCastDialogResetTimer()
+    resetCastDialogResetTimerRef.current = setTimeout(() => {
+      resetCastDialogResetTimerRef.current = null
+      setResetCastError(null)
+    }, SCHEDULE_DIALOG_EXIT_MS)
+  }, [clearResetCastDialogResetTimer])
+
+  const handleResetCastDialogOpenChange = useCallback(
+    (open: boolean) => {
+      setResetCastDialogOpen(open)
+      if (!open) {
+        scheduleResetCastDialogReset()
+      }
+    },
+    [scheduleResetCastDialogReset]
   )
 
   useEffect(() => {
@@ -448,23 +498,6 @@ export function ShotListPage() {
       !activeEpisodes.some((e) => e.id === editSceneEpisodeId),
   })
 
-  const { data: sceneCastList = [] } = useQuery({
-    queryKey: ['scene-cast-by-scene', selectedSceneId],
-    queryFn: async () => {
-      if (!selectedSceneId) return []
-      if (authSession.authSupported && authSession.currentUser) {
-        const db = await getDb()
-        return listSceneCastBySceneForActor({
-          db,
-          actor: authSession.currentUser,
-          sceneId: selectedSceneId,
-        })
-      }
-      return listSceneCastByScene(selectedSceneId)
-    },
-    enabled: !!selectedSceneId,
-  })
-
   const { data: cast = [] } = useQuery({
     queryKey: ['cast', currentProductionId],
     queryFn: async () => {
@@ -501,67 +534,19 @@ export function ShotListPage() {
   })
 
   const castById = useMemo(() => new Map(cast.map((c) => [c.id, c])), [cast])
-  const castInScene = useMemo(
-    () => sceneCastList.map((sc) => ({ sc, person: castById.get(sc.person_id) })).filter((x) => x.person != null),
-    [sceneCastList, castById]
-  )
-  const castAvailableToAdd = useMemo(
-    () => cast.filter((c) => !sceneCastList.some((sc) => sc.person_id === c.id)),
-    [cast, sceneCastList]
-  )
-
-  const addCastMutation = useMutation({
-    mutationFn: async (personIds: string[]) => {
-      if (!currentProductionId || !selectedSceneId) return
-      for (const personId of personIds) {
-        if (authSession.authSupported && authSession.currentUser) {
-          const db = await getDb()
-          await addSceneCastForActor({
-            db,
-            actor: authSession.currentUser,
-            data: {
-              production_id: currentProductionId,
-              scene_id: selectedSceneId,
-              person_id: personId,
-            },
-          })
-        } else {
-          await addSceneCast({
-            production_id: currentProductionId,
-            scene_id: selectedSceneId,
-            person_id: personId,
-          })
-        }
+  /** Union of cast on any shot in the selected scene (read-only summary). */
+  const castInScene = useMemo(() => {
+    const personIds = new Set<string>()
+    for (const shotId of shotIds) {
+      for (const sc of shotCastByShotId.get(shotId) ?? []) {
+        personIds.add(sc.person_id)
       }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-scene', selectedSceneId] })
-      queryClient.invalidateQueries({ queryKey: ['cast-by-scene'] })
-      queryClient.invalidateQueries({ queryKey: ['dood-scenes-by-day', currentProductionId] })
-      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
-      setAddCastOpen(false)
-    },
-  })
-
-  const removeCastMutation = useMutation({
-    mutationFn: async (sceneCastId: string) => {
-      if (authSession.authSupported && authSession.currentUser) {
-        const db = await getDb()
-        return removeSceneCastForActor({
-          db,
-          actor: authSession.currentUser,
-          sceneCastId,
-        })
-      }
-      return removeSceneCast(sceneCastId)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-scene', selectedSceneId] })
-      queryClient.invalidateQueries({ queryKey: ['cast-by-scene'] })
-      queryClient.invalidateQueries({ queryKey: ['dood-scenes-by-day', currentProductionId] })
-      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
-    },
-  })
+    }
+    return [...personIds]
+      .map((personId) => castById.get(personId))
+      .filter((p): p is NonNullable<typeof p> => p != null)
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [shotIds, shotCastByShotId, castById])
 
   const addShotCastMutation = useMutation({
     mutationFn: async ({ shotId, personId }: { shotId: string; personId: string }) => {
@@ -591,6 +576,36 @@ export function ShotListPage() {
       queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
       setAddShotCastShotId(null)
     },
+    onError: () => {
+      setSaveError('Could not add cast to shot. Please try again.')
+    },
+  })
+
+  const resetSceneCastMutation = useMutation({
+    mutationFn: async (sceneId: string) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return clearShotCastForSceneForActor({
+          db,
+          actor: authSession.currentUser,
+          sceneId,
+        })
+      }
+      return clearShotCastForScene(sceneId)
+    },
+    onSuccess: (_void, sceneId) => {
+      queryClient.invalidateQueries({ queryKey: ['shot-cast-by-shot-ids'] })
+      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-scene', sceneId] })
+      queryClient.invalidateQueries({ queryKey: ['cast-by-scene'] })
+      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
+      if (currentProductionId) {
+        queryClient.invalidateQueries({ queryKey: ['dood-scenes-by-day', currentProductionId] })
+      }
+      handleResetCastDialogOpenChange(false)
+    },
+    onError: () => {
+      setResetCastError('Could not reset cast for this scene. Please try again.')
+    },
   })
 
   const removeShotCastMutation = useMutation({
@@ -607,7 +622,15 @@ export function ShotListPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shot-cast-by-shot-ids'] })
+      queryClient.invalidateQueries({ queryKey: ['scene-cast-by-scene', selectedSceneId] })
+      queryClient.invalidateQueries({ queryKey: ['cast-by-scene'] })
       queryClient.invalidateQueries({ queryKey: ['scene-cast-by-person'] })
+      if (currentProductionId) {
+        queryClient.invalidateQueries({ queryKey: ['dood-scenes-by-day', currentProductionId] })
+      }
+    },
+    onError: () => {
+      setSaveError('Could not remove cast from shot. Please try again.')
     },
   })
 
@@ -902,6 +925,103 @@ export function ShotListPage() {
     },
   })
 
+  const duplicateShotMutation = useMutation({
+    mutationFn: async (args: {
+      sceneId: string
+      sourceShotId: string
+      productionId: string | null
+    }) => {
+      const { sceneId, sourceShotId, productionId } = args
+      const source = shots.find((s) => s.id === sourceShotId)
+      if (!source) throw new Error('SHOT_NOT_FOUND')
+
+      const existingNumbers = shots.map((s) => s.shot_number)
+      const newShotNumber = nextShotNumberForDuplicate(source.shot_number, existingNumbers)
+      const castPersonIds = (shotCastByShotId.get(sourceShotId) ?? []).map((sc) => sc.person_id)
+      const input = buildDuplicateShotInput(source, newShotNumber, castPersonIds)
+
+      const lensStr = source.lens?.trim() ?? ''
+      const supportStr = source.support?.trim() ?? ''
+      if (productionId) {
+        if (lensStr) {
+          if (authSession.authSupported && authSession.currentUser) {
+            const db = await getDb()
+            await upsertEquipmentTermForActor({
+              db,
+              actor: authSession.currentUser,
+              productionId,
+              type: 'LENS',
+              value: lensStr,
+            })
+          } else {
+            await upsertEquipmentTerm(productionId, 'LENS', lensStr)
+          }
+        }
+        if (supportStr) {
+          if (authSession.authSupported && authSession.currentUser) {
+            const db = await getDb()
+            await upsertEquipmentTermForActor({
+              db,
+              actor: authSession.currentUser,
+              productionId,
+              type: 'SUPPORT',
+              value: supportStr,
+            })
+          } else {
+            await upsertEquipmentTerm(productionId, 'SUPPORT', supportStr)
+          }
+        }
+      }
+
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return createShotForActor({
+          db,
+          actor: authSession.currentUser,
+          data: input,
+        })
+      }
+      return createShot(input)
+    },
+    onSuccess: (_result, variables) => {
+      const source = shots.find((s) => s.id === variables.sourceShotId)
+      const castCount = shotCastByShotId.get(variables.sourceShotId)?.length ?? 0
+      queryClient.invalidateQueries({ queryKey: ['shots', variables.sceneId] })
+      if (castCount > 0) {
+        queryClient.invalidateQueries({ queryKey: ['scene-cast-by-scene', variables.sceneId] })
+      }
+      if (variables.productionId && source) {
+        if (source.lens?.trim()) {
+          queryClient.invalidateQueries({
+            queryKey: ['equipment-terms', variables.productionId, 'LENS'],
+          })
+        }
+        if (source.support?.trim()) {
+          queryClient.invalidateQueries({
+            queryKey: ['equipment-terms', variables.productionId, 'SUPPORT'],
+          })
+        }
+      }
+      setSaveError(null)
+    },
+    onError: (error) => {
+      const raw = error instanceof Error ? error.message : String(error)
+      if (raw === 'SHOT_NOT_FOUND') {
+        setSaveError('Could not duplicate shot. Please try again.')
+        return
+      }
+      if (/Could not find an available shot number/.test(raw)) {
+        setSaveError('Could not find an available shot number for this duplicate.')
+        return
+      }
+      if (/empty shot number/.test(raw)) {
+        setSaveError('Could not duplicate shot: source shot number is empty.')
+        return
+      }
+      setSaveError(messageForCreateShotError(error))
+    },
+  })
+
   const deleteShotMutation = useMutation({
     mutationFn: async (args: { shotId: string; sceneId: string }) => {
       if (authSession.authSupported && authSession.currentUser) {
@@ -924,6 +1044,14 @@ export function ShotListPage() {
       setDeleteShotError('Could not delete shot. Please try again.')
     },
   })
+
+  const sortedShots = useMemo(
+    () =>
+      [...shots].sort((a, b) =>
+        a.shot_number.localeCompare(b.shot_number, undefined, { numeric: true })
+      ),
+    [shots]
+  )
 
   const selectedScene = scenes.find((s) => s.id === selectedSceneId)
   const getLocationName = (locationId: string | null) =>
@@ -1160,40 +1288,22 @@ export function ShotListPage() {
       {selectedSceneId && (
         <>
           <Card className="border-zinc-700 bg-zinc-800/50">
-            <CardHeader className="border-b border-zinc-700 py-0 flex flex-row items-center justify-between gap-2">
+            <CardHeader className="border-b border-zinc-700 py-3">
               <CardTitle className="text-sm font-medium text-zinc-200">Cast in this scene</CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 border-zinc-600 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
-                onClick={() => setAddCastOpen(true)}
-                disabled={castAvailableToAdd.length === 0}
-              >
-                <Plus className="mr-1.5 size-3.5" />
-                Add cast
-              </Button>
             </CardHeader>
             <CardContent className="py-3">
               {castInScene.length === 0 ? (
-                <p className="text-sm text-zinc-500">No cast assigned. Use “Add cast” to assign cast to this scene.</p>
+                <p className="text-sm text-zinc-500">
+                  No cast on any shot in this scene. Add cast to individual shots in the list below.
+                </p>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {castInScene.map(({ sc, person }) => (
+                  {castInScene.map((person) => (
                     <span
-                      key={sc.id}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-zinc-700/80 px-2.5 py-1 text-sm text-zinc-200"
+                      key={person.id}
+                      className="inline-flex items-center rounded-md bg-zinc-700/80 px-2.5 py-1 text-sm text-zinc-200"
                     >
-                      {person!.name}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5 shrink-0 text-zinc-400 hover:text-destructive"
-                        onClick={() => removeCastMutation.mutate(sc.id)}
-                        disabled={removeCastMutation.isPending}
-                        aria-label={`Remove ${person!.name} from scene`}
-                      >
-                        <Trash2 className="size-3" />
-                      </Button>
+                      {person.name}
                     </span>
                   ))}
                 </div>
@@ -1210,6 +1320,23 @@ export function ShotListPage() {
                 <span className="text-sm text-destructive" role="alert">
                   {saveError}
                 </span>
+              )}
+              {editMode && selectedSceneId && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 border-zinc-600 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+                  onClick={() => {
+                    clearResetCastDialogResetTimer()
+                    setResetCastError(null)
+                    setResetCastDialogOpen(true)
+                  }}
+                  disabled={resetSceneCastMutation.isPending || castInScene.length === 0}
+                >
+                  <UsersRound className="size-3.5" />
+                  Reset cast
+                </Button>
               )}
               <Button
                 type="button"
@@ -1264,8 +1391,8 @@ export function ShotListPage() {
                   <TableHead className="text-zinc-100 font-medium h-11 px-3">Notes</TableHead>
                   <TableHead className="text-zinc-100 font-medium h-11 px-3 w-[180px]">Cast</TableHead>
                   {editMode && (
-                    <TableHead className="text-zinc-100 font-medium h-11 px-2 w-12 text-right">
-                      <span className="sr-only">Delete shot</span>
+                    <TableHead className="text-zinc-100 font-medium h-11 px-2 w-20 text-right">
+                      <span className="sr-only">Shot actions</span>
                     </TableHead>
                   )}
                 </TableRow>
@@ -1281,7 +1408,7 @@ export function ShotListPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  shots.map((shot) => (
+                  sortedShots.map((shot) => (
                     <ShotRow
                       key={shot.id}
                       shot={shot}
@@ -1301,6 +1428,22 @@ export function ShotListPage() {
                       onRemoveShotCast={removeShotCastMutation.mutate}
                       onAddCastClick={() => setAddShotCastShotId(shot.id)}
                       isRemovingShotCast={removeShotCastMutation.isPending}
+                      onDuplicate={
+                        editMode && selectedSceneId
+                          ? (s) => {
+                              setSaveError(null)
+                              duplicateShotMutation.mutate({
+                                sceneId: selectedSceneId,
+                                sourceShotId: s.id,
+                                productionId: currentProductionId,
+                              })
+                            }
+                          : undefined
+                      }
+                      isDuplicatePending={
+                        duplicateShotMutation.isPending &&
+                        duplicateShotMutation.variables?.sourceShotId === shot.id
+                      }
                       onRequestDelete={
                         editMode && selectedSceneId
                           ? (s) => {
@@ -1323,6 +1466,47 @@ export function ShotListPage() {
           </div>
         </>
       )}
+
+      <Dialog open={resetCastDialogOpen} onOpenChange={handleResetCastDialogOpenChange}>
+        <DialogContent className="max-w-md bg-zinc-800 border-zinc-600">
+          <h3 className="text-base font-semibold text-zinc-100">Reset cast for scene</h3>
+          {selectedScene && (
+            <p className="text-sm text-zinc-300 mt-1">
+              Remove all cast from every shot in scene{' '}
+              <span className="font-medium text-zinc-100">{selectedScene.scene_number}</span>? This
+              cannot be undone from this screen, but you can add cast back to individual shots
+              afterward.
+            </p>
+          )}
+          {resetCastError && (
+            <p className="mt-2 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive" role="alert">
+              {resetCastError}
+            </p>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => handleResetCastDialogOpenChange(false)}
+              disabled={resetSceneCastMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={resetSceneCastMutation.isPending || !selectedSceneId}
+              onClick={() => {
+                if (!selectedSceneId) return
+                setResetCastError(null)
+                resetSceneCastMutation.mutate(selectedSceneId)
+              }}
+            >
+              {resetSceneCastMutation.isPending ? 'Resetting…' : 'Confirm'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteDialogOpen} onOpenChange={handleDeleteDialogOpenChange}>
         <DialogContent className="max-w-md bg-zinc-800 border-zinc-600">
@@ -2056,37 +2240,6 @@ export function ShotListPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={addCastOpen} onOpenChange={setAddCastOpen}>
-        <DialogContent className="max-h-[85vh] flex flex-col bg-zinc-800 border-zinc-600">
-          <h3 className="text-base font-semibold text-zinc-100">Add cast to scene</h3>
-          <p className="text-sm text-zinc-400">Select cast members to add to this scene.</p>
-          {castAvailableToAdd.length === 0 ? (
-            <p className="py-4 text-sm text-zinc-500">All cast are already in this scene.</p>
-          ) : (
-            <div className="flex-1 min-h-0 overflow-auto py-2">
-              <div className="flex flex-col gap-1">
-                {castAvailableToAdd.map((person) => (
-                  <Button
-                    key={person.id}
-                    variant="ghost"
-                    className="justify-start text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
-                    onClick={() => {
-                      addCastMutation.mutate([person.id])
-                    }}
-                    disabled={addCastMutation.isPending}
-                  >
-                    {person.name}
-                    {person.cast_number && (
-                      <span className="ml-2 text-zinc-500">#{person.cast_number}</span>
-                    )}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
       {/* Add cast to shot dialog */}
       <Dialog open={addShotCastShotId != null} onOpenChange={(open) => !open && setAddShotCastShotId(null)}>
         <DialogContent className="max-h-[85vh] flex flex-col bg-zinc-800 border-zinc-600">
@@ -2149,6 +2302,8 @@ function ShotRow({
   isRemovingShotCast,
   onRequestDelete,
   isDeletePending,
+  onDuplicate,
+  isDuplicatePending,
 }: {
   shot: Shot
   sceneNumber: string
@@ -2167,6 +2322,8 @@ function ShotRow({
   onRemoveShotCast: (shotCastId: string) => void
   onAddCastClick: () => void
   isRemovingShotCast: boolean
+  onDuplicate?: (shot: Shot) => void
+  isDuplicatePending?: boolean
   onRequestDelete?: (shot: Shot) => void
   isDeletePending?: boolean
 }) {
@@ -2537,7 +2694,10 @@ function ShotRow({
                   variant="ghost"
                   size="icon"
                   className="h-4 w-4 shrink-0 text-zinc-400 hover:text-destructive"
-                  onClick={() => onRemoveShotCast(sc.id)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onRemoveShotCast(sc.id)
+                  }}
                   disabled={isRemovingShotCast}
                   aria-label={`Remove from shot`}
                 >
@@ -2558,22 +2718,42 @@ function ShotRow({
         </div>
       </TableCell>
 
-      {onRequestDelete != null && (
-        <TableCell className="align-middle px-2 py-2 w-12 text-right">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-destructive hover:bg-destructive/15 hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation()
-              onRequestDelete(shot)
-            }}
-            disabled={isDeletePending}
-            aria-label={`Delete shot ${shot.shot_number}`}
-          >
-            <Trash2 className="size-4" />
-          </Button>
+      {(onDuplicate != null || onRequestDelete != null) && (
+        <TableCell className="align-middle px-2 py-2 w-20 text-right">
+          <div className="flex items-center justify-end gap-0.5">
+            {onDuplicate != null && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-zinc-400 hover:bg-zinc-700/80 hover:text-zinc-100"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDuplicate(shot)
+                }}
+                disabled={isDuplicatePending || isDeletePending}
+                aria-label={`Duplicate shot ${shot.shot_number}`}
+              >
+                <Copy className="size-4" />
+              </Button>
+            )}
+            {onRequestDelete != null && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-destructive hover:bg-destructive/15 hover:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRequestDelete(shot)
+                }}
+                disabled={isDeletePending || isDuplicatePending}
+                aria-label={`Delete shot ${shot.shot_number}`}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            )}
+          </div>
         </TableCell>
       )}
     </TableRow>

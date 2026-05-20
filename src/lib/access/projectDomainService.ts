@@ -54,6 +54,7 @@ import {
 } from '@/lib/db/repositories/scene-cast'
 import {
   addShotCast,
+  clearShotCastForScene,
   getCastIdsByShotIds,
   listShotCastByPersonInProduction,
   listShotCastByShotIds,
@@ -475,7 +476,17 @@ export async function removeShotCastForActor(args: {
 }) {
   const productionId = await resolveProductionIdForShotCast(args.db, args.shotCastId)
   await requireProjectEditAccess(args.db, args.actor, productionId)
-  return removeShotCast(args.shotCastId)
+  return removeShotCast(args.shotCastId, args.db)
+}
+
+export async function clearShotCastForSceneForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  sceneId: string
+}) {
+  const productionId = await resolveProductionIdForScene(args.db, args.sceneId)
+  await requireProjectEditAccess(args.db, args.actor, productionId)
+  return clearShotCastForScene(args.sceneId, args.db)
 }
 
 export async function getCastIdsByShotIdsForActor(args: {

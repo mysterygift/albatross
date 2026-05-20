@@ -5,10 +5,10 @@
  */
 
 import { getDb, now, uuid, runInSerializedTransaction, executeBatch } from '../client'
+import type { DatabaseAdapter } from '../databaseAdapter'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { ShotCast } from '../types'
 import { getShotById } from './schedule'
-import { listSceneCastByScene } from './scene-cast'
 
 const TABLE = 'shot_cast'
 const SCENE_CAST_TABLE = 'scene_cast'
@@ -101,9 +101,22 @@ export async function listShotCastByShotIds(shotIds: string[]): Promise<Map<stri
   return map
 }
 
+async function findSceneCastLink(
+  db: DatabaseAdapter,
+  sceneId: string,
+  personId: string
+): Promise<{ id: string; deleted_at: string | null } | null> {
+  const rows = await db.select<Array<{ id: string; deleted_at: string | null }>>(
+    `SELECT id, deleted_at FROM ${SCENE_CAST_TABLE} WHERE scene_id = $1 AND person_id = $2 LIMIT 1`,
+    [sceneId, personId]
+  )
+  return rows[0] ?? null
+}
+
 /**
  * Add a cast member to a shot. Ensures scene_cast exists for the shot's scene (auto-adds if missing).
- * If person is not on the parent scene, we add scene_cast then shot_cast in one transaction.
+ * Restores soft-deleted scene_cast / shot_cast rows when the unique (scene_id, person_id) / (shot_id, person_id)
+ * index would otherwise block a new insert.
  */
 export async function addShotCast(data: {
   production_id: string
@@ -120,52 +133,131 @@ export async function addShotCast(data: {
   const shot = await getShotById(data.shot_id)
   if (!shot) throw new Error('Shot not found')
 
-  const sceneCastList = await listSceneCastByScene(shot.scene_id)
-  const hasSceneCast = sceneCastList.some((sc) => sc.person_id === data.person_id)
-
-  if (!hasSceneCast) {
+  const softDeletedShotCast = await db.select<Array<{ id: string }>>(
+    `SELECT id FROM ${TABLE} WHERE shot_id = $1 AND person_id = $2 AND deleted_at IS NOT NULL LIMIT 1`,
+    [data.shot_id, data.person_id]
+  )
+  if (softDeletedShotCast.length > 0) {
+    const shotCastId = softDeletedShotCast[0]!.id
+    const ts = now()
+    const sceneLink = await findSceneCastLink(db, shot.scene_id, data.person_id)
     await runInSerializedTransaction(async () => {
       const conn = await getDb()
-      const idScene = uuid()
-      const idShot = uuid()
-      const ts = now()
-      const outboxScene = outboxStatementForRow({
-        entity: SCENE_CAST_TABLE,
-        entityId: idScene,
-        operation: 'create',
-        payloadJson: JSON.stringify({ id: idScene, production_id: data.production_id, scene_id: shot.scene_id, person_id: data.person_id }),
-      })
-      const outboxShot = outboxStatementForRow({
-        entity: TABLE,
-        entityId: idShot,
-        operation: 'create',
-        payloadJson: JSON.stringify({ id: idShot, ...data }),
-      })
       const batch: Array<{ sql: string; bindValues: unknown[] }> = [
         { sql: 'BEGIN TRANSACTION', bindValues: [] },
         {
-          sql: `INSERT INTO ${SCENE_CAST_TABLE} (id, production_id, scene_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
-          bindValues: [idScene, data.production_id, shot.scene_id, data.person_id, ts, ts],
+          sql: `UPDATE ${TABLE} SET deleted_at = NULL, updated_at = $1 WHERE id = $2`,
+          bindValues: [ts, shotCastId],
         },
-        {
-          sql: `INSERT INTO ${TABLE} (id, production_id, shot_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
-          bindValues: [idShot, data.production_id, data.shot_id, data.person_id, ts, ts],
-        },
-        outboxScene,
-        outboxShot,
-        { sql: 'COMMIT', bindValues: [] },
+        outboxStatementForRow({
+          entity: TABLE,
+          entityId: shotCastId,
+          operation: 'update',
+          payloadJson: JSON.stringify({ deleted_at: null, updated_at: ts }),
+        }),
       ]
+      if (sceneLink?.deleted_at != null) {
+        batch.push({
+          sql: `UPDATE ${SCENE_CAST_TABLE} SET deleted_at = NULL, updated_at = $1 WHERE id = $2`,
+          bindValues: [ts, sceneLink.id],
+        })
+        batch.push(
+          outboxStatementForRow({
+            entity: SCENE_CAST_TABLE,
+            entityId: sceneLink.id,
+            operation: 'update',
+            payloadJson: JSON.stringify({ deleted_at: null, updated_at: ts }),
+          })
+        )
+      }
+      batch.push({ sql: 'COMMIT', bindValues: [] })
       await executeBatch(conn, batch)
     })
   } else {
-    const id = uuid()
-    const ts = now()
-    await db.execute(
-      `INSERT INTO ${TABLE} (id, production_id, shot_id, person_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, data.production_id, data.shot_id, data.person_id, ts, ts]
-    )
-    await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, id }))
+    const sceneLink = await findSceneCastLink(db, shot.scene_id, data.person_id)
+
+    if (!sceneLink) {
+      await runInSerializedTransaction(async () => {
+        const conn = await getDb()
+        const idScene = uuid()
+        const idShot = uuid()
+        const ts = now()
+        const outboxScene = outboxStatementForRow({
+          entity: SCENE_CAST_TABLE,
+          entityId: idScene,
+          operation: 'create',
+          payloadJson: JSON.stringify({
+            id: idScene,
+            production_id: data.production_id,
+            scene_id: shot.scene_id,
+            person_id: data.person_id,
+          }),
+        })
+        const outboxShot = outboxStatementForRow({
+          entity: TABLE,
+          entityId: idShot,
+          operation: 'create',
+          payloadJson: JSON.stringify({ id: idShot, ...data }),
+        })
+        const batch: Array<{ sql: string; bindValues: unknown[] }> = [
+          { sql: 'BEGIN TRANSACTION', bindValues: [] },
+          {
+            sql: `INSERT INTO ${SCENE_CAST_TABLE} (id, production_id, scene_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+            bindValues: [idScene, data.production_id, shot.scene_id, data.person_id, ts, ts],
+          },
+          {
+            sql: `INSERT INTO ${TABLE} (id, production_id, shot_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+            bindValues: [idShot, data.production_id, data.shot_id, data.person_id, ts, ts],
+          },
+          outboxScene,
+          outboxShot,
+          { sql: 'COMMIT', bindValues: [] },
+        ]
+        await executeBatch(conn, batch)
+      })
+    } else if (sceneLink.deleted_at != null) {
+      await runInSerializedTransaction(async () => {
+        const conn = await getDb()
+        const idShot = uuid()
+        const ts = now()
+        const outboxScene = outboxStatementForRow({
+          entity: SCENE_CAST_TABLE,
+          entityId: sceneLink.id,
+          operation: 'update',
+          payloadJson: JSON.stringify({ deleted_at: null, updated_at: ts }),
+        })
+        const outboxShot = outboxStatementForRow({
+          entity: TABLE,
+          entityId: idShot,
+          operation: 'create',
+          payloadJson: JSON.stringify({ id: idShot, ...data }),
+        })
+        const batch: Array<{ sql: string; bindValues: unknown[] }> = [
+          { sql: 'BEGIN TRANSACTION', bindValues: [] },
+          {
+            sql: `UPDATE ${SCENE_CAST_TABLE} SET deleted_at = NULL, updated_at = $1 WHERE id = $2`,
+            bindValues: [ts, sceneLink.id],
+          },
+          {
+            sql: `INSERT INTO ${TABLE} (id, production_id, shot_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+            bindValues: [idShot, data.production_id, data.shot_id, data.person_id, ts, ts],
+          },
+          outboxScene,
+          outboxShot,
+          { sql: 'COMMIT', bindValues: [] },
+        ]
+        await executeBatch(conn, batch)
+      })
+    } else {
+      const id = uuid()
+      const ts = now()
+      await db.execute(
+        `INSERT INTO ${TABLE} (id, production_id, shot_id, person_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, data.production_id, data.shot_id, data.person_id, ts, ts]
+      )
+      await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, id }))
+    }
   }
 
   const rows = await db.select<Record<string, unknown>[]>(
@@ -175,12 +267,137 @@ export async function addShotCast(data: {
   return rowToShotCast(rows[0]!)
 }
 
-export async function removeShotCast(id: string): Promise<void> {
-  const db = await getDb()
-  const ts = now()
-  await db.execute(
-    `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
-    [ts, ts, id]
+/**
+ * Soft-delete shot_cast by id. When the person has no other shot_cast rows in the
+ * parent scene, also soft-delete their scene_cast row (scene panel stays in sync).
+ */
+export async function removeShotCast(id: string, db?: DatabaseAdapter): Promise<void> {
+  const conn = db ?? (await getDb())
+  const linkRows = await conn.select<
+    Array<{ shot_id: string; person_id: string; scene_id: string }>
+  >(
+    `SELECT sc.shot_id, sc.person_id, s.scene_id
+     FROM ${TABLE} sc
+     INNER JOIN shots s ON s.id = sc.shot_id AND s.deleted_at IS NULL
+     WHERE sc.id = $1 AND sc.deleted_at IS NULL`,
+    [id]
   )
-  await outboxPush(TABLE, id, 'delete', null)
+  if (linkRows.length === 0) {
+    throw new Error('Shot cast not found or already removed')
+  }
+  const { person_id: personId, scene_id: sceneId } = linkRows[0]!
+  const ts = now()
+
+  await runInSerializedTransaction(async () => {
+    const batchDb = db ?? (await getDb())
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+      { sql: 'BEGIN', bindValues: [] },
+      {
+        sql: `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
+        bindValues: [ts, ts, id],
+      },
+      outboxStatementForRow({
+        entity: TABLE,
+        entityId: id,
+        operation: 'delete',
+        payloadJson: null,
+      }),
+    ]
+
+    const remaining = await batchDb.select<Array<{ n: number }>>(
+      `SELECT COUNT(*) AS n FROM ${TABLE} sc
+       INNER JOIN shots s ON s.id = sc.shot_id AND s.deleted_at IS NULL
+       WHERE sc.person_id = $1 AND s.scene_id = $2 AND sc.deleted_at IS NULL AND sc.id != $3`,
+      [personId, sceneId, id]
+    )
+    const otherShotCastInScene = Number(remaining[0]?.n ?? 0)
+    if (otherShotCastInScene === 0) {
+      const sceneCastRows = await batchDb.select<Array<{ id: string }>>(
+        `SELECT id FROM ${SCENE_CAST_TABLE} WHERE scene_id = $1 AND person_id = $2 AND deleted_at IS NULL`,
+        [sceneId, personId]
+      )
+      for (const row of sceneCastRows) {
+        const sceneCastId = row.id
+        statements.push({
+          sql: `UPDATE ${SCENE_CAST_TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
+          bindValues: [ts, ts, sceneCastId],
+        })
+        statements.push(
+          outboxStatementForRow({
+            entity: SCENE_CAST_TABLE,
+            entityId: sceneCastId,
+            operation: 'delete',
+            payloadJson: null,
+          })
+        )
+      }
+    }
+
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+    await executeBatch(batchDb, statements)
+  })
+}
+
+/**
+ * Soft-delete all shot_cast rows for shots in the scene, then all scene_cast for the scene
+ * (keeps DooD / scene participation aligned when cast is shot-derived).
+ */
+export async function clearShotCastForScene(sceneId: string, db?: DatabaseAdapter): Promise<void> {
+  const conn = db ?? (await getDb())
+  const shotCastRows = await conn.select<Array<{ id: string }>>(
+    `SELECT sc.id FROM ${TABLE} sc
+     INNER JOIN shots s ON s.id = sc.shot_id AND s.deleted_at IS NULL
+     WHERE s.scene_id = $1 AND sc.deleted_at IS NULL`,
+    [sceneId]
+  )
+  const sceneCastRows = await conn.select<Array<{ id: string }>>(
+    `SELECT id FROM ${SCENE_CAST_TABLE} WHERE scene_id = $1 AND deleted_at IS NULL`,
+    [sceneId]
+  )
+  if (shotCastRows.length === 0 && sceneCastRows.length === 0) return
+
+  const ts = now()
+  await runInSerializedTransaction(async () => {
+    const batchDb = db ?? (await getDb())
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN', bindValues: [] }]
+
+    if (shotCastRows.length > 0) {
+      statements.push({
+        sql: `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2
+         WHERE shot_id IN (SELECT id FROM shots WHERE scene_id = $3 AND deleted_at IS NULL)
+         AND deleted_at IS NULL`,
+        bindValues: [ts, ts, sceneId],
+      })
+      for (const row of shotCastRows) {
+        statements.push(
+          outboxStatementForRow({
+            entity: TABLE,
+            entityId: row.id,
+            operation: 'delete',
+            payloadJson: null,
+          })
+        )
+      }
+    }
+
+    if (sceneCastRows.length > 0) {
+      statements.push({
+        sql: `UPDATE ${SCENE_CAST_TABLE} SET deleted_at = $1, updated_at = $2 WHERE scene_id = $3 AND deleted_at IS NULL`,
+        bindValues: [ts, ts, sceneId],
+      })
+      for (const row of sceneCastRows) {
+        statements.push(
+          outboxStatementForRow({
+            entity: SCENE_CAST_TABLE,
+            entityId: row.id,
+            operation: 'delete',
+            payloadJson: null,
+          })
+        )
+      }
+    }
+
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+    await executeBatch(batchDb, statements)
+  })
 }

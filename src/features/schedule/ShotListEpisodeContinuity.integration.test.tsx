@@ -36,6 +36,7 @@ vi.mock('@/lib/db/repositories/shot-cast', () => ({
   listShotCastByShotIds: vi.fn(async () => new Map()),
   addShotCast: vi.fn(),
   removeShotCast: vi.fn(),
+  clearShotCastForScene: vi.fn(),
 }))
 
 vi.mock('@/lib/db/repositories/person', () => ({
