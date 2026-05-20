@@ -83,6 +83,7 @@ import { getSetting, setSetting, FIRST_LAUNCH_TUTORIAL_SEEN_KEY, setFirstLaunchT
 import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
 import { EpisodesSettingsSection } from '@/features/settings/EpisodesSettingsSection'
 import { ShootingBlocsSettingsSection } from '@/features/settings/ShootingBlocsSettingsSection'
+import { ClientsSettingsSection } from '@/features/settings/ClientsSettingsSection'
 import {
   API_CALL_TRACKER_IDS,
   API_CALL_TRACKER_LABELS,
@@ -244,6 +245,7 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       if (currentProductionId) {
         queryClient.invalidateQueries({ queryKey: ['episodes-management', currentProductionId] })
+        queryClient.invalidateQueries({ queryKey: ['shooting-blocs', currentProductionId] })
       }
       refetchProductions()
     },
@@ -496,7 +498,7 @@ export function SettingsPage() {
                 <DialogHeader>
                   <DialogTitle>Enable episodic mode</DialogTitle>
                   <p className="text-muted-foreground text-sm leading-snug">
-                    This choice is permanent. You will not be able to disable episodic mode for this production later. Episodic projects must have at least one episode—you are about to create the first one.
+                    This choice is permanent. You will not be able to disable episodic mode for this production later. Episodic projects must have at least one episode—you are about to create the first one, plus a default shooting bloc named Block A.
                   </p>
                 </DialogHeader>
                 <div className="rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-amber-800 dark:text-amber-200 text-xs leading-snug">
@@ -814,6 +816,8 @@ export function SettingsPage() {
           </CardDescription>
         </CardHeader>
       </Card>
+
+      <ClientsSettingsSection />
 
       <Card className="mt-2">
         <CardHeader>

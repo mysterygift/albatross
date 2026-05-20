@@ -25,6 +25,7 @@ export async function preflightApfImportDb(params: {
   assertManifestMatchesProductionPayload(manifest, prod)
 
   const productionId = String(prod.id)
+
   const slug =
     prod.slug != null && String(prod.slug).length > 0
       ? String(prod.slug)
@@ -33,6 +34,28 @@ export async function preflightApfImportDb(params: {
         : null
 
   const db = await getDb()
+
+  const rawClientId = prod.client_id
+  const clientIdStr =
+    rawClientId == null
+      ? ''
+      : typeof rawClientId === 'string'
+        ? rawClientId.trim()
+        : String(rawClientId).trim()
+  if (clientIdStr) {
+    const clientRows = await db.select<{ id: string }[]>(
+      `SELECT id FROM clients WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+      [clientIdStr]
+    )
+    if (clientRows.length === 0) {
+      prod.client_id = null
+    }
+  } else if ('client_id' in prod) {
+    prod.client_id = null
+  }
+  if (!('delivery_date' in prod)) {
+    prod.delivery_date = null
+  }
 
   const existingById = await db.select<{ id: string }[]>(
     `SELECT id FROM productions WHERE id = $1 LIMIT 1`,

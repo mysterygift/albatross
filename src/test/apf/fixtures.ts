@@ -37,6 +37,8 @@ export function minimalProductionRow(overrides: Partial<ApfTableRow> = {}): ApfT
     wrapped_at: null,
     created_from_template: null,
     is_episodic: 0,
+    client_id: null,
+    delivery_date: null,
     ...overrides,
   }
 }

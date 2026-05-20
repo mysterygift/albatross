@@ -496,6 +496,15 @@ export async function createShootDayWithDefaultMainUnit(args: CreateShootDayWith
   if (!productionId) throw new Error('productionId is required')
   if (!shootDate) throw new Error('shootDate is required')
 
+  const db = await getDb()
+  const existingOnDate = await db.select<Record<string, unknown>[]>(
+    `SELECT id FROM ${DAY_TABLE} WHERE production_id = $1 AND shoot_date = $2 AND deleted_at IS NULL`,
+    [productionId, shootDate]
+  )
+  if (existingOnDate.length > 0) {
+    throw new Error('SHOOT_DATE_ALREADY_EXISTS')
+  }
+
   const mainUnit = args.mainUnitId
     ? { id: args.mainUnitId }
     : await ensureMainUnit(productionId)

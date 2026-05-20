@@ -105,6 +105,7 @@ import {
   shotEstMinutesSchema,
   shotDurationSecondsSchema,
 } from './shot-list-validation'
+import { invalidateStripboardCaches } from './stripboard-hooks'
 
 function formatSceneLabel(scene: Scene, locationName: string | null): string {
   const intExt = scene.int_ext ?? '—'
@@ -803,7 +804,9 @@ export function ShotListPage() {
       setSaveError(null)
       queryClient.invalidateQueries({ queryKey: ['shots', selectedSceneId] })
       queryClient.invalidateQueries({ queryKey: ['shots', currentProductionId ?? ''] })
-      queryClient.invalidateQueries({ queryKey: ['stripboard'] })
+      if (currentProductionId) {
+        void invalidateStripboardCaches(queryClient, currentProductionId)
+      }
       queryClient.invalidateQueries({ queryKey: ['equipment-terms'] })
     },
     onError: (error) => {

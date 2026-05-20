@@ -61,6 +61,8 @@ export async function duplicateProduction(
   const currencyCode = (prodRows[0]!.currency_code as string) ?? 'GBP'
   const notes = (prodRows[0]!.notes as string | null) ?? null
   const isEpisodic = coerceBoolean(prodRows[0]!.is_episodic, false)
+  const clientId = (prodRows[0]!.client_id as string | null) ?? null
+  const deliveryDate = (prodRows[0]!.delivery_date as string | null) ?? null
 
   // Load all source data first (reads only).
   const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs, episodes, shootingBlocs] = await Promise.all([
@@ -124,8 +126,8 @@ export async function duplicateProduction(
   const statements: Stmt[] = [
     { sql: 'BEGIN TRANSACTION', bindValues: [] },
     {
-      sql: `INSERT INTO ${TABLE_PRODUCTIONS} (id, name, slug, currency_code, notes, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      bindValues: [newProdId, newName, slug, currencyCode, notes, isEpisodic, ts, ts],
+      sql: `INSERT INTO ${TABLE_PRODUCTIONS} (id, name, slug, currency_code, notes, client_id, delivery_date, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      bindValues: [newProdId, newName, slug, currencyCode, notes, clientId, deliveryDate, isEpisodic, ts, ts],
     },
   ]
 

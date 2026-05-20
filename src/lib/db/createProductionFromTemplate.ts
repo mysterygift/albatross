@@ -5,7 +5,12 @@
 
 import { uuid } from './client'
 import type { Production } from './types'
-import { createProduction, setProductionCreatedFromTemplate } from './repositories/production'
+import type { CreateClientData } from './repositories/clients'
+import {
+  createProduction,
+  setProductionCreatedFromTemplate,
+  type CreateProductionOptions,
+} from './repositories/production'
 import { listAccounts } from './repositories/budgetAccounts'
 import { createContingencyRule } from './repositories/budgetDerived'
 import { applyTaskTemplateToProduction } from './repositories/taskTemplates'
@@ -22,18 +27,27 @@ export type CreateProductionFromTemplateParams = {
   /** When true, production is created as episodic with `initialEpisodeName` (irreversible). */
   isEpisodic?: boolean
   initialEpisodeName?: string | null
+  clientId?: string | null
+  newClient?: CreateClientData
+  deliveryDate?: string | null
 }
 
-function createOptionsFromEpisodicParams(
-  base: { skipBudgetSeed?: boolean },
+function createOptionsFromParams(
+  base: Pick<CreateProductionOptions, 'skipBudgetSeed'>,
   params: CreateProductionFromTemplateParams
-): { skipBudgetSeed?: boolean; episodicInitialEpisodeName?: string } {
-  if (!params.isEpisodic) return base
+): CreateProductionOptions {
+  const opts: CreateProductionOptions = {
+    ...base,
+    clientId: params.clientId ?? null,
+    newClient: params.newClient,
+    deliveryDate: params.deliveryDate ?? null,
+  }
+  if (!params.isEpisodic) return opts
   const n = (params.initialEpisodeName ?? '').trim()
   if (!n) {
     throw new Error('Episodic production requires a first episode name')
   }
-  return { ...base, episodicInitialEpisodeName: n }
+  return { ...opts, episodicInitialEpisodeName: n }
 }
 
 /**
@@ -48,12 +62,12 @@ export async function createProductionFromTemplate(
 
   switch (template) {
     case 'blank':
-      return createProduction({ name, notes }, createOptionsFromEpisodicParams({}, params))
+      return createProduction({ name, notes }, createOptionsFromParams({}, params))
 
     case 'demo': {
       const production = await createProduction(
         { name, notes },
-        createOptionsFromEpisodicParams({ skipBudgetSeed: true }, params)
+        createOptionsFromParams({ skipBudgetSeed: true }, params)
       )
       await seedDemoProductionContent(production.id)
       await setProductionCreatedFromTemplate(production.id, 'demo')
@@ -63,7 +77,7 @@ export async function createProductionFromTemplate(
     case 'default': {
       const production = await createProduction(
         { name, notes },
-        createOptionsFromEpisodicParams({ skipBudgetSeed: true }, params)
+        createOptionsFromParams({ skipBudgetSeed: true }, params)
       )
       await seedDefaultProductionContent(production.id)
       return production

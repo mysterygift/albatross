@@ -71,6 +71,7 @@ import {
   bulkAssignShotsToDay,
   createShotStrip,
   createStrip,
+  deleteShootDayAndDiscardStrips,
   deleteStrip,
   getScheduledSceneIdsByShootDay,
   listBoneyardStrips,
@@ -794,6 +795,16 @@ export async function createShootDayWithDefaultMainUnitForActor(args: {
 }) {
   await requireProjectEditAccess(args.db, args.actor, args.data.productionId)
   return createShootDayWithDefaultMainUnit(args.data)
+}
+
+export async function deleteShootDayAndDiscardStripsForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  shootDayId: string
+}) {
+  const productionId = await resolveProductionIdForShootDay(args.db, args.shootDayId)
+  await requireProjectEditAccess(args.db, args.actor, productionId)
+  return deleteShootDayAndDiscardStrips(args.shootDayId)
 }
 
 export async function ensureMainUnitForActor(args: {

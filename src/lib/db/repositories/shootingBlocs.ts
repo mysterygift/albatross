@@ -1,15 +1,63 @@
-import { getDb, now, uuid } from '../client'
+import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import {
   addCalendarDaysToIso,
   classifyShootingBlocRangeMutation,
   reassignShootDaysAfterShootingBlocRangeChange,
 } from '../shootingBlocAssociation'
-import { outboxPush } from '../outbox'
+import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { ShootingBloc } from '../types'
-import { deleteShootDay, setShootDayDatesForBlocShiftBatch } from './schedule'
+import { setShootDayDatesForBlocShiftBatch } from './schedule'
+import { deleteShootDayAndDiscardStrips } from './stripboard-strips'
 
 const TABLE = 'shooting_blocs'
 const SHOOT_DAYS_TABLE = 'shoot_days'
+
+/** Default name for the shooting bloc created when episodic mode is enabled. */
+export const DEFAULT_EPISODIC_SHOOTING_BLOC_NAME = 'Block A'
+
+const DEFAULT_EPISODIC_BLOC_SPAN_DAYS = 90
+
+/** UTC today through today + 89 days (90 inclusive days). */
+export function defaultEpisodicShootingBlocDateRange(): { start_date: string; end_date: string } {
+  const d = new Date()
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  const start_date = `${y}-${m}-${day}`
+  const end_date = addCalendarDaysToIso(start_date, DEFAULT_EPISODIC_BLOC_SPAN_DAYS - 1)
+  return { start_date, end_date }
+}
+
+export function shootingBlocInsertStatement(params: {
+  id: string
+  production_id: string
+  name: string
+  start_date: string
+  end_date: string
+  ts: string
+}): { sql: string; bindValues: unknown[] } {
+  return {
+    sql: `INSERT INTO ${TABLE} (id, production_id, name, start_date, end_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    bindValues: [
+      params.id,
+      params.production_id,
+      params.name,
+      params.start_date,
+      params.end_date,
+      params.ts,
+      params.ts,
+    ],
+  }
+}
+
+export function shootingBlocOutboxCreate(blocId: string, payload: Record<string, unknown>) {
+  return outboxStatementForRow({
+    entity: TABLE,
+    entityId: blocId,
+    operation: 'create',
+    payloadJson: JSON.stringify(payload),
+  })
+}
 
 export async function listBlocTaggedShootDays(
   productionId: string,
@@ -70,7 +118,7 @@ async function applyShootingBlocRangeChangeMutations(
   const rows = await listBlocTaggedShootDays(productionId, blocId)
   for (const r of rows) {
     if (r.shoot_date < newStart || r.shoot_date > newEnd) {
-      await deleteShootDay(r.id)
+      await deleteShootDayAndDiscardStrips(r.id)
     }
   }
 }
@@ -201,4 +249,74 @@ export async function updateShootingBloc(
     })
   }
   return (await getShootingBlocById(id))!
+}
+
+/**
+ * Soft-deletes a shooting bloc and merges its shoot days into the prior calendar bloc.
+ * Throws if the bloc is the first (earliest start_date) in the production.
+ */
+export async function deleteShootingBloc(blocId: string): Promise<void> {
+  const existing = await getShootingBlocById(blocId)
+  if (!existing) throw new Error('Shooting bloc not found')
+
+  const blocs = await listShootingBlocsByProduction(existing.production_id)
+  const index = blocs.findIndex((b) => b.id === blocId)
+  if (index < 0) throw new Error('Shooting bloc not found')
+  if (index === 0) {
+    throw new Error('Cannot delete the first shooting bloc')
+  }
+
+  const previous = blocs[index - 1]!
+  const willExtendPrevious = existing.end_date > previous.end_date
+  const tagged = await listBlocTaggedShootDays(existing.production_id, blocId)
+  const ts = now()
+
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN', bindValues: [] }]
+
+    for (const row of tagged) {
+      statements.push({
+        sql: `UPDATE ${SHOOT_DAYS_TABLE} SET shooting_bloc_id = $1, updated_at = $2 WHERE id = $3`,
+        bindValues: [previous.id, ts, row.id],
+      })
+      statements.push(
+        outboxStatementForRow({
+          entity: SHOOT_DAYS_TABLE,
+          entityId: row.id,
+          operation: 'update',
+          payloadJson: JSON.stringify({ shooting_bloc_id: previous.id }),
+        })
+      )
+    }
+
+    statements.push({
+      sql: `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+      bindValues: [ts, ts, blocId],
+    })
+    statements.push(
+      outboxStatementForRow({
+        entity: TABLE,
+        entityId: blocId,
+        operation: 'delete',
+        payloadJson: null,
+      })
+    )
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+    await executeBatch(db, statements)
+  })
+
+  let previousAfterExtend = (await getShootingBlocById(previous.id))!
+  if (willExtendPrevious) {
+    previousAfterExtend = await updateShootingBloc(previous.id, { end_date: existing.end_date })
+  }
+
+  await reassignShootDaysAfterShootingBlocRangeChange({
+    productionId: existing.production_id,
+    blocId,
+    oldStart: existing.start_date,
+    oldEnd: existing.end_date,
+    newStart: previousAfterExtend.start_date,
+    newEnd: previousAfterExtend.end_date,
+  })
 }

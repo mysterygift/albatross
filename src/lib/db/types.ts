@@ -6,6 +6,14 @@ export type SoftDeletable = {
   deleted_at: string | null
 }
 
+/** Instance-scoped client (person or business), reusable across productions. */
+export type Client = {
+  id: string
+  name: string
+  email: string | null
+  phone: string | null
+} & SoftDeletable
+
 export type Production = {
   id: string
   name: string
@@ -13,6 +21,10 @@ export type Production = {
   /** ISO 4217 code; all stored budget numbers are in this currency. Default GBP. */
   currency_code: string
   notes: string | null
+  /** Optional link to an instance-scoped client. */
+  client_id: string | null
+  /** Target delivery date (ISO YYYY-MM-DD). */
+  delivery_date: string | null
   /** When true, production uses episodic mode. Irreversible once enabled (app-enforced). */
   is_episodic: boolean
   /** When set, production was completed/wrapped (e.g. via Wrap Production workflow). */

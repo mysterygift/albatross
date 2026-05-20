@@ -22,6 +22,7 @@ import {
   permanentlyDeleteProduction,
 } from '@/lib/db/repositories/production'
 import type { Production } from '@/lib/db/types'
+import { coerceBoolean } from '@/lib/db/sqlValueCoercion'
 
 type ProductionRow = {
   id: string
@@ -29,6 +30,8 @@ type ProductionRow = {
   slug: string | null
   notes: string | null
   currency_code: string
+  client_id: string | null
+  delivery_date: string | null
   is_episodic: boolean
   wrapped_at: string | null
   archived_at: string | null
@@ -45,7 +48,9 @@ function productionRowToProduction(r: ProductionRow): Production {
     slug: r.slug ?? `prod-${r.id}`,
     currency_code: r.currency_code,
     notes: r.notes,
-    is_episodic: r.is_episodic,
+    client_id: r.client_id ?? null,
+    delivery_date: r.delivery_date ?? null,
+    is_episodic: coerceBoolean(r.is_episodic, false),
     wrapped_at: r.wrapped_at,
     archived_at: r.archived_at,
     created_from_template: r.created_from_template,
@@ -269,15 +274,19 @@ export async function updateProjectMetadataForActor(args: {
   productionId: string
   name: string
   notes: string | null
+  clientId?: string | null
+  newClient?: { name: string; email?: string | null; phone?: string | null }
+  deliveryDate?: string | null
 }): Promise<void> {
   await assertCanEditProject(args.db, args.actor, args.productionId)
-  await args.db.execute(
-    `UPDATE productions
-     SET name = $1, notes = $2, updated_at = $3
-     WHERE id = $4
-       AND deleted_at IS NULL`,
-    [args.name, args.notes, nowIso(), args.productionId]
-  )
+  const { updateProduction } = await import('@/lib/db/repositories/production')
+  await updateProduction(args.productionId, {
+    name: args.name,
+    notes: args.notes,
+    clientId: args.clientId,
+    newClient: args.newClient,
+    deliveryDate: args.deliveryDate,
+  })
 }
 
 export async function archiveProjectForActor(

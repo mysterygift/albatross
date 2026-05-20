@@ -1,10 +1,18 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from './client'
 import { episodeInsertStatement, episodeOutboxCreate } from './repositories/episodes'
 import { getProductionById } from './repositories/production'
+import {
+  DEFAULT_EPISODIC_SHOOTING_BLOC_NAME,
+  defaultEpisodicShootingBlocDateRange,
+  shootingBlocInsertStatement,
+  shootingBlocOutboxCreate,
+} from './repositories/shootingBlocs'
 import { outboxStatementForRow } from './outbox'
 import type { Production } from './types'
 
 const PRODUCTIONS = 'productions'
+
+export { DEFAULT_EPISODIC_SHOOTING_BLOC_NAME }
 
 export type EnableEpisodicProductionParams = {
   productionId: string
@@ -30,6 +38,8 @@ export async function enableEpisodicProduction(params: EnableEpisodicProductionP
 
   const ts = now()
   const episodeId = uuid()
+  const blocId = uuid()
+  const { start_date, end_date } = defaultEpisodicShootingBlocDateRange()
 
   await runInSerializedTransaction(async () => {
     const db = await getDb()
@@ -40,9 +50,18 @@ export async function enableEpisodicProduction(params: EnableEpisodicProductionP
       sort_order: 0,
       ts,
     })
+    const blocStmt = shootingBlocInsertStatement({
+      id: blocId,
+      production_id: params.productionId,
+      name: DEFAULT_EPISODIC_SHOOTING_BLOC_NAME,
+      start_date,
+      end_date,
+      ts,
+    })
     await executeBatch(db, [
       { sql: 'BEGIN', bindValues: [] },
       epStmt,
+      blocStmt,
       {
         sql: `UPDATE ${PRODUCTIONS} SET is_episodic = 1, updated_at = $1 WHERE id = $2`,
         bindValues: [ts, params.productionId],
@@ -52,6 +71,15 @@ export async function enableEpisodicProduction(params: EnableEpisodicProductionP
         production_id: params.productionId,
         name,
         sort_order: 0,
+        created_at: ts,
+        updated_at: ts,
+      }),
+      shootingBlocOutboxCreate(blocId, {
+        id: blocId,
+        production_id: params.productionId,
+        name: DEFAULT_EPISODIC_SHOOTING_BLOC_NAME,
+        start_date,
+        end_date,
         created_at: ts,
         updated_at: ts,
       }),

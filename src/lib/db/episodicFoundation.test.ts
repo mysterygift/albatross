@@ -46,7 +46,14 @@ import { createProduction, updateProduction } from '@/lib/db/repositories/produc
 import { enableEpisodicProduction } from '@/lib/db/episodicProductionService'
 import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
 import {
+  createShootDayWithDefaultMainUnit,
+  getShootDayById,
+} from '@/lib/db/repositories/schedule'
+import {
   createShootingBloc,
+  DEFAULT_EPISODIC_SHOOTING_BLOC_NAME,
+  deleteShootingBloc,
+  listShootingBlocsByProduction,
   shootingBlocRangesOverlap,
   updateShootingBloc,
 } from '@/lib/db/repositories/shootingBlocs'
@@ -107,6 +114,10 @@ describe('episodic production foundation', () => {
     expect(eps[0]!.sort_order).toBe(0)
     const n = sqlJsQueryExec(db, `SELECT COUNT(*) FROM episodes WHERE production_id = '${p.id}' AND deleted_at IS NULL`)
     expect(n[0]?.values[0]?.[0]).toBe(1)
+    const blocs = await listShootingBlocsByProduction(p.id)
+    expect(blocs).toHaveLength(1)
+    expect(blocs[0]!.name).toBe(DEFAULT_EPISODIC_SHOOTING_BLOC_NAME)
+    expect(blocs[0]!.start_date <= blocs[0]!.end_date).toBe(true)
   })
 
   it('rejects episodic create with empty episode name', async () => {
@@ -126,6 +137,9 @@ describe('episodic production foundation', () => {
     expect(updated.is_episodic).toBe(true)
     const eps = await listEpisodesByProduction(p.id)
     expect(eps.map((e) => e.name)).toEqual(['E1'])
+    const blocs = await listShootingBlocsByProduction(p.id)
+    expect(blocs).toHaveLength(1)
+    expect(blocs[0]!.name).toBe(DEFAULT_EPISODIC_SHOOTING_BLOC_NAME)
   })
 
   it('enableEpisodicProduction rejects empty episode name', async () => {
@@ -189,6 +203,53 @@ describe('episodic production foundation', () => {
       end_date: '2025-01-15',
     })
     await expect(updateShootingBloc(b2.id, { start_date: '2025-01-03' })).rejects.toThrow(/overlaps/)
+  })
+
+  it('deleteShootingBloc rejects deleting the first bloc', async () => {
+    await makeDb()
+    const p = await createProduction({ name: 'Del', notes: null }, { skipBudgetSeed: true })
+    const a = await createShootingBloc({
+      production_id: p.id,
+      name: 'A',
+      start_date: '2025-06-01',
+      end_date: '2025-06-10',
+    })
+    await expect(deleteShootingBloc(a.id)).rejects.toThrow(/first shooting bloc/)
+  })
+
+  it('deleteShootingBloc merges middle bloc into previous and extends end date', async () => {
+    const db = await makeDb()
+    const p = await createProduction({ name: 'Merge', notes: null }, { skipBudgetSeed: true })
+    const a = await createShootingBloc({
+      production_id: p.id,
+      name: 'A',
+      start_date: '2025-06-01',
+      end_date: '2025-06-10',
+    })
+    const b = await createShootingBloc({
+      production_id: p.id,
+      name: 'B',
+      start_date: '2025-06-11',
+      end_date: '2025-06-20',
+    })
+    const day = await createShootDayWithDefaultMainUnit({
+      productionId: p.id,
+      shootDate: '2025-06-15',
+    })
+    expect(day.shootDay.shooting_bloc_id).toBe(b.id)
+
+    await deleteShootingBloc(b.id)
+
+    const afterDay = await getShootDayById(day.shootDay.id)
+    expect(afterDay?.shooting_bloc_id).toBe(a.id)
+
+    const blocs = await listShootingBlocsByProduction(p.id)
+    expect(blocs).toHaveLength(1)
+    expect(blocs[0]!.id).toBe(a.id)
+    expect(blocs[0]!.end_date).toBe('2025-06-20')
+
+    const deleted = sqlJsQueryExec(db, `SELECT deleted_at FROM shooting_blocs WHERE id = '${b.id}'`)
+    expect(deleted[0]?.values[0]?.[0]).not.toBeNull()
   })
 
   it('migration leaves legacy production row non-episodic without episodes', async () => {

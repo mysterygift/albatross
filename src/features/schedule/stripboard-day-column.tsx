@@ -2,7 +2,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Lock, Unlock, AlertTriangle } from 'lucide-react'
+import { Lock, Unlock, AlertTriangle, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 import { StripItem } from './strip-item'
@@ -35,6 +35,7 @@ export function StripboardDayColumn({
   isEpisodic,
   shootingBlocLabel,
   episodeById,
+  onDeleteShootDay,
 }: {
   day: ShootDay
   units: Unit[]
@@ -59,6 +60,7 @@ export function StripboardDayColumn({
   /** Day-level label from `shoot_days.shooting_bloc_id` + bloc catalog; episodic only. */
   shootingBlocLabel?: string
   episodeById?: Map<string, Episode>
+  onDeleteShootDay?: (day: ShootDay) => void
 }) {
   const allStripsOnDay = stripsByUnit.flatMap(({ strips }) => strips)
   const scheduledCallCountOnDay = allStripsOnDay.filter((s) => s.strip_type === 'CALL').length
@@ -69,9 +71,30 @@ export function StripboardDayColumn({
       <CardHeader className="py-3 px-4">
         <CardTitle className="text-base flex items-center justify-between gap-2">
           <span>{day.shoot_date}</span>
-          {day.day_number != null && (
-            <Badge variant="secondary" className="text-xs">Day {day.day_number}</Badge>
-          )}
+          <span className="flex items-center gap-1 shrink-0">
+            {day.day_number != null && (
+              <Badge variant="secondary" className="text-xs">Day {day.day_number}</Badge>
+            )}
+            {onDeleteShootDay && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      aria-label="Delete shoot day"
+                      onClick={() => onDeleteShootDay(day)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Delete shoot day</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </span>
         </CardTitle>
         {isEpisodic && shootingBlocLabel != null && (
           <p

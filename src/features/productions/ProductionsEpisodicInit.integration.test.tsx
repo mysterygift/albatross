@@ -26,6 +26,10 @@ vi.mock('@/lib/db/createProductionFromTemplate', () => ({
   createProductionFromTemplate: createFromTemplate,
 }))
 
+vi.mock('@/lib/db/repositories/clients', () => ({
+  listClients: vi.fn(async () => []),
+}))
+
 vi.mock('@/lib/db/episodicProductionService', () => ({
   enableEpisodicProduction: enableEpisodicProductionFn,
 }))
@@ -178,6 +182,8 @@ describe('ProductionsPage episodic wizard', () => {
       wrapped_at: null,
       archived_at: null,
       created_from_template: 'default',
+      client_id: null,
+      delivery_date: null,
       created_at: 't',
       updated_at: 't',
       deleted_at: null,

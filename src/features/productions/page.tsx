@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listProductions,
@@ -9,6 +9,15 @@ import {
   findExistingDemoTemplateProduction,
 } from '@/lib/db/repositories/production'
 import { createProductionFromTemplate } from '@/lib/db/createProductionFromTemplate'
+import { createClient, listClients } from '@/lib/db/repositories/clients'
+import {
+  CLIENT_PHONE_MAX_DIGITS,
+  clientDraftSchema,
+  clientDraftToRepoFields,
+  optionalClientEmailField,
+  optionalClientPhoneField,
+} from '@/lib/clients/clientFieldValidation'
+import { ClientContactCard } from '@/features/productions/ClientContactCard'
 import { getDb } from '@/lib/db/client'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { canAdminProject, canEditProject } from '@/lib/access/projectAccess'
@@ -55,7 +64,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { useForm, Controller } from 'react-hook-form'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { useForm, Controller, type UseFormReturn } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
@@ -74,7 +90,7 @@ import {
   Cloud,
   Unlink,
 } from 'lucide-react'
-import type { Production } from '@/lib/db/types'
+import type { Client, Production } from '@/lib/db/types'
 import { useCurrentProduction } from './context'
 import { useApfActions } from '@/features/productions/useApfActions'
 import { useServerPublishEnabled } from '@/hooks/useServerPublishEnabled'
@@ -88,19 +104,67 @@ import { serverSessionTokenSettingKey } from '@/lib/server/constants'
 import { serverUnlinkProject } from '@/lib/server/serverClient'
 
 const templateEnum = z.enum(['blank', 'demo', 'default'])
-const editProductionSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  notes: z.string().optional(),
-})
+const CLIENT_MODE_NONE = 'none' as const
+const CLIENT_MODE_EXISTING = 'existing' as const
+const CLIENT_MODE_NEW = 'new' as const
+
+const productionClientFieldsSchema = {
+  clientMode: z.enum([CLIENT_MODE_NONE, CLIENT_MODE_EXISTING, CLIENT_MODE_NEW]),
+  clientId: z.string().optional(),
+  newClientName: z.string().optional(),
+  newClientEmail: optionalClientEmailField,
+  newClientPhone: optionalClientPhoneField,
+  deliveryDate: z.string().optional(),
+}
+
+function refineProductionClientFields(
+  data: {
+    clientMode: string
+    clientId?: string
+    newClientName?: string
+    isEpisodic?: boolean
+    initialEpisodeName?: string
+  },
+  ctx: z.RefinementCtx
+) {
+  if (data.clientMode === CLIENT_MODE_EXISTING && !(data.clientId ?? '').trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Select a client',
+      path: ['clientId'],
+    })
+  }
+  if (data.clientMode === CLIENT_MODE_NEW) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Save the new client before continuing',
+      path: ['newClientName'],
+    })
+  }
+}
+
+const PRODUCTION_DIALOG_CONTENT_CLASS =
+  '!flex max-h-[min(85vh,720px)] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-lg'
+
+const editProductionSchema = z
+  .object({
+    name: z.string().min(1, 'Name is required'),
+    notes: z.string().optional(),
+    ...productionClientFieldsSchema,
+  })
+  .superRefine(refineProductionClientFields)
+
 const newProductionFormSchema = z
   .object({
     name: z.string().min(1, 'Name is required'),
     notes: z.string().optional(),
     template: templateEnum,
+    ...productionClientFieldsSchema,
     isEpisodic: z.boolean(),
     initialEpisodeName: z.string().optional(),
   })
   .superRefine((data, ctx) => {
+    refineProductionClientFields(data, ctx)
     if (!data.isEpisodic) return
     if (!(data.initialEpisodeName ?? '').trim()) {
       ctx.addIssue({
@@ -154,6 +218,240 @@ const TEMPLATE_OPTIONS: {
 /** Template options visible in the New Production modal. Demo is hidden for now. */
 const VISIBLE_TEMPLATE_OPTIONS = TEMPLATE_OPTIONS.filter((opt) => opt.value !== 'demo')
 
+type ProductionClientFormValues = {
+  clientMode: typeof CLIENT_MODE_NONE | typeof CLIENT_MODE_EXISTING | typeof CLIENT_MODE_NEW
+  clientId?: string
+  newClientName?: string
+  newClientEmail?: string
+  newClientPhone?: string
+  deliveryDate?: string
+}
+
+function formatProjectDeliveryDate(isoDate: string | null | undefined): string {
+  const t = isoDate?.trim() ?? ''
+  if (!t) return '—'
+  try {
+    return new Date(t + 'T12:00:00').toLocaleDateString()
+  } catch {
+    return t
+  }
+}
+
+function clientOptionsFromForm(data: ProductionClientFormValues) {
+  return {
+    clientId: data.clientMode === CLIENT_MODE_EXISTING ? data.clientId?.trim() ?? null : null,
+    deliveryDate: data.deliveryDate?.trim() || null,
+  }
+}
+
+function defaultClientFieldsFromProduction(production: Production): ProductionClientFormValues {
+  return {
+    clientMode: production.client_id ? CLIENT_MODE_EXISTING : CLIENT_MODE_NONE,
+    clientId: production.client_id ?? '',
+    newClientName: '',
+    newClientEmail: '',
+    newClientPhone: '',
+    deliveryDate: production.delivery_date ?? '',
+  }
+}
+
+type ProductionClientFormControl = Pick<
+  UseFormReturn<ProductionClientFormValues>,
+  'register' | 'watch' | 'setValue' | 'getValues' | 'setError' | 'formState' | 'clearErrors'
+>
+
+function ProductionClientAndDeliveryFields({
+  form,
+  clients,
+  clientsLoading,
+  idPrefix,
+}: {
+  form: ProductionClientFormControl
+  clients: Client[]
+  clientsLoading: boolean
+  idPrefix: string
+}) {
+  const queryClient = useQueryClient()
+  const [saveClientError, setSaveClientError] = useState<string | null>(null)
+  const [saveClientSuccess, setSaveClientSuccess] = useState<string | null>(null)
+
+  const saveClientMutation = useMutation({
+    mutationFn: async () => {
+      const parsed = clientDraftSchema.safeParse({
+        name: form.getValues('newClientName') ?? '',
+        email: form.getValues('newClientEmail') ?? '',
+        phone: form.getValues('newClientPhone') ?? '',
+      })
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          const path = issue.path[0]
+          if (path === 'name') {
+            form.setError('newClientName', { type: 'manual', message: issue.message })
+          } else if (path === 'email') {
+            form.setError('newClientEmail', { type: 'manual', message: issue.message })
+          } else if (path === 'phone') {
+            form.setError('newClientPhone', { type: 'manual', message: issue.message })
+          }
+        }
+        throw new Error(parsed.error.issues[0]?.message ?? 'Invalid client details')
+      }
+      return createClient(clientDraftToRepoFields(parsed.data))
+    },
+    onSuccess: (created) => {
+      setSaveClientError(null)
+      setSaveClientSuccess('Client saved — selected below.')
+      void queryClient.invalidateQueries({ queryKey: ['clients'] })
+      form.setValue('clientMode', CLIENT_MODE_EXISTING)
+      form.setValue('clientId', created.id)
+      form.setValue('newClientName', '')
+      form.setValue('newClientEmail', '')
+      form.setValue('newClientPhone', '')
+      form.clearErrors(['newClientName', 'newClientEmail', 'newClientPhone'])
+    },
+    onError: (err: unknown) => {
+      setSaveClientSuccess(null)
+      let message = 'Failed to save client'
+      if (err instanceof Error) message = err.message
+      else if (typeof err === 'string' && err.trim()) message = err
+      setSaveClientError(message)
+    },
+  })
+
+  const clientMode = form.watch('clientMode')
+  const clientId = form.watch('clientId')
+  const selectedClient =
+    clientMode === CLIENT_MODE_EXISTING && clientId
+      ? clients.find((c) => c.id === clientId) ?? null
+      : null
+  const clientSelectValue =
+    clientMode === CLIENT_MODE_NEW
+      ? '__new__'
+      : clientMode === CLIENT_MODE_EXISTING && clientId
+        ? clientId
+        : '__none__'
+
+  function handleClientSelectChange(value: string) {
+    if (value === '__none__') {
+      form.setValue('clientMode', CLIENT_MODE_NONE)
+      form.setValue('clientId', '')
+      form.setValue('newClientName', '')
+      form.setValue('newClientEmail', '')
+      form.setValue('newClientPhone', '')
+      return
+    }
+    if (value === '__new__') {
+      form.setValue('clientMode', CLIENT_MODE_NEW)
+      form.setValue('clientId', '')
+      setSaveClientError(null)
+      setSaveClientSuccess(null)
+      return
+    }
+    form.setValue('clientMode', CLIENT_MODE_EXISTING)
+    form.setValue('clientId', value)
+    form.setValue('newClientName', '')
+    form.setValue('newClientEmail', '')
+    form.setValue('newClientPhone', '')
+  }
+
+  return (
+    <>
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-client-select`}>Client</Label>
+        <Select value={clientSelectValue} onValueChange={handleClientSelectChange}>
+          <SelectTrigger id={`${idPrefix}-client-select`}>
+            <SelectValue placeholder={clientsLoading ? 'Loading…' : 'Optional'} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">None</SelectItem>
+            {clients.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}
+              </SelectItem>
+            ))}
+            <SelectItem value="__new__">Add new client…</SelectItem>
+          </SelectContent>
+        </Select>
+        {clientMode === CLIENT_MODE_EXISTING && form.formState.errors.clientId && (
+          <p className="text-destructive text-sm">{form.formState.errors.clientId.message}</p>
+        )}
+        {clientMode === CLIENT_MODE_EXISTING && clientId && (
+          <ClientContactCard client={selectedClient} />
+        )}
+        {clientMode === CLIENT_MODE_NEW && (
+          <div className="rounded-lg border border-border bg-muted/20 px-3.5 py-3 space-y-3 mt-2">
+            <div className="space-y-2">
+              <Label htmlFor={`${idPrefix}-new-client-name`}>Client name</Label>
+              <Input
+                id={`${idPrefix}-new-client-name`}
+                {...form.register('newClientName')}
+                placeholder="Person or business name"
+              />
+              {form.formState.errors.newClientName && (
+                <p className="text-destructive text-sm">
+                  {form.formState.errors.newClientName.message}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${idPrefix}-new-client-email`}>Email</Label>
+              <Input
+                id={`${idPrefix}-new-client-email`}
+                type="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                {...form.register('newClientEmail')}
+                placeholder="Optional (e.g. user@domain.com)"
+              />
+              {form.formState.errors.newClientEmail && (
+                <p className="text-destructive text-sm">
+                  {form.formState.errors.newClientEmail.message}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${idPrefix}-new-client-phone`}>Phone</Label>
+              <Input
+                id={`${idPrefix}-new-client-phone`}
+                type="tel"
+                maxLength={CLIENT_PHONE_MAX_DIGITS + 1}
+                {...form.register('newClientPhone')}
+                placeholder="Optional (e.g. +441234567890)"
+              />
+              {form.formState.errors.newClientPhone && (
+                <p className="text-destructive text-sm">
+                  {form.formState.errors.newClientPhone.message}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Button
+                type="button"
+                size="sm"
+                disabled={saveClientMutation.isPending}
+                onClick={() => void saveClientMutation.mutate()}
+              >
+                {saveClientMutation.isPending ? 'Saving…' : 'Save client'}
+              </Button>
+              {saveClientError && (
+                <p className="text-destructive text-sm">{saveClientError}</p>
+              )}
+              {saveClientSuccess && !saveClientError && (
+                <p className="text-mint-700 dark:text-mint-400 text-sm">{saveClientSuccess}</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-delivery-date`}>Delivery date</Label>
+        <Input id={`${idPrefix}-delivery-date`} type="date" {...form.register('deliveryDate')} />
+        <p className="text-muted-foreground text-xs">Optional target delivery date for this project.</p>
+      </div>
+    </>
+  )
+}
+
 export function ProductionsPage() {
   const authSession = useAuthSession()
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -201,6 +499,16 @@ export function ProductionsPage() {
     },
     enabled: featureServer.data === true,
   })
+
+  const { data: clients = [] } = useQuery({
+    queryKey: ['clients'],
+    queryFn: listClients,
+  })
+
+  const clientNameById = useMemo(
+    () => new Map(clients.map((c) => [c.id, c.name])),
+    [clients]
+  )
 
   const { data: productions = [] } = useQuery({
     queryKey: [
@@ -301,9 +609,11 @@ export function ProductionsPage() {
         template: data.template,
         isEpisodic: data.isEpisodic,
         initialEpisodeName: data.isEpisodic ? data.initialEpisodeName?.trim() : undefined,
+        ...clientOptionsFromForm(data),
       }),
     onSuccess: (production) => {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
+      queryClient.invalidateQueries({ queryKey: ['clients'] })
       setCurrentProductionId(production.id)
       setOpen(false)
     },
@@ -315,21 +625,27 @@ export function ProductionsPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: EditProductionForm }) => {
+      const clientOpts = clientOptionsFromForm(data)
+      const payload = {
+        name: data.name,
+        notes: data.notes ?? null,
+        ...clientOpts,
+      }
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
         await updateProjectMetadataForActor({
           db,
           actor: authSession.currentUser,
           productionId: id,
-          name: data.name,
-          notes: data.notes ?? null,
+          ...payload,
         })
         return
       }
-      return updateProduction(id, data)
+      return updateProduction(id, payload)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
+      queryClient.invalidateQueries({ queryKey: ['clients'] })
       setEditingId(null)
     },
   })
@@ -465,7 +781,7 @@ export function ProductionsPage() {
           <span className={row.original.archived_at ? 'text-muted-foreground' : ''}>
             {row.original.name}
           </span>
-          {row.original.is_episodic && (
+          {row.original.is_episodic === true && (
             <span className="rounded border border-violet-500/30 bg-yellow-500/10 px-1.5 py-0.5 text-xs font-medium text-white-800 dark:border-violet-400/35 dark:bg-yellow-500/15 dark:text-white-300">
               Episodic
             </span>
@@ -489,6 +805,27 @@ export function ProductionsPage() {
       cell: ({ getValue, row }) => (
         <span className={row.original.archived_at ? 'text-muted-foreground' : ''}>
           {(getValue() as string)?.slice(0, 50) ?? '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'client',
+      header: 'Client',
+      cell: ({ row }) => {
+        const name = row.original.client_id
+          ? clientNameById.get(row.original.client_id) ?? '—'
+          : '—'
+        return (
+          <span className={row.original.archived_at ? 'text-muted-foreground' : ''}>{name}</span>
+        )
+      },
+    },
+    {
+      id: 'delivery_date',
+      header: 'Delivery date',
+      cell: ({ row }) => (
+        <span className={row.original.archived_at ? 'text-muted-foreground' : ''}>
+          {formatProjectDeliveryDate(row.original.delivery_date)}
         </span>
       ),
     },
@@ -654,7 +991,7 @@ export function ProductionsPage() {
                 New production
               </Button>
             </DialogTrigger>
-          <DialogContent>
+          <DialogContent className={PRODUCTION_DIALOG_CONTENT_CLASS}>
             <ProductionFormDialog
               onSubmit={async (data) => {
                 if (data.template !== 'demo') {
@@ -787,7 +1124,7 @@ export function ProductionsPage() {
           <TableBody>
             {table.getRowModel().rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={3} className="text-center text-muted-foreground">
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
                   No productions. Create one to get started.
                 </TableCell>
               </TableRow>
@@ -811,12 +1148,11 @@ export function ProductionsPage() {
 
       {editingId && (
         <Dialog open={!!editingId} onOpenChange={() => setEditingId(null)}>
-          <DialogContent>
+          <DialogContent className={PRODUCTION_DIALOG_CONTENT_CLASS}>
             <EditProductionForm
               production={productions.find((p) => p.id === editingId)!}
-              onSubmit={(data) =>
-                updateMutation.mutate({ id: editingId, data: { name: data.name, notes: data.notes } })
-              }
+              clients={clients}
+              onSubmit={(data) => updateMutation.mutate({ id: editingId, data })}
               onCancel={() => setEditingId(null)}
               isLoading={updateMutation.isPending}
             />
@@ -1026,20 +1362,31 @@ function ProductionFormDialog({
   error?: string | null
   onDismissError?: () => void
 }) {
+  const { data: clients = [], isLoading: clientsLoading } = useQuery({
+    queryKey: ['clients'],
+    queryFn: listClients,
+  })
   const form = useForm<NewProductionForm>({
     resolver: zodResolver(newProductionFormSchema),
     defaultValues: {
       name: '',
       notes: '',
       template: 'default',
+      clientMode: CLIENT_MODE_NONE,
+      clientId: '',
+      newClientName: '',
+      newClientEmail: '',
+      newClientPhone: '',
+      deliveryDate: '',
       isEpisodic: false,
       initialEpisodeName: '',
     },
   })
   const isEpisodic = form.watch('isEpisodic')
+
   return (
     <>
-      <DialogHeader className="space-y-1.5">
+      <DialogHeader className="shrink-0 space-y-1.5 px-6 pt-6">
         <DialogTitle>New production</DialogTitle>
         <p className="text-muted-foreground text-sm leading-snug">
           Choose a template, then name your project. You can add a description below if you like.
@@ -1047,8 +1394,9 @@ function ProductionFormDialog({
       </DialogHeader>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="flex flex-col gap-5"
+        className="flex min-h-0 flex-1 flex-col"
       >
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-4">
         <div className="space-y-2">
           <Label htmlFor="name">Name</Label>
           <Input id="name" {...form.register('name')} placeholder="e.g. My Feature" />
@@ -1062,6 +1410,12 @@ function ProductionFormDialog({
           <Label htmlFor="notes">Project description</Label>
           <Textarea id="notes" {...form.register('notes')} rows={2} placeholder="Optional" className="resize-none" />
         </div>
+        <ProductionClientAndDeliveryFields
+          form={form as unknown as ProductionClientFormControl}
+          clients={clients}
+          clientsLoading={clientsLoading}
+          idPrefix="new"
+        />
         <div className="rounded-lg border border-border bg-muted/20 px-3.5 py-3 space-y-3">
           <Controller
             name="isEpisodic"
@@ -1153,7 +1507,8 @@ function ProductionFormDialog({
             )}
           </div>
         )}
-        <DialogFooter className="gap-2 sm:gap-2">
+        </div>
+        <DialogFooter className="shrink-0 gap-2 border-t px-6 py-4 sm:gap-2">
           <Button type="button" variant="outline" onClick={onCancel} disabled={isLoading}>
             Cancel
           </Button>
@@ -1168,42 +1523,56 @@ function ProductionFormDialog({
 
 function EditProductionForm({
   production,
+  clients,
   onSubmit,
   onCancel,
   isLoading,
 }: {
   production: Production
+  clients: Client[]
   onSubmit: (data: EditProductionForm) => void
   onCancel: () => void
   isLoading: boolean
 }) {
   const form = useForm<EditProductionForm>({
     resolver: zodResolver(editProductionSchema),
-    defaultValues: { name: production.name, notes: production.notes ?? '' },
+    defaultValues: {
+      name: production.name,
+      notes: production.notes ?? '',
+      ...defaultClientFieldsFromProduction(production),
+    },
   })
   return (
     <>
-      <DialogHeader>
+      <DialogHeader className="shrink-0 px-6 pt-6">
         <DialogTitle>Edit production</DialogTitle>
       </DialogHeader>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="flex flex-col gap-4"
+        className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="space-y-2">
-          <Label htmlFor="edit-name">Name</Label>
-          <Input id="edit-name" {...form.register('name')} />
-          {form.formState.errors.name && (
-            <p className="text-destructive text-sm">
-              {form.formState.errors.name.message}
-            </p>
-          )}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="edit-name">Name</Label>
+            <Input id="edit-name" {...form.register('name')} />
+            {form.formState.errors.name && (
+              <p className="text-destructive text-sm">
+                {form.formState.errors.name.message}
+              </p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-notes">Notes</Label>
+            <Textarea id="edit-notes" {...form.register('notes')} rows={3} />
+          </div>
+          <ProductionClientAndDeliveryFields
+            form={form as unknown as ProductionClientFormControl}
+            clients={clients}
+            clientsLoading={false}
+            idPrefix="edit"
+          />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="edit-notes">Notes</Label>
-          <Textarea id="edit-notes" {...form.register('notes')} rows={3} />
-        </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t px-6 py-4">
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>

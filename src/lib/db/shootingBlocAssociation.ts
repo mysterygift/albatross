@@ -178,6 +178,42 @@ export function describeShootingBlocRangeChange(
   }
 }
 
+export type ShootingBlocDeletionDescription = {
+  title: string
+  detailLines: string[]
+}
+
+/** UX copy for confirmation before `deleteShootingBloc`. */
+export function describeShootingBlocDeletion(args: {
+  blocName: string
+  previousBlocName: string
+  taggedShootDays: BlocTaggedShootDaySummary[]
+  willExtendPreviousEnd: boolean
+  previousEndDate: string
+  deletedEndDate: string
+}): ShootingBlocDeletionDescription {
+  const count = args.taggedShootDays.length
+  const movePhrase =
+    count === 0
+      ? 'No shoot days are currently assigned to this bloc.'
+      : count === 1
+        ? `One shoot day will move to "${args.previousBlocName}".`
+        : `${count} shoot days will move to "${args.previousBlocName}".`
+
+  const detailLines = [movePhrase]
+  if (args.willExtendPreviousEnd) {
+    detailLines.push(
+      `"${args.previousBlocName}" will extend through ${args.deletedEndDate} (from ${args.previousEndDate}).`
+    )
+  }
+  detailLines.push('This cannot be undone.')
+
+  return {
+    title: `Delete "${args.blocName}"?`,
+    detailLines,
+  }
+}
+
 function resolveBlocIdFromSortedBlocs(blocs: BlocRow[], shootDate: string): string | null {
   for (const b of blocs) {
     if (b.start_date <= shootDate && b.end_date >= shootDate) return b.id

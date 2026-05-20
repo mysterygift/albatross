@@ -2,7 +2,8 @@ import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../c
 import { OptimisticConcurrencyConflictError } from '../concurrency'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { Scene, Shot, StripboardStrip, StripStatus, StripType } from '../types'
-import { listScenesByProduction, listShootDaysByProduction, listShotsByProduction } from './schedule'
+import { deleteShootDay, getShootDayById, listScenesByProduction, listShootDaysByProduction, listShotsByProduction } from './schedule'
+import { listShootDayUnitsByShootDay } from './shoot-day-units'
 import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
 
 const TABLE = 'stripboard_strips'
@@ -837,4 +838,49 @@ export async function listUnscheduledShots(
     list = list.filter((x) => !x.scene.location_id)
   }
   return list
+}
+
+const CONTENT_STRIP_TYPES: ReadonlyArray<StripType> = ['SHOT', 'SCENE']
+
+async function softDeleteStripForDayRemoval(stripId: string): Promise<void> {
+  const db = await getDb()
+  const ts = now()
+  await db.execute(
+    `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+    [ts, ts, stripId]
+  )
+  await outboxPush(TABLE, stripId, 'delete', null)
+}
+
+/**
+ * Delete a shoot day after moving scheduled SHOT/SCENE strips to the Boneyard and
+ * soft-deleting structural strips (CALL, WRAP, etc.) and shoot day units.
+ */
+export async function deleteShootDayAndDiscardStrips(shootDayId: string): Promise<void> {
+  const day = await getShootDayById(shootDayId)
+  if (!day) {
+    throw new Error('Shoot day not found or deleted')
+  }
+
+  const strips = await listStripsByShootDay(shootDayId)
+  for (const strip of strips) {
+    if (strip.strip_status === 'SCHEDULED' && CONTENT_STRIP_TYPES.includes(strip.strip_type)) {
+      await moveStripToBoneyard(strip.id)
+    } else {
+      await softDeleteStripForDayRemoval(strip.id)
+    }
+  }
+
+  const dayUnits = await listShootDayUnitsByShootDay(shootDayId)
+  const db = await getDb()
+  const ts = now()
+  for (const sdu of dayUnits) {
+    await db.execute(
+      `UPDATE shoot_day_units SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+      [ts, ts, sdu.id]
+    )
+    await outboxPush('shoot_day_units', sdu.id, 'delete', null)
+  }
+
+  await deleteShootDay(shootDayId)
 }

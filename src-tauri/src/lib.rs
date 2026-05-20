@@ -823,6 +823,12 @@ pub fn run() {
             sql: include_str!("../migrations/0067_server_collab.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 68,
+            description: "clients_and_production_delivery",
+            sql: include_str!("../migrations/0068_clients_and_production_delivery.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

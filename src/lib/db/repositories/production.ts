@@ -4,7 +4,18 @@ import { OptimisticConcurrencyConflictError } from '../concurrency'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import { coerceBoolean, coerceIsoString } from '../sqlValueCoercion'
 import type { Production } from '../types'
+import {
+  clientInsertStatement,
+  getClientById,
+  type CreateClientData,
+} from './clients'
 import { episodeInsertStatement, episodeOutboxCreate } from './episodes'
+import {
+  DEFAULT_EPISODIC_SHOOTING_BLOC_NAME,
+  defaultEpisodicShootingBlocDateRange,
+  shootingBlocInsertStatement,
+  shootingBlocOutboxCreate,
+} from './shootingBlocs'
 import { seedDefaultBudgetCategories } from './budget'
 import { listAccounts, seedDefaultBudgetAccounts } from './budgetAccounts'
 import { createContingencyRule } from './budgetDerived'
@@ -40,7 +51,70 @@ function rowToProduction(r: Record<string, unknown>): Production {
     wrapped_at: r.wrapped_at == null ? null : coerceIsoString(r.wrapped_at),
     archived_at: r.archived_at == null ? null : coerceIsoString(r.archived_at),
     created_from_template: (r.created_from_template as string | null) ?? null,
+    client_id: (r.client_id as string | null) ?? null,
+    delivery_date: (r.delivery_date as string | null) ?? null,
   }
+}
+
+function normalizeDeliveryDate(value: string | null | undefined): string | null {
+  const t = value?.trim() ?? ''
+  return t.length > 0 ? t : null
+}
+
+type ResolvedClientForCreate = {
+  clientId: string | null
+  preamble: Array<{ sql: string; bindValues: unknown[] }>
+}
+
+async function resolveClientForCreate(
+  options: Pick<CreateProductionOptions, 'clientId' | 'newClient'> | undefined,
+  ts: string
+): Promise<ResolvedClientForCreate> {
+  const clientId = options?.clientId ?? null
+  const newClient = options?.newClient
+  if (clientId && newClient) {
+    throw new Error('Cannot specify both clientId and newClient when creating a production')
+  }
+  if (newClient) {
+    const name = newClient.name.trim()
+    if (!name) throw new Error('Client name is required')
+    const id = uuid()
+    const email = newClient.email?.trim() ? newClient.email.trim() : null
+    const phone = newClient.phone?.trim() ? newClient.phone.trim() : null
+    return {
+      clientId: id,
+      preamble: [clientInsertStatement({ id, name, email, phone, ts })],
+    }
+  }
+  if (clientId) {
+    const existing = await getClientById(clientId)
+    if (!existing) throw new Error('Selected client not found')
+    return { clientId, preamble: [] }
+  }
+  return { clientId: null, preamble: [] }
+}
+
+function productionCreateOutboxPayload(
+  data: Pick<Production, 'name' | 'notes'>,
+  extras: {
+    slug: string
+    id: string
+    ts: string
+    is_episodic?: boolean
+    client_id?: string | null
+    delivery_date?: string | null
+  }
+): string {
+  return JSON.stringify({
+    ...data,
+    slug: extras.slug,
+    id: extras.id,
+    created_at: extras.ts,
+    updated_at: extras.ts,
+    ...(extras.is_episodic !== undefined ? { is_episodic: extras.is_episodic } : {}),
+    client_id: extras.client_id ?? null,
+    delivery_date: extras.delivery_date ?? null,
+  })
 }
 
 export type ListProductionsOptions = { includeArchived?: boolean }
@@ -219,6 +293,12 @@ export type CreateProductionOptions = {
   episodicInitialEpisodeName?: string
   /** Optional: grant creator project administrator membership at create time. */
   creatorUserId?: string
+  /** Link to an existing instance-scoped client. */
+  clientId?: string | null
+  /** Create a new client in the same transaction as the production. */
+  newClient?: CreateClientData
+  /** Target delivery date (ISO YYYY-MM-DD). */
+  deliveryDate?: string | null
 }
 
 export async function createProduction(
@@ -237,9 +317,14 @@ export async function createProduction(
     throw new Error('Episodic production requires a non-empty first episode name')
   }
 
+  const deliveryDate = normalizeDeliveryDate(options?.deliveryDate)
+  const resolvedClient = await resolveClientForCreate(options, ts)
+
   if (asEpisodic) {
     const id = uuid()
     const episodeId = uuid()
+    const blocId = uuid()
+    const { start_date, end_date } = defaultEpisodicShootingBlocDateRange()
     const slug = await withSlugLock(async () => ensureUniqueSlug(slugify(data.name)))
     await runInSerializedTransaction(async () => {
       const batchDb = await getDb()
@@ -250,11 +335,30 @@ export async function createProduction(
         sort_order: 0,
         ts,
       })
+      const blocStmt = shootingBlocInsertStatement({
+        id: blocId,
+        production_id: id,
+        name: DEFAULT_EPISODIC_SHOOTING_BLOC_NAME,
+        start_date,
+        end_date,
+        ts,
+      })
       await executeBatch(batchDb, [
         { sql: 'BEGIN', bindValues: [] },
+        ...resolvedClient.preamble,
         {
-          sql: `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7)`,
-          bindValues: [id, data.name, slug, currencyCode, data.notes ?? null, ts, ts],
+          sql: `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, client_id, delivery_date, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9)`,
+          bindValues: [
+            id,
+            data.name,
+            slug,
+            currencyCode,
+            data.notes ?? null,
+            resolvedClient.clientId,
+            deliveryDate,
+            ts,
+            ts,
+          ],
         },
         ...(creatorUserId
           ? [
@@ -268,17 +372,18 @@ export async function createProduction(
             ]
           : []),
         epStmt,
+        blocStmt,
         outboxStatementForRow({
           entity: TABLE,
           entityId: id,
           operation: 'create',
-          payloadJson: JSON.stringify({
-            ...data,
+          payloadJson: productionCreateOutboxPayload(data, {
             slug,
             id,
+            ts,
             is_episodic: true,
-            created_at: ts,
-            updated_at: ts,
+            client_id: resolvedClient.clientId,
+            delivery_date: deliveryDate,
           }),
         }),
         episodeOutboxCreate(episodeId, {
@@ -286,6 +391,15 @@ export async function createProduction(
           production_id: id,
           name: episodicName,
           sort_order: 0,
+          created_at: ts,
+          updated_at: ts,
+        }),
+        shootingBlocOutboxCreate(blocId, {
+          id: blocId,
+          production_id: id,
+          name: DEFAULT_EPISODIC_SHOOTING_BLOC_NAME,
+          start_date,
+          end_date,
           created_at: ts,
           updated_at: ts,
         }),
@@ -322,9 +436,20 @@ export async function createProduction(
       const batchDb = await getDb()
       await executeBatch(batchDb, [
         { sql: 'BEGIN', bindValues: [] },
+        ...resolvedClient.preamble,
         {
-          sql: `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          bindValues: [id, data.name, s, currencyCode, data.notes ?? null, ts, ts],
+          sql: `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, client_id, delivery_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          bindValues: [
+            id,
+            data.name,
+            s,
+            currencyCode,
+            data.notes ?? null,
+            resolvedClient.clientId,
+            deliveryDate,
+            ts,
+            ts,
+          ],
         },
         ...(creatorUserId
           ? [
@@ -341,7 +466,13 @@ export async function createProduction(
           entity: TABLE,
           entityId: id,
           operation: 'create',
-          payloadJson: JSON.stringify({ ...data, slug: s, id, created_at: ts, updated_at: ts }),
+          payloadJson: productionCreateOutboxPayload(data, {
+            slug: s,
+            id,
+            ts,
+            client_id: resolvedClient.clientId,
+            delivery_date: deliveryDate,
+          }),
         }),
         { sql: 'COMMIT', bindValues: [] },
       ])
@@ -370,9 +501,15 @@ export async function createProduction(
   return (await getProductionById(id))!
 }
 
+export type UpdateProductionData = Partial<Pick<Production, 'name' | 'notes'>> & {
+  clientId?: string | null
+  newClient?: CreateClientData
+  deliveryDate?: string | null
+}
+
 export async function updateProduction(
   id: string,
-  data: Partial<Pick<Production, 'name' | 'notes'>>,
+  data: UpdateProductionData,
   options?: { expectedUpdatedAt?: string }
 ): Promise<Production> {
   const existing = await getProductionById(id)
@@ -381,23 +518,75 @@ export async function updateProduction(
   if (existing.is_episodic && maybeEpisodic.is_episodic === false) {
     throw new Error('Episodic mode cannot be disabled once enabled')
   }
-  const db = await getDb()
+
+  const name = data.name ?? existing.name
+  const notes = data.notes !== undefined ? data.notes : existing.notes
+  const deliveryDate =
+    data.deliveryDate !== undefined ? normalizeDeliveryDate(data.deliveryDate) : existing.delivery_date
+
   const ts = now()
-  const bindValues: unknown[] = [data.name ?? existing.name, data.notes ?? null, ts, id]
-  let sql = `UPDATE ${TABLE} SET name = $1, notes = $2, updated_at = $3 WHERE id = $4`
+  const resolvedClient =
+    data.clientId !== undefined || data.newClient !== undefined
+      ? await resolveClientForCreate(
+          { clientId: data.clientId ?? null, newClient: data.newClient },
+          ts
+        )
+      : { clientId: existing.client_id, preamble: [] as Array<{ sql: string; bindValues: unknown[] }> }
+
+  const clientId = resolvedClient.clientId
+
+  const outboxPayload = {
+    name,
+    notes,
+    client_id: clientId,
+    delivery_date: deliveryDate,
+  }
+
+  if (resolvedClient.preamble.length > 0) {
+    await runInSerializedTransaction(async () => {
+      const batchDb = await getDb()
+      const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+        { sql: 'BEGIN', bindValues: [] },
+        ...resolvedClient.preamble,
+        {
+          sql: `UPDATE ${TABLE} SET name = $1, notes = $2, client_id = $3, delivery_date = $4, updated_at = $5 WHERE id = $6${
+            options?.expectedUpdatedAt ? ' AND updated_at = $7' : ''
+          }`,
+          bindValues: options?.expectedUpdatedAt
+            ? [name, notes, clientId, deliveryDate, ts, id, options.expectedUpdatedAt]
+            : [name, notes, clientId, deliveryDate, ts, id],
+        },
+        outboxStatementForRow({
+          entity: TABLE,
+          entityId: id,
+          operation: 'update',
+          payloadJson: JSON.stringify(outboxPayload),
+        }),
+        { sql: 'COMMIT', bindValues: [] },
+      ]
+      await executeBatch(batchDb, statements)
+    })
+    const updated = await getProductionById(id)
+    if (!updated) throw new Error('Production not found')
+    return updated
+  }
+
+  const db = await getDb()
+  const bindValues: unknown[] = [name, notes, clientId, deliveryDate, ts, id]
+  let sql = `UPDATE ${TABLE} SET name = $1, notes = $2, client_id = $3, delivery_date = $4, updated_at = $5 WHERE id = $6`
   if (options?.expectedUpdatedAt) {
-    sql += ' AND updated_at = $5'
+    sql += ' AND updated_at = $7'
     bindValues.push(options.expectedUpdatedAt)
   }
   const result = await db.execute(sql, bindValues)
-  if ((result.rowsAffected ?? 0) === 0 && options?.expectedUpdatedAt) {
+  if ((result?.rowsAffected ?? 0) === 0 && options?.expectedUpdatedAt) {
     throw new OptimisticConcurrencyConflictError({
       entity: TABLE,
       entityId: id,
       expectedUpdatedAt: options.expectedUpdatedAt,
     })
   }
-  await outboxPush(TABLE, id, 'update', JSON.stringify(data))
+  await outboxPush(TABLE, id, 'update', JSON.stringify(outboxPayload))
   return (await getProductionById(id))!
 }
 

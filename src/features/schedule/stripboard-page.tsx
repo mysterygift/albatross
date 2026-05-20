@@ -19,7 +19,12 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { useCurrentProduction } from '@/features/productions/context'
-import { useStripboard, stripboardQueryKeys, useUnscheduledShots, useBoneyardStrips } from './stripboard-hooks'
+import {
+  useStripboard,
+  invalidateStripboardCaches,
+  useUnscheduledShots,
+  useBoneyardStrips,
+} from './stripboard-hooks'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
@@ -271,6 +276,13 @@ export function StripboardPage() {
   const [newDayError, setNewDayError] = useState<string | null>(null)
   const [newlyCreatedShootDayId, setNewlyCreatedShootDayId] = useState<string | null>(null)
   const [newDaySuccessToast, setNewDaySuccessToast] = useState(false)
+  const [deleteShootDayTarget, setDeleteShootDayTarget] = useState<{
+    id: string
+    shoot_date: string
+    day_number: number | null
+  } | null>(null)
+  const [deleteShootDayDialogOpen, setDeleteShootDayDialogOpen] = useState(false)
+  const [deleteShootDayError, setDeleteShootDayError] = useState<string | null>(null)
   const newDayColumnRef = useRef<HTMLDivElement | null>(null)
   const columnsScrollRef = useRef<HTMLDivElement | null>(null)
   const [showColumnsLeftFeather, setShowColumnsLeftFeather] = useState(false)
@@ -349,6 +361,7 @@ export function StripboardPage() {
     moveToUnscheduledMutation,
     moveToBoneyardMutation,
     deleteStripMutation,
+    deleteShootDayMutation,
     moveStripMutation,
     reorderStripMutation,
     createStripMutation,
@@ -393,7 +406,7 @@ export function StripboardPage() {
       setNewDayError(null)
       setNewlyCreatedShootDayId(result.shootDay.id)
       setNewDaySuccessToast(true)
-      queryClient.invalidateQueries({ queryKey: stripboardQueryKeys.all })
+      void invalidateStripboardCaches(queryClient, currentProductionId)
     },
     onError: (error) => {
       const message =
@@ -402,6 +415,8 @@ export function StripboardPage() {
         setNewDayError('Shoot date is required.')
       } else if (message === 'No production selected') {
         setNewDayError('Select a production before creating shoot days.')
+      } else if (message === 'SHOOT_DATE_ALREADY_EXISTS') {
+        setNewDayError('A shoot day already exists on this date.')
       } else {
         setNewDayError('Could not create shoot day. Please try again.')
       }
@@ -421,7 +436,7 @@ export function StripboardPage() {
           await getOrCreateShootDayUnit(day.id, mainUnit.id)
         }
       }
-      if (!cancelled) queryClient.invalidateQueries({ queryKey: stripboardQueryKeys.all })
+      if (!cancelled) void invalidateStripboardCaches(queryClient, currentProductionId)
     }
     run()
     return () => { cancelled = true }
@@ -794,6 +809,72 @@ export function StripboardPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={deleteShootDayDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteShootDayDialogOpen(open)
+          if (!open) {
+            setDeleteShootDayTarget(null)
+            setDeleteShootDayError(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-md bg-zinc-900 border-zinc-700">
+          <h3 className="text-base font-semibold text-zinc-100">Delete shoot day</h3>
+          {deleteShootDayTarget && (
+            <>
+              <p className="text-sm text-zinc-300 mt-1">
+                Are you sure you want to delete shoot day{' '}
+                <span className="font-medium text-zinc-100">{deleteShootDayTarget.shoot_date}</span>
+                {deleteShootDayTarget.day_number != null
+                  ? ` (Day ${deleteShootDayTarget.day_number})`
+                  : ''}
+                ?
+              </p>
+              <p className="text-sm text-zinc-400 mt-2">
+                Scheduled shot and scene strips on this day will be moved to the Boneyard. This cannot
+                be undone from this action alone.
+              </p>
+            </>
+          )}
+          {deleteShootDayError && (
+            <p className="mt-2 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive" role="alert">
+              {deleteShootDayError}
+            </p>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setDeleteShootDayDialogOpen(false)}
+              disabled={deleteShootDayMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteShootDayMutation.isPending || !deleteShootDayTarget}
+              onClick={() => {
+                if (!deleteShootDayTarget) return
+                setDeleteShootDayError(null)
+                deleteShootDayMutation.mutate(deleteShootDayTarget.id, {
+                  onSuccess: () => {
+                    setDeleteShootDayDialogOpen(false)
+                    setDeleteShootDayTarget(null)
+                  },
+                  onError: () => {
+                    setDeleteShootDayError('Could not delete shoot day. Please try again.')
+                  },
+                })
+              }}
+            >
+              {deleteShootDayMutation.isPending ? 'Deleting…' : 'Delete shoot day'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <SmartSchedulingInsightsPanel
         strips={strips}
         shots={shots}
@@ -870,6 +951,15 @@ export function StripboardPage() {
                       stripsByUnit={stripsByUnit}
                       scenes={scenes}
                       shots={shots}
+                      onDeleteShootDay={(d) => {
+                        setDeleteShootDayTarget({
+                          id: d.id,
+                          shoot_date: d.shoot_date,
+                          day_number: d.day_number,
+                        })
+                        setDeleteShootDayError(null)
+                        setDeleteShootDayDialogOpen(true)
+                      }}
                       estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
                       onUpdateStripEstimatedMinutes={(stripId, minutes) =>
                         updateEstimatedMutation.mutate({ stripId, minutes })

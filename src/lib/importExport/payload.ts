@@ -34,8 +34,11 @@ export function coerceLegacyApfDataRawForV2TableKeys(dataRaw: unknown): unknown 
   if (!('episodes' in tables)) tables.episodes = []
   if (!('shooting_blocs' in tables)) tables.shooting_blocs = []
   const prows = tables.productions
-  if (Array.isArray(prows) && prows.length > 0 && isPlainObject(prows[0]) && !('is_episodic' in prows[0])) {
-    const p0 = { ...prows[0], is_episodic: 0 }
+  if (Array.isArray(prows) && prows.length > 0 && isPlainObject(prows[0])) {
+    const p0 = { ...prows[0] } as Record<string, unknown>
+    if (!('is_episodic' in p0)) p0.is_episodic = 0
+    if (!('client_id' in p0)) p0.client_id = null
+    if (!('delivery_date' in p0)) p0.delivery_date = null
     tables.productions = [p0, ...prows.slice(1)]
   }
   return { ...dataRaw, tables }

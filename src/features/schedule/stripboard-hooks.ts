@@ -3,13 +3,14 @@
  * Invalidate ['stripboard'], ['unscheduled-scenes'] after any strip/scene assignment mutation.
  */
 import { useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
 import {
   bulkAssignShotsToDayForActor,
   createShotStripForActor,
   createStripForActor,
+  deleteShootDayAndDiscardStripsForActor,
   deleteStripForActor,
   getCastIdsByShotIdsForActor,
   getEstimatedShootMinutesByShotIdsForActor,
@@ -46,6 +47,7 @@ import {
   moveStripToUnscheduled,
   moveStripToBoneyard,
   listBoneyardStrips,
+  deleteShootDayAndDiscardStrips,
   deleteStrip,
   reorderStrip,
   updateStripEstimatedMinutes,
@@ -84,6 +86,21 @@ export const unscheduledShotsQueryKeys = {
 export const boneyardStripsQueryKeys = {
   all: ['boneyard-strips'] as const,
   list: (productionId: string) => [...boneyardStripsQueryKeys.all, productionId] as const,
+}
+
+/** Invalidate stripboard-related TanStack caches (includes data-source prefix). */
+export async function invalidateStripboardCaches(
+  queryClient: QueryClient,
+  productionId: string | null,
+): Promise<void> {
+  const source = productionId ? await getEffectiveDataSourceForProduction(productionId) : 'local_sqlite'
+  const prefix = tanstackDataSourceKey(productionId, source)
+  await queryClient.invalidateQueries({ queryKey: [...prefix, ...stripboardQueryKeys.all] })
+  await queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
+  await queryClient.invalidateQueries({ queryKey: ['shoot-days'] })
+  await queryClient.invalidateQueries({ queryKey: [...prefix, ...unscheduledShotsQueryKeys.all] })
+  await queryClient.invalidateQueries({ queryKey: [...prefix, ...boneyardStripsQueryKeys.all] })
+  await queryClient.invalidateQueries({ queryKey: [...prefix, 'shots'] })
 }
 
 /** Full stripboard data for a production: days, units, day-units, strips grouped by day/unit, scenes, estimated minutes. */
@@ -255,16 +272,7 @@ export function useStripboard(productionId: string | null) {
   }, [strips])
 
   const invalidate = () => {
-    void (async () => {
-      const source = productionId ? await getEffectiveDataSourceForProduction(productionId) : 'local_sqlite'
-      const prefix = tanstackDataSourceKey(productionId, source)
-      await queryClient.invalidateQueries({ queryKey: [...prefix, ...stripboardQueryKeys.all] })
-      await queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
-      await queryClient.invalidateQueries({ queryKey: ['shoot-days'] })
-      await queryClient.invalidateQueries({ queryKey: [...prefix, ...unscheduledShotsQueryKeys.all] })
-      await queryClient.invalidateQueries({ queryKey: [...prefix, ...boneyardStripsQueryKeys.all] })
-      await queryClient.invalidateQueries({ queryKey: [...prefix, 'shots'] })
-    })()
+    void invalidateStripboardCaches(queryClient, productionId)
   }
 
   const setLockedMutation = useMutation({
@@ -374,6 +382,20 @@ export function useStripboard(productionId: string | null) {
     onSuccess: () => invalidate(),
   })
 
+  const deleteShootDayMutation = useMutation({
+    mutationFn: (shootDayId: string) =>
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) =>
+            deleteShootDayAndDiscardStripsForActor({
+              db,
+              actor: authSession.currentUser!,
+              shootDayId,
+            })
+          )
+        : deleteShootDayAndDiscardStrips(shootDayId),
+    onSuccess: () => invalidate(),
+  })
+
   const createShotStripMutation = useMutation({
     mutationFn: ({
       productionId,
@@ -430,6 +452,7 @@ export function useStripboard(productionId: string | null) {
     moveToUnscheduledMutation,
     moveToBoneyardMutation,
     deleteStripMutation,
+    deleteShootDayMutation,
     moveStripMutation,
     reorderStripMutation,
     createStripMutation,
@@ -489,12 +512,7 @@ export function useUnscheduledShots(
         : bulkAssignShotsToDay(productionId!, shotIds, shootDayId, shootDayUnitId),
     onSuccess: async () => {
       if (!productionId) return
-      const source = await getEffectiveDataSourceForProduction(productionId)
-      const prefix = tanstackDataSourceKey(productionId, source)
-      await queryClient.invalidateQueries({ queryKey: [...prefix, ...stripboardQueryKeys.all] })
-      await queryClient.invalidateQueries({ queryKey: [...prefix, ...unscheduledShotsQueryKeys.all] })
-      await queryClient.invalidateQueries({ queryKey: [...prefix, ...boneyardStripsQueryKeys.all] })
-      await queryClient.invalidateQueries({ queryKey: [...prefix, 'shots'] })
+      await invalidateStripboardCaches(queryClient, productionId)
     },
   })
 

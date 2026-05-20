@@ -34,7 +34,7 @@ import {
   listShootDaysByProduction,
   ensureCallWrapStripsForProduction,
 } from '@/lib/db/repositories/schedule'
-import { stripboardQueryKeys } from '@/features/schedule/stripboard-hooks'
+import { invalidateStripboardCaches, stripboardQueryKeys } from '@/features/schedule/stripboard-hooks'
 import type { CalendarShootDayEvent } from '@/lib/db/types'
 import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
 import { listStripsByProduction } from '@/lib/db/repositories/stripboard-strips'
@@ -1065,9 +1065,7 @@ export function ScheduleCalendarPage() {
   }, [toast])
 
   const invalidateScheduleQueries = () => {
-    queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
-    queryClient.invalidateQueries({ queryKey: ['shoot-days'] })
-    queryClient.invalidateQueries({ queryKey: stripboardQueryKeys.all })
+    void invalidateStripboardCaches(queryClient, currentProductionId)
   }
 
   const sensors = useSensors(
