@@ -96,81 +96,30 @@ export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }:
     event.preventDefault()
     setError(null)
     setIsSubmitting(true)
-    let bootstrapStep = 'start'
-    // #region agent log
-    const debugLog = (
-      message: string,
-      data: Record<string, unknown>,
-      hypothesisId: string
-    ) => {
-      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '415200' },
-        body: JSON.stringify({
-          sessionId: '415200',
-          location: 'AuthGateScreen.tsx:handleBootstrap',
-          message,
-          data,
-          hypothesisId,
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-    }
-    // #endregion
     try {
-      bootstrapStep = 'prepareEncryptedDatabaseForFirstAdmin'
-      debugLog('bootstrap step', { step: bootstrapStep }, 'A')
       await prepareEncryptedDatabaseForFirstAdmin(bootstrapPassword)
-      bootstrapStep = 'getDb'
-      debugLog('bootstrap step', { step: bootstrapStep }, 'A')
       const db = await getDb()
-      bootstrapStep = 'setupInitialAdmin'
-      debugLog('bootstrap step', { step: bootstrapStep, dialect: db.dialect }, 'B')
       const result = await setupInitialAdmin(db, {
         username: bootstrapUsername,
         password: bootstrapPassword,
       })
-      bootstrapStep = 'establishDataEncryptionKey'
-      debugLog('bootstrap step', { step: bootstrapStep, userId: result.user.id }, 'C')
       await establishDataEncryptionKey(db, result.user.id, bootstrapPassword)
-      bootstrapStep = 'backfillClientEncryptionIfNeeded'
-      debugLog('bootstrap step', { step: bootstrapStep }, 'D')
       await backfillClientEncryptionIfNeeded(db)
-      bootstrapStep = 'backfillPeopleIsCastIntegerIfNeeded'
-      debugLog('bootstrap step', { step: bootstrapStep }, 'D')
       const repairedPeople = await backfillPeopleIsCastIntegerIfNeeded(db)
-      bootstrapStep = 'persistSessionAndRefresh'
-      debugLog('bootstrap step', { step: bootstrapStep, repairedPeople }, 'D')
       await persistSessionAndRefresh(result.sessionToken)
-      debugLog('bootstrap complete', { step: 'done' }, 'A')
       if (repairedPeople > 0) {
         await queryClient.invalidateQueries({ queryKey: ['crew'] })
         await queryClient.invalidateQueries({ queryKey: ['people'] })
       }
     } catch (bootstrapError) {
       await closeDb()
-      const errType = bootstrapError === null ? 'null' : typeof bootstrapError
-      const errMessage =
+      setError(
         bootstrapError instanceof Error
           ? bootstrapError.message
           : typeof bootstrapError === 'string'
             ? bootstrapError
-            : bootstrapError && typeof bootstrapError === 'object' && 'message' in bootstrapError
-              ? String((bootstrapError as { message: unknown }).message)
-              : String(bootstrapError)
-      // #region agent log
-      debugLog(
-        'bootstrap failed',
-        {
-          step: bootstrapStep,
-          errType,
-          errMessage: errMessage.slice(0, 500),
-          isErrorInstance: bootstrapError instanceof Error,
-        },
-        'E'
+            : 'Admin setup failed'
       )
-      // #endregion
-      setError(errMessage || 'Admin setup failed')
     } finally {
       setIsSubmitting(false)
     }

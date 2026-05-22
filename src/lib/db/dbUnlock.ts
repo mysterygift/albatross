@@ -83,26 +83,8 @@ export async function unlockLocalDatabaseWithPassword(
 }
 
 export async function prepareEncryptedDatabaseForFirstAdmin(password: string): Promise<void> {
-  // #region agent log
-  const debugLog = (message: string, data: Record<string, unknown>, hypothesisId: string) => {
-    fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '415200' },
-      body: JSON.stringify({
-        sessionId: '415200',
-        location: 'dbUnlock.ts:prepareEncryptedDatabaseForFirstAdmin',
-        message,
-        data,
-        hypothesisId,
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-  }
-  // #endregion
-
   const meta = await readDbEncryptionMeta()
   const needsMigration = await needsPlainToEncryptedMigration()
-  debugLog('prepareEncrypted entry', { hasMeta: meta != null, needsMigration, isDbUnlocked: isDbUnlocked() }, 'A')
 
   // Close any plain DB opened at startup (e.g. settings defaults) before SQLCipher open/migrate.
   if (isDbUnlocked()) {
@@ -112,14 +94,11 @@ export async function prepareEncryptedDatabaseForFirstAdmin(password: string): P
   if (meta) {
     const passphrase = await deriveSqlCipherPassphraseFromPassword(password, meta.kdf_salt)
     if (needsMigration) {
-      debugLog('migrating plain db with existing meta', {}, 'A')
       await migratePlainDbToSqlcipher(passphrase)
       await openDbWithFileKey(passphrase)
       await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '1')
-      debugLog('prepareEncrypted complete after migrate (meta)', { isDbUnlocked: isDbUnlocked() }, 'A')
       return
     }
-    debugLog('opening db with existing meta', {}, 'A')
     await openDbWithFileKey(passphrase)
     return
   }
@@ -128,20 +107,16 @@ export async function prepareEncryptedDatabaseForFirstAdmin(password: string): P
   const passphrase = await deriveSqlCipherPassphraseFromPassword(password, instanceKdfSalt)
 
   if (needsMigration) {
-    debugLog('migrating plain db for first admin', {}, 'A')
     await migratePlainDbToSqlcipher(passphrase)
     await writeDbEncryptionMeta({ version: 1, kdf_salt: instanceKdfSalt })
     await openDbWithFileKey(passphrase)
     await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '1')
-    debugLog('prepareEncrypted complete after migrate', { isDbUnlocked: isDbUnlocked() }, 'A')
     return
   }
 
-  debugLog('creating new encrypted db for first admin', {}, 'A')
   await writeDbEncryptionMeta({ version: 1, kdf_salt: instanceKdfSalt })
   await openDbWithFileKey(passphrase)
   await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '1')
-  debugLog('prepareEncrypted complete', { isDbUnlocked: isDbUnlocked() }, 'A')
 }
 
 export async function isLocalDatabaseLocked(): Promise<boolean> {
