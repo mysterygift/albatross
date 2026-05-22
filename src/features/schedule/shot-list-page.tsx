@@ -931,7 +931,7 @@ export function ShotListPage() {
       sourceShotId: string
       productionId: string | null
     }) => {
-      const { sceneId, sourceShotId, productionId } = args
+      const { sourceShotId, productionId } = args
       const source = shots.find((s) => s.id === sourceShotId)
       if (!source) throw new Error('SHOT_NOT_FOUND')
 

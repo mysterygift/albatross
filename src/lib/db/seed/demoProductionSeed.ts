@@ -1422,6 +1422,8 @@ async function buildCallSheetDataForSeed(
     const shot =
       shRaw != null
         ? {
+            id: shRaw.id as string,
+            scene_id: shRaw.scene_id as string,
             shot_number: shRaw.shot_number as string,
             description: (shRaw.description as string) ?? null,
             shot_description: (shRaw.shot_description as string) ?? null,

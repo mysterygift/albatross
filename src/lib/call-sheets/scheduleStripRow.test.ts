@@ -56,6 +56,8 @@ describe('buildCallSheetStripFromStripboard', () => {
       location_id: null,
     }
     const shot = {
+      id: 'shot-1',
+      scene_id: 'scene-1',
       shot_number: '3',
       description: null,
       shot_description: 'Hero enters',

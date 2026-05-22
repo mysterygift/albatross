@@ -147,6 +147,8 @@ type SceneLike = {
 }
 
 type ShotLike = {
+  id: string
+  scene_id: string
   shot_number: string
   description: string | null
   shot_description: string | null

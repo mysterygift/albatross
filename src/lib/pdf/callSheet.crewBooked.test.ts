@@ -58,7 +58,7 @@ describe('generateCallSheetPdf with booked crew', () => {
         department: 'Production',
         phases: null,
         notes: null,
-        contributor_form_status: null,
+        contributor_form_status: 'not_requested',
         cast_number: null,
         agent_name: null,
         agent_email: null,

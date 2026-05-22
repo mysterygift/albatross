@@ -10,7 +10,7 @@ const MARGIN = 54
 const PAGE_WIDTH = 612
 const PAGE_HEIGHT = 792
 const Y_MIN = MARGIN + 40
-const ROW_HEIGHT = 14
+const ROW_HEIGHT = 18
 const FONT_TITLE = 16
 const FONT_HEADER = 11
 const FONT_BODY = 9
@@ -48,13 +48,13 @@ export async function generateEquipmentListPdf(params: EquipmentListPdfParams): 
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
 
-  const checkboxSize = 10
-  const colOut = checkboxSize + 4
-  const colIn = checkboxSize + 4
-  const colName = 100
-  const colCategory = 52
-  const colSerial = 52
-  const colUuid = 42
+  const checkboxSize = 15
+  const colOut = checkboxSize + 14
+  const colIn = checkboxSize + 14
+  const colName = 110
+  const colCategory = 62
+  const colSerial = 62
+  const colUuid = 52
   const colNotes = PAGE_WIDTH - MARGIN * 2 - colOut - colIn - colName - colCategory - colSerial - colUuid
 
   const columns = [
@@ -127,7 +127,7 @@ export async function generateEquipmentListPdf(params: EquipmentListPdfParams): 
   const drawRule = (yVal: number): void => {
     page.drawRectangle({
       x: xStart,
-      y: yVal - 0.25,
+      y: yVal,
       width: tableWidth,
       height: 0.5,
       color: GRAY,
@@ -146,7 +146,7 @@ export async function generateEquipmentListPdf(params: EquipmentListPdfParams): 
   }
 
   const drawTableHeader = (): void => {
-    drawRule(y)
+    drawRule(y - 5)
     y -= ROW_HEIGHT
     let x = xStart
     for (const col of columns) {
@@ -157,10 +157,10 @@ export async function generateEquipmentListPdf(params: EquipmentListPdfParams): 
         font: bold,
         color: rgb(0.2, 0.2, 0.2),
       })
-      x += col.width
+      x += col.width + 5
     }
     y -= ROW_HEIGHT
-    drawRule(y)
+    drawRule(y + 10)
     y -= 4
   }
 
