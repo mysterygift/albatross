@@ -43,7 +43,7 @@ This document is both a **user guide** (how to use the Equipment features) and a
 
 | Feature | Description |
 |--------|-------------|
-| **Equipment registry** | Master list of equipment items. Fields: name, **quantity** (count of identical units, default 1), category, source (owned/purchased/rented), status, department, vendor (text + optional vendor_id), invoice_id, rental dates, serial number, replacement value, notes. Each item has a stable `item_uuid`. |
+| **Equipment registry** | Master list of equipment items. Fields: name, **quantity** (count of identical units, default 1), category, source (owned/purchased/rented), status, department, vendor (text + optional vendor_id), invoice_id, rental dates, serial number, replacement value, notes. Each item has a stable `item_uuid`. **Import CSV** bulk-imports from a user file with column mapping (name, quantity, serial, replacement value). |
 | **Return reminder tasks** | Rented equipment with a return due date gets one linked task in Tasks ("Return equipment — {name}"). Marking the item returned or clearing the due date completes/removes the task. |
 | **Equipment lists** | Named lists (e.g. "Day 4 Lighting", "Main Unit Camera") with optional shoot day and department. Lists reference registry items; they do not duplicate them. |
 | **Checklist state** | Each list item has **OUT** and **IN** toggles for on-set check-out/check-in. This state lives only on the list item, not on the registry. Rows are highlighted when checked; the checklist table is scrollable for long lists. |
@@ -61,7 +61,8 @@ This document is both a **user guide** (how to use the Equipment features) and a
 3. **Add Equipment** (top right) to create a new item. Set **Quantity** (number of identical units; default 1, minimum 1) for items like "8× Sandbags" or "6× V-Lock Batteries". Optionally set vendor, rental dates, and return due date (which creates a return reminder task).
 4. The registry table shows: Name, **Qty** (quantity, right-aligned), Category, Department, Source, Status, Vendor, Rental Window (combined start/return dates), Replacement Value (right-aligned), and Actions. Category, source, and status use readable labels (e.g. Camera Accessories, Rented, Planned). Items linked to an invoice show **(Invoice INV-xxx)** under the vendor name.
 5. Edit or archive items from the table. Archiving soft-deletes the item and its linked reminder task.
-6. Empty state: "Add equipment to your production registry." with an **Add Equipment** button.
+6. **Import CSV** (next to Add Equipment) opens a system file picker, then a column-mapping step with a preview of the first five rows. Map CSV columns to **Name** (required), **Quantity**, **Serial number**, and **Replacement value**. Confirm to bulk-create items (category Other, source Owned, status Planned; quantity defaults to 1 if unmapped). If you map **Serial number**, rows that match an existing item by **both** name and serial update that item; otherwise new items are created.
+7. Empty state: "Add equipment to your production registry." with an **Add Equipment** button.
 
 **Using equipment lists**
 
@@ -99,14 +100,15 @@ This document is both a **user guide** (how to use the Equipment features) and a
 
 | Path | Purpose |
 |------|---------|
-| [src/features/equipment/page.tsx](src/features/equipment/page.tsx) | Single Equipment page: Registry tab (filters, table with readable labels and vendor/invoice provenance, add/edit/archive, reminder indicator) and Equipment Lists tab (list index, list detail, create with optional “generate from department”, add from registry, checklist with OUT/IN and row highlighting, reorder, PDF/CSV export and import, create-from-CSV dialog). |
+| [src/features/equipment/page.tsx](src/features/equipment/page.tsx) | Single Equipment page: Registry tab (filters, table with readable labels and vendor/invoice provenance, add/edit/archive, **registry CSV import**, reminder indicator) and Equipment Lists tab (list index, list detail, create with optional “generate from department”, add from registry, checklist with OUT/IN and row highlighting, reorder, PDF/CSV export and import, create-from-CSV dialog). |
+| [src/features/equipment/ImportEquipmentRegistryCsvDialog.tsx](src/features/equipment/ImportEquipmentRegistryCsvDialog.tsx) | Registry CSV import: column mapping modal, confirm step, bulk create/update via `createEquipmentWithReminderTask` / `updateEquipmentWithReminderTask`. |
 | [src/features/equipment/formatEquipmentLabel.ts](src/features/equipment/formatEquipmentLabel.ts) | Display helpers: `formatEquipmentLabel(value)` for generic enum-style values; `formatEquipmentCategoryLabel(category)` for canonical equipment categories (e.g. DIT / Video Village, Storage / Cases). Category labels are the single source of truth for UI. |
 | [src/lib/db/repositories/equipment.ts](src/lib/db/repositories/equipment.ts) | Equipment registry CRUD: list by production, get by id, create, update, soft-delete; buildCreateEquipmentStatements / buildUpdateEquipmentStatements for transactional use. |
 | [src/lib/db/repositories/equipmentLists.ts](src/lib/db/repositories/equipmentLists.ts) | Equipment lists and list items: list lists by production, get list by id, create/update/delete list; list items by list, add item, update item, remove item, getMaxSortOrderForList, reorderEquipmentListItems. |
 | [src/lib/db/repositories/equipment-terms.ts](src/lib/db/repositories/equipment-terms.ts) | Equipment terms (LENS, SUPPORT etc.) for shot list; list by production and type, upsert. Not the same as the equipment registry. |
 | [src/lib/db/equipmentReturnReminderService.ts](src/lib/db/equipmentReturnReminderService.ts) | Orchestration: createEquipmentWithReminderTask, updateEquipmentWithReminderTask, archiveEquipmentWithReminderTask. Creates/updates/deletes the single linked production_task when equipment is reminder-eligible (rented + return_due_date + status !== returned). |
 | [src/lib/db/equipmentInvoiceIngestionService.ts](src/lib/db/equipmentInvoiceIngestionService.ts) | Invoice-driven ingestion: createEquipmentFromInvoiceContext (create with vendor_id/invoice_id via createEquipmentWithReminderTask), linkExistingEquipmentToInvoice (updateEquipment vendor_id/invoice_id). |
-| [src/lib/equipment/csv.ts](src/lib/equipment/csv.ts) | CSV for lists: exportEquipmentListToCsv, parseEquipmentListCsv, matchParsedRowsToRegistry (by item_uuid), csvRowToCreateEquipmentData, normalizers. |
+| [src/lib/equipment/csv.ts](src/lib/equipment/csv.ts) | CSV: list export/import (fixed headers, match by item_uuid); registry import (parseCsvRaw, applyColumnMapping, matchRegistryImportRows by name+serial, registryRowToCreateData / registryRowToUpdatePatch). |
 | [src/lib/pdf/equipmentListPdf.ts](src/lib/pdf/equipmentListPdf.ts) | PDF checklist: generateEquipmentListPdf (pdf-lib, A4 portrait, header + table with OUT/IN checkboxes). Read-only. |
 | [src/features/budget/vendors/IngestEquipmentFromInvoiceModal.tsx](src/features/budget/vendors/IngestEquipmentFromInvoiceModal.tsx) | Modal from vendor invoice: rows with action create/link/skip; create uses prefilled form and createEquipmentFromInvoiceContext; link uses equipment picker and linkExistingEquipmentToInvoice. |
 | [src/features/budget/vendors/VendorDetailPage.tsx](src/features/budget/vendors/VendorDetailPage.tsx) | Renders invoice table and passes onAddEquipment to open IngestEquipmentFromInvoiceModal. |
@@ -180,7 +182,8 @@ Types and constants: [src/lib/db/types.ts](src/lib/db/types.ts) — `Equipment`,
 - **List CRUD:** equipmentLists repo; list items reference equipment by equipment_id. Checklist state (checked_out, checked_back_in) only on list items.
 - **PDF export:** generateEquipmentListPdf(list, listItems, equipmentById, productionName, shootDayLabel) → Uint8Array; UI triggers save via saveFileWithDialog.
 - **CSV export:** exportEquipmentListToCsv(items, equipmentById) → string; save via saveFileWithDialog.
-- **CSV import:** Parse file → matchParsedRowsToRegistry; review modal shows matched vs new; for new, user confirms via CreateEquipmentFromCsvRowDialog (createEquipmentWithReminderTask); then add matched + created to list (skip already-on-list).
+- **CSV import (list):** Parse file → matchParsedRowsToRegistry; review modal shows matched vs new; for new, user confirms via CreateEquipmentFromCsvRowDialog (createEquipmentWithReminderTask); then add matched + created to list (skip already-on-list).
+- **CSV import (registry):** `pickCsvFileForImport` → `readTextFile` → `parseCsvRaw` → column mapping UI → `applyColumnMapping` → `matchRegistryImportRows` (name+serial when serial mapped) → bulk `createEquipmentWithReminderTask` / `updateEquipmentWithReminderTask`.
 - **Invoice ingestion:** Vendor detail → invoice row Package button → IngestEquipmentFromInvoiceModal; create rows use createEquipmentFromInvoiceContext; link rows use linkExistingEquipmentToInvoice.
 - **Demo seed (D1):** For the singleton demo production only, `seedDemoEquipment` runs after `seedDemoVendorFinance`. It inserts ~120 equipment items (realistic TV drama/commercial kit), creates return reminder tasks for rented items with `return_due_date`, and creates 5 equipment lists (e.g. Camera Package – Shoot Day 1, Lighting Package – Night Exterior) with 15–30 items each and sample OUT/IN checklist state. Equipment links to existing demo vendors (Panavision London, Lumen Grip & Light, Signal Sound Services, Keystone Transport) and invoices where applicable. PDF and CSV export from these lists produce meaningful data.
 
@@ -236,8 +239,8 @@ Equipment terms (shot list) live in an earlier migration (0006_shots_rich_props_
 - **Duplicate production:** Equipment and equipment lists are not copied when duplicating a production; only equipment_terms are. Copying registry/lists could be added later.
 - **OCR / invoice line items:** Invoice-driven ingestion is manual (user-entered rows). If invoice line items exist in the future, the ingestion flow could be adapted to use them as candidates.
 - **Barcode/scanner:** No barcode or scanner workflows yet.
-- **Fuzzy matching:** CSV and invoice flows do not match by name; matching is by item_uuid (registry) or explicit link (invoice).
-- **PDF/CSV:** No invoice-specific PDF export or bulk registry CSV import; list-focused only.
+- **Fuzzy matching:** List CSV import matches by `item_uuid` only; registry CSV import matches by name + serial when serial is mapped. Invoice flows use explicit link.
+- **PDF/CSV:** No invoice-specific PDF export; registry CSV import is supported on the Registry tab.
 
 ---
 

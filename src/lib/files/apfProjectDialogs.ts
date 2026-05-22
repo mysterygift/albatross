@@ -47,3 +47,19 @@ export async function pickApfFileForImport(): Promise<string | null> {
   if (typeof selected === 'string') return selected
   return null
 }
+
+/**
+ * Native open dialog for CSV equipment import. Returns absolute path or null if cancelled.
+ */
+export async function pickCsvFileForImport(): Promise<string | null> {
+  const selected = await open({
+    title: 'Import equipment CSV',
+    multiple: false,
+    directory: false,
+    filters: [{ name: 'CSV', extensions: ['csv'] }],
+  })
+  if (selected == null) return null
+  if (Array.isArray(selected)) return selected[0] ?? null
+  if (typeof selected === 'string') return selected
+  return null
+}

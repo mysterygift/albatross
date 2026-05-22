@@ -67,7 +67,12 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, Pencil, Trash2, Search, Bell, ArrowLeft, Package, CheckSquare, ChevronUp, ChevronDown, FileDown } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Bell, ArrowLeft, Package, CheckSquare, ChevronUp, ChevronDown, FileDown, Upload } from 'lucide-react'
+import {
+  ImportEquipmentRegistryCsvDialog,
+  loadRegistryCsvFromPicker,
+} from '@/features/equipment/ImportEquipmentRegistryCsvDialog'
+import type { ColumnMapping } from '@/lib/equipment/csv'
 import type { Equipment, EquipmentCategory, EquipmentStatus, EquipmentList } from '@/lib/db/types'
 import {
   EQUIPMENT_CATEGORY_VALUES,
@@ -180,6 +185,13 @@ export function EquipmentPage() {
   const [filterDepartment, setFilterDepartment] = useState<string>('')
   const [filterStatus, setFilterStatus] = useState<string>('')
   const [searchText, setSearchText] = useState('')
+  const [registryCsvImportOpen, setRegistryCsvImportOpen] = useState(false)
+  const [registryCsvRaw, setRegistryCsvRaw] = useState<{ headers: string[]; rows: string[][] } | null>(
+    null
+  )
+  const [registryCsvMapping, setRegistryCsvMapping] = useState<ColumnMapping>({})
+  const [registryCsvParseErrors, setRegistryCsvParseErrors] = useState<string[]>([])
+  const [registryCsvImportBusy, setRegistryCsvImportBusy] = useState(false)
 
   const { data: equipment = [] } = useQuery({
     queryKey: ['equipment', currentProductionId],
@@ -243,6 +255,28 @@ export function EquipmentPage() {
     }
     return list
   }, [equipment, filterCategory, filterSource, filterDepartment, filterStatus, searchText])
+
+  const startRegistryCsvImport = async () => {
+    if (registryCsvImportBusy) return
+    setRegistryCsvImportBusy(true)
+    try {
+      const result = await loadRegistryCsvFromPicker()
+      if (!result.ok) {
+        if (result.errors.length > 0) {
+          setRegistryCsvParseErrors(result.errors)
+          setRegistryCsvRaw(null)
+          setRegistryCsvImportOpen(true)
+        }
+        return
+      }
+      setRegistryCsvParseErrors([])
+      setRegistryCsvRaw(result.raw)
+      setRegistryCsvMapping(result.suggestedMapping)
+      setRegistryCsvImportOpen(true)
+    } finally {
+      setRegistryCsvImportBusy(false)
+    }
+  }
 
   const createMutation = useMutation({
     mutationFn: (d: EquipmentForm) =>
@@ -443,7 +477,15 @@ export function EquipmentPage() {
 
         <TabsContent value="registry" className="mt-4 space-y-4">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex justify-end sm:flex-1 sm:justify-end">
+            <div className="flex justify-end gap-2 sm:flex-1 sm:justify-end">
+              <Button
+                variant="outline"
+                onClick={() => void startRegistryCsvImport()}
+                disabled={registryCsvImportBusy}
+              >
+                <Upload className="mr-2 size-4" />
+                {registryCsvImportBusy ? 'Opening…' : 'Import CSV'}
+              </Button>
               <Dialog open={open} onOpenChange={setOpen}>
                 <DialogTrigger asChild>
                   <Button>
@@ -571,6 +613,16 @@ export function EquipmentPage() {
           </TableBody>
         </Table>
       </div>
+
+          <ImportEquipmentRegistryCsvDialog
+            productionId={currentProductionId}
+            existingEquipment={equipment}
+            open={registryCsvImportOpen}
+            onOpenChange={setRegistryCsvImportOpen}
+            rawParse={registryCsvRaw}
+            initialMapping={registryCsvMapping}
+            parseErrors={registryCsvParseErrors}
+          />
 
           {editingId && (
             <Dialog open={!!editingId} onOpenChange={() => setEditingId(null)}>

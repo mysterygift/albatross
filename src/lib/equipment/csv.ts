@@ -1,9 +1,10 @@
 /**
- * Equipment list CSV import/export.
- * Operates on the list layer: export from list + registry; import into a list with registry matching by item_uuid.
- * New equipment is never created here — that is done in the UI after user confirmation.
+ * Equipment CSV import/export.
+ * - List layer: export/import with fixed headers; match by item_uuid.
+ * - Registry layer: flexible column mapping; match by name + serial when serial is mapped.
  */
 
+import type { CreateEquipmentData } from '@/lib/db/repositories/equipment'
 import type { Equipment, EquipmentListItem } from '@/lib/db/types'
 import { EQUIPMENT_CATEGORY_LEGACY_MAP, EQUIPMENT_CATEGORY_VALUES, EQUIPMENT_STATUS_VALUES } from '@/lib/db/types'
 import type { EquipmentCategory, EquipmentStatus } from '@/lib/db/types'
@@ -107,7 +108,7 @@ export function exportEquipmentListToCsv(
  * Parse a single CSV line respecting quoted fields (RFC 4180 style).
  * Returns array of field values.
  */
-function parseCsvLine(line: string): string[] {
+export function parseCsvLine(line: string): string[] {
   const out: string[] = []
   let i = 0
   while (i < line.length) {
@@ -321,11 +322,235 @@ export function csvRowToCreateEquipmentData(
     return_due_date: row.return_due_date?.trim() || null,
     serial_number: row.serial_number?.trim() || null,
     notes: row.notes?.trim() || null,
-    replacement_value: (() => {
-      const v = row.replacement_value?.trim()
-      if (!v) return null
-      const n = Number(v)
-      return Number.isFinite(n) ? n : null
-    })(),
+    replacement_value: parseReplacementValueFromString(row.replacement_value),
+  }
+}
+
+// --- Registry CSV import (flexible column mapping) ---
+
+export type EquipmentRegistryCsvField =
+  | 'name'
+  | 'quantity'
+  | 'serial_number'
+  | 'replacement_value'
+
+/** Maps registry fields to CSV column index (0-based). */
+export type ColumnMapping = Partial<Record<EquipmentRegistryCsvField, number>>
+
+export type EquipmentRegistryCsvRow = {
+  name: string
+  quantity: number
+  serial_number: string | null
+  replacement_value: number | null
+}
+
+export type RegistryImportMatchResult = {
+  toCreate: EquipmentRegistryCsvRow[]
+  toUpdate: Array<{ row: EquipmentRegistryCsvRow; equipment: Equipment }>
+}
+
+function parseReplacementValueFromString(value: string | null | undefined): number | null {
+  const v = value?.trim()
+  if (!v) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function parseQuantityFromString(value: string | null | undefined): number {
+  const v = value?.trim()
+  if (!v) return 1
+  const n = Number(v)
+  if (!Number.isFinite(n)) return 1
+  const int = Math.floor(n)
+  return int >= 1 ? int : 1
+}
+
+function normalizeNameKey(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+function normalizeSerialKey(serial: string | null | undefined): string {
+  return serial?.trim().toLowerCase() ?? ''
+}
+
+function registryMatchKey(name: string, serial: string | null): string | null {
+  const serialKey = normalizeSerialKey(serial)
+  if (!serialKey) return null
+  return `${normalizeNameKey(name)}|${serialKey}`
+}
+
+/**
+ * Parse CSV without assuming column names. First non-empty line is the header row.
+ */
+export function parseCsvRaw(csvText: string): {
+  headers: string[]
+  rows: string[][]
+  errors: string[]
+} {
+  const errors: string[] = []
+  const lines = csvText.split(/\r?\n/).map((l) => l.trimEnd())
+  if (lines.length === 0 || lines.every((l) => l.trim() === '')) {
+    return { headers: [], rows: [], errors: ['CSV is empty.'] }
+  }
+
+  const headerLine = lines.find((l) => l.trim() !== '')!
+  const headerIndex = lines.indexOf(headerLine)
+  const headers = parseCsvLine(headerLine).map((h) => h.trim())
+
+  if (headers.length === 0 || headers.every((h) => h === '')) {
+    return { headers: [], rows: [], errors: ['CSV has no column headers.'] }
+  }
+
+  const rows: string[][] = []
+  for (let i = headerIndex + 1; i < lines.length; i++) {
+    const line = lines[i]!
+    if (line.trim() === '') continue
+    rows.push(parseCsvLine(line))
+  }
+
+  if (rows.length === 0) {
+    errors.push('No data rows found.')
+  }
+
+  return { headers, rows, errors }
+}
+
+/** Guess column mapping from header labels (best-effort). */
+export function suggestColumnMapping(headers: string[]): ColumnMapping {
+  const mapping: ColumnMapping = {}
+  const lower = headers.map((h) => h.trim().toLowerCase())
+
+  const pick = (patterns: RegExp[]): number | undefined => {
+    const idx = lower.findIndex((h) => patterns.some((p) => p.test(h)))
+    return idx >= 0 ? idx : undefined
+  }
+
+  const nameIdx = pick([/^name$/, /item\s*name/, /description/, /product/])
+  if (nameIdx !== undefined) mapping.name = nameIdx
+
+  const qtyIdx = pick([/^qty$/, /^quantity$/, /^count$/, /^units?$/])
+  if (qtyIdx !== undefined) mapping.quantity = qtyIdx
+
+  const serialIdx = pick([/^serial/, /serial\s*no/, /serial\s*number/, /^sn$/])
+  if (serialIdx !== undefined) mapping.serial_number = serialIdx
+
+  const valueIdx = pick([/replacement/, /^value$/, /^cost$/, /insured/])
+  if (valueIdx !== undefined) mapping.replacement_value = valueIdx
+
+  return mapping
+}
+
+export function applyColumnMapping(
+  headers: string[],
+  rows: string[][],
+  mapping: ColumnMapping
+): {
+  rows: EquipmentRegistryCsvRow[]
+  skipped: number
+  errors: string[]
+} {
+  const errors: string[] = []
+  if (mapping.name === undefined) {
+    return { rows: [], skipped: 0, errors: ['Name column is required.'] }
+  }
+
+  const getCell = (row: string[], colIndex: number | undefined): string | null => {
+    if (colIndex === undefined) return null
+    if (colIndex < 0 || colIndex >= row.length) return null
+    return trimToNull(row[colIndex] ?? '')
+  }
+
+  const parsed: EquipmentRegistryCsvRow[] = []
+  let skipped = 0
+
+  for (const row of rows) {
+    const name = getCell(row, mapping.name)?.trim() ?? ''
+    if (!name) {
+      skipped += 1
+      continue
+    }
+
+    const quantityRaw = mapping.quantity !== undefined ? getCell(row, mapping.quantity) : null
+    const serialRaw =
+      mapping.serial_number !== undefined ? getCell(row, mapping.serial_number) : null
+    const valueRaw =
+      mapping.replacement_value !== undefined ? getCell(row, mapping.replacement_value) : null
+
+    parsed.push({
+      name,
+      quantity: parseQuantityFromString(quantityRaw),
+      serial_number: serialRaw?.trim() || null,
+      replacement_value: parseReplacementValueFromString(valueRaw),
+    })
+  }
+
+  if (parsed.length === 0 && rows.length > 0 && skipped === rows.length) {
+    errors.push('All rows were skipped (missing names).')
+  }
+
+  return { rows: parsed, skipped, errors }
+}
+
+/**
+ * Match registry import rows to existing equipment.
+ * When serialMapped is false, all rows are treated as creates.
+ * When serialMapped is true, updates only when both name and non-empty serial match.
+ */
+export function matchRegistryImportRows(
+  rows: EquipmentRegistryCsvRow[],
+  existing: Equipment[],
+  serialMapped: boolean
+): RegistryImportMatchResult {
+  if (!serialMapped) {
+    return { toCreate: [...rows], toUpdate: [] }
+  }
+
+  const byKey = new Map<string, Equipment>()
+  for (const e of existing) {
+    const key = registryMatchKey(e.name, e.serial_number)
+    if (key) byKey.set(key, e)
+  }
+
+  const toCreate: EquipmentRegistryCsvRow[] = []
+  const toUpdate: RegistryImportMatchResult['toUpdate'] = []
+
+  for (const row of rows) {
+    const key = registryMatchKey(row.name, row.serial_number)
+    if (key && byKey.has(key)) {
+      toUpdate.push({ row, equipment: byKey.get(key)! })
+    } else {
+      toCreate.push(row)
+    }
+  }
+
+  return { toCreate, toUpdate }
+}
+
+/** Defaults aligned with registry EquipmentForm create defaults. */
+export function registryRowToCreateData(
+  row: EquipmentRegistryCsvRow,
+  productionId: string
+): CreateEquipmentData {
+  return {
+    production_id: productionId,
+    name: row.name,
+    quantity: row.quantity,
+    category: 'other',
+    status: 'planned',
+    source_type: 'owned',
+    department: null,
+    serial_number: row.serial_number,
+    replacement_value: row.replacement_value,
+  }
+}
+
+export function registryRowToUpdatePatch(
+  row: EquipmentRegistryCsvRow
+): Pick<Equipment, 'name' | 'quantity' | 'serial_number' | 'replacement_value'> {
+  return {
+    name: row.name,
+    quantity: row.quantity,
+    serial_number: row.serial_number,
+    replacement_value: row.replacement_value,
   }
 }
