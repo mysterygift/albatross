@@ -158,7 +158,7 @@ export function ImportEquipmentRegistryCsvDialog({
   const handleContinue = () => {
     if (!rawParse) return
     setApplyErrors([])
-    const applied = applyColumnMapping(rawParse.headers, rawParse.rows, columnMapping)
+    const applied = applyColumnMapping(rawParse.rows, columnMapping)
     if (applied.errors.length > 0) {
       setApplyErrors(applied.errors)
       return

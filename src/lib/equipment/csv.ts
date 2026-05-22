@@ -441,7 +441,6 @@ export function suggestColumnMapping(headers: string[]): ColumnMapping {
 }
 
 export function applyColumnMapping(
-  headers: string[],
   rows: string[][],
   mapping: ColumnMapping
 ): {

@@ -42,7 +42,6 @@ describe('suggestColumnMapping', () => {
 })
 
 describe('applyColumnMapping', () => {
-  const headers = ['Name', 'Qty', 'Serial', 'Value']
   const rows = [
     ['Widget', '3', 'ABC', '100'],
     ['', '1', 'DEF', ''],
@@ -50,12 +49,12 @@ describe('applyColumnMapping', () => {
   ]
 
   it('requires name column in mapping', () => {
-    const result = applyColumnMapping(headers, rows, {})
+    const result = applyColumnMapping(rows, {})
     expect(result.errors).toContain('Name column is required.')
   })
 
   it('maps fields and skips blank names', () => {
-    const result = applyColumnMapping(headers, rows, {
+    const result = applyColumnMapping(rows, {
       name: 0,
       quantity: 1,
       serial_number: 2,
@@ -79,7 +78,7 @@ describe('applyColumnMapping', () => {
   })
 
   it('defaults quantity to 1 when column unmapped', () => {
-    const result = applyColumnMapping(headers, [['Only Item', '', '', '']], { name: 0 })
+    const result = applyColumnMapping([['Only Item', '', '', '']], { name: 0 })
     expect(result.rows[0]?.quantity).toBe(1)
     expect(result.rows[0]?.replacement_value).toBeNull()
   })
