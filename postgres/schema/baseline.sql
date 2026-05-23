@@ -352,6 +352,7 @@ CREATE TABLE equipment_list_items (
   equipment_list_id UUID NOT NULL,
   equipment_id UUID NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 1),
   checked_out BOOLEAN NOT NULL DEFAULT FALSE,
   checked_back_in BOOLEAN NOT NULL DEFAULT FALSE,
   notes TEXT,

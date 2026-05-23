@@ -23,6 +23,7 @@ export const EQUIPMENT_LIST_CSV_HEADERS = [
   'notes',
   'status',
   'replacement_value',
+  'quantity',
 ] as const
 
 const REQUIRED_IMPORT_HEADERS = [
@@ -52,6 +53,8 @@ export type EquipmentListCsvRow = {
   notes: string | null
   status: string | null
   replacement_value: string | null
+  /** List-item quantity (units to pack). Defaults to 1 when column missing. */
+  quantity: number
 }
 
 export type MatchResult = {
@@ -97,6 +100,7 @@ export function exportEquipmentListToCsv(
       notes,
       eq.status,
       eq.replacement_value != null ? String(eq.replacement_value) : '',
+      String(item.quantity),
     ]
     lines.push(row.map((v) => escapeCsvField(v)).join(','))
   }
@@ -198,6 +202,7 @@ export function parseEquipmentListCsv(csvText: string): {
       notes: get('notes'),
       status: get('status'),
       replacement_value: get('replacement_value'),
+      quantity: parseQuantityFromString(get('quantity')),
     })
   }
 

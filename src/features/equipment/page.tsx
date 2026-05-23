@@ -67,7 +67,9 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, Pencil, Trash2, Search, Bell, ArrowLeft, Package, CheckSquare, ChevronUp, ChevronDown, FileDown, Upload } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Bell, ArrowLeft, Package, CheckSquare, ChevronUp, ChevronDown, FileDown, Upload, AlertTriangle } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { getOverStockListItems, isListQuantityOverRegistry } from '@/lib/equipment/listQuantity'
 import {
   ImportEquipmentRegistryCsvDialog,
   loadRegistryCsvFromPicker,
@@ -1341,6 +1343,10 @@ function EquipmentListDetail({
     enabled: !!productionId,
   })
   const equipmentById = useMemo(() => new Map(equipment.map((e) => [e.id, e])), [equipment])
+  const overStockItems = useMemo(
+    () => getOverStockListItems(items, equipmentById),
+    [items, equipmentById]
+  )
   const itemIdsOnList = useMemo(() => new Set(items.map((i) => i.equipment_id)), [items])
   const availableEquipment = useMemo(
     () => equipment.filter((e) => !itemIdsOnList.has(e.id)),
@@ -1453,15 +1459,26 @@ function EquipmentListDetail({
   const addToListMutation = useMutation({
     mutationFn: async () => {
       if (!importReview) return
-      const toAdd: Equipment[] = [
-        ...importReview.matched.map((m) => m.equipment),
-        ...importReview.new.map((_, i) => createdFromImport.get(i)).filter((e): e is Equipment => e != null),
+      const toAdd: Array<{ equipment: Equipment; quantity: number }> = [
+        ...importReview.matched.map((m) => ({
+          equipment: m.equipment,
+          quantity: m.row.quantity ?? 1,
+        })),
+        ...importReview.new.flatMap((row, i) => {
+          const eq = createdFromImport.get(i)
+          return eq ? [{ equipment: eq, quantity: row.quantity ?? 1 }] : []
+        }),
       ]
       let sortOrder = await getMaxSortOrderForList(listId)
       const alreadyOnList = new Set(items.map((i) => i.equipment_id))
-      for (const eq of toAdd) {
+      for (const { equipment: eq, quantity } of toAdd) {
         if (alreadyOnList.has(eq.id)) continue
-        await addEquipmentItemToList({ equipment_list_id: listId, equipment_id: eq.id, sort_order: sortOrder })
+        await addEquipmentItemToList({
+          equipment_list_id: listId,
+          equipment_id: eq.id,
+          sort_order: sortOrder,
+          quantity,
+        })
         sortOrder += 1
         alreadyOnList.add(eq.id)
       }
@@ -1519,6 +1536,17 @@ function EquipmentListDetail({
           )}
         </div>
       </div>
+
+      {overStockItems.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="size-4" />
+          <AlertTitle>Insufficient stock in registry</AlertTitle>
+          <AlertDescription>
+            {overStockItems.length} item(s) request more units than available:{' '}
+            {overStockItems.map(({ equipment }) => equipment.name).join(', ')}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <input
         ref={fileInputRef}
@@ -1588,6 +1616,9 @@ function EquipmentListDetail({
                       >
                         <Package className="mr-2 size-4 text-muted-foreground" />
                         {e.name}
+                        {e.quantity > 1 && (
+                          <span className="ml-2 text-muted-foreground text-xs">· qty {e.quantity}</span>
+                        )}
                         <span className="ml-2 text-muted-foreground text-xs">{shortUuid(e.item_uuid)}</span>
                       </Button>
                     </li>
@@ -1727,6 +1758,7 @@ function EquipmentListDetail({
               <TableHead>UUID</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Serial</TableHead>
+              <TableHead className="w-20 text-center">Qty</TableHead>
               <TableHead className="text-center w-28">OUT</TableHead>
               <TableHead className="text-center w-28">IN</TableHead>
               <TableHead>Notes</TableHead>
@@ -1736,7 +1768,7 @@ function EquipmentListDetail({
           <TableBody>
             {items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
                   No items on this list. Add equipment from the registry.
                 </TableCell>
               </TableRow>
@@ -1744,6 +1776,7 @@ function EquipmentListDetail({
               items.map((item, index) => {
                 const eq = equipmentById.get(item.equipment_id)
                 const checked = item.checked_out && item.checked_back_in
+                const overStock = isListQuantityOverRegistry(item.quantity, eq?.quantity)
                 return (
                   <TableRow
                     key={item.id}
@@ -1781,6 +1814,36 @@ function EquipmentListDetail({
                     <TableCell className="text-muted-foreground font-mono text-xs">{eq ? shortUuid(eq.item_uuid) : '—'}</TableCell>
                     <TableCell>{eq ? formatEquipmentCategoryLabel(eq.category) : '—'}</TableCell>
                     <TableCell className="text-muted-foreground">{eq?.serial_number ?? '—'}</TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex flex-col items-center gap-0.5">
+                        <Input
+                          type="number"
+                          min={1}
+                          step={1}
+                          key={`${item.id}-${item.quantity}`}
+                          defaultValue={item.quantity}
+                          aria-invalid={overStock || undefined}
+                          className={cn(
+                            'w-16 h-8 text-center',
+                            overStock && 'text-destructive border-destructive'
+                          )}
+                          onBlur={(e) => {
+                            const parsed = parseInt(e.target.value, 10)
+                            if (Number.isInteger(parsed) && parsed >= 1 && parsed !== item.quantity) {
+                              updateItemMutation.mutate({ itemId: item.id, patch: { quantity: parsed } })
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                          }}
+                        />
+                        {eq && eq.quantity > 1 && (
+                          <span className="text-[10px] text-muted-foreground leading-none">
+                            {eq.quantity} in registry
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-center">
                       <Button
                         variant={item.checked_out ? 'default' : 'outline'}

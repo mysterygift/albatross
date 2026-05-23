@@ -850,6 +850,12 @@ pub fn run() {
             sql: include_str!("../migrations/0071_stripboard_strips_move_locations.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 72,
+            description: "equipment_list_item_quantity",
+            sql: include_str!("../migrations/0072_equipment_list_item_quantity.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

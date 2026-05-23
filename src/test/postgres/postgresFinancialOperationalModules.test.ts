@@ -14,7 +14,7 @@ import { createFloat } from '@/lib/db/repositories/floats'
 import { createFloatExpenseLinks, listFloatExpenseLinksByProduction } from '@/lib/db/repositories/floatReconciliation'
 import { createDocument, deleteDocument, getDocumentById, listDocumentsByProduction } from '@/lib/db/repositories/document'
 import { createEquipment, updateEquipment } from '@/lib/db/repositories/equipment'
-import { addEquipmentItemToList, createEquipmentList, listEquipmentListItems } from '@/lib/db/repositories/equipmentLists'
+import { addEquipmentItemToList, createEquipmentList, listEquipmentListItems, updateEquipmentListItem } from '@/lib/db/repositories/equipmentLists'
 import { listEquipmentTermsByProductionAndType, upsertEquipmentTerm } from '@/lib/db/repositories/equipment-terms'
 import { createVendor, listVendors } from '@/lib/db/repositories/vendors'
 import { createVendorInvoice } from '@/lib/db/repositories/vendorInvoices'
@@ -249,9 +249,31 @@ describe('postgres financial/operational/asset-heavy module validation', () => {
       expect(updated.quantity).toBe(3)
 
       const list = await createEquipmentList({ production_id: production.id, name: 'Day 1 list' })
-      await addEquipmentItemToList({ equipment_list_id: list.id, equipment_id: equipment.id, sort_order: 0 })
+      const defaultItem = await addEquipmentItemToList({
+        equipment_list_id: list.id,
+        equipment_id: equipment.id,
+        sort_order: 0,
+      })
+      expect(defaultItem.quantity).toBe(1)
+
+      const qtyItem = await addEquipmentItemToList({
+        equipment_list_id: list.id,
+        equipment_id: (await createEquipment({
+          production_id: production.id,
+          name: 'Spare lens',
+          replacement_value: 100,
+          quantity: 5,
+        })).id,
+        sort_order: 1,
+        quantity: 3,
+      })
+      expect(qtyItem.quantity).toBe(3)
+
+      const updatedQty = await updateEquipmentListItem(qtyItem.id, { quantity: 4 })
+      expect(updatedQty.quantity).toBe(4)
+
       const items = await listEquipmentListItems(list.id)
-      expect(items).toHaveLength(1)
+      expect(items).toHaveLength(2)
       expect(items[0]!.checked_out).toBe(0)
       expect(items[0]!.checked_back_in).toBe(0)
 

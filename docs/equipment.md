@@ -130,7 +130,7 @@ This document is both a **user guide** (how to use the Equipment features) and a
 
 **EquipmentListItem** — `equipment_list_items` table
 
-- `id`, `equipment_list_id`, `equipment_id` (FK to equipment), `sort_order`, `checked_out` (0/1), `checked_back_in` (0/1), `notes`, timestamps. No soft-delete; hard delete on remove.
+- `id`, `equipment_list_id`, `equipment_id` (FK to equipment), `sort_order`, `quantity` (integer ≥ 1, default 1 — units to pack on this list), `checked_out` (0/1), `checked_back_in` (0/1), `notes`, timestamps. No soft-delete; hard delete on remove.
 
 **ProductionTask (Tasks)** — link to equipment
 
@@ -154,7 +154,7 @@ Types and constants: [src/lib/db/types.ts](src/lib/db/types.ts) — `Equipment`,
 **equipmentLists.ts**
 
 - Lists: `listEquipmentListsByProduction`, `getEquipmentListById`, `createEquipmentList`, `updateEquipmentList`, `deleteEquipmentList` (soft).
-- Items: `listEquipmentListItems` (ordered by sort_order), `addEquipmentItemToList`, `updateEquipmentListItem`, `removeEquipmentItemFromList`, `getMaxSortOrderForList`, `reorderEquipmentListItems`.
+- Items: `listEquipmentListItems` (ordered by sort_order), `addEquipmentItemToList` (optional `quantity`, default 1), `updateEquipmentListItem` (including `quantity` patch), `removeEquipmentItemFromList`, `getMaxSortOrderForList`, `reorderEquipmentListItems`.
 - Writes use outbox where applicable; reorder uses runInSerializedTransaction + executeBatch.
 
 **equipmentReturnReminderService.ts**
@@ -171,8 +171,8 @@ Types and constants: [src/lib/db/types.ts](src/lib/db/types.ts) — `Equipment`,
 
 **equipment/csv.ts**
 
-- Export: `exportEquipmentListToCsv(listItems, equipmentById)` — registry data per item (includes category; quantity not in CSV columns in current format); notes from list item or equipment.
-- Import: `parseEquipmentListCsv(csvText)` → `{ rows, errors }`; `matchParsedRowsToRegistry(rows, productionEquipment)` → `{ matched, new }` by item_uuid only.
+- Export: `exportEquipmentListToCsv(listItems, equipmentById)` — registry data per item (includes category); list-item `quantity` in final column; notes from list item or equipment.
+- Import: `parseEquipmentListCsv(csvText)` → `{ rows, errors }`; `matchParsedRowsToRegistry(rows, productionEquipment)` → `{ matched, new }` by item_uuid only. Optional `quantity` column defaults to 1 when missing.
 - `csvRowToCreateEquipmentData(row, productionId)` for creating new equipment from CSV new rows (used with createEquipmentWithReminderTask in UI). Category normalised via `normalizeCategory` (legacy map + canonical list); department via `normalizeDepartment` (legacy → crew name). New equipment gets quantity default 1.
 
 ### 8. Key flows
@@ -185,7 +185,7 @@ Types and constants: [src/lib/db/types.ts](src/lib/db/types.ts) — `Equipment`,
 - **CSV import (list):** Parse file → matchParsedRowsToRegistry; review modal shows matched vs new; for new, user confirms via CreateEquipmentFromCsvRowDialog (createEquipmentWithReminderTask); then add matched + created to list (skip already-on-list).
 - **CSV import (registry):** `pickCsvFileForImport` → `readTextFile` → `parseCsvRaw` → column mapping UI → `applyColumnMapping` → `matchRegistryImportRows` (name+serial when serial mapped) → bulk `createEquipmentWithReminderTask` / `updateEquipmentWithReminderTask`.
 - **Invoice ingestion:** Vendor detail → invoice row Package button → IngestEquipmentFromInvoiceModal; create rows use createEquipmentFromInvoiceContext; link rows use linkExistingEquipmentToInvoice.
-- **Demo seed (D1):** For the singleton demo production only, `seedDemoEquipment` runs after `seedDemoVendorFinance`. It inserts ~120 equipment items (realistic TV drama/commercial kit), creates return reminder tasks for rented items with `return_due_date`, and creates 5 equipment lists (e.g. Camera Package – Shoot Day 1, Lighting Package – Night Exterior) with 15–30 items each and sample OUT/IN checklist state. Equipment links to existing demo vendors (Panavision London, Lumen Grip & Light, Signal Sound Services, Keystone Transport) and invoices where applicable. PDF and CSV export from these lists produce meaningful data.
+- **Demo seed (D1):** For the singleton demo production only, `seedDemoEquipment` runs after `seedDemoVendorFinance`. It inserts ~120 equipment items (realistic TV drama/commercial kit), creates return reminder tasks for rented items with `return_due_date`, and creates 5 equipment lists (e.g. Camera Package – Shoot Day 1, Lighting Package – Night Exterior) with 15–30 items each and sample OUT/IN checklist state. Selected list rows include explicit pack quantities (e.g. V-Lock batteries ×3, Quasar tubes ×6 over registry stock) so over-stock warnings are visible in demo lists. Equipment links to existing demo vendors (Panavision London, Lumen Grip & Light, Signal Sound Services, Keystone Transport) and invoices where applicable. PDF and CSV export from these lists produce meaningful data.
 
 ### 9. Query keys and invalidation
 
@@ -215,6 +215,7 @@ Types and constants: [src/lib/db/types.ts](src/lib/db/types.ts) — `Equipment`,
 | 0047_equipment_quantity.sql | Adds `quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 1)` to equipment. Existing rows backfilled to 1. |
 | 0048_equipment_category_normalisation.sql | Updates equipment.category from legacy values to canonical grouped categories (e.g. camera_body→camera, lens→lenses, wireless_video/wireless_fiz→wireless_systems, dit/monitor→dit_video_village). |
 | 0049_equipment_department_crew_alignment.sql | Normalises equipment.department and equipment_lists.department to crew hierarchy names (e.g. Electrical→Lighting, DIT/Video→Camera); unknown values set to NULL. |
+| 0072_equipment_list_item_quantity.sql (Tauri) / 0009 (Postgres) | Adds `quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 1)` to `equipment_list_items`. List-item quantity = units to pack on the kit. |
 
 Equipment terms (shot list) live in an earlier migration (0006_shots_rich_props_equipment_terms.sql).
 

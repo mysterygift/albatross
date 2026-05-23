@@ -12,6 +12,7 @@
  * rows (quantity 1 or omitted). Repeated support stock (batteries, stands, cables, lavs,
  * walkies, cases) uses the equipment quantity field so the demo demonstrates grouped inventory
  * and on-set counts; names are normalized to singular/base where quantity carries the count.
+ * List item quantity = units to pack on a kit; registry quantity = stock on hand.
  *
  * Run only for singleton demo production (DEMO_SLUG), after seedDemoVendorFinance.
  * Uses deterministic IDs from IDS; equipment lists reference shoot days and registry items.
@@ -229,12 +230,19 @@ function isReminderEligible(def: DemoEquipmentDef): boolean {
   )
 }
 
+type DemoListItemDef = {
+  equipmentIndex: number
+  quantity?: number
+  checked_out?: 0 | 1
+  checked_back_in?: 0 | 1
+}
+
 type DemoListDef = {
   name: string
   shootDayIdx?: number
   department?: string | null
   notes?: string | null
-  items: { equipmentIndex: number; checked_out?: 0 | 1; checked_back_in?: 0 | 1 }[]
+  items: DemoListItemDef[]
 }
 
 const DEMO_LISTS: DemoListDef[] = [
@@ -247,7 +255,7 @@ const DEMO_LISTS: DemoListDef[] = [
       { equipmentIndex: 0, checked_out: 1, checked_back_in: 0 },   // Alexa Mini OUT
       { equipmentIndex: 1 },   { equipmentIndex: 2 },   { equipmentIndex: 3 },   { equipmentIndex: 4 },   { equipmentIndex: 5 },   { equipmentIndex: 6 },   { equipmentIndex: 7 },   { equipmentIndex: 8 },   { equipmentIndex: 9 },
       { equipmentIndex: 10 },  { equipmentIndex: 11 },  { equipmentIndex: 12 },  { equipmentIndex: 13 },  { equipmentIndex: 14 },  { equipmentIndex: 15 },
-      { equipmentIndex: 16 },  { equipmentIndex: 17 },  { equipmentIndex: 18, checked_out: 1, checked_back_in: 0 },  { equipmentIndex: 19 },  // V-Lock OUT
+      { equipmentIndex: 16, quantity: 2 },  { equipmentIndex: 17 },  { equipmentIndex: 18, quantity: 3, checked_out: 1, checked_back_in: 0 },  { equipmentIndex: 19 },  // V-Lock OUT
       { equipmentIndex: 20 },  { equipmentIndex: 21 },  { equipmentIndex: 22 },  { equipmentIndex: 23 },
       { equipmentIndex: 24 },  { equipmentIndex: 25, checked_out: 1, checked_back_in: 1 },  { equipmentIndex: 26 },  { equipmentIndex: 27 },  { equipmentIndex: 28, checked_out: 1, checked_back_in: 1 },  { equipmentIndex: 29 },  { equipmentIndex: 30 },  { equipmentIndex: 31 },  { equipmentIndex: 32 },
       { equipmentIndex: 36 },  { equipmentIndex: 37 },
@@ -259,9 +267,9 @@ const DEMO_LISTS: DemoListDef[] = [
     department: 'Lighting',
     notes: 'Night exterior lighting package',
     items: [
-      { equipmentIndex: 41 },  { equipmentIndex: 42 },  { equipmentIndex: 43 },  { equipmentIndex: 44 },  { equipmentIndex: 45 },  { equipmentIndex: 46 },  { equipmentIndex: 47 },  { equipmentIndex: 48 },  { equipmentIndex: 49 },
+      { equipmentIndex: 41 },  { equipmentIndex: 42 },  { equipmentIndex: 43 },  { equipmentIndex: 44 },  { equipmentIndex: 45 },  { equipmentIndex: 46 },  { equipmentIndex: 47, quantity: 6 },  { equipmentIndex: 48 },  { equipmentIndex: 49 },
       { equipmentIndex: 50 },  { equipmentIndex: 51 },  { equipmentIndex: 52 },  { equipmentIndex: 53 },  { equipmentIndex: 54 },  { equipmentIndex: 55 },  { equipmentIndex: 56 },  { equipmentIndex: 57 },
-      { equipmentIndex: 58 },  { equipmentIndex: 59 },  { equipmentIndex: 60 },  { equipmentIndex: 61 },  { equipmentIndex: 62 },  { equipmentIndex: 63 },  { equipmentIndex: 64 },  { equipmentIndex: 65 },
+      { equipmentIndex: 58 },  { equipmentIndex: 59, quantity: 6 },  { equipmentIndex: 60 },  { equipmentIndex: 61 },  { equipmentIndex: 62 },  { equipmentIndex: 63 },  { equipmentIndex: 64 },  { equipmentIndex: 65 },
       { equipmentIndex: 66 },  { equipmentIndex: 67 },  { equipmentIndex: 68 },  { equipmentIndex: 69 },  { equipmentIndex: 70 },  { equipmentIndex: 71 },  { equipmentIndex: 72 },  { equipmentIndex: 73 },
       { equipmentIndex: 74 },  { equipmentIndex: 75 },  { equipmentIndex: 76 },  { equipmentIndex: 77 },
     ],
@@ -274,7 +282,7 @@ const DEMO_LISTS: DemoListDef[] = [
     items: [
       { equipmentIndex: 22 },  { equipmentIndex: 23 },  { equipmentIndex: 78 },  { equipmentIndex: 79 },  { equipmentIndex: 80 },  { equipmentIndex: 81 },  { equipmentIndex: 82 },
       { equipmentIndex: 83 },  { equipmentIndex: 84 },  { equipmentIndex: 85 },  { equipmentIndex: 86 },  { equipmentIndex: 87 },  { equipmentIndex: 88 },  { equipmentIndex: 89 },
-      { equipmentIndex: 90 },  { equipmentIndex: 91 },  { equipmentIndex: 92 },  { equipmentIndex: 93 },  { equipmentIndex: 94 },  { equipmentIndex: 95 },  { equipmentIndex: 96 },  { equipmentIndex: 97 },
+      { equipmentIndex: 90 },  { equipmentIndex: 91 },  { equipmentIndex: 92 },  { equipmentIndex: 93 },  { equipmentIndex: 94 },  { equipmentIndex: 95 },  { equipmentIndex: 96 },  { equipmentIndex: 97, quantity: 10 },
     ],
   },
   {
@@ -283,8 +291,8 @@ const DEMO_LISTS: DemoListDef[] = [
     department: 'Sound',
     notes: 'Main unit sound package',
     items: [
-      { equipmentIndex: 98 },  { equipmentIndex: 99 },  { equipmentIndex: 100 },  { equipmentIndex: 101 },  { equipmentIndex: 102 },  { equipmentIndex: 103 },
-      { equipmentIndex: 104 },  { equipmentIndex: 105 },  { equipmentIndex: 106 },  { equipmentIndex: 107 },  { equipmentIndex: 108 },  { equipmentIndex: 109 },  { equipmentIndex: 110 },
+      { equipmentIndex: 98 },  { equipmentIndex: 99 },  { equipmentIndex: 100 },  { equipmentIndex: 101 },  { equipmentIndex: 102 },  { equipmentIndex: 103 },  { equipmentIndex: 104, quantity: 5 },
+      { equipmentIndex: 105 },  { equipmentIndex: 106 },  { equipmentIndex: 107 },  { equipmentIndex: 108 },  { equipmentIndex: 109 },  { equipmentIndex: 110 },
     ],
   },
   {
@@ -409,14 +417,16 @@ export async function seedDemoEquipment(
       const listItemId = ids.equipmentListItem(
         listIdx * 200 + itemIdx + 1
       )
+      const listItemQty = listItemDef.quantity ?? 1
       await db.execute(
-        `INSERT INTO ${ITEMS_TABLE} (id, equipment_list_id, equipment_id, sort_order, checked_out, checked_back_in, notes, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO ${ITEMS_TABLE} (id, equipment_list_id, equipment_id, sort_order, quantity, checked_out, checked_back_in, notes, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           listItemId,
           listId,
           equipmentId,
           itemIdx,
+          listItemQty,
           listItemDef.checked_out ?? 0,
           listItemDef.checked_back_in ?? 0,
           null,

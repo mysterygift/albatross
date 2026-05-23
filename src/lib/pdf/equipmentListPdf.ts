@@ -51,15 +51,17 @@ export async function generateEquipmentListPdf(params: EquipmentListPdfParams): 
   const checkboxSize = 15
   const colOut = checkboxSize + 14
   const colIn = checkboxSize + 14
-  const colName = 110
-  const colCategory = 62
-  const colSerial = 62
-  const colUuid = 52
-  const colNotes = PAGE_WIDTH - MARGIN * 2 - colOut - colIn - colName - colCategory - colSerial - colUuid
+  const colQty = 22
+  const colName = 100
+  const colCategory = 58
+  const colSerial = 58
+  const colUuid = 48
+  const colNotes = PAGE_WIDTH - MARGIN * 2 - colOut - colIn - colQty - colName - colCategory - colSerial - colUuid
 
   const columns = [
     { label: 'OUT', width: colOut },
     { label: 'IN', width: colIn },
+    { label: 'Qty', width: colQty },
     { label: 'Name', width: colName },
     { label: 'Category', width: colCategory },
     { label: 'Serial', width: colSerial },
@@ -187,6 +189,8 @@ export async function generateEquipmentListPdf(params: EquipmentListPdfParams): 
     x += colOut
     drawCheckbox(x, y)
     x += colIn
+    page.drawText(String(item.quantity), { x, y, size: FONT_TABLE, font })
+    x += colQty
     page.drawText(name, { x, y, size: FONT_TABLE, font })
     x += colName
     page.drawText(category, { x, y, size: FONT_TABLE, font })

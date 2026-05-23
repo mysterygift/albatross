@@ -21,11 +21,14 @@ function rowToList(r: Record<string, unknown>): EquipmentList {
 }
 
 function rowToItem(r: Record<string, unknown>): EquipmentListItem {
+  const q = r.quantity
+  const quantity = typeof q === 'number' && Number.isInteger(q) && q >= 1 ? q : 1
   return {
     id: r.id as string,
     equipment_list_id: r.equipment_list_id as string,
     equipment_id: r.equipment_id as string,
     sort_order: (r.sort_order as number) ?? 0,
+    quantity,
     checked_out: coerceBoolean(r.checked_out, false) ? 1 : 0,
     checked_back_in: coerceBoolean(r.checked_back_in, false) ? 1 : 0,
     notes: (r.notes as string | null) ?? null,
@@ -138,16 +141,19 @@ export async function addEquipmentItemToList(data: {
   equipment_list_id: string
   equipment_id: string
   sort_order?: number
+  quantity?: number
   notes?: string | null
 }): Promise<EquipmentListItem> {
   const db = await getDb()
   const id = uuid()
   const ts = now()
   const sortOrder = data.sort_order ?? 0
+  const quantity =
+    data.quantity != null && Number.isInteger(data.quantity) && data.quantity >= 1 ? data.quantity : 1
   await db.execute(
-    `INSERT INTO ${ITEMS_TABLE} (id, equipment_list_id, equipment_id, sort_order, checked_out, checked_back_in, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, FALSE, FALSE, $5, $6, $7)`,
-    [id, data.equipment_list_id, data.equipment_id, sortOrder, data.notes ?? null, ts, ts]
+    `INSERT INTO ${ITEMS_TABLE} (id, equipment_list_id, equipment_id, sort_order, quantity, checked_out, checked_back_in, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, FALSE, FALSE, $6, $7, $8)`,
+    [id, data.equipment_list_id, data.equipment_id, sortOrder, quantity, data.notes ?? null, ts, ts]
   )
   await outboxPush(ITEMS_TABLE, id, 'create', JSON.stringify({ ...data, id }))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${ITEMS_TABLE} WHERE id = $1`, [id])
@@ -156,18 +162,21 @@ export async function addEquipmentItemToList(data: {
 
 export async function updateEquipmentListItem(
   itemId: string,
-  data: Partial<Pick<EquipmentListItem, 'sort_order' | 'checked_out' | 'checked_back_in' | 'notes'>>
+  data: Partial<Pick<EquipmentListItem, 'sort_order' | 'quantity' | 'checked_out' | 'checked_back_in' | 'notes'>>
 ): Promise<EquipmentListItem> {
   const db = await getDb()
   const ts = now()
   const cols: string[] = []
   const vals: unknown[] = []
   let i = 1
-  for (const k of ['sort_order', 'checked_out', 'checked_back_in', 'notes'] as const) {
+  for (const k of ['sort_order', 'quantity', 'checked_out', 'checked_back_in', 'notes'] as const) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
       if (k === 'checked_out' || k === 'checked_back_in') {
         vals.push(coerceBoolean(data[k], false))
+      } else if (k === 'quantity') {
+        const q = data.quantity
+        vals.push(typeof q === 'number' && Number.isInteger(q) && q >= 1 ? q : 1)
       } else {
         vals.push(data[k])
       }

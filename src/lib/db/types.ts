@@ -688,6 +688,8 @@ export type EquipmentListItem = {
   equipment_list_id: string
   equipment_id: string
   sort_order: number
+  /** How many units of this registry item to include on the list. Default 1. */
+  quantity: number
   /** 1 = checked out, 0 = not. Operational checklist state only. */
   checked_out: number
   /** 1 = checked back in, 0 = not. Operational checklist state only. */
