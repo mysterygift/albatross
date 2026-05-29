@@ -12,7 +12,7 @@ export type AuditLogEvent = {
   userAgent?: string | null
 }
 
-const SENSITIVE_KEY_PATTERN = /(password|hash|token|secret)/i
+const SENSITIVE_KEY_PATTERN = /(password|hash|token|secret|recovery)/i
 
 function sanitize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((item) => sanitize(item))

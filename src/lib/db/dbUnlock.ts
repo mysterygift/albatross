@@ -1,7 +1,7 @@
 import { closeDb, isDbUnlocked, openDbWithFileKey, openPlainDbIfExists } from '@/lib/db/client'
 import {
   deriveSqlCipherPassphraseFromPassword,
-  generateInstanceKdfSaltHex,
+  isLegacyPasswordDerivedMode,
   isLocalDbEncryptionEnabled,
   migratePlainDbToSqlcipher,
   probeSqlCipherPassphrase,
@@ -11,10 +11,26 @@ import {
   readDbEncryptionMeta,
   removeDbEncryptionMeta,
   restoreSqliteFromPreSqlcipherBackup,
+  usesInstanceKeyMode,
   writeDbEncryptionMeta,
+  type DbEncryptionMetaV2,
 } from '@/lib/security/dbFileEncryption'
+import {
+  findWrapperForUsername,
+  generateInstanceKeyHex,
+  isInstanceKeyWrapperActive,
+  readInstanceKeyWrappersMeta,
+  unwrapInstanceKeyForUser,
+} from '@/lib/security/instanceKey'
 import { setSetting } from '@/lib/db/repositories/settings'
 import { DB_ENCRYPTION_SETTINGS_KEY } from '@/lib/security/dbFileEncryption'
+
+export type UnlockCredentials = {
+  username: string
+  password: string
+}
+
+const UNLOCK_FAILED_MESSAGE = 'Unable to unlock local database'
 
 /**
  * Restore plain DB from `albatross.db.pre-sqlcipher-backup` and clear stale encryption meta.
@@ -29,52 +45,97 @@ export async function recoverFromPreSqlcipherBackupIfAvailable(): Promise<boolea
   return true
 }
 
+async function openWithLegacyPasswordDerivedKey(
+  credentials: UnlockCredentials,
+  kdfSalt: string,
+  allowBackupRestore: boolean
+): Promise<void> {
+  const passphrase = await deriveSqlCipherPassphraseFromPassword(
+    credentials.password,
+    kdfSalt
+  )
+  if (allowBackupRestore) {
+    const keyOk = await probeSqlCipherPassphrase(passphrase)
+    if (!keyOk) {
+      const recovered = await recoverFromPreSqlcipherBackupIfAvailable()
+      if (recovered) {
+        return unlockLocalDatabaseWithPassword(credentials, { allowBackupRestore: false })
+      }
+    }
+  }
+  try {
+    await closeDb()
+    await openDbWithFileKey(passphrase)
+  } catch (unlockErr) {
+    if (allowBackupRestore && isKeyVerificationError(unlockErr)) {
+      const recovered = await recoverFromPreSqlcipherBackupIfAvailable()
+      if (recovered) {
+        return unlockLocalDatabaseWithPassword(credentials, { allowBackupRestore: false })
+      }
+    }
+    throw unlockErr
+  }
+}
+
+async function openWithInstanceKeyWrapper(
+  credentials: UnlockCredentials
+): Promise<void> {
+  const wrappersMeta = await readInstanceKeyWrappersMeta()
+  if (!wrappersMeta) {
+    throw new Error(UNLOCK_FAILED_MESSAGE)
+  }
+  const wrapper = findWrapperForUsername(wrappersMeta, credentials.username)
+  if (!wrapper || !isInstanceKeyWrapperActive(wrapper)) {
+    throw new Error(UNLOCK_FAILED_MESSAGE)
+  }
+  let instanceKeyHex: string
+  try {
+    instanceKeyHex = await unwrapInstanceKeyForUser(credentials.password, wrapper)
+  } catch {
+    throw new Error(UNLOCK_FAILED_MESSAGE)
+  }
+  await closeDb()
+  await openDbWithFileKey(instanceKeyHex)
+}
+
+async function createFreshInstanceKeyMeta(): Promise<DbEncryptionMetaV2> {
+  return {
+    version: 2,
+    key_mode: 'instance_key',
+  }
+}
+
 /**
  * Unlock the local DB for an authenticated session: open with SQLCipher key and migrate plain DB if needed.
  */
 export async function unlockLocalDatabaseWithPassword(
-  password: string,
+  credentials: UnlockCredentials,
   options?: { allowBackupRestore?: boolean }
 ): Promise<void> {
   const allowBackupRestore = options?.allowBackupRestore !== false
   const needsMigration = await needsPlainToEncryptedMigration()
 
   if (needsMigration) {
-    const instanceKdfSalt = await generateInstanceKdfSaltHex()
-    const passphrase = await deriveSqlCipherPassphraseFromPassword(password, instanceKdfSalt)
-    await migratePlainDbToSqlcipher(passphrase)
-    await writeDbEncryptionMeta({ version: 1, kdf_salt: instanceKdfSalt })
+    const instanceKeyHex = generateInstanceKeyHex()
+    await migratePlainDbToSqlcipher(instanceKeyHex)
+    await writeDbEncryptionMeta(await createFreshInstanceKeyMeta())
     await closeDb()
-    await openDbWithFileKey(passphrase)
-    await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '1')
+    await openDbWithFileKey(instanceKeyHex)
+    await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '2')
     return
   }
 
   const meta = await readDbEncryptionMeta()
   if (meta) {
-    const passphrase = await deriveSqlCipherPassphraseFromPassword(password, meta.kdf_salt)
-    if (allowBackupRestore) {
-      const keyOk = await probeSqlCipherPassphrase(passphrase)
-      if (!keyOk) {
-        const recovered = await recoverFromPreSqlcipherBackupIfAvailable()
-        if (recovered) {
-          return unlockLocalDatabaseWithPassword(password, { allowBackupRestore: false })
-        }
-      }
+    if (usesInstanceKeyMode(meta)) {
+      await openWithInstanceKeyWrapper(credentials)
+      return
     }
-    try {
-      await closeDb()
-      await openDbWithFileKey(passphrase)
-    } catch (unlockErr) {
-      if (allowBackupRestore && isKeyVerificationError(unlockErr)) {
-        const recovered = await recoverFromPreSqlcipherBackupIfAvailable()
-        if (recovered) {
-          return unlockLocalDatabaseWithPassword(password, { allowBackupRestore: false })
-        }
-      }
-      throw unlockErr
+    if (isLegacyPasswordDerivedMode(meta)) {
+      await openWithLegacyPasswordDerivedKey(credentials, meta.kdf_salt, allowBackupRestore)
+      return
     }
-    return
+    throw new Error('Invalid database encryption metadata')
   }
 
   if (!isDbUnlocked()) {
@@ -82,41 +143,54 @@ export async function unlockLocalDatabaseWithPassword(
   }
 }
 
-export async function prepareEncryptedDatabaseForFirstAdmin(password: string): Promise<void> {
+export type PrepareEncryptedDatabaseResult = {
+  instanceKeyHex: string
+}
+
+/**
+ * Prepare SQLCipher for initial admin setup using a random instance key (not password-derived).
+ */
+export async function prepareEncryptedDatabaseForFirstAdmin(
+  _password: string
+): Promise<PrepareEncryptedDatabaseResult> {
   const meta = await readDbEncryptionMeta()
   const needsMigration = await needsPlainToEncryptedMigration()
+  const instanceKeyHex = generateInstanceKeyHex()
 
-  // Close any plain DB opened at startup (e.g. settings defaults) before SQLCipher open/migrate.
   if (isDbUnlocked()) {
     await closeDb()
   }
 
   if (meta) {
-    const passphrase = await deriveSqlCipherPassphraseFromPassword(password, meta.kdf_salt)
-    if (needsMigration) {
-      await migratePlainDbToSqlcipher(passphrase)
-      await openDbWithFileKey(passphrase)
-      await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '1')
-      return
+    if (usesInstanceKeyMode(meta)) {
+      if (needsMigration) {
+        await migratePlainDbToSqlcipher(instanceKeyHex)
+        await openDbWithFileKey(instanceKeyHex)
+        await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '2')
+        return { instanceKeyHex }
+      }
+      throw new Error('Database encryption metadata is inconsistent')
     }
-    await openDbWithFileKey(passphrase)
-    return
+    if (isLegacyPasswordDerivedMode(meta)) {
+      throw new Error(
+        'Legacy password-derived encryption must be migrated on sign-in before initial admin setup'
+      )
+    }
+    throw new Error('Invalid database encryption metadata')
   }
-
-  const instanceKdfSalt = await generateInstanceKdfSaltHex()
-  const passphrase = await deriveSqlCipherPassphraseFromPassword(password, instanceKdfSalt)
 
   if (needsMigration) {
-    await migratePlainDbToSqlcipher(passphrase)
-    await writeDbEncryptionMeta({ version: 1, kdf_salt: instanceKdfSalt })
-    await openDbWithFileKey(passphrase)
-    await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '1')
-    return
+    await migratePlainDbToSqlcipher(instanceKeyHex)
+    await writeDbEncryptionMeta(await createFreshInstanceKeyMeta())
+    await openDbWithFileKey(instanceKeyHex)
+    await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '2')
+    return { instanceKeyHex }
   }
 
-  await writeDbEncryptionMeta({ version: 1, kdf_salt: instanceKdfSalt })
-  await openDbWithFileKey(passphrase)
-  await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '1')
+  await writeDbEncryptionMeta(await createFreshInstanceKeyMeta())
+  await openDbWithFileKey(instanceKeyHex)
+  await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '2')
+  return { instanceKeyHex }
 }
 
 export async function isLocalDatabaseLocked(): Promise<boolean> {

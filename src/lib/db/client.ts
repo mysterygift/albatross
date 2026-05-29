@@ -33,6 +33,8 @@ let db: SQLiteDatabaseAdapter | null = null
 let fkChecked = false
 let testDbOverride: DatabaseAdapter | null = null
 let dbUnlocked = false
+/** SQLCipher key hex in memory after unlock (instance-key mode admin wrap flows). */
+let activeSqlCipherKeyHex: string | null = null
 
 export class DatabaseLockedError extends Error {
   constructor(message = 'Local database is locked. Sign in to unlock.') {
@@ -48,6 +50,17 @@ export class DatabaseLockedError extends Error {
 export function setDbAdapterForTests(adapter: DatabaseAdapter | null): void {
   testDbOverride = adapter
   if (adapter) dbUnlocked = true
+}
+
+export function setActiveSqlCipherKeyHexForTests(hex: string | null): void {
+  activeSqlCipherKeyHex = hex
+}
+
+export function getActiveSqlCipherKeyHex(): string {
+  if (!activeSqlCipherKeyHex) {
+    throw new Error('Local database is locked')
+  }
+  return activeSqlCipherKeyHex
 }
 
 export function isDbUnlocked(): boolean {
@@ -68,6 +81,7 @@ export async function openDbWithFileKey(passphrase: string): Promise<DatabaseAda
     db = null
   }
   db = await SQLiteDatabaseAdapter.load(DB_URL, { sqlCipherPassphrase: passphrase })
+  activeSqlCipherKeyHex = passphrase
   dbUnlocked = true
   fkChecked = false
   return db
@@ -102,10 +116,11 @@ export async function closeDb(): Promise<void> {
   }
   dbUnlocked = false
   fkChecked = false
+  activeSqlCipherKeyHex = null
 }
 
 export function clearDbFileKey(): void {
-  // No-op: passphrase is held on SQLiteDatabaseAdapter after openDbWithFileKey.
+  activeSqlCipherKeyHex = null
 }
 
 export async function ensureForeignKeysChecked(adapter: DatabaseAdapter): Promise<void> {

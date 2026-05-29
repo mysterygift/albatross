@@ -6,8 +6,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getDb } from '@/lib/db/client'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import type { ProjectAccessLevel } from '@/lib/access/projectAccess'
+import { readDbEncryptionMeta, usesInstanceKeyMode } from '@/lib/security/dbFileEncryption'
 import {
   createUserAsAdmin,
+  deleteUserAsAdmin,
   disableUserAsAdmin,
   enableUserAsAdmin,
   grantUserProjectAccessAsAdmin,
@@ -64,6 +66,7 @@ export function UserManagementPage() {
   const [roleOpenFor, setRoleOpenFor] = useState<ManagedUser | null>(null)
   const [visibilityForUser, setVisibilityForUser] = useState<ManagedUser | null>(null)
   const [disableConfirmUser, setDisableConfirmUser] = useState<ManagedUser | null>(null)
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState<ManagedUser | null>(null)
 
   const usersQuery = useQuery({
     queryKey: ['admin-user-management-users', currentUser?.id],
@@ -73,6 +76,13 @@ export function UserManagementPage() {
       return listUsersAsAdmin(db, currentUser!)
     },
   })
+
+  const encryptionMetaQuery = useQuery({
+    queryKey: ['admin-user-management-encryption-meta'],
+    queryFn: () => readDbEncryptionMeta(),
+  })
+  const showEncryptionResetCopy =
+    encryptionMetaQuery.data != null && usesInstanceKeyMode(encryptionMetaQuery.data)
 
   const createMutation = useMutation({
     mutationFn: async (input: { username: string; password: string; role: InstanceRole }) => {
@@ -106,14 +116,30 @@ export function UserManagementPage() {
     },
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: async (targetUserId: string) => {
+      const db = await getDb()
+      return deleteUserAsAdmin({ db, actor: currentUser!, targetUserId })
+    },
+    onSuccess: async () => {
+      setDeleteConfirmUser(null)
+      await queryClient.invalidateQueries({ queryKey: ['admin-user-management-users'] })
+    },
+  })
+
   const resetPasswordMutation = useMutation({
-    mutationFn: async (input: { targetUserId: string; newPassword: string }) => {
+    mutationFn: async (input: {
+      targetUserId: string
+      newPassword: string
+      targetOldPassword?: string
+    }) => {
       const db = await getDb()
       return resetUserPasswordAsAdmin({
         db,
         actor: currentUser!,
         targetUserId: input.targetUserId,
         newPassword: input.newPassword,
+        targetOldPassword: input.targetOldPassword,
       })
     },
     onSuccess: async () => {
@@ -305,17 +331,33 @@ export function UserManagementPage() {
                               Reset password
                             </Button>
                             {isDisabled ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  enableMutation.mutate(user.id)
-                                }}
-                                aria-label={`Enable ${user.username}`}
-                              >
-                                Enable
-                              </Button>
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    enableMutation.mutate(user.id)
+                                  }}
+                                  aria-label={`Enable ${user.username}`}
+                                >
+                                  Enable
+                                </Button>
+                                {user.id !== currentUser?.id && (
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                      deleteMutation.reset()
+                                      setDeleteConfirmUser(user)
+                                    }}
+                                    aria-label={`Delete ${user.username}`}
+                                  >
+                                    Delete
+                                  </Button>
+                                )}
+                              </>
                             ) : (
                               <Button
                                 type="button"
@@ -341,6 +383,7 @@ export function UserManagementPage() {
           )}
           {(disableMutation.error instanceof Error ||
             enableMutation.error instanceof Error ||
+            deleteMutation.error instanceof Error ||
             roleMutation.error instanceof Error ||
             resetPasswordMutation.error instanceof Error ||
             createMutation.error instanceof Error ||
@@ -351,6 +394,7 @@ export function UserManagementPage() {
               {(
                 disableMutation.error ??
                 enableMutation.error ??
+                deleteMutation.error ??
                 roleMutation.error ??
                 resetPasswordMutation.error ??
                 createMutation.error ??
@@ -361,6 +405,7 @@ export function UserManagementPage() {
                 ? (
                     disableMutation.error ??
                     enableMutation.error ??
+                    deleteMutation.error ??
                     roleMutation.error ??
                     resetPasswordMutation.error ??
                     createMutation.error ??
@@ -373,6 +418,28 @@ export function UserManagementPage() {
           )}
         </CardContent>
       </Card>
+
+      <DeleteUserConfirmDialog
+        user={deleteConfirmUser}
+        open={deleteConfirmUser != null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deleteMutation.isPending) {
+            deleteMutation.reset()
+            setDeleteConfirmUser(null)
+          }
+        }}
+        onCancel={() => {
+          if (!deleteMutation.isPending) {
+            deleteMutation.reset()
+            setDeleteConfirmUser(null)
+          }
+        }}
+        onConfirm={() => {
+          if (deleteConfirmUser) deleteMutation.mutate(deleteConfirmUser.id)
+        }}
+        isSubmitting={deleteMutation.isPending}
+        error={deleteMutation.error instanceof Error ? deleteMutation.error.message : null}
+      />
 
       <DisableUserConfirmDialog
         user={disableConfirmUser}
@@ -405,12 +472,14 @@ export function UserManagementPage() {
 
       <ResetPasswordDialog
         user={resetOpenFor}
+        showEncryptionResetCopy={showEncryptionResetCopy}
         onOpenChange={(open) => !open && setResetOpenFor(null)}
-        onSubmit={(newPassword) => {
+        onSubmit={(payload) => {
           if (!resetOpenFor) return
           resetPasswordMutation.mutate({
             targetUserId: resetOpenFor.id,
-            newPassword,
+            newPassword: payload.newPassword,
+            targetOldPassword: payload.targetOldPassword,
           })
         }}
         isSubmitting={resetPasswordMutation.isPending}
@@ -718,6 +787,51 @@ function UserProjectVisibilityDialog({
   )
 }
 
+function DeleteUserConfirmDialog({
+  user,
+  open,
+  onOpenChange,
+  onCancel,
+  onConfirm,
+  isSubmitting,
+  error,
+}: {
+  user: ManagedUser | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onCancel: () => void
+  onConfirm: () => void
+  isSubmitting: boolean
+  error: string | null
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md" showCloseButton={!isSubmitting}>
+        <DialogHeader>
+          <DialogTitle>Delete user permanently?</DialogTitle>
+          <DialogDescription>
+            {user ? (
+              <>
+                Delete <strong>{user.username}</strong>? This removes their account and instance key access. This
+                cannot be undone.
+              </>
+            ) : null}
+          </DialogDescription>
+        </DialogHeader>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" onClick={onConfirm} disabled={isSubmitting}>
+            {isSubmitting ? 'Deleting…' : 'Delete user'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function DisableUserConfirmDialog({
   user,
   open,
@@ -847,33 +961,70 @@ function CreateUserDialog({
 
 function ResetPasswordDialog({
   user,
+  showEncryptionResetCopy,
   onOpenChange,
   onSubmit,
   isSubmitting,
 }: {
   user: ManagedUser | null
+  showEncryptionResetCopy: boolean
   onOpenChange: (open: boolean) => void
-  onSubmit: (newPassword: string) => void
+  onSubmit: (payload: { newPassword: string; targetOldPassword?: string }) => void
   isSubmitting: boolean
 }) {
   const [password, setPassword] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
   const open = user != null
   return (
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
         onOpenChange(nextOpen)
-        if (!nextOpen) setPassword('')
+        if (!nextOpen) {
+          setPassword('')
+          setCurrentPassword('')
+        }
       }}
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Reset password</DialogTitle>
-          <DialogDescription>Set a new temporary password and revoke active sessions.</DialogDescription>
+          <DialogDescription>
+            {showEncryptionResetCopy
+              ? 'Set a new temporary password, re-wrap database access keys, and revoke active sessions.'
+              : 'Set a new temporary password and revoke active sessions.'}
+          </DialogDescription>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
           Set a temporary password for <strong>{user?.username}</strong>. Existing sessions are revoked.
         </p>
+        {showEncryptionResetCopy && (
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>
+              While you are signed in as admin, the encrypted database stays unlocked and reset can re-wrap this
+              user&apos;s access key automatically.
+            </li>
+            <li>
+              If you know the user&apos;s current password, enter it below to re-wrap using their existing credentials.
+            </li>
+            <li>
+              If neither applies, reset is blocked. Use <strong>Forgot password?</strong> on the sign-in screen for
+              instance recovery with your recovery key.
+            </li>
+          </ul>
+        )}
+        {showEncryptionResetCopy && (
+          <div className="space-y-1">
+            <Label htmlFor="reset-current-password-input">Current password (optional)</Label>
+            <Input
+              id="reset-current-password-input"
+              type="password"
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+            />
+          </div>
+        )}
         <div className="space-y-1">
           <Label htmlFor="reset-password-input">New temporary password</Label>
           <Input
@@ -888,7 +1039,15 @@ function ResetPasswordDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button disabled={password.length < 8 || isSubmitting} onClick={() => onSubmit(password)}>
+          <Button
+            disabled={password.length < 8 || isSubmitting}
+            onClick={() =>
+              onSubmit({
+                newPassword: password,
+                targetOldPassword: currentPassword.trim() ? currentPassword : undefined,
+              })
+            }
+          >
             {isSubmitting ? 'Resetting…' : 'Reset password'}
           </Button>
         </DialogFooter>

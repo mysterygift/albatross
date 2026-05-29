@@ -191,6 +191,28 @@ describe('postgres admin user-management service (UAM3)', () => {
     })
   })
 
+  it('users table includes instance key wrapper mirror columns (ENC6)', async () => {
+    await withHarness('pg_enc6_wrapper_columns', async ({ db }) => {
+      const rows = await db.select<Array<{ column_name: string }>>(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = 'users'
+           AND column_name LIKE 'instance_key%'
+         ORDER BY column_name`,
+        []
+      )
+      const names = rows.map((r) => r.column_name)
+      expect(names).toEqual([
+        'instance_key_wrap_created_at',
+        'instance_key_wrap_rotated_at',
+        'instance_key_wrap_salt',
+        'instance_key_wrap_version',
+        'instance_key_wrapped',
+      ])
+    })
+  })
+
   it('rejects password reset for disabled target users', async () => {
     await withHarness('pg_uam6_reset_disabled_target', async ({ db }) => {
       const admin = await seedUser(db, 'reset-disabled-admin', 'admin', 'adminpass123')
@@ -380,8 +402,13 @@ async function createHarness(prefix: string): Promise<Harness> {
     join(process.cwd(), 'postgres', 'migrations', '0005_uam6_audit_logs.sql'),
     'utf8'
   )
+  const enc6WrapperSql = readFileSync(
+    join(process.cwd(), 'postgres', 'migrations', '0010_user_instance_key_wrapper.sql'),
+    'utf8'
+  )
   await pool.query(uam1Sql)
   await pool.query(uam6AuditSql)
+  await pool.query(enc6WrapperSql)
   return {
     db: new PostgresDatabaseAdapter(pool, schemaName),
     close: async () => {

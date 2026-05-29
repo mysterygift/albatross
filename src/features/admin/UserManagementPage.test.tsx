@@ -3,10 +3,11 @@ import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { AdminOnlyUserManagementRoute, UserManagementPage } from '@/features/admin/UserManagementPage'
+import { readDbEncryptionMeta, usesInstanceKeyMode } from '@/lib/security/dbFileEncryption'
 
 const authSessionState = vi.hoisted(() => ({
   isLoading: false,
@@ -38,6 +39,11 @@ vi.mock('@/lib/db/client', () => ({
   getDb: vi.fn(async () => ({ dialect: 'postgres' })),
 }))
 
+vi.mock('@/lib/security/dbFileEncryption', () => ({
+  readDbEncryptionMeta: vi.fn(async () => null),
+  usesInstanceKeyMode: vi.fn(() => false),
+}))
+
 vi.mock('@/lib/auth/adminUserManagementService', () => service)
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -53,6 +59,7 @@ function renderWithProviders(ui: React.ReactElement) {
 
 describe('UserManagementPage', () => {
   beforeEach(() => {
+    cleanup()
     vi.clearAllMocks()
     authSessionState.isLoading = false
     authSessionState.authSupported = true
@@ -153,7 +160,14 @@ describe('UserManagementPage', () => {
     const resetDialog = await screen.findByRole('dialog')
     await user.type(within(resetDialog).getByLabelText('New temporary password'), 'newpass123')
     await user.click(within(resetDialog).getByRole('button', { name: 'Reset password' }))
-    await waitFor(() => expect(service.resetUserPasswordAsAdmin).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(service.resetUserPasswordAsAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({
+          targetUserId: 'u-1',
+          newPassword: 'newpass123',
+        })
+      )
+    )
 
     await user.click(screen.getByRole('button', { name: 'Change role alice' }))
     const roleDialog = await screen.findByRole('dialog')
@@ -193,5 +207,33 @@ describe('UserManagementPage', () => {
     service.listUsersAsAdmin.mockRejectedValueOnce(new Error('Forbidden'))
     renderWithProviders(<UserManagementPage />)
     expect(await screen.findByText('Forbidden')).toBeTruthy()
+  })
+
+  it('shows encryption-aware reset copy and optional current password on encrypted installs', async () => {
+    vi.mocked(readDbEncryptionMeta).mockResolvedValue({
+      version: 2,
+      key_mode: 'instance_key',
+    })
+    vi.mocked(usesInstanceKeyMode).mockReturnValue(true)
+    const user = userEvent.setup()
+    renderWithProviders(<UserManagementPage />)
+    await screen.findByRole('button', { name: 'Reset password alice' })
+    await user.click(screen.getByRole('button', { name: 'Reset password alice' }))
+    const resetDialog = await screen.findByRole('dialog')
+    expect(
+      within(resetDialog).getByText(/re-wrap database access keys/i)
+    ).toBeTruthy()
+    expect(within(resetDialog).getByLabelText('Current password (optional)')).toBeTruthy()
+    await user.type(within(resetDialog).getByLabelText('Current password (optional)'), 'oldpass123')
+    await user.type(within(resetDialog).getByLabelText('New temporary password'), 'newpass123')
+    await user.click(within(resetDialog).getByRole('button', { name: 'Reset password' }))
+    await waitFor(() =>
+      expect(service.resetUserPasswordAsAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({
+          targetOldPassword: 'oldpass123',
+          newPassword: 'newpass123',
+        })
+      )
+    )
   })
 })

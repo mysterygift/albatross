@@ -20,6 +20,26 @@ Instance admins can manage users at the server/database level.
 - role changes revoke active sessions for the target user
 - disabled users cannot authenticate with existing session tokens
 - admin password reset is blocked for disabled target users
+- on encrypted local installs (instance key mode), admin password reset also re-wraps the target user's instance-key wrapper — it is not a hash-only change
+- admin password reset does **not** rekey SQLCipher or rotate the instance key
+- reset is blocked when no valid wrapper path exists (see below)
+
+### Admin password reset paths (ENC7)
+
+On instance-key encrypted installs, `resetUserPasswordAsAdmin` must establish a valid new wrapper before updating the password hash:
+
+| Path | When | Behavior |
+|------|------|----------|
+| **A — current password** | Admin supplies the target user's current password | Unwrap existing wrapper, re-wrap with new password (`rewrapInstanceKeyForUser`) |
+| **B1 — admin unlock** | Signed-in admin with database unlocked (default in User Management) | Use in-memory instance key, create replacement wrapper (`replaceUserInstanceKeyWrapper`) |
+| **B2 — recovery escrow** | Recovery key verifies (service/tests; not exposed in User Management UI) | Unwrap instance key from recovery sidecar, create replacement wrapper |
+| **C — forbidden** | None of the above | Reset rejected before hash or sidecar mutation |
+
+Postgres / non-encrypted installs skip wrapper handling (hash + session revoke only).
+
+Audit metadata for password reset includes `wrapperResetPath` (`old_password`, `admin_unlock`, or `recovery_escrow`) when wrapping applies. Implementation: [`adminPasswordResetPaths.ts`](../src/lib/security/adminPasswordResetPaths.ts), [`adminUserManagementService.ts`](../src/lib/auth/adminUserManagementService.ts).
+
+For full instance recovery (including admin self-reset with DEK re-encryption when v3 escrow exists), use **Forgot password?** on the sign-in screen — not User Management.
 
 ## Audit logging
 

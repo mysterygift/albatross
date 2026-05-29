@@ -50,6 +50,28 @@ export function getDataEncryptionKey(): Uint8Array {
   return key
 }
 
+/** Export active DEK as 64-char hex for recovery-sidecar wrapping only. */
+export function exportDataEncryptionKeyHex(): string {
+  return dekBytesToHex(getDataEncryptionKey())
+}
+
+export function dekBytesToHex(dek: Uint8Array): string {
+  return bytesToHex(dek)
+}
+
+/** Parse DEK hex into bytes (recovery / re-encryption flows). */
+export function dataEncryptionKeyFromHex(dekHex: string): Uint8Array {
+  if (!/^[0-9a-fA-F]{64}$/.test(dekHex)) {
+    throw new Error('Invalid DEK material')
+  }
+  return hexToBytes(dekHex)
+}
+
+/** Import DEK hex into memory (recovery / re-encryption flows). */
+export function importDataEncryptionKeyFromHex(dekHex: string): void {
+  activeDek = dataEncryptionKeyFromHex(dekHex)
+}
+
 /** Test-only: bypass login-derived DEK for repository tests. */
 export function setTestDataEncryptionKeyForTests(key: Uint8Array | null): void {
   testDekOverride = key

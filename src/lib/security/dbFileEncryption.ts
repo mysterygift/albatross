@@ -7,9 +7,35 @@ export const DB_FILE_NAME = 'albatross.db'
 export const DB_META_FILENAME = 'albatross.db.meta.json'
 export const DB_ENCRYPTION_SETTINGS_KEY = 'db_encryption_version'
 
-export type DbEncryptionMeta = {
+export type DbEncryptionMetaV1 = {
   version: 1
   kdf_salt: string
+}
+
+export type DbEncryptionMetaV2 = {
+  version: 2
+  key_mode: 'instance_key'
+  legacy_kdf_salt?: string
+  migrated_at?: string
+}
+
+export type DbEncryptionMeta = DbEncryptionMetaV1 | DbEncryptionMetaV2
+
+export const FILE_KEY_ARGON2_PARAMS = {
+  iterations: 2,
+  parallelism: 1,
+  memorySize: 19_456,
+  hashLength: 32,
+} as const
+
+export function isLegacyPasswordDerivedMode(
+  meta: DbEncryptionMeta
+): meta is DbEncryptionMetaV1 {
+  return meta.version === 1
+}
+
+export function usesInstanceKeyMode(meta: DbEncryptionMeta): meta is DbEncryptionMetaV2 {
+  return meta.version === 2 && meta.key_mode === 'instance_key'
 }
 
 export type LocalDbStatus = {
@@ -17,13 +43,6 @@ export type LocalDbStatus = {
   encryptionMetaExists: boolean
   isPlainSqlite: boolean
 }
-
-const FILE_KEY_ARGON2 = {
-  iterations: 2,
-  parallelism: 1,
-  memorySize: 19_456,
-  hashLength: 32,
-} as const
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
@@ -48,17 +67,39 @@ async function getLegacyDbMetaPath(): Promise<string> {
   return join(dir, DB_META_FILENAME)
 }
 
+function parseDbEncryptionMeta(raw: unknown): DbEncryptionMeta {
+  const parsed = raw as DbEncryptionMeta
+  if (parsed?.version === 1) {
+    if (typeof parsed.kdf_salt !== 'string' || !parsed.kdf_salt.trim()) {
+      throw new Error('Invalid database encryption metadata')
+    }
+    return parsed
+  }
+  if (parsed?.version === 2) {
+    if (parsed.key_mode !== 'instance_key') {
+      throw new Error('Invalid database encryption metadata')
+    }
+    if (
+      parsed.legacy_kdf_salt !== undefined &&
+      (typeof parsed.legacy_kdf_salt !== 'string' || !parsed.legacy_kdf_salt.trim())
+    ) {
+      throw new Error('Invalid database encryption metadata')
+    }
+    if (parsed.migrated_at !== undefined && typeof parsed.migrated_at !== 'string') {
+      throw new Error('Invalid database encryption metadata')
+    }
+    return parsed
+  }
+  throw new Error('Invalid database encryption metadata')
+}
+
 export async function readDbEncryptionMeta(): Promise<DbEncryptionMeta | null> {
   const primary = await getDbMetaPath()
   const legacy = await getLegacyDbMetaPath()
   const path = (await exists(primary)) ? primary : (await exists(legacy)) ? legacy : null
   if (!path) return null
   const raw = await readTextFile(path)
-  const parsed = JSON.parse(raw) as DbEncryptionMeta
-  if (parsed?.version !== 1 || typeof parsed.kdf_salt !== 'string' || !parsed.kdf_salt.trim()) {
-    throw new Error('Invalid database encryption metadata')
-  }
-  return parsed
+  return parseDbEncryptionMeta(JSON.parse(raw))
 }
 
 export async function writeDbEncryptionMeta(meta: DbEncryptionMeta): Promise<void> {
@@ -87,7 +128,7 @@ export async function deriveSqlCipherPassphraseFromPassword(
   const raw = await argon2id({
     password,
     salt: hexToBytes(instanceKdfSaltHex),
-    ...FILE_KEY_ARGON2,
+    ...FILE_KEY_ARGON2_PARAMS,
     outputType: 'binary',
   })
   return bytesToHex(new Uint8Array(raw))
@@ -114,6 +155,16 @@ export async function migratePlainDbToSqlcipher(passphrase: string): Promise<voi
   await invoke('migrate_plain_db_to_sqlcipher', { passphrase })
 }
 
+export async function rekeySqlCipherDatabase(
+  currentPassphrase: string,
+  newPassphrase: string
+): Promise<void> {
+  await invoke('rekey_sqlcipher_database', {
+    currentPassphrase,
+    newPassphrase,
+  })
+}
+
 export type PreSqlcipherBackupStatus = {
   backupExists: boolean
   backupIsPlainSqlite: boolean
@@ -125,6 +176,23 @@ export async function getPreSqlcipherBackupStatus(): Promise<PreSqlcipherBackupS
 
 export async function restoreSqliteFromPreSqlcipherBackup(): Promise<void> {
   await invoke('restore_sqlite_from_pre_sqlcipher_backup')
+}
+
+export type InstanceKeyBackupStatus = {
+  backupExists: boolean
+  backupIsEncrypted: boolean
+}
+
+export async function getInstanceKeyBackupStatus(): Promise<InstanceKeyBackupStatus> {
+  return invoke<InstanceKeyBackupStatus>('get_instance_key_backup_status')
+}
+
+export async function backupEncryptedDbBeforeRekey(): Promise<void> {
+  await invoke('backup_encrypted_db_before_rekey')
+}
+
+export async function restoreSqliteFromInstanceKeyBackup(): Promise<void> {
+  await invoke('restore_sqlite_from_instance_key_backup')
 }
 
 export async function removeDbEncryptionMeta(): Promise<void> {

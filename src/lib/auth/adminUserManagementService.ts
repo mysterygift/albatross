@@ -1,5 +1,7 @@
 import type { ProjectAccessLevel } from '@/lib/access/projectAccess'
 import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
+import { getActiveSqlCipherKeyHex, isDbUnlocked } from '@/lib/db/client'
+import { clearUserInstanceKeyMirror } from '@/lib/db/repositories/userInstanceKeyWrapper'
 import {
   addUserToProject,
   listActiveProjectMembershipsForUser,
@@ -8,7 +10,22 @@ import {
   type ProjectMembership,
   type UserProjectVisibilityRow,
 } from '@/lib/db/repositories/projectMemberships'
+import {
+  resolveAdminPasswordResetWrapper,
+  restorePriorSidecarEntry,
+  type AdminPasswordResetWrapperPath,
+} from '@/lib/security/adminPasswordResetPaths'
 import { appendAuditLog } from '@/lib/security/auditLog'
+import { readDbEncryptionMeta, usesInstanceKeyMode } from '@/lib/security/dbFileEncryption'
+import {
+  clearUserInstanceKeyRevocation,
+  findWrapperForUserId,
+  readInstanceKeyWrappersMeta,
+  removeUserInstanceKeyWrapper,
+  revokeUserInstanceKeyWrapper,
+  upsertUserInstanceKeyWrapper,
+  wrapInstanceKeyForUser,
+} from '@/lib/security/instanceKey'
 import {
   DEFAULT_ADMIN_MUTATION_RATE_LIMIT,
   enforceRateLimit,
@@ -97,6 +114,22 @@ async function countActiveAdmins(db: DatabaseAdapter): Promise<number> {
   return Number(rows[0]?.count ?? 0)
 }
 
+async function isInstanceKeyWrappingRequired(): Promise<boolean> {
+  try {
+    const meta = await readDbEncryptionMeta()
+    return meta != null && usesInstanceKeyMode(meta)
+  } catch {
+    return false
+  }
+}
+
+async function assertUnlockedForInstanceKeyWrap(): Promise<string> {
+  if (!isDbUnlocked()) {
+    throw new Error('Local database must be unlocked to manage instance key access')
+  }
+  return getActiveSqlCipherKeyHex()
+}
+
 export async function listUsersAsAdmin(
   db: DatabaseAdapter,
   actor: AuthenticatedUser
@@ -129,14 +162,58 @@ export async function createUserAsAdmin(args: {
 
   const { hashPassword } = await getPasswordHashHelpers()
   const passwordHash = await hashPassword(args.password)
+  const wrappingRequired = await isInstanceKeyWrappingRequired()
+  let wrapperEntry: Awaited<ReturnType<typeof wrapInstanceKeyForUser>> | null = null
+  if (wrappingRequired) {
+    const instanceKeyHex = await assertUnlockedForInstanceKeyWrap()
+    wrapperEntry = await wrapInstanceKeyForUser(args.password, instanceKeyHex, {
+      userId: '',
+      username,
+    })
+  }
+
   const rows = await args.db.select<ManagedUser[]>(
-    `INSERT INTO users (username, password_hash, role)
-     VALUES ($1, $2, $3)
-     RETURNING id, username, role, created_at, updated_at, disabled_at`,
-    [username, passwordHash, args.role]
+    wrappingRequired && wrapperEntry
+      ? `INSERT INTO users (
+           username, password_hash, role,
+           instance_key_wrap_version, instance_key_wrap_salt, instance_key_wrapped,
+           instance_key_wrap_created_at, instance_key_wrap_rotated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, username, role, created_at, updated_at, disabled_at`
+      : `INSERT INTO users (username, password_hash, role)
+         VALUES ($1, $2, $3)
+         RETURNING id, username, role, created_at, updated_at, disabled_at`,
+    wrappingRequired && wrapperEntry
+      ? [
+          username,
+          passwordHash,
+          args.role,
+          wrapperEntry.version,
+          wrapperEntry.wrap_salt,
+          wrapperEntry.wrapped_instance_key,
+          wrapperEntry.created_at,
+          wrapperEntry.rotated_at,
+        ]
+      : [username, passwordHash, args.role]
   )
   const created = rows[0]
   if (!created) throw new Error('User create failed')
+
+  if (wrappingRequired && wrapperEntry) {
+    const sidecarEntry = {
+      ...wrapperEntry,
+      user_id: created.id,
+      username: created.username,
+    }
+    try {
+      await upsertUserInstanceKeyWrapper(sidecarEntry)
+    } catch (sidecarErr) {
+      await args.db.execute(`DELETE FROM users WHERE id = $1`, [created.id])
+      throw sidecarErr
+    }
+  }
+
   await appendAuditLog(args.db, {
     actorUserId: args.actor.id,
     targetUserId: created.id,
@@ -186,11 +263,73 @@ export async function disableUserAsAdmin(args: {
     },
     { sql: 'COMMIT', bindValues: [] },
   ])
+  if (await isInstanceKeyWrappingRequired()) {
+    await revokeUserInstanceKeyWrapper(args.targetUserId, ts)
+    await clearUserInstanceKeyMirror(args.db, args.targetUserId)
+  }
+
   await appendAuditLog(args.db, {
     actorUserId: args.actor.id,
     targetUserId: args.targetUserId,
     action: 'admin.user_disabled',
     metadata: { targetRole: target.role },
+    ipAddress: args.options?.sourceIp ?? null,
+    userAgent: args.options?.userAgent ?? null,
+  })
+}
+
+export async function deleteUserAsAdmin(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  targetUserId: string
+  options?: AdminMutationOptions
+}): Promise<void> {
+  await assertActorIsActiveInstanceAdmin(args.db, args.actor, 'delete_user', args.options)
+  enforceAdminMutationRateLimit(args.actor, 'delete_user', args.options)
+  if (args.targetUserId === args.actor.id) throw new Error('You cannot delete your own account')
+
+  const targetRows = await args.db.select<
+    Array<{ id: string; username: string; role: InstanceRole; disabled_at: string | null }>
+  >(
+    `SELECT id, username, role, disabled_at FROM users WHERE id = $1 LIMIT 1`,
+    [args.targetUserId]
+  )
+  const target = targetRows[0]
+  if (!target) throw new Error('User not found')
+  if (target.role === 'admin' && target.disabled_at == null) {
+    const activeAdmins = await countActiveAdmins(args.db)
+    if (activeAdmins <= 1) throw new Error('Cannot delete the final active admin')
+  }
+
+  const ts = nowIso()
+  await args.db.executeBatch([
+    { sql: 'BEGIN', bindValues: [] },
+    {
+      sql: `UPDATE sessions
+            SET revoked_at = $1
+            WHERE user_id = $2
+              AND revoked_at IS NULL`,
+      bindValues: [ts, args.targetUserId],
+    },
+    {
+      sql: `DELETE FROM users WHERE id = $1`,
+      bindValues: [args.targetUserId],
+    },
+    { sql: 'COMMIT', bindValues: [] },
+  ])
+
+  if (await isInstanceKeyWrappingRequired()) {
+    await removeUserInstanceKeyWrapper({
+      userId: args.targetUserId,
+      username: target.username,
+    })
+  }
+
+  await appendAuditLog(args.db, {
+    actorUserId: args.actor.id,
+    targetUserId: null,
+    action: 'admin.user_deleted',
+    metadata: { deletedUserId: args.targetUserId, deletedUsername: target.username, deletedRole: target.role },
     ipAddress: args.options?.sourceIp ?? null,
     userAgent: args.options?.userAgent ?? null,
   })
@@ -205,12 +344,38 @@ export async function enableUserAsAdmin(args: {
   await assertActorIsActiveInstanceAdmin(args.db, args.actor, 'enable_user', args.options)
   enforceAdminMutationRateLimit(args.actor, 'enable_user', args.options)
   const ts = nowIso()
+  const targetRows = await args.db.select<
+    Array<{
+      id: string
+      username: string
+      instance_key_wrapped: string | null
+    }>
+  >(
+    `SELECT id, username, instance_key_wrapped FROM users WHERE id = $1 LIMIT 1`,
+    [args.targetUserId]
+  )
+  const target = targetRows[0]
+  if (!target) throw new Error('User not found')
+
   await args.db.execute(
     `UPDATE users
      SET disabled_at = NULL, updated_at = $1
      WHERE id = $2`,
     [ts, args.targetUserId]
   )
+
+  if (await isInstanceKeyWrappingRequired()) {
+    const wrappersMeta = await readInstanceKeyWrappersMeta()
+    const sidecar = wrappersMeta ? findWrapperForUserId(wrappersMeta, args.targetUserId) : null
+    if (sidecar?.wrapped_instance_key?.trim()) {
+      await clearUserInstanceKeyRevocation(args.targetUserId)
+    } else if (target.instance_key_wrapped?.trim()) {
+      throw new Error(
+        'User has no instance key wrapper; reset their password before enabling sign-in'
+      )
+    }
+  }
+
   await appendAuditLog(args.db, {
     actorUserId: args.actor.id,
     targetUserId: args.targetUserId,
@@ -226,14 +391,20 @@ export async function resetUserPasswordAsAdmin(args: {
   actor: AuthenticatedUser
   targetUserId: string
   newPassword: string
+  /** Path A: re-wrap using the target user's current password. */
+  targetOldPassword?: string
+  /** Path B2: authorize instance-key access via recovery escrow (tests/programmatic). */
+  recoveryKey?: string
   options?: AdminMutationOptions
 }): Promise<void> {
   await assertActorIsActiveInstanceAdmin(args.db, args.actor, 'reset_password', args.options)
   enforceAdminMutationRateLimit(args.actor, 'reset_password', args.options)
   if (!args.newPassword) throw new Error('Password is required')
   if (args.newPassword.length < 8) throw new Error('Password must be at least 8 characters')
-  const targetRows = await args.db.select<Array<{ id: string; disabled_at: string | null }>>(
-    `SELECT id, disabled_at FROM users WHERE id = $1 LIMIT 1`,
+  const targetRows = await args.db.select<
+    Array<{ id: string; username: string; disabled_at: string | null; password_hash: string }>
+  >(
+    `SELECT id, username, disabled_at, password_hash FROM users WHERE id = $1 LIMIT 1`,
     [args.targetUserId]
   )
   const target = targetRows[0]
@@ -242,28 +413,102 @@ export async function resetUserPasswordAsAdmin(args: {
   const { hashPassword } = await getPasswordHashHelpers()
   const passwordHash = await hashPassword(args.newPassword)
   const ts = nowIso()
-  await args.db.executeBatch([
-    { sql: 'BEGIN', bindValues: [] },
-    {
-      sql: `UPDATE users
-            SET password_hash = $1, updated_at = $2
-            WHERE id = $3`,
-      bindValues: [passwordHash, ts, args.targetUserId],
-    },
-    {
-      sql: `UPDATE sessions
-            SET revoked_at = $1
-            WHERE user_id = $2
-              AND revoked_at IS NULL`,
-      bindValues: [ts, args.targetUserId],
-    },
-    { sql: 'COMMIT', bindValues: [] },
-  ])
+
+  const wrappingRequired = await isInstanceKeyWrappingRequired()
+  let wrapperEntry: Awaited<
+    ReturnType<typeof resolveAdminPasswordResetWrapper>
+  >['wrapperEntry'] | null = null
+  let wrapperResetPath: AdminPasswordResetWrapperPath | null = null
+  let priorSidecarEntry: Awaited<
+    ReturnType<typeof resolveAdminPasswordResetWrapper>
+  >['priorSidecarEntry'] | null = null
+
+  if (wrappingRequired) {
+    const resolved = await resolveAdminPasswordResetWrapper({
+      db: args.db,
+      targetUserId: target.id,
+      targetUsername: target.username,
+      targetPasswordHash: target.password_hash,
+      newPassword: args.newPassword,
+      targetOldPassword: args.targetOldPassword,
+      recoveryKey: args.recoveryKey,
+    })
+    wrapperEntry = resolved.wrapperEntry
+    wrapperResetPath = resolved.path
+    priorSidecarEntry = resolved.priorSidecarEntry
+  }
+
+  const sidecarEntry =
+    wrappingRequired && wrapperEntry
+      ? {
+          ...wrapperEntry,
+          user_id: target.id,
+          username: target.username,
+        }
+      : null
+
+  if (sidecarEntry) {
+    await upsertUserInstanceKeyWrapper(sidecarEntry)
+  }
+
+  try {
+    await args.db.executeBatch([
+      { sql: 'BEGIN', bindValues: [] },
+      {
+        sql: wrappingRequired && wrapperEntry
+          ? `UPDATE users
+              SET password_hash = $1,
+                  updated_at = $2,
+                  instance_key_wrap_version = $4,
+                  instance_key_wrap_salt = $5,
+                  instance_key_wrapped = $6,
+                  instance_key_wrap_created_at = $7,
+                  instance_key_wrap_rotated_at = $8
+              WHERE id = $3`
+          : `UPDATE users
+              SET password_hash = $1, updated_at = $2
+              WHERE id = $3`,
+        bindValues:
+          wrappingRequired && wrapperEntry
+            ? [
+                passwordHash,
+                ts,
+                args.targetUserId,
+                wrapperEntry.version,
+                wrapperEntry.wrap_salt,
+                wrapperEntry.wrapped_instance_key,
+                wrapperEntry.created_at,
+                wrapperEntry.rotated_at,
+              ]
+            : [passwordHash, ts, args.targetUserId],
+      },
+      {
+        sql: `UPDATE sessions
+              SET revoked_at = $1
+              WHERE user_id = $2
+                AND revoked_at IS NULL`,
+        bindValues: [ts, args.targetUserId],
+      },
+      { sql: 'COMMIT', bindValues: [] },
+    ])
+  } catch (dbErr) {
+    if (sidecarEntry) {
+      await restorePriorSidecarEntry(priorSidecarEntry, {
+        userId: target.id,
+        username: target.username,
+      })
+    }
+    throw dbErr
+  }
+
   await appendAuditLog(args.db, {
     actorUserId: args.actor.id,
     targetUserId: args.targetUserId,
     action: 'admin.user_password_reset',
-    metadata: { sessionsRevoked: true },
+    metadata: {
+      sessionsRevoked: true,
+      ...(wrapperResetPath ? { wrapperResetPath } : {}),
+    },
     ipAddress: args.options?.sourceIp ?? null,
     userAgent: args.options?.userAgent ?? null,
   })

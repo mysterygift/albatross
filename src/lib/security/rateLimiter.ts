@@ -12,6 +12,11 @@ export const DEFAULT_AUTH_LOGIN_RATE_LIMIT: RateLimitRule = {
   windowMs: 60_000,
 }
 
+export const DEFAULT_AUTH_RECOVERY_RATE_LIMIT: RateLimitRule = {
+  maxAttempts: 5,
+  windowMs: 60_000,
+}
+
 export const DEFAULT_AUTH_BOOTSTRAP_RATE_LIMIT: RateLimitRule = {
   maxAttempts: 3,
   windowMs: 5 * 60_000,
