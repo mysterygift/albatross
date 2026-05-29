@@ -6,9 +6,8 @@ function listItem(overrides: Partial<EquipmentListItem> & { equipment_id: string
   return {
     id: 'item-1',
     equipment_list_id: 'list-1',
-    equipment_id: overrides.equipment_id,
     sort_order: 0,
-    quantity: overrides.quantity ?? 1,
+    quantity: 1,
     checked_out: 0,
     checked_back_in: 0,
     notes: null,
@@ -20,10 +19,9 @@ function listItem(overrides: Partial<EquipmentListItem> & { equipment_id: string
 
 function equipment(overrides: Partial<Equipment> & { id: string }): Equipment {
   return {
-    id: overrides.id,
     production_id: 'prod-1',
     name: 'Test item',
-    quantity: overrides.quantity ?? 1,
+    quantity: 1,
     source_type: 'owned',
     vendor: null,
     shoot_day_id: null,
