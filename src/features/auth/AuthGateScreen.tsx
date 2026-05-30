@@ -6,28 +6,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ForgotPasswordRecoveryCard } from '@/features/auth/ForgotPasswordRecoveryCard'
-import { InitialAdminSetupWizard } from '@/features/auth/InitialAdminSetupWizard'
-import { closeDb, getDb, openPlainDbIfExists } from '@/lib/db/client'
+import { SetupWizard } from '@/features/auth/setup/SetupWizard'
+import { closeDb, getDb } from '@/lib/db/client'
 import { completeLoginAfterDatabaseUnlock } from '@/lib/auth/loginOrchestration'
 import { unlockLocalDatabaseWithPassword } from '@/lib/db/dbUnlock'
-import { sqlAdminUsersCount } from '@/lib/auth/authSql'
+import {
+  AUTH_GATE_MODE_QUERY_KEY,
+  INITIAL_SETUP_STATUS_QUERY_KEY,
+  resolveAuthGateMode,
+} from '@/lib/auth/initialSetupStatus'
 import { AUTH_SESSION_TOKEN_SETTING_KEY } from '@/lib/auth/useAuthSession'
 import { setSetting } from '@/lib/db/repositories/settings'
-import { getLocalDbStatus } from '@/lib/security/dbFileEncryption'
 import { recoveryPasswordResetAvailable } from '@/lib/security/recoveryKey'
-
-async function getAdminsCount(): Promise<number> {
-  const status = await getLocalDbStatus()
-  if (status.encryptionMetaExists && !status.isPlainSqlite) {
-    return 1
-  }
-  const db = await openPlainDbIfExists()
-  const rows = await db.select<Array<{ count: number | string }>>(
-    sqlAdminUsersCount(db.dialect),
-    []
-  )
-  return Number(rows[0]?.count ?? 0)
-}
+import { useSetupWorkspaceHandoff } from '@/hooks/useSetupWorkspaceHandoff'
 
 type AuthGateScreenProps = {
   loadingAuthState: boolean
@@ -38,31 +29,35 @@ type AuthGateView = 'signIn' | 'forgotPassword'
 
 export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }: AuthGateScreenProps) {
   const queryClient = useQueryClient()
+  const handoff = useSetupWorkspaceHandoff()
   const [view, setView] = useState<AuthGateView>('signIn')
   const [loginUsername, setLoginUsername] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const adminsCountQuery = useQuery({
-    queryKey: ['auth-admins-count'],
-    queryFn: getAdminsCount,
+  const authGateModeQuery = useQuery({
+    queryKey: AUTH_GATE_MODE_QUERY_KEY,
+    queryFn: resolveAuthGateMode,
     enabled: !loadingAuthState,
   })
 
   const recoveryAvailableQuery = useQuery({
     queryKey: ['auth-recovery-available'],
     queryFn: recoveryPasswordResetAvailable,
-    enabled: !loadingAuthState,
+    enabled: !loadingAuthState && authGateModeQuery.data === 'sign_in',
   })
 
-  const hasExistingAdmin = (adminsCountQuery.data ?? 0) > 0
   const showForgotPasswordLink =
-    hasExistingAdmin && (recoveryAvailableQuery.data ?? false) && view === 'signIn'
+    authGateModeQuery.data === 'sign_in' &&
+    (recoveryAvailableQuery.data ?? false) &&
+    view === 'signIn'
 
   const persistSessionAndRefresh = async (sessionToken: string) => {
     await setSetting(AUTH_SESSION_TOKEN_SETTING_KEY, sessionToken)
     await queryClient.refetchQueries({ queryKey: ['auth-session'] })
+    await queryClient.invalidateQueries({ queryKey: INITIAL_SETUP_STATUS_QUERY_KEY })
+    await queryClient.invalidateQueries({ queryKey: AUTH_GATE_MODE_QUERY_KEY })
     await queryClient.invalidateQueries({ queryKey: ['productions'] })
   }
 
@@ -103,6 +98,47 @@ export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }:
   }
 
   const busy = isSubmitting || encryptingDatabase
+
+  const handleRequireSignIn = async () => {
+    await queryClient.invalidateQueries({ queryKey: AUTH_GATE_MODE_QUERY_KEY })
+    await queryClient.invalidateQueries({ queryKey: INITIAL_SETUP_STATUS_QUERY_KEY })
+  }
+
+  if (authGateModeQuery.isLoading || loadingAuthState) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-4">
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </main>
+    )
+  }
+
+  const showSetupWizard = authGateModeQuery.data === 'setup' || handoff.armed
+
+  if (showSetupWizard) {
+    return (
+      <>
+        <SetupWizard
+          busy={busy}
+          onRequireSignIn={() => void handleRequireSignIn()}
+          onError={(message) => setError(message || null)}
+          onSetupComplete={async ({ sessionToken, repairedPeople }) => {
+            await persistSessionAndRefresh(sessionToken)
+            if (repairedPeople > 0) {
+              await queryClient.invalidateQueries({ queryKey: ['crew'] })
+              await queryClient.invalidateQueries({ queryKey: ['people'] })
+            }
+          }}
+        />
+        {error && (
+          <div className="fixed bottom-4 left-1/2 z-50 w-full max-w-md -translate-x-1/2 px-4">
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+          </div>
+        )}
+      </>
+    )
+  }
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
@@ -152,7 +188,7 @@ export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }:
                     disabled={busy}
                   />
                 </div>
-                <Button type="submit" className="w-full" disabled={busy || adminsCountQuery.isLoading}>
+                <Button type="submit" className="w-full" disabled={busy}>
                   {busy ? 'Signing in...' : 'Sign in'}
                 </Button>
                 {showForgotPasswordLink && (
@@ -172,20 +208,6 @@ export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }:
               </form>
             </CardContent>
           </Card>
-        )}
-
-        {!hasExistingAdmin && !adminsCountQuery.isLoading && (
-          <InitialAdminSetupWizard
-            busy={busy}
-            onError={(message) => setError(message || null)}
-            onComplete={async ({ sessionToken, repairedPeople }) => {
-              await persistSessionAndRefresh(sessionToken)
-              if (repairedPeople > 0) {
-                await queryClient.invalidateQueries({ queryKey: ['crew'] })
-                await queryClient.invalidateQueries({ queryKey: ['people'] })
-              }
-            }}
-          />
         )}
 
         {error && (

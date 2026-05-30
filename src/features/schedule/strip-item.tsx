@@ -122,12 +122,16 @@ export function StripItem({
 
   const label = (
     <div className="flex flex-col gap-0 min-w-0 flex-1">
-      <div className="flex items-center gap-2 min-w-0 flex-wrap">
-        <Icon className="size-4 shrink-0 text-primary" />
-        {strip.strip_type === 'SHOT' && scene && shot ? (
-          <>
-            <span className="font-medium shrink-0">Scene {scene.scene_number} / Shot {shot.shot_number}</span>
-            <div className="flex gap-1 shrink-0 flex-wrap">
+      {strip.strip_type === 'SHOT' && scene && shot && isEpisodic ? (
+        <>
+          <div className="flex items-center gap-2 min-w-0">
+            <Icon className="size-4 shrink-0 text-primary" />
+            <span className="font-medium shrink-0">
+              Scene {scene.scene_number} / Shot {shot.shot_number}
+            </span>
+          </div>
+          {(episodeStripLabel || scene.int_ext || scene.day_night || scene.page_eighths != null) && (
+            <div className="flex items-center gap-1 shrink-0 flex-wrap pl-6 pt-1">
               {episodeStripLabel && (
                 <Badge
                   variant={episodeStripLabel === NO_EPISODE_ASSIGNMENT_LABEL ? 'outline' : 'secondary'}
@@ -139,10 +143,34 @@ export function StripItem({
               )}
               {scene.int_ext && <Badge variant="secondary" className="text-[10px]">{scene.int_ext}</Badge>}
               {scene.day_night && <Badge variant="outline" className="text-[10px]">{scene.day_night}</Badge>}
-              {scene.page_eighths != null && <Badge variant="outline" className="text-[10px]">{scene.page_eighths}/8</Badge>}
+              {scene.page_eighths != null && (
+                <Badge variant="outline" className="text-[10px]">{scene.page_eighths}/8</Badge>
+              )}
             </div>
-          </>
-        ) : strip.strip_type === 'SCENE' && scene ? (
+          )}
+        </>
+      ) : (
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+          <Icon className="size-4 shrink-0 text-primary" />
+          {strip.strip_type === 'SHOT' && scene && shot ? (
+            <>
+              <span className="font-medium shrink-0">Scene {scene.scene_number} / Shot {shot.shot_number}</span>
+              <div className="flex gap-1 shrink-0 flex-wrap">
+                {episodeStripLabel && (
+                  <Badge
+                    variant={episodeStripLabel === NO_EPISODE_ASSIGNMENT_LABEL ? 'outline' : 'secondary'}
+                    className="text-[10px] max-w-[6.5rem] truncate"
+                    title={episodeStripLabel}
+                  >
+                    {episodeStripLabel}
+                  </Badge>
+                )}
+                {scene.int_ext && <Badge variant="secondary" className="text-[10px]">{scene.int_ext}</Badge>}
+                {scene.day_night && <Badge variant="outline" className="text-[10px]">{scene.day_night}</Badge>}
+                {scene.page_eighths != null && <Badge variant="outline" className="text-[10px]">{scene.page_eighths}/8</Badge>}
+              </div>
+            </>
+          ) : strip.strip_type === 'SCENE' && scene ? (
           <>
             <span className="font-medium shrink-0">Scene {scene.scene_number}</span>
             <span className="text-muted-foreground text-sm min-w-0 truncate">
@@ -178,7 +206,8 @@ export function StripItem({
             {strip.title && <span className="text-muted-foreground text-sm min-w-0 truncate">{strip.title}</span>}
           </>
         )}
-      </div>
+        </div>
+      )}
       {strip.strip_type === 'SHOT' && shot && (
         <div className="flex items-start gap-2 pt-2 min-w-0">
           <span className="size-4 shrink-0" aria-hidden />
@@ -215,6 +244,7 @@ export function StripItem({
       scheduledWrapCountOnDay={scheduledWrapCountOnDay}
       label={label}
       className={className}
+      isEpisodic={isEpisodic}
     />
   )
 }
@@ -236,6 +266,7 @@ function SortableStripInner({
   scheduledWrapCountOnDay = 0,
   label,
   className,
+  isEpisodic,
 }: {
   strip: StripboardStrip
   estimatedMinutesDefault?: number
@@ -251,6 +282,7 @@ function SortableStripInner({
   scheduledWrapCountOnDay?: number
   label: React.ReactNode
   className?: string
+  isEpisodic?: boolean
 }) {
   const isShotOrScene = strip.strip_type === 'SHOT' || strip.strip_type === 'SCENE'
   const showBoneyard = isShotOrScene && onSendToBoneyard
@@ -338,18 +370,21 @@ function SortableStripInner({
     })
   }
 
+  const alignActionsWithTitle = isEpisodic === true && strip.strip_type === 'SHOT'
+
   return (
     <li
       ref={setNodeRef}
       style={style}
-      className={`flex items-center justify-between gap-2 rounded-md border border-border bg-card px-4 py-3 text-sm min-h-[52px] ${isDragging ? 'opacity-50' : ''} ${!disabled ? 'cursor-grab active:cursor-grabbing' : ''} ${className ?? ''}`}
+      className={`flex justify-between gap-2 rounded-md border border-border bg-card px-4 py-3 text-sm min-h-[52px] ${alignActionsWithTitle ? 'items-start' : 'items-center'} ${isDragging ? 'opacity-50' : ''} ${!disabled ? 'cursor-grab active:cursor-grabbing' : ''} ${className ?? ''}`}
     >
       <div
-        className="flex min-w-0 flex-1 items-center gap-2 flex-wrap"
+        className={`flex min-w-0 flex-1 gap-2 ${alignActionsWithTitle ? 'items-start' : 'items-center flex-wrap'}`}
         {...(disabled ? {} : { ...attributes, ...listeners })}
       >
         {label}
       </div>
+      <div className={`flex shrink-0 items-center gap-0.5 ${alignActionsWithTitle ? 'self-start' : ''}`}>
       {showEstMin && (
         <Popover
           onOpenChange={(open) => {
@@ -586,6 +621,7 @@ function SortableStripInner({
           <X className="size-3.5" />
         </Button>
       )}
+      </div>
     </li>
   )
 }

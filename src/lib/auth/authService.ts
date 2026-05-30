@@ -11,6 +11,7 @@ import {
 import { clearDbFileKey, closeDb } from '@/lib/db/client'
 import { clearDataEncryptionKey } from '@/lib/security/dataEncryptionContext'
 
+import { assertInitialAdminCredentialShape } from './credentialPolicy'
 import { sqlAdminUsersCount, sqlTotalUsersCount } from './authSql'
 import { generateSessionToken, hashSessionToken } from './sessionToken'
 
@@ -32,8 +33,8 @@ export type AuthSession = {
 
 export type AuthResult = {
   user: AuthenticatedUser
-  session: AuthSession
-  sessionToken: string
+  session?: AuthSession
+  sessionToken?: string
 }
 
 export type CreateUserInput = {
@@ -66,6 +67,8 @@ export type LoginInput = {
 export type SetupInitialAdminInput = {
   username: string
   password: string
+  confirmPassword?: string
+  createSession?: boolean
   sourceIp?: string | null
   userAgent?: string | null
 }
@@ -109,6 +112,18 @@ function assertNewCredentialShape(username: string, password: string): void {
   if (!username) throw new Error('Username is required')
   if (username.length > 128) throw new Error('Username is too long')
   if (!password) throw new Error('Password is required')
+}
+
+function isUniqueUsernameViolation(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+  const message = error.message.toLowerCase()
+  return (
+    message.includes('unique') ||
+    message.includes('duplicate') ||
+    message.includes('idx_users_username_unique')
+  )
 }
 
 function safeSecretEquals(left: string, right: string): boolean {
@@ -184,15 +199,22 @@ export async function createUserAccount(
   const { hashPassword } = await getPasswordHashHelpers()
   const passwordHash = await hashPassword(input.password)
   const role = input.role ?? 'user'
-  const rows = await db.select<AuthenticatedUser[]>(
-    `INSERT INTO users (username, password_hash, role)
-     VALUES ($1, $2, $3)
-     RETURNING id, username, role`,
-    [username, passwordHash, role]
-  )
-  const user = rows[0]
-  if (!user) throw new Error('Failed to create user')
-  return user
+  try {
+    const rows = await db.select<AuthenticatedUser[]>(
+      `INSERT INTO users (username, password_hash, role)
+       VALUES ($1, $2, $3)
+       RETURNING id, username, role`,
+      [username, passwordHash, role]
+    )
+    const user = rows[0]
+    if (!user) throw new Error('Failed to create user')
+    return user
+  } catch (error) {
+    if (isUniqueUsernameViolation(error)) {
+      throw new Error('Username is already taken')
+    }
+    throw error
+  }
 }
 
 export async function bootstrapFirstAdmin(
@@ -242,12 +264,27 @@ export async function setupInitialAdmin(
     throw new Error('Initial admin setup unavailable: admin user already exists')
   }
 
-  const user = await createUserAccount(db, {
+  const credentials = assertInitialAdminCredentialShape({
     username: input.username,
     password: input.password,
+    confirmPassword: input.confirmPassword ?? input.password,
+  })
+
+  const user = await createUserAccount(db, {
+    username: credentials.username,
+    password: credentials.password,
     role: 'admin',
   })
-  const { session, sessionToken } = await createSession(db, user.id)
+
+  const shouldCreateSession = input.createSession !== false
+  let session: AuthSession | undefined
+  let sessionToken: string | undefined
+  if (shouldCreateSession) {
+    const createdSession = await createSession(db, user.id)
+    session = createdSession.session
+    sessionToken = createdSession.sessionToken
+  }
+
   await appendAuditLog(db, {
     actorUserId: user.id,
     targetUserId: user.id,

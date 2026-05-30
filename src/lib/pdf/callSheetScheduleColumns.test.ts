@@ -3,6 +3,7 @@ import {
   buildMainScheduleColumns,
   buildAdvancedScheduleColumns,
   MAIN_SCHEDULE_TABLE_WIDTH,
+  MAIN_SCHEDULE_TABLE_WIDTH_WITH_EP,
 } from '@/lib/pdf/callSheetScheduleColumns'
 
 describe('buildMainScheduleColumns', () => {
@@ -28,7 +29,7 @@ describe('buildMainScheduleColumns', () => {
     const iSc = labels.indexOf('SC/SH')
     expect(iEp).toBeGreaterThanOrEqual(0)
     expect(iSc).toBe(iEp + 1)
-    expect(cols.reduce((s, c) => s + c.w, 0)).toBe(MAIN_SCHEDULE_TABLE_WIDTH)
+    expect(cols.reduce((s, c) => s + c.w, 0)).toBe(MAIN_SCHEDULE_TABLE_WIDTH_WITH_EP)
   })
 })
 

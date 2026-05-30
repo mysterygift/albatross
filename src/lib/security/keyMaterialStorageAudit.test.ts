@@ -158,7 +158,6 @@ describe('key material storage audit (ENC8)', () => {
             'lib/security/instanceKeyMigration.ts',
             'lib/security/adminPasswordResetPaths.ts',
             'lib/auth/adminUserManagementService.ts',
-            'features/auth/InitialAdminSetupWizard.tsx',
           ],
         })
       ).toEqual([])
@@ -174,7 +173,6 @@ describe('key material storage audit (ENC8)', () => {
             'lib/security/dataEncryptionContext.ts',
             'lib/security/recoveryKey.ts',
             'lib/security/dekEscrowMigration.ts',
-            'features/auth/InitialAdminSetupWizard.tsx',
           ],
         })
       ).toEqual([])
@@ -187,7 +185,6 @@ describe('key material storage audit (ENC8)', () => {
           allowlistSuffixes: [
             'lib/security/recoveryKey.ts',
             'lib/security/dekEscrowMigration.ts',
-            'features/auth/InitialAdminSetupWizard.tsx',
           ],
         })
       ).toEqual([])
@@ -202,7 +199,6 @@ describe('key material storage audit (ENC8)', () => {
           allowlistSuffixes: [
             'lib/security/recoveryKey.ts',
             'lib/security/dekEscrowMigration.ts',
-            'features/auth/InitialAdminSetupWizard.tsx',
           ],
         })
       ).toEqual([])

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { getDefaultCrewHierarchyConfig } from '@/lib/people/crewHierarchyResolver'
 import { getCallSheetCrewRequirements } from '@/lib/call-sheets/crewRequirements'
 import { generateCallSheetPdf, type CallSheetData } from '@/lib/pdf/callSheet'
+import { extractPdfText } from '@/test/episodicIntegrationHelpers'
 import type { Person } from '@/lib/db/types'
 
 function minimalData(over: Partial<CallSheetData> = {}): CallSheetData {
@@ -104,6 +105,36 @@ describe('generateCallSheetPdf with booked crew', () => {
       minimalData({
         schedule: [{ ...minimalData().schedule[0]!, shot_description: longDesc }],
       }),
+    )
+    expect(longBytes.length).toBeGreaterThan(shortBytes.length)
+  })
+
+  it('renders safety information beneath weather in Environment & safety', async () => {
+    const bytes = await generateCallSheetPdf(
+      minimalData({
+        weatherSummary: 'Sunny, 72°F',
+        specialNotes: 'Hard hats required on set.',
+        dayNotes: 'Day note after safety.',
+      }),
+    )
+    const text = await extractPdfText(bytes)
+    const forecastIdx = text.indexOf('Forecast')
+    const safetyIdx = text.indexOf('Safety information')
+    const dayNotesIdx = text.indexOf('Day notes')
+    expect(forecastIdx).toBeGreaterThanOrEqual(0)
+    expect(safetyIdx).toBeGreaterThan(forecastIdx)
+    expect(dayNotesIdx).toBeGreaterThan(safetyIdx)
+    expect(text).toMatch(/Hard hats required on set/)
+  })
+
+  it('grows Environment & safety section height for multi-line safety text', async () => {
+    const singleLine = 'Wear hi-vis vests at all times.'
+    const multiLine = Array(12).fill(singleLine).join('\n')
+    const shortBytes = await generateCallSheetPdf(
+      minimalData({ weatherSummary: 'Cloudy', specialNotes: singleLine }),
+    )
+    const longBytes = await generateCallSheetPdf(
+      minimalData({ weatherSummary: 'Cloudy', specialNotes: multiLine }),
     )
     expect(longBytes.length).toBeGreaterThan(shortBytes.length)
   })

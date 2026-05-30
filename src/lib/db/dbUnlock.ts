@@ -149,48 +149,65 @@ export type PrepareEncryptedDatabaseResult = {
 
 /**
  * Prepare SQLCipher for initial admin setup using a random instance key (not password-derived).
+ *
+ * Ordering:
+ * 1. Generate instance key
+ * 2. Migrate plain DB → SQLCipher (if needed)
+ * 3. Write v2 metadata (key_mode: 'instance_key')
+ * 4. Open DB with instance key
+ * 5. Later setup phases create admin, wrapper, DEK, and recovery escrow
  */
-export async function prepareEncryptedDatabaseForFirstAdmin(
-  _password: string
-): Promise<PrepareEncryptedDatabaseResult> {
+export async function prepareEncryptedDatabaseForFirstAdmin(): Promise<PrepareEncryptedDatabaseResult> {
   const meta = await readDbEncryptionMeta()
   const needsMigration = await needsPlainToEncryptedMigration()
   const instanceKeyHex = generateInstanceKeyHex()
+  let migratedPlain = false
 
   if (isDbUnlocked()) {
     await closeDb()
   }
 
-  if (meta) {
-    if (usesInstanceKeyMode(meta)) {
-      if (needsMigration) {
-        await migratePlainDbToSqlcipher(instanceKeyHex)
-        await openDbWithFileKey(instanceKeyHex)
-        await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '2')
-        return { instanceKeyHex }
+  try {
+    if (meta) {
+      if (usesInstanceKeyMode(meta)) {
+        if (needsMigration) {
+          await migratePlainDbToSqlcipher(instanceKeyHex)
+          migratedPlain = true
+          await openDbWithFileKey(instanceKeyHex)
+          await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '2')
+          return { instanceKeyHex }
+        }
+        throw new Error('Database encryption metadata is inconsistent')
       }
-      throw new Error('Database encryption metadata is inconsistent')
+      if (isLegacyPasswordDerivedMode(meta)) {
+        throw new Error(
+          'Legacy password-derived encryption must be migrated on sign-in before initial admin setup'
+        )
+      }
+      throw new Error('Invalid database encryption metadata')
     }
-    if (isLegacyPasswordDerivedMode(meta)) {
-      throw new Error(
-        'Legacy password-derived encryption must be migrated on sign-in before initial admin setup'
-      )
-    }
-    throw new Error('Invalid database encryption metadata')
-  }
 
-  if (needsMigration) {
-    await migratePlainDbToSqlcipher(instanceKeyHex)
+    if (needsMigration) {
+      await migratePlainDbToSqlcipher(instanceKeyHex)
+      migratedPlain = true
+      await writeDbEncryptionMeta(await createFreshInstanceKeyMeta())
+      await openDbWithFileKey(instanceKeyHex)
+      await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '2')
+      return { instanceKeyHex }
+    }
+
     await writeDbEncryptionMeta(await createFreshInstanceKeyMeta())
     await openDbWithFileKey(instanceKeyHex)
     await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '2')
     return { instanceKeyHex }
+  } catch (err) {
+    if (migratedPlain) {
+      await recoverFromPreSqlcipherBackupIfAvailable()
+    } else {
+      await closeDb()
+    }
+    throw err
   }
-
-  await writeDbEncryptionMeta(await createFreshInstanceKeyMeta())
-  await openDbWithFileKey(instanceKeyHex)
-  await setSetting(DB_ENCRYPTION_SETTINGS_KEY, '2')
-  return { instanceKeyHex }
 }
 
 export async function isLocalDatabaseLocked(): Promise<boolean> {

@@ -13,6 +13,7 @@ import {
 } from '@/lib/db/client'
 import { prepareEncryptedDatabaseForFirstAdmin, isLocalDatabaseLocked } from '@/lib/db/dbUnlock'
 import { setupInitialAdmin, clearPersistedAuthSession } from '@/lib/auth/authService'
+import { runSetupCommit } from '@/lib/auth/setupCommitService'
 import { performFullLoginSequence } from '@/lib/auth/loginOrchestration'
 import {
   DB_META_FILENAME,
@@ -134,6 +135,52 @@ export async function simulateColdStart(): Promise<void> {
   encryptionHarnessState.settings.delete('auth_session_token')
 }
 
+export type SetupCommitInstallResult = {
+  username: string
+  password: string
+  recoveryKey: string
+  instanceKeyHex: string
+  sessionToken: string
+  userId: string
+}
+
+export async function createFreshEncryptedInstallViaSetupCommit(args?: {
+  username?: string
+  password?: string
+  recoveryKey?: string
+}): Promise<SetupCommitInstallResult> {
+  await resetEncryptionHarness()
+  await initSqlJsDatabase()
+
+  const username = args?.username ?? 'admin'
+  const password = args?.password ?? 'AdminPass123!'
+  const recoveryKey = args?.recoveryKey ?? generateRecoveryKey()
+
+  const { instanceKeyHex } = await prepareEncryptedDatabaseForFirstAdmin()
+  const db = encryptionHarnessState.dbAdapter!
+  const adminResult = await setupInitialAdmin(db, {
+    username,
+    password,
+    confirmPassword: password,
+    createSession: false,
+  })
+
+  const commitResult = await runSetupCommit({
+    plainRecoveryKey: recoveryKey,
+    username,
+    password,
+  })
+
+  return {
+    username,
+    password,
+    recoveryKey,
+    instanceKeyHex,
+    sessionToken: commitResult.sessionToken,
+    userId: adminResult.user.id,
+  }
+}
+
 export async function createFreshEncryptedInstall(args?: {
   username?: string
   password?: string
@@ -147,9 +194,13 @@ export async function createFreshEncryptedInstall(args?: {
   const recoveryKey = args?.recoveryKey ?? generateRecoveryKey()
   const verifier = await hashRecoveryKey(recoveryKey)
 
-  const { instanceKeyHex } = await prepareEncryptedDatabaseForFirstAdmin(password)
+  const { instanceKeyHex } = await prepareEncryptedDatabaseForFirstAdmin()
   const db = encryptionHarnessState.dbAdapter!
-  const result = await setupInitialAdmin(db, { username, password })
+  const result = await setupInitialAdmin(db, {
+    username,
+    password,
+    confirmPassword: password,
+  })
   const wrapper = await wrapInstanceKeyForUser(password, instanceKeyHex, {
     userId: result.user.id,
     username: result.user.username,
@@ -170,7 +221,7 @@ export async function createFreshEncryptedInstall(args?: {
     password,
     recoveryKey,
     instanceKeyHex,
-    sessionToken: result.sessionToken,
+    sessionToken: result.sessionToken ?? '',
     userId: result.user.id,
   }
 }

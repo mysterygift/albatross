@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { SidebarInset, SidebarProvider, useSidebar } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
@@ -18,18 +18,42 @@ import { ServerCollabBanner } from '@/features/server/ServerCollabBanner'
 import { useCurrentProduction } from '@/features/productions/context'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
 import { Button } from '@/components/ui/button'
+import {
+  INITIAL_SETUP_STATUS_QUERY_KEY,
+  isInitialSetupComplete,
+} from '@/lib/auth/initialSetupStatus'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { AuthGateScreen } from '@/features/auth/AuthGateScreen'
+import { useSetupWorkspaceHandoff } from '@/hooks/useSetupWorkspaceHandoff'
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
+import { SetupWorkspaceTransitionOverlay } from '@/features/auth/setup/SetupWorkspaceTransitionOverlay'
+import { isSetupWorkspaceTransitionActive } from '@/lib/auth/setupWorkspaceHandoff'
 
 const DB_PERF_SETTING_KEY = 'enable_db_perf_logging'
 
 export function AppLayout() {
-  const authSession = useAuthSession()
-  const queryClient = useQueryClient()
-  const showAuthGate =
-    authSession.authSupported && (!authSession.isAuthenticated || authSession.dbLocked)
+  return <AppLayoutInner />
+}
 
-  if (authSession.status === 'pending') {
+function AppLayoutInner() {
+  const authSession = useAuthSession()
+  const handoff = useSetupWorkspaceHandoff()
+  const reducedMotion = usePrefersReducedMotion()
+  const queryClient = useQueryClient()
+  const setupCompleteQuery = useQuery({
+    queryKey: INITIAL_SETUP_STATUS_QUERY_KEY,
+    queryFn: isInitialSetupComplete,
+    enabled: authSession.authSupported,
+  })
+  const showAuthGate =
+    authSession.authSupported &&
+    (setupCompleteQuery.isLoading ||
+      setupCompleteQuery.isFetching ||
+      !setupCompleteQuery.data ||
+      !authSession.isAuthenticated ||
+      authSession.dbLocked)
+
+  if (authSession.status === 'pending' || (authSession.authSupported && setupCompleteQuery.isLoading)) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background px-6 text-center">
         <p className="text-sm font-medium text-foreground">Connecting…</p>
@@ -107,6 +131,47 @@ export function AppLayout() {
           errors.
         </p>
       </div>
+    )
+  }
+
+  const transitionActive = isSetupWorkspaceTransitionActive()
+  const sessionReady =
+    authSession.status === 'success' &&
+    authSession.isAuthenticated &&
+    !authSession.dbLocked
+
+  if (showAuthGate && handoff.armed) {
+    return <AuthGateScreen loadingAuthState={false} />
+  }
+
+  if (transitionActive) {
+    const shellReady =
+      sessionReady &&
+      (handoff.phase === 'brandWash' ||
+        handoff.phase === 'revealingApp' ||
+        handoff.phase === 'complete')
+    const shellRevealed = handoff.phase === 'revealingApp' || handoff.phase === 'complete'
+
+    return (
+      <>
+        {shellReady && (
+          <div
+            className={
+              shellRevealed
+                ? 'min-h-screen animate-in fade-in-0 slide-in-from-bottom-2 duration-300 fill-mode-forwards motion-reduce:animate-none motion-reduce:opacity-100'
+                : 'pointer-events-none fixed inset-0 opacity-0'
+            }
+            aria-hidden={!shellRevealed}
+          >
+            <AppLayoutShell />
+          </div>
+        )}
+        <SetupWorkspaceTransitionOverlay
+          phase={handoff.phase}
+          reducedMotion={reducedMotion}
+          shellVisible={shellRevealed}
+        />
+      </>
     )
   }
 

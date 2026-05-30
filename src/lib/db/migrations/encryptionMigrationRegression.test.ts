@@ -12,6 +12,7 @@ import {
   writeSidecarFile,
 } from '@/test/encryption/encryptionTestHarness'
 import { prepareEncryptedDatabaseForFirstAdmin } from '@/lib/db/dbUnlock'
+import { runSetupEncryption } from '@/lib/auth/setupEncryptionService'
 import { setupInitialAdmin } from '@/lib/auth/authService'
 import { createUserAsAdmin } from '@/lib/auth/adminUserManagementService'
 import { unlockLocalDatabaseWithPassword } from '@/lib/db/dbUnlock'
@@ -52,9 +53,13 @@ describe('encryption migration regression (ENC8)', () => {
     setHarnessPlainDb(true)
 
     const password = 'LegacyPlain1!'
-    const { instanceKeyHex } = await prepareEncryptedDatabaseForFirstAdmin(password)
+    const { instanceKeyHex } = await prepareEncryptedDatabaseForFirstAdmin()
     const db = getHarnessDbAdapter()!
-    await setupInitialAdmin(db, { username: 'admin', password: 'LegacyPlain1!' })
+    await setupInitialAdmin(db, {
+      username: 'admin',
+      password: 'LegacyPlain1!',
+      confirmPassword: 'LegacyPlain1!',
+    })
 
     expect(getInvokeCounts().migratePlain).toBe(1)
     const snapshot = readSidecarSnapshot()
@@ -71,6 +76,18 @@ describe('encryption migration regression (ENC8)', () => {
     await getDb()
   })
 
+  it('legacy plain DB migrates to SQLCipher via runSetupEncryption', async () => {
+    await initSqlJsDatabase()
+    setHarnessPlainDb(true)
+
+    const result = await runSetupEncryption()
+    expect(result).toEqual({ status: 'ready', keyMode: 'instance_key' })
+
+    expect(getInvokeCounts().migratePlain).toBe(1)
+    const snapshot = readSidecarSnapshot()
+    expect(snapshot.dbMeta).toMatchObject({ version: 2, key_mode: 'instance_key' })
+  })
+
   it('legacy v1 password-derived meta migrates to instance key on login', async () => {
     await initSqlJsDatabase()
     setHarnessPlainDb(false)
@@ -80,7 +97,11 @@ describe('encryption migration regression (ENC8)', () => {
     await writeDbEncryptionMeta({ version: 1, kdf_salt: kdfSalt })
 
     const db = getHarnessDbAdapter()!
-    const admin = await setupInitialAdmin(db, { username: 'admin', password })
+    const admin = await setupInitialAdmin(db, {
+      username: 'admin',
+      password,
+      confirmPassword: password,
+    })
     const legacyPassphrase = await (
       await import('@/lib/security/dbFileEncryption')
     ).deriveSqlCipherPassphraseFromPassword(password, kdfSalt)

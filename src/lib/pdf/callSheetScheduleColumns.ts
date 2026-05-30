@@ -11,23 +11,33 @@ export type MainScheduleColKey =
 
 export type MainScheduleColDef = { key: MainScheduleColKey; label: string; w: number }
 
-/** Total width matches legacy fixed table: 486pt between margins. */
+/** Main schedule table width without EP column (486pt between margins). */
 export const MAIN_SCHEDULE_TABLE_WIDTH = 486
+
+/** Main schedule table width when EP column is included (+6pt vs non-episodic). */
+export const MAIN_SCHEDULE_TABLE_WIDTH_WITH_EP = 492
+
+export function mainScheduleTableWidth(includeEpisodesInSchedule?: boolean): number {
+  return includeEpisodesInSchedule === true
+    ? MAIN_SCHEDULE_TABLE_WIDTH_WITH_EP
+    : MAIN_SCHEDULE_TABLE_WIDTH
+}
 
 /**
  * Column layout for the main SHOOTING SCHEDULE grid. When episodes are included,
- * EP sits between LOC and SC/SH; synopsis width is reduced to keep total width stable.
+ * EP sits between LOC and SC/SH; table is 6pt wider than the non-episodic layout.
  */
 export function buildMainScheduleColumns(data: {
   includeEpisodesInSchedule?: boolean
 }): MainScheduleColDef[] {
   const withEp = data.includeEpisodesInSchedule === true
+  const targetWidth = mainScheduleTableWidth(withEp)
   const synopsisW = withEp ? 184 : 208
   const cols: MainScheduleColDef[] = [
     { key: 'loc', label: 'LOC', w: 46 },
   ]
   if (withEp) {
-    cols.push({ key: 'ep', label: 'EP', w: 24 })
+    cols.push({ key: 'ep', label: 'EP', w: 30 })
   }
   cols.push(
     { key: 'scsh', label: 'SC/SH', w: 38 },
@@ -38,9 +48,9 @@ export function buildMainScheduleColumns(data: {
     { key: 'notes', label: 'NOTES', w: 66 }
   )
   const sum = cols.reduce((s, c) => s + c.w, 0)
-  if (sum !== MAIN_SCHEDULE_TABLE_WIDTH) {
+  if (sum !== targetWidth) {
     throw new Error(
-      `Main schedule column widths must sum to ${MAIN_SCHEDULE_TABLE_WIDTH}, got ${sum}`
+      `Main schedule column widths must sum to ${targetWidth}, got ${sum}`
     )
   }
   return cols

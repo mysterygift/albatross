@@ -26,7 +26,7 @@ The calendar **Day Summary** drawer still has a placeholder “Generate Call She
 ### Queries (TanStack Query)
 
 - **Production** → `productionName`
-- **Shoot day** → dates, call/wrap, safety, notes, **`meal_times_json`** (meals only when this JSON has entries), weather fields
+- **Shoot day** → dates, call/wrap, **`special_notes`** (safety information), notes, **`meal_times_json`** (meals only when this JSON has entries), weather fields
 - **Shoot day units + units** → `unitName`, `unitNotes`
 - **Stripboard** → strips for the selected unit, `sort_index` order
 - **Scenes / shots** → schedule row metadata and cast resolution
@@ -44,6 +44,14 @@ The calendar **Day Summary** drawer still has a placeholder “Generate Call She
 - **Meals** — parsed from `shoot_days.meal_times_json` only. **No default lunch** is injected when the array is empty.
 - **Advanced schedule** — [`buildAdvancedScheduleForCallSheet`](../src/lib/call-sheets/advancedSchedule.ts): up to two shoot days after the current day (same unit on the stripboard when possible), compact strip table, **IF TIME PERMITS** mirroring the main schedule.
 - **`radioChannels` / `transportRows`** — supported on `CallSheetData` for the PDF. The Call Sheets page **does not populate** them from the DB/UI yet; they are omitted so **RADIO CHANNELS** and **TRANSPORT REQUIREMENTS** do not appear unless another caller sets real rows.
+
+### Editable on the Call Sheets page
+
+| UI field | Persistence | PDF use |
+|----------|-------------|---------|
+| Weather (manual fallback) | Session only (used at generate time) | `weatherSummary` |
+| Sunrise / Sunset (optional) | Session only | `weatherSunrise` / `weatherSunset` |
+| **Safety information** | `shoot_days.special_notes` (debounced save) | **Environment & safety** — wrapped paragraph directly beneath weather |
 
 ---
 
@@ -81,7 +89,7 @@ Wrapped **confidentiality** text in small grey: production name (if any) + fixed
 
 1. **Masthead / production identity** — as above; no unit call / wrap line here.
 2. **Essential times & primary contacts** — left: **Date**, **Unit call**, **Wrap (est.)**, **Breakfast** / **Lunch** only when matched from real `mealTimes` (from `meal_times_json`). Right: **Primary contacts** (subset of key contacts).
-3. **Environment & safety** — omitted if nothing to show. Forecast, stored weather keys, manual weather, day/unit/special notes, hospital, police/emergency.
+3. **Environment & safety** — omitted if nothing to show. Forecast, stored weather keys, manual weather, **safety information** (`special_notes`), day/unit notes, hospital, police/emergency. Safety text uses word-wrapped lines; section height grows with line count.
 4. **Base & locations** — unit base / crew parking; shooting locations with optional what3words and notes.
 5. **Shooting schedule** — stripboard-driven grid: **LOC**, **EP/SC**, **SET / SYNOPSIS**, **D/N**, **PGS**, **CAST**, **NOTES**; special strips (e.g. **MOVE**, **CALL**, **LUNCH**, **WRAP**, **NOTE**) as grey band rows; **IF TIME PERMITS** subsection when needed. Continuation pages repeat the running header + **SHOOTING SCHEDULE (cont'd)** + column headers.
 6. **Principal cast calls** — dynamic columns (**ID**, **CAST**, and optional **CHARACTER**, **ON SET**, **PHONE**, **NOTES**, **AGENT** when any row has data). Continuations repeat heading and header row.
@@ -110,6 +118,7 @@ When `advancedScheduleDays` is non-empty: for each forward day, day meta (date, 
 | `callTime` / `wrapTime` | `shoot_days`; shown under Essential times, not masthead |
 | `radioChannels` / `transportRows` | Optional; unset in default UI assembly |
 | `weatherSummary` | Set only in generate mutation / external callers |
+| `specialNotes` | `shoot_days.special_notes`; editable on Call Sheets page as **Safety information** |
 
 ---
 

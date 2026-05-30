@@ -79,6 +79,14 @@ const shootDayRow = {
   ...soft,
 }
 
+const shootDayRow2 = {
+  ...shootDayRow,
+  id: 'day-2',
+  shoot_date: '2025-06-02',
+  day_number: 2,
+  special_notes: 'Day two safety note.',
+}
+
 const dayUnitRow = {
   id: 'sdu-1',
   shoot_day_id: 'day-1',
@@ -127,6 +135,7 @@ const repo = vi.hoisted(() => ({
   getProductionById: vi.fn(),
   listShootDaysByProduction: vi.fn(),
   getShootDayById: vi.fn(),
+  updateShootDay: vi.fn(),
   listShootDayUnitsByShootDay: vi.fn(),
   listShootDayUnitsByProduction: vi.fn(),
   listUnitsByProduction: vi.fn(),
@@ -155,6 +164,7 @@ vi.mock('@/lib/db/repositories/production', () => ({
 vi.mock('@/lib/db/repositories/schedule', () => ({
   listShootDaysByProduction: repo.listShootDaysByProduction,
   getShootDayById: repo.getShootDayById,
+  updateShootDay: repo.updateShootDay,
   listScenesByProduction: repo.listScenesByProduction,
   listShotsByProduction: repo.listShotsByProduction,
 }))
@@ -226,6 +236,7 @@ vi.mock('@/lib/db/repositories/settings', () => ({
 }))
 
 function setupRepoDefaults() {
+  shootDayRow.special_notes = null
   repo.getProductionById.mockResolvedValue({
     id: 'prod-1',
     name: 'P',
@@ -238,10 +249,21 @@ function setupRepoDefaults() {
     created_from_template: null,
     ...soft,
   })
-  repo.listShootDaysByProduction.mockResolvedValue([shootDayRow])
+  repo.listShootDaysByProduction.mockResolvedValue([shootDayRow, shootDayRow2])
   repo.getShootDayById.mockImplementation(async (id: string) =>
-    id === 'day-1' ? shootDayRow : null
+    id === 'day-1' ? shootDayRow : id === 'day-2' ? shootDayRow2 : null
   )
+  repo.updateShootDay.mockImplementation(async (id: string, data: { special_notes?: string | null }) => {
+    if (id === 'day-1') {
+      Object.assign(shootDayRow, { special_notes: data.special_notes ?? null })
+      return shootDayRow
+    }
+    if (id === 'day-2') {
+      Object.assign(shootDayRow2, { special_notes: data.special_notes ?? null })
+      return shootDayRow2
+    }
+    throw new Error('unknown shoot day')
+  })
   repo.listShootDayUnitsByShootDay.mockResolvedValue([dayUnitRow])
   repo.listShootDayUnitsByProduction.mockResolvedValue([dayUnitRow])
   repo.listUnitsByProduction.mockResolvedValue([
@@ -397,5 +419,37 @@ describe('CallSheetsPage episodic UI', () => {
     await user.click(await screen.findByRole('option', { name: /main unit/i }))
 
     expect(screen.queryByRole('checkbox', { name: /include episodes/i })).toBeNull()
+  })
+
+  it('persists safety information to shoot_days.special_notes and reloads when switching shoot days', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(wrap(<CallSheetsPage />))
+
+    await user.click(screen.getAllByRole('combobox')[0]!)
+    await user.click(await screen.findByRole('option', { name: /2025-06-01/ }))
+    await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+    await user.click(screen.getAllByRole('combobox')[1]!)
+    await user.click(await screen.findByRole('option', { name: /main unit/i }))
+
+    const safetyField = await screen.findByLabelText(/safety information/i)
+    await user.type(safetyField, 'Marine safety officer on standby.')
+    await vi.advanceTimersByTimeAsync(600)
+
+    await waitFor(() =>
+      expect(repo.updateShootDay).toHaveBeenCalledWith('day-1', {
+        special_notes: 'Marine safety officer on standby.',
+      }),
+    )
+
+    await user.click(screen.getAllByRole('combobox')[0]!)
+    await user.click(await screen.findByRole('option', { name: /2025-06-02/ }))
+    await waitFor(() =>
+      expect((screen.getByLabelText(/safety information/i) as HTMLTextAreaElement).value).toBe(
+        'Day two safety note.',
+      ),
+    )
+
+    vi.useRealTimers()
   })
 })

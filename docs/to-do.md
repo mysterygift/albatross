@@ -12,7 +12,7 @@ BUDGET
 1. Importing/Exporting to MovieMagic Budgeting. Examine file structure to make sure that the budget from albatross gets imported/exported in the correct format.
 
 CALL SHEET
-1. Need to add text field to Call Sheet Form for safety information.
+~~1. Need to add text field to Call Sheet Form for safety information.~~
 
 SCHEDULE
 5. The script parser should look for taglines "INT./EXT. – LOCATIONAME – TIMEOFDAY" and there must be copy informing the user that this is expected formatting. Currently the parser does detect some of this but the logic is not correctly extracting the location name (AD to check regex).

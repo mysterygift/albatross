@@ -7,16 +7,8 @@ const clientMocks = vi.hoisted(() => ({
   isDbUnlocked: vi.fn(() => false),
 }))
 
-const dbFileMocks = vi.hoisted(() => ({
-  needsPlainToEncryptedMigration: vi.fn(async () => false),
-  readDbEncryptionMeta: vi.fn(async () => null),
-  deriveSqlCipherPassphraseFromPassword: vi.fn(async () => 'legacy-pass-hex'),
-  probeSqlCipherPassphrase: vi.fn(async () => true),
-  migratePlainDbToSqlcipher: vi.fn(async () => undefined),
-  writeDbEncryptionMeta: vi.fn(async () => undefined),
-}))
-
 const instanceKeyMocks = vi.hoisted(() => ({
+  generateInstanceKeyHex: vi.fn(() => 'd'.repeat(64)),
   readInstanceKeyWrappersMeta: vi.fn(async () => ({
     version: 1 as const,
     wrappers: [
@@ -33,7 +25,21 @@ const instanceKeyMocks = vi.hoisted(() => ({
     ],
   })),
   unwrapInstanceKeyForUser: vi.fn(async () => 'c'.repeat(64)),
-  generateInstanceKeyHex: vi.fn(() => 'd'.repeat(64)),
+}))
+
+const dbFileMocks = vi.hoisted(() => ({
+  needsPlainToEncryptedMigration: vi.fn(async () => false),
+  readDbEncryptionMeta: vi.fn(async () => null),
+  deriveSqlCipherPassphraseFromPassword: vi.fn(async () => 'legacy-pass-hex'),
+  probeSqlCipherPassphrase: vi.fn(async () => true),
+  migratePlainDbToSqlcipher: vi.fn(async () => undefined),
+  writeDbEncryptionMeta: vi.fn(async () => undefined),
+  getPreSqlcipherBackupStatus: vi.fn(async () => ({
+    backupExists: true,
+    backupIsPlainSqlite: true,
+  })),
+  restoreSqliteFromPreSqlcipherBackup: vi.fn(async () => undefined),
+  removeDbEncryptionMeta: vi.fn(async () => undefined),
 }))
 
 vi.mock('@/lib/db/client', () => clientMocks)
@@ -55,11 +61,78 @@ vi.mock('@/lib/security/instanceKey', async (importOriginal) => {
   }
 })
 
-import { unlockLocalDatabaseWithPassword } from '@/lib/db/dbUnlock'
+import {
+  prepareEncryptedDatabaseForFirstAdmin,
+  recoverFromPreSqlcipherBackupIfAvailable,
+  unlockLocalDatabaseWithPassword,
+} from '@/lib/db/dbUnlock'
 
-describe('dbUnlock', () => {
+describe('prepareEncryptedDatabaseForFirstAdmin', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    clientMocks.isDbUnlocked.mockReturnValue(false)
+    dbFileMocks.readDbEncryptionMeta.mockResolvedValue(null)
+    dbFileMocks.needsPlainToEncryptedMigration.mockResolvedValue(false)
+  })
+
+  it('fresh plain DB migrates, writes v2 meta, and opens with instance key', async () => {
+    dbFileMocks.needsPlainToEncryptedMigration.mockResolvedValue(true)
+
+    const result = await prepareEncryptedDatabaseForFirstAdmin()
+
+    expect(result.instanceKeyHex).toBe('d'.repeat(64))
+    expect(dbFileMocks.migratePlainDbToSqlcipher).toHaveBeenCalledWith('d'.repeat(64))
+    expect(dbFileMocks.writeDbEncryptionMeta).toHaveBeenCalledWith({
+      version: 2,
+      key_mode: 'instance_key',
+    })
+    expect(clientMocks.openDbWithFileKey).toHaveBeenCalledWith('d'.repeat(64))
+  })
+
+  it('rejects legacy password-derived metadata', async () => {
+    dbFileMocks.readDbEncryptionMeta.mockResolvedValue({
+      version: 1,
+      kdf_salt: 'f'.repeat(32),
+    })
+
+    await expect(prepareEncryptedDatabaseForFirstAdmin()).rejects.toThrow(
+      'Legacy password-derived encryption must be migrated on sign-in'
+    )
+    expect(dbFileMocks.migratePlainDbToSqlcipher).not.toHaveBeenCalled()
+  })
+
+  it('restores pre-sqlcipher backup when migration succeeds but open fails', async () => {
+    dbFileMocks.needsPlainToEncryptedMigration.mockResolvedValue(true)
+    clientMocks.openDbWithFileKey.mockRejectedValueOnce(new Error('open failed'))
+
+    await expect(prepareEncryptedDatabaseForFirstAdmin()).rejects.toThrow('open failed')
+    expect(dbFileMocks.restoreSqliteFromPreSqlcipherBackup).toHaveBeenCalled()
+    expect(dbFileMocks.removeDbEncryptionMeta).toHaveBeenCalled()
+  })
+})
+
+describe('recoverFromPreSqlcipherBackupIfAvailable', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('restores backup when available', async () => {
+    dbFileMocks.getPreSqlcipherBackupStatus.mockResolvedValue({
+      backupExists: true,
+      backupIsPlainSqlite: true,
+    })
+
+    await expect(recoverFromPreSqlcipherBackupIfAvailable()).resolves.toBe(true)
+    expect(dbFileMocks.restoreSqliteFromPreSqlcipherBackup).toHaveBeenCalled()
+    expect(clientMocks.closeDb).toHaveBeenCalled()
+  })
+})
+
+describe('unlockLocalDatabaseWithPassword', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    clientMocks.isDbUnlocked.mockReturnValue(false)
+    dbFileMocks.needsPlainToEncryptedMigration.mockResolvedValue(false)
   })
 
   it('v2 instance key mode unlocks via user wrapper', async () => {

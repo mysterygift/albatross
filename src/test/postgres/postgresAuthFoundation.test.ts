@@ -134,15 +134,24 @@ describe('postgres auth foundation (UAM1)', () => {
       const result = await setupInitialAdmin(adapter, {
         username: 'setup-admin',
         password: 'setup-admin-password',
+        confirmPassword: 'setup-admin-password',
       })
       expect(result.user.role).toBe('admin')
       expect(result.user.username).toBe('setup-admin')
-      expect(result.sessionToken.length).toBeGreaterThan(20)
+      expect(result.sessionToken!.length).toBeGreaterThan(20)
+
+      const userRows = await adapter.select<Array<{ password_hash: string }>>(
+        `SELECT password_hash FROM users WHERE username = $1`,
+        ['setup-admin']
+      )
+      expect(userRows[0]?.password_hash).not.toBe('setup-admin-password')
+      expect(userRows[0]?.password_hash.startsWith('$argon2')).toBe(true)
 
       await expect(
         setupInitialAdmin(adapter, {
           username: 'setup-admin-2',
           password: 'setup-admin-2-password',
+          confirmPassword: 'setup-admin-2-password',
         })
       ).rejects.toThrow('Initial admin setup unavailable')
 
@@ -151,6 +160,27 @@ describe('postgres auth foundation (UAM1)', () => {
         []
       )
       expect(auditRows.some((row) => row.action === 'auth.initial_admin_created')).toBe(true)
+    })
+  })
+
+  it('can create initial admin without a session during setup', async () => {
+    await withHarness('pg_auth_initial_admin_no_session', async ({ adapter }) => {
+      const result = await setupInitialAdmin(adapter, {
+        username: 'NoSessionAdmin',
+        password: 'no-session-password',
+        confirmPassword: 'no-session-password',
+        createSession: false,
+      })
+
+      expect(result.user.username).toBe('nosessionadmin')
+      expect(result.session).toBeUndefined()
+      expect(result.sessionToken).toBeUndefined()
+
+      const sessionRows = await adapter.select<Array<{ count: number | string }>>(
+        `SELECT COUNT(*)::int AS count FROM sessions`,
+        []
+      )
+      expect(Number(sessionRows[0]?.count ?? 0)).toBe(0)
     })
   })
 

@@ -1089,10 +1089,17 @@ function drawEnvironmentAndSafety(
     y.current -= 2
   }
 
+  if (data.specialNotes?.trim()) {
+    if (y.current < Y_MIN) return
+    drawPdfText(page, 'Safety information', { x: MARGIN, y: y.current, size: FONT_TABLE, font: bold })
+    y.current -= LINE_BODY
+    drawParagraphLines(page, font, data.specialNotes.trim(), y, PAGE_WIDTH - 2 * MARGIN, FONT_TABLE)
+    y.current -= 2
+  }
+
   const noteBlocks: Array<{ title: string; body: string }> = []
   if (data.dayNotes?.trim()) noteBlocks.push({ title: 'Day notes', body: data.dayNotes.trim() })
   if (data.unitNotes?.trim()) noteBlocks.push({ title: 'Unit notes', body: data.unitNotes.trim() })
-  if (data.specialNotes?.trim()) noteBlocks.push({ title: 'Safety / special', body: data.specialNotes.trim() })
 
   for (const nb of noteBlocks) {
     if (y.current < Y_MIN) return

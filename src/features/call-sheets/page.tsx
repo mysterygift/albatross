@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -24,11 +24,12 @@ import {
   listStripsByProductionForActor,
   listStripsByShootDayForActor,
   listUnitsByProductionForActor,
+  updateShootDayForActor,
 } from '@/lib/access/projectDomainService'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { callSheetsTutorialSteps } from '@/features/tutorial/sections/callSheetsTutorial'
-import { listShootDaysByProduction, getShootDayById } from '@/lib/db/repositories/schedule'
+import { listShootDaysByProduction, getShootDayById, updateShootDay } from '@/lib/db/repositories/schedule'
 import { listStripsByShootDay, listStripsByProduction } from '@/lib/db/repositories/stripboard-strips'
 import { listShootDayUnitsByShootDay, listShootDayUnitsByProduction } from '@/lib/db/repositories/shoot-day-units'
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
@@ -75,6 +76,7 @@ import { getWeatherForCallSheet } from '@/lib/weather/openMeteo'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -116,6 +118,9 @@ export function CallSheetsPage() {
   const [weatherSummary, setWeatherSummary] = useState('')
   const [sunriseManual, setSunriseManual] = useState('')
   const [sunsetManual, setSunsetManual] = useState('')
+  const [safetyInformation, setSafetyInformation] = useState('')
+  const [safetySaveStatus, setSafetySaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const safetyDirtyRef = useRef(false)
   const [weatherFallbackMessage, setWeatherFallbackMessage] = useState<string | null>(null)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [numPages, setNumPages] = useState<number | null>(null)
@@ -591,7 +596,56 @@ export function CallSheetsPage() {
   useEffect(() => {
     setSunriseManual('')
     setSunsetManual('')
+    safetyDirtyRef.current = false
+    setSafetyInformation('')
+    setSafetySaveStatus('idle')
   }, [shootDayId])
+
+  useEffect(() => {
+    if (!shootDayId || shootDay?.id !== shootDayId || safetyDirtyRef.current) return
+    setSafetyInformation(shootDay.special_notes ?? '')
+  }, [shootDayId, shootDay?.id, shootDay?.special_notes])
+
+  const persistSafetyMutation = useMutation({
+    mutationFn: async (vars: { shootDayId: string; special_notes: string | null }) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return updateShootDayForActor({
+          db,
+          actor: authSession.currentUser,
+          shootDayId: vars.shootDayId,
+          data: { special_notes: vars.special_notes },
+        })
+      }
+      return updateShootDay(vars.shootDayId, { special_notes: vars.special_notes })
+    },
+    onSuccess: (_data, vars) => {
+      safetyDirtyRef.current = false
+      setSafetySaveStatus('saved')
+      void queryClient.invalidateQueries({ queryKey: ['shoot-day', vars.shootDayId] })
+      if (currentProductionId) {
+        void queryClient.invalidateQueries({ queryKey: ['shoot-days', currentProductionId] })
+      }
+    },
+    onError: () => {
+      setSafetySaveStatus('error')
+    },
+  })
+
+  useEffect(() => {
+    if (!shootDayId || !shootDay || shootDay.id !== shootDayId) return
+    const dbValue = shootDay.special_notes ?? ''
+    if (safetyInformation === dbValue) return
+    setSafetySaveStatus('saving')
+    const timer = window.setTimeout(() => {
+      persistSafetyMutation.mutate({
+        shootDayId,
+        special_notes: safetyInformation.trim() || null,
+      })
+    }, 500)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce on text input only
+  }, [safetyInformation, shootDayId, shootDay?.id, shootDay?.special_notes])
 
   useEffect(() => {
     setDistributionExportSuccessMessage(null)
@@ -997,6 +1051,24 @@ export function CallSheetsPage() {
                   placeholder="e.g. 19:42"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="call-sheet-safety-information">Safety information</Label>
+              <Textarea
+                id="call-sheet-safety-information"
+                className="bg-input border-border min-h-[84px] resize-y"
+                value={safetyInformation}
+                onChange={(e) => {
+                  safetyDirtyRef.current = true
+                  setSafetyInformation(e.target.value)
+                  if (safetySaveStatus === 'saved') setSafetySaveStatus('idle')
+                }}
+                placeholder="e.g. Hard hats required on set. Marine safety officer on standby."
+                disabled={!shootDayId}
+              />
+              {safetySaveStatus === 'error' && (
+                <p className="text-destructive text-xs">Could not save safety information.</p>
+              )}
             </div>
             {shootDayId && shootDayUnitId && (
               <>
