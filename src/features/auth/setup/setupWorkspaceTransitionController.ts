@@ -6,7 +6,10 @@ import {
 export const SETUP_TRANSITION_TIMING = {
   full: {
     fadingWelcome: 275,
-    brandWash: 400,
+    /** Radial brand gradient fade-in (ms). */
+    brandWashFadeIn: 400,
+    /** Plateau after fade-in before crossfade to the app shell (ms). */
+    brandWashHold: 3000,
     revealingApp: 300,
   },
   reduced: {
@@ -44,7 +47,9 @@ export async function runSetupWorkspaceTransition({
   await delay(SETUP_TRANSITION_TIMING.full.fadingWelcome)
   await onPersistSession()
   advanceSetupWorkspaceHandoffPhase('brandWash')
-  await delay(SETUP_TRANSITION_TIMING.full.brandWash)
+  await delay(
+    SETUP_TRANSITION_TIMING.full.brandWashFadeIn + SETUP_TRANSITION_TIMING.full.brandWashHold
+  )
   advanceSetupWorkspaceHandoffPhase('revealingApp')
   await delay(SETUP_TRANSITION_TIMING.full.revealingApp)
   advanceSetupWorkspaceHandoffPhase('complete')

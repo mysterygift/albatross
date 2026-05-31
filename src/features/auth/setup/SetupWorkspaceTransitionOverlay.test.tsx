@@ -22,6 +22,9 @@ describe('SetupWorkspaceTransitionOverlay', () => {
     expect(overlay.getAttribute('data-phase')).toBe('brandWash')
     expect(overlay.getAttribute('data-reduced-motion')).toBe('false')
     expect(screen.getByTestId('setup-brand-wash')).toBeTruthy()
+    expect(screen.getByTestId('setup-brand-logo')).toBeTruthy()
+    expect(screen.getByTestId('albatross-logo')).toBeTruthy()
+    expect(screen.getByText('Welcome to Albatross')).toBeTruthy()
   })
 
   it('skips brand wash when reduced motion is enabled', () => {
@@ -34,6 +37,7 @@ describe('SetupWorkspaceTransitionOverlay', () => {
     )
 
     expect(screen.queryByTestId('setup-brand-wash')).toBeNull()
+    expect(screen.queryByTestId('setup-brand-logo')).toBeNull()
     expect(screen.getByTestId('setup-workspace-transition-overlay').getAttribute('data-reduced-motion')).toBe(
       'true'
     )
