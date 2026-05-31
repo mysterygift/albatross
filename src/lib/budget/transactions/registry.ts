@@ -5,6 +5,8 @@ import { parseLabourDetails } from '@/lib/budget/transactions/labour'
 import { parsePurchaseDetails } from '@/lib/budget/transactions/purchase'
 import { parseRentalDetails } from '@/lib/budget/transactions/rental'
 import { parseAllowDetails } from '@/lib/budget/transactions/allow'
+import { parseDepositDetails } from '@/lib/budget/transactions/deposit'
+import { saveDepositTransaction } from '@/lib/db/repositories/depositTransactions'
 import { saveExpenseTransactionDetails } from '@/lib/db/repositories/expenseTransactions'
 import { savePurchaseTransaction } from '@/lib/db/repositories/purchaseTransactions'
 import { saveRentalTransaction } from '@/lib/db/repositories/rentalTransactions'
@@ -17,6 +19,7 @@ import { RentalTransactionEditor } from '@/features/budget/typed-expense-views/R
 import { AllowTransactionRead } from '@/features/budget/typed-expense-views/AllowTransactionRead'
 import { AllowTransactionEditor } from '@/features/budget/typed-expense-views/AllowTransactionEditor'
 import { DepositTransactionRead } from '@/features/budget/typed-expense-views/DepositTransactionRead'
+import { DepositTransactionEditor } from '@/features/budget/typed-expense-views/DepositTransactionEditor'
 
 export type SaveContext = {
   productionId: string
@@ -31,19 +34,6 @@ export type TypedExpenseConfig = {
   save: (args: { expenseId: string; details: unknown; ctx: SaveContext }) => Promise<void>
   editable: boolean
   derivesAmount?: boolean
-}
-
-function parseDeposit(_detailsJson: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
-  try {
-    const parsed = JSON.parse(_detailsJson)
-    return { ok: true, value: typeof parsed === 'object' && parsed !== null ? parsed : {} }
-  } catch {
-    return { ok: false, error: 'Invalid JSON' }
-  }
-}
-
-async function saveDeposit(): Promise<void> {
-  throw new Error('Deposit editing is not implemented')
 }
 
 const labourConfig: TypedExpenseConfig = {
@@ -98,10 +88,16 @@ const allowConfig: TypedExpenseConfig = {
 const depositConfig: TypedExpenseConfig = {
   type: 'deposit',
   label: 'Deposit',
-  parse: parseDeposit,
+  parse: (json) => parseDepositDetails(json),
   ReadComponent: DepositTransactionRead,
-  save: saveDeposit,
-  editable: false,
+  EditComponent: DepositTransactionEditor as ComponentType<TypedExpenseEditProps<unknown>>,
+  save: async ({ expenseId, details }) => {
+    await saveDepositTransaction({
+      expenseId,
+      details: details as Parameters<typeof saveDepositTransaction>[0]['details'],
+    })
+  },
+  editable: true,
 }
 
 export const typedExpenseRegistry: Record<ExpenseTransactionType, TypedExpenseConfig> = {

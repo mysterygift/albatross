@@ -7,7 +7,7 @@ This document describes the unified typed-expense editing architecture on the Bu
 - **Registry** (`src/lib/budget/transactions/registry.ts`): Single source of truth per transaction type (label, parser, read component, edit component, save handler, editable flag).
 - **ExpenseDetailPanel** (`src/features/budget/ExpenseDetailPanel.tsx`): Shared shell that renders header, resolves type from the registry, and delegates to type-specific read or edit views.
 - **Shared subcomponents** (`src/features/budget/expense-shared/`): Reusable header, vendor summary, meta grid, typed section wrapper, parse-error card, editor footer.
-- **Type-specific views** (`src/features/budget/typed-expense-views/`): One read and one edit component per type (Labour, Purchase, Rental, Allow, Deposit read-only).
+- **Type-specific views** (`src/features/budget/typed-expense-views/`): One read and one edit component per type (Labour, Purchase, Rental, Allow, Deposit).
 
 ## Registry Structure
 
@@ -30,7 +30,7 @@ Use `getTypedExpenseConfig(transaction_type)` to get config or `null` for untype
 - **Purchase**: Parser from `purchase.ts`; save calls `savePurchaseTransaction` (handles vendor and location side effects).
 - **Rental**: Parser from `rental.ts`; save calls `saveRentalTransaction` (derives and writes `expenses.amount`).
 - **Allow**: Parser from `allow.ts`; save calls `saveExpenseTransactionDetails` with type `'allow'`.
-- **Deposit**: Parser can be a no-op or minimal; `DepositTransactionRead` shows raw JSON or a simple message; `editable: false`; no EditComponent or save.
+- **Deposit**: Parser from `deposit.ts`; read/edit components in `typed-expense-views`; save calls `saveDepositTransaction` (updates `expenses.amount`, `vendor_id`, `notes`, and details JSON).
 
 ## ExpenseDetailPanel Responsibilities
 
@@ -54,7 +54,7 @@ Use `getTypedExpenseConfig(transaction_type)` to get config or `null` for untype
 ## Non-editable and Untyped Cases
 
 - **Untyped** (`transaction_type == null`): `getTypedExpenseConfig` returns null. Panel shows shared header and the "does not yet use a typed transaction format" message; Edit button is disabled with tooltip.
-- **Deposit** (or any type with `editable: false`): Read view is shown; Edit button is disabled with tooltip "Editing is not yet available for this transaction type."
+- **Non-editable types** (if any type has `editable: false`): Read view is shown; Edit button is disabled with tooltip "Editing is not yet available for this transaction type."
 
 ## Row-Level Editing Boundaries
 

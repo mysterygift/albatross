@@ -40,7 +40,7 @@ This document is both a **user guide** (how to use the Budget feature) and a **d
 ### 1. Overview
 
 - **Route:** `/budget` (see `src/app/router.tsx`).
-- **Entry point:** `src/features/budget/page.tsx` — `BudgetPage` plus dialogs and the right-hand sheet (Examine Account, Examine Spend, Log Spend).
+- **Entry point:** `src/features/budget/page.tsx` — `BudgetPage` plus dialogs (including Log Spend) and right-hand sheets (Examine Account, Examine Spend).
 - **Navigation:** “Budget” (DollarSign icon) in the app nav (`src/app/navigation.ts`).
 - **Context:** A **current production** must be selected. If none is selected, the page shows “Select a production first.” All budget data is scoped by `production_id`.
 
@@ -82,14 +82,14 @@ Expenses with no account appear in the Uncoded spend section. Use the Recode dro
 
 ### 3. Log Spend
 
-**Log Spend** is the main way to create new spend. It opens a right-hand sheet (panel) where you choose an account and a transaction type, then fill the type-specific form.
+**Log Spend** is the main way to create new spend. It opens a modal dialog where you choose an account and a transaction type, then fill the type-specific form.
 
 1. Click **Log Spend** in the Budget tab header.
 2. **Account** — Select a postable account (the budget line you are logging spend against). The selected account is shown in a summary card below the dropdown.
-3. **Transaction type** — Choose Labour, Purchase, Rental, Allow, or Deposit. Short helper text explains each type. Changing type after entering data will prompt to discard the current form values.
-4. **Details** — A type-specific form appears (e.g. Labour: person, role, rate type, days, rate per day, dates; Purchase: description, purchase type (Service / Physical goods), amount, category, vendor, location, notes; Rental: description, rate type, rate, dates, equipment, vendor; Allow: description, provisional amount, status, notes). **Deposit** shows “Deposit creation is not yet available” — use another type for now.
-5. **Save** — Persists the expense and typed details, closes the panel, and refreshes the Budget page so the new spend appears. **Save & Add Another** — Saves, keeps the panel open, keeps the same account and type, and clears the form so you can enter another transaction (useful for logging several items to the same account).
-6. **Cancel** — Closes the panel without saving.
+3. **Transaction type** — Choose Labour, Purchase, Rental, Allow, or Deposit. Short helper text explains each type. Changing type after you have an editable form for the current type opens a confirmation dialog; the type only changes if you choose **Continue** (otherwise the form and type stay as they were).
+4. **Details** — A type-specific form appears (e.g. Labour: person, role, rate type, days, rate per day, dates; Purchase: description, purchase type (Service / Physical goods), amount, category, vendor, location, notes; Rental: description, rate type, rate, dates, equipment, vendor; Allow: description, provisional amount, status, notes; Deposit: description, deposit amount, refundable or non-refundable status, vendor, location, notes).
+5. **Save** — Persists the expense and typed details, closes the dialog, and refreshes the Budget page so the new spend appears. **Save & Add Another** — Saves, keeps the dialog open, keeps the same account and type, and clears the form so you can enter another transaction (useful for logging several items to the same account).
+6. **Cancel** — Closes the dialog without saving.
 
 Validation errors (e.g. “Purchase amount is required and must be greater than 0”, “Rental amount cannot be calculated…”) appear above the footer. The Save button is disabled until account and type are selected and the form is valid for types that have an editor.
 
@@ -99,7 +99,7 @@ Validation errors (e.g. “Purchase amount is required and must be greater than 
 
 - **Examine account** — Click the eye icon on an account row. A right-hand sheet opens showing that account’s **line items** (description, estimated cost) and **expenses** (date, amount, with an eye to examine spend). Line items are view-only in this sheet; editing is done from the Budget table or Add line item.
 - **Examine spend** — From the Examine Account sheet, click the eye on an expense row. The sheet switches to **Expense details**: amount, date, account, transaction type, vendor, notes, and the type-specific details (or “This spend does not yet use a typed transaction format” for untyped expenses).
-- **Edit** — For typed expenses (Labour, Purchase, Rental, Allow) an Edit button appears in the header. Click to switch to edit mode: the same type-specific editor used in Log Spend appears inline. Save persists via the registry’s save handler and returns to read mode. For **untyped** expenses, Edit is available when the app supports it: you can change amount, date, vendor, and notes (transaction type cannot be set here). **Deposit** and unknown types do not show Edit (tooltip explains).
+- **Edit** — For typed expenses (Labour, Purchase, Rental, Allow, Deposit) an Edit button appears in the header. Click to switch to edit mode: the same type-specific editor used in Log Spend appears inline. Save persists via the registry’s save handler and returns to read mode. For **untyped** expenses, Edit is available when the app supports it: you can change amount, date, vendor, and notes (transaction type cannot be set here). Unknown types do not show Edit (tooltip explains).
 - **Cancel / View** — In edit mode, Cancel or View returns to read mode without saving.
 
 ---
@@ -244,7 +244,7 @@ Types: `src/lib/db/types.ts`. Repositories: `budget.ts`, `budgetAccounts.ts`, `b
 - **Purchase** — purchase_description (required), purchase_category, is_service_purchase, service_description, location_id, vendor_id, notes, **amount** (required for creation; expenses.amount is the actual).
 - **Rental** — rental_description (required), rental_rate_type, rental_rate_amount, rental_start_date/end_date, rental_period_override_days, equipment_description, vendor_id, primary_contact_override, notes. Amount is derived from rate and duration.
 - **Allow** — allow_description (required), provisional_amount, status (open/resolved), notes.
-- **Deposit** — No full schema or editor yet; creation UI shows “Deposit creation is not yet available.”
+- **Deposit** — `deposit.ts` schema: description, refundable status (required), amount (required, &gt; 0 on `expenses.amount`), vendor, location, notes. Log Spend and Examine Spend use `DepositTransactionEditor` / `DepositTransactionRead`; save via `saveDepositTransaction`.
 
 #### 7.3 Relationships and totals
 
@@ -293,7 +293,7 @@ Rules have name, rate (decimal 0–1), base_kind (budget | actual), scope_mode, 
 - **expenseTransactions.ts** — getExpenseWithDetails (expense + vendor + account + transaction_details); saveExpenseTransactionDetails (update expenses.transaction_type, upsert expense_transaction_details). Used by labour and allow. runInSerializedTransaction + executeBatch.
 - **purchaseTransactions.ts** — savePurchaseTransaction (update expense type + vendor_id, upsert details, optional location booked_status + outbox for location update).
 - **rentalTransactions.ts** — saveRentalTransaction (validates details, computes amount via calculateRentalExpenseAmount, update expense type + vendor_id + amount, upsert details).
-- **createTypedExpense.ts** — **Creation pipeline:** single entry point for Log Spend. Validates account (postable, same production). Per type: parse draft with type schema, compute amount (labour: rate×days; purchase: required > 0; rental: calculateRentalExpenseAmount; allow: provisional_amount ?? 0; deposit: 0), build details_json, vendor_id where applicable. One atomic transaction: runInSerializedTransaction + executeBatch(BEGIN, INSERT expense, INSERT expense_transaction_details ON CONFLICT DO UPDATE, optional location update + location outbox for purchase, expense outbox, COMMIT). No separate BEGIN/COMMIT calls (per DATABASE_LAYER.md).
+- **createTypedExpense.ts** — **Creation pipeline:** single entry point for Log Spend. Validates account (postable, same production). Per type: parse draft with type schema, compute amount (labour: rate×days; purchase: required > 0; rental: calculateRentalExpenseAmount; allow: provisional_amount ?? 0; deposit: required amount from draft), build details_json, vendor_id where applicable. One atomic transaction: runInSerializedTransaction + executeBatch(BEGIN, INSERT expense, INSERT expense_transaction_details ON CONFLICT DO UPDATE, optional location update + location outbox for purchase, expense outbox, COMMIT). No separate BEGIN/COMMIT calls (per DATABASE_LAYER.md).
 - **productionTotals.ts** — Production totals and production_total_accounts; create/update/delete with runInSerializedTransaction + executeBatch.
 - **costReportGroups.ts** — Cost report groups and group–account mappings; list, create, update, setGroupAccountIds, delete. Used by Cost Report “By groups” and Settings.
 - **floats.ts** — `createFloat`, list by production / budget item / person, `getFloatById`, `updateFloat`, `softDeleteFloat`. Float allocations are not synced; no outbox.
@@ -305,10 +305,10 @@ Rules have name, rate (decimal 0–1), base_kind (budget | actual), scope_mode, 
 
 - **Registry** — `src/lib/budget/transactions/registry.ts`: `getTypedExpenseConfig(type)`, `typedExpenseRegistry`. Each type has: type, label, parse(detailsJson), ReadComponent, EditComponent (optional), save({ expenseId, details, ctx }), editable, derivesAmount (optional). See **docs/typed-expense-registry-and-editor.md** for full registry structure.
 - **ExpenseDetailPanel** — `src/features/budget/ExpenseDetailPanel.tsx`. Shared shell: header (amount, date, account, transaction type, vendor, notes), mode read | edit, Edit/View toggle. Resolves config from registry; read path: parse details_json, render ReadComponent or ExpenseParseErrorCard; edit path: render EditComponent with shared ExpenseEditorFooter. For untyped expenses, renders UntypedExpenseEditor when onUpdateExpenseRequest is provided. Save calls config.save (or onUpdateExpenseRequest for untyped); parent invalidates queries and calls onSaved().
-- **Type-specific views** — `src/features/budget/typed-expense-views/`: LabourTransactionRead, LabourTransactionEditor; PurchaseTransactionRead, PurchaseTransactionEditor; RentalTransactionRead, RentalTransactionEditor; AllowTransactionRead, AllowTransactionEditor; DepositTransactionRead (no editor). Shared: `expense-shared/` (ExpenseDetailHeader, ExpenseEditorFooter, UntypedExpenseEditor, etc.).
-- **Creation flow** — LogSpendPanel opens from “Log Spend” button. User selects account (postable) and transaction type. Panel renders config.EditComponent (when type has one) with expenseId="create", detailsJson from draft, hideFooter, editorRef. On Save click, panel calls editorRef.current.submit(); editor validates and calls onSave(details). Panel’s handleEditorSave calls createMutation.mutate({ productionId, accountId, transactionType, draft: details, date: today }). createTypedExpense runs; on success panel invalidates ['expenses', productionId], ['expense-with-details', data.id], and for allow ['allow-expense-details', productionId]. Save & Add Another: same mutation, onSuccess keeps panel open, clears draft for that type, increments formKey to remount editor. Type-switch: if current type has a form, confirm “Switching type will discard the current form values. Continue?” before changing.
+- **Type-specific views** — `src/features/budget/typed-expense-views/`: LabourTransactionRead, LabourTransactionEditor; PurchaseTransactionRead, PurchaseTransactionEditor; RentalTransactionRead, RentalTransactionEditor; AllowTransactionRead, AllowTransactionEditor; DepositTransactionRead, DepositTransactionEditor. Shared: `expense-shared/` (ExpenseDetailHeader, ExpenseEditorFooter, UntypedExpenseEditor, etc.).
+- **Creation flow** — LogSpendPanel opens from “Log Spend” button as a centered Dialog. User selects account (postable) and transaction type. Dialog renders config.EditComponent (when type has one) with expenseId="create", detailsJson from draft, hideFooter, editorRef. On Save click, dialog calls editorRef.current.submit(); editor validates and calls onSave(details). handleEditorSave calls createMutation.mutate({ productionId, accountId, transactionType, draft: details, date: today }). createTypedExpense runs; on success invalidates ['expenses', productionId], ['expense-with-details', data.id], and for allow ['allow-expense-details', productionId]. Save & Add Another: same mutation, onSuccess keeps dialog open, clears draft for that type, increments formKey to remount editor. Type-switch: if current type has a form, a nested confirmation Dialog asks to discard form values; type changes only on **Continue**.
 
-**Amount behaviour:** Labour: amount = rate_per_day × booked_days_count (or 0). Purchase: amount required > 0 from draft. Rental: amount = calculateRentalExpenseAmount(details). Allow: amount = provisional_amount ?? 0. Deposit: 0.
+**Amount behaviour:** Labour: amount = rate_per_day × booked_days_count (or 0). Purchase: amount required > 0 from draft. Rental: amount = calculateRentalExpenseAmount(details). Allow: amount = provisional_amount ?? 0. Deposit: amount required > 0 from draft (held deposit value).
 
 ---
 
@@ -397,7 +397,6 @@ When adding or changing budget-related features:
 
 - **No edit/delete for budget line items** — updateBudgetItem/deleteBudgetItem exist but the page has no edit/delete UI for line items.
 - **No full expense list** — No table of all expenses with filters (type, date); expenses are created via Log Spend and recoded from uncoded section; editing is via Examine Spend.
-- **Deposit creation** — Deposit has no creation UI in Log Spend (“Deposit creation is not yet available”); read-only in Expense Detail Panel.
 - **Line items in Examine Account** — Line items are view-only in the sheet; editing is from the Budget table or Add line item.
 - **Set/change transaction type on existing expense** — No UI to convert an untyped expense to typed (e.g. “Make this a Labour expense”) or to create expense_transaction_details for it.
 - **Other** — No phase filtering; no column sorting in account table; export is CSV only; BudgetItem.status not shown/editable; duplicate production behaviour for derived rules may need to be defined.
@@ -409,9 +408,9 @@ When adding or changing budget-related features:
 ### 16. History / changes
 
 - **Quick-add removed; Log Spend only** — The old “Quick-add spend” dialog (`QuickExpenseForm`) created plain expenses (no `transaction_type` or `expense_transaction_details`). It has been removed from the codebase. **Log Spend** is the header entry for new spend: typed creation via `createTypedExpense` (expense row + details row + outbox in one transaction).
-- **Typed creation** — createTypedExpense supports labour, purchase, rental, allow, deposit (deposit with amount 0 and empty details; no Deposit editor yet). Purchase requires amount > 0; rental amount is derived; labour amount = rate×days; allow uses provisional_amount.
+- **Typed creation** — createTypedExpense supports labour, purchase, rental, allow, deposit. Purchase and deposit require amount > 0; rental amount is derived; labour amount = rate×days; allow uses provisional_amount.
 - **Untyped expense editing** — updateExpense(expenseId, { amount, date, vendor, notes }) and UntypedExpenseEditor allow editing amount, date, vendor, notes for expenses with no transaction_type. onUpdateExpenseRequest is passed from Budget page to ExpenseDetailPanel.
-- **Examine Account** — Sheet shows both line items (view-only) and expenses (with Examine spend). Expense Detail Panel uses registry + typed-expense-views (LabourTransactionEditor, etc.) for read/edit; Deposit and untyped have no or limited edit.
+- **Examine Account** — Sheet shows both line items (view-only) and expenses (with Examine spend). Expense Detail Panel uses registry + typed-expense-views (LabourTransactionEditor, etc.) for read/edit; untyped has limited edit.
 - **Registry** — Single source of truth per type (label, parse, ReadComponent, EditComponent, save, editable). See typed-expense-registry-and-editor.md.
 - **Actualisation and Match Spend** — The **Match Expenses** tab and Match Spend modal were added to support reconciling expenses to line items via `budget_item_expense_links`. Users can create, edit, and remove links with matched amounts. Derived statuses (unmatched, partial, matched, overspent for line items; unallocated, partial, allocated for expenses) are computed in `src/lib/budget/reconciliation.ts` and not stored.
 - **Floats tab** — **Floats** tab, `floats` and `float_expense_links` tables, **Allocate float**, and **Reconcile float** (`FloatReconciliationDialog`) track petty cash per line item and crew member and match expenses to floats separately from Match Spend. Overview summaries and status badges use `getFloatSummaryForProduction` / `getPettyCashFloatDerived`; expense eligibility uses `getExpenseUnallocatedForFloatMatching`. Does not affect Total actual or `computeAccountTotals`.

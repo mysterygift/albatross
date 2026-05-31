@@ -11,6 +11,7 @@ import {
   type RentalDetails,
 } from '@/lib/budget/transactions/rental'
 import { allowDetailsSchema, allowDetailsToJson, type AllowDetails } from '@/lib/budget/transactions/allow'
+import { depositDetailsSchema, depositDetailsToJson, type DepositDetails } from '@/lib/budget/transactions/deposit'
 
 const EXP_TABLE = 'expenses'
 const DETAILS_TABLE = 'expense_transaction_details'
@@ -137,8 +138,19 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
       break
     }
     case 'deposit': {
-      amount = 0
-      detailsJson = JSON.stringify({})
+      const parsed = depositDetailsSchema.safeParse(draft)
+      if (!parsed.success) {
+        throw new Error(parsed.error.issues.map((i) => i.message).join('; '))
+      }
+      const d = parsed.data as DepositDetails
+      const rawAmount = d.amount
+      if (typeof rawAmount !== 'number' || rawAmount <= 0 || !Number.isFinite(rawAmount)) {
+        throw new Error('Deposit amount is required and must be greater than 0.')
+      }
+      amount = rawAmount
+      vendorId = d.vendor_id?.trim() ? d.vendor_id.trim() : null
+      notes = d.notes?.trim() ? d.notes.trim() : null
+      detailsJson = depositDetailsToJson(d)
       break
     }
     default: {

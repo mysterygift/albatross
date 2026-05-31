@@ -1280,7 +1280,7 @@ export function BudgetPage() {
             <span
               className={`rounded px-2 py-0.5 text-xs ${
                 workingBudgetRevision?.is_live
-                  ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
+                  ? 'bg-emerald-500/15 text-emerald-100 dark:text-emerald-300'
                   : 'bg-muted text-muted-foreground'
               }`}
               data-testid="budget-revision-context-label"
@@ -3206,7 +3206,7 @@ function ProductionTotalsModal({
                 {productionTotals.length === 0 && !showForm ? (
                   <TableRow>
                     <TableCell colSpan={2} className="text-muted-foreground text-sm">
-                      No subtotals yet.
+                      No production totals yet.
                     </TableCell>
                   </TableRow>
                 ) : (
