@@ -3,9 +3,10 @@
  * No new DB table; builds a combined list from existing repositories.
  */
 
-import type { Booking, CastAvailability, SceneCast } from '../types'
+import type { Booking, CastAvailability, CrewAvailability, SceneCast } from '../types'
 import { listBookingsByPerson } from './booking'
 import { listAvailabilityByPerson } from './cast-availability'
+import { listCrewAvailabilityByPerson } from './crew-availability'
 import { listSceneCastByPerson } from './scene-cast'
 
 /** Internal shape for the Recent activity UI only. */
@@ -40,7 +41,9 @@ function bookingToActivity(b: Booking): PersonActivityItem {
   }
 }
 
-function availabilityToActivity(a: CastAvailability): PersonActivityItem {
+function availabilityToActivity(
+  a: Pick<CastAvailability | CrewAvailability, 'id' | 'start_date' | 'end_date' | 'availability' | 'notes' | 'updated_at'>
+): PersonActivityItem {
   const range = `${a.start_date} – ${a.end_date}`
   return {
     id: `availability:${a.id}`,
@@ -72,9 +75,10 @@ export async function listRecentPersonActivity(
   personId: string,
   limit: number = DEFAULT_LIMIT
 ): Promise<PersonActivityItem[]> {
-  const [bookings, availability, sceneCasts] = await Promise.all([
+  const [bookings, castAvailability, crewAvailability, sceneCasts] = await Promise.all([
     listBookingsByPerson(personId),
     listAvailabilityByPerson(personId),
+    listCrewAvailabilityByPerson(personId),
     listSceneCastByPerson(personId),
   ])
 
@@ -82,7 +86,10 @@ export async function listRecentPersonActivity(
   for (const b of bookings) {
     items.push(bookingToActivity(b))
   }
-  for (const a of availability) {
+  for (const a of castAvailability) {
+    items.push(availabilityToActivity(a))
+  }
+  for (const a of crewAvailability) {
     items.push(availabilityToActivity(a))
   }
   for (const sc of sceneCasts) {

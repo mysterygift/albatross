@@ -157,6 +157,7 @@ const PERSON_ASSOCIATION_TABLES = [
   'scene_cast',
   'shot_cast',
   'cast_availability',
+  'crew_availability',
   'bookings',
   'floats',
 ] as const

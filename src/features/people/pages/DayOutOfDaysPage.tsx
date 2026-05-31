@@ -303,7 +303,7 @@ export function DayOutOfDaysPage() {
         </div>
 
         <p className="text-muted-foreground text-sm">
-          Cast-only. WORK = scheduled that day (from stripboard scenes). HOLD = between start/finish, not working. CLASH = working but marked unavailable.
+          Cast-only. WORK = scheduled that day (from stripboard scenes). HOLD = between start/finish, not working. CLASH = working but marked unavailable. Unavailable dates are edited from Cast Manager or cast person detail.
         </p>
 
         <div className="overflow-auto rounded-md border border-border">

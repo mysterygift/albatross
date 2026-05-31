@@ -71,6 +71,7 @@ The full **People list** (all people, cast and crew together) lives at **People 
 - **See summary counts** at the top: total cast, how many are missing cast number, role, or agent info.
 - **Add cast** — “Add cast” opens a cast-specific form; new records are always saved as cast.
 - **Edit cast** — Use the edit action on a row to update that cast member in the same form.
+- **Record unavailable dates** — Use the calendar icon on a row (or cast person detail) to enter single days or date ranges when a cast member cannot work. These appear as **CLASH** in Day Out of Days when they are scheduled to work on an unavailable day.
 
 The form is organised into: **Identity** (name, cast number, role), **Direct contact** (email, phone), **Agent** (name, email, phone), and **Production / admin** (contributor form status, phases, notes). Cast Manager uses the same underlying people data as the rest of the app (Call Sheets, scene/shot participation, etc.); there is no separate cast system.
 
@@ -85,7 +86,7 @@ The **People list** (route `/people/cast`) shows **all** people for the producti
 
 ### 6. Person detail: single-person hub
 
-Opening a person (e.g. from the People list or Cast Manager) takes you to **Person detail** (`/people/:personId`). There you see summary cards (bookings count, next booked, clashes, DooD work days), the list of their bookings, booking need summary, availability, **Scene participation** (which scenes they are in), **Shot participation** (which shots; cast only), Day out of Days summary, and recent activity. You can edit the person via the edit dialog.
+Opening a person (e.g. from the People list or Cast Manager) takes you to **Person detail** (`/people/:personId` for cast, `/people/crew/:personId` for crew). There you see summary cards (bookings count, next booked, clashes, DooD work days for cast), the list of their bookings, booking need summary, **unavailable dates** (editable), **Scene participation** (which scenes they are in), **Shot participation** (which shots; cast only), Day out of Days summary (cast), and recent activity. Crew person detail also supports unavailable dates (crew-only; not shown in DooD). You can edit the person via the edit dialog.
 
 ---
 
@@ -243,7 +244,7 @@ flowchart LR
 
 ### 13. Database and types
 
-- **Tables:** `people`, `bookings`, `cast_availability`, `scene_cast`, **`shot_cast`**; plus schedule tables `shoot_days`, `shoot_day_units`, `stripboard_strips`, `scenes`, `shots`. FK and cascade: see migrations (e.g. [src-tauri/migrations/0004_fk_cascade_refactor.sql](src-tauri/migrations/0004_fk_cascade_refactor.sql) and later migrations for shot_cast) — people → scene_cast, shot_cast, cast_availability, bookings (CASCADE); bookings.shoot_day_id SET NULL on delete.
+- **Tables:** `people`, `bookings`, `cast_availability`, **`crew_availability`**, `scene_cast`, **`shot_cast`**; plus schedule tables `shoot_days`, `shoot_day_units`, `stripboard_strips`, `scenes`, `shots`. FK and cascade: see migrations (e.g. [src-tauri/migrations/0004_fk_cascade_refactor.sql](src-tauri/migrations/0004_fk_cascade_refactor.sql) and later migrations for shot_cast) — people → scene_cast, shot_cast, cast_availability, crew_availability, bookings (CASCADE); bookings.shoot_day_id SET NULL on delete.
 - **Shared types** in [src/lib/db/types.ts](src/lib/db/types.ts): `Person` (including cast_number, **role_name** (string | null — cast role/character name; nullable for crew or when unset), agent_name, agent_email, agent_phone), `Booking`, `CastAvailability`, `CastAvailabilityStatus`, `SceneCast`, **`ShotCast`**. Used across People, Budget, Schedule, Call Sheets, and PDF/duplicate logic. Duplicate production copies `role_name` when copying people.
 
 ### 14. Checklist for refactors
@@ -277,6 +278,8 @@ When changing People, Booking, or DooD:
 | Scene cast repo | [src/lib/db/repositories/scene-cast.ts](src/lib/db/repositories/scene-cast.ts) |
 | Shot cast repo | [src/lib/db/repositories/shot-cast.ts](src/lib/db/repositories/shot-cast.ts) |
 | Cast availability repo | [src/lib/db/repositories/cast-availability.ts](src/lib/db/repositories/cast-availability.ts) |
+| Crew availability repo | [src/lib/db/repositories/crew-availability.ts](src/lib/db/repositories/crew-availability.ts) |
+| Unavailability dialog (cast + crew) | [src/features/people/components/PersonUnavailabilityDialog.tsx](src/features/people/components/PersonUnavailabilityDialog.tsx) |
 | Stripboard strips | [src/lib/db/repositories/stripboard-strips.ts](src/lib/db/repositories/stripboard-strips.ts) — `getScheduledSceneIdsByShootDay`, `getScheduledShotIdsByShootDay` |
 | Bookings summary lib | [src/lib/people/bookingsSummary.ts](src/lib/people/bookingsSummary.ts) |
 | Booking intelligence lib | [src/lib/people/bookingIntelligence.ts](src/lib/people/bookingIntelligence.ts) |

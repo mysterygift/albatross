@@ -30,6 +30,7 @@ export const APF_V1_TABLE_KEYS = [
   'vendor_purchase_orders',
   'bookings',
   'cast_availability',
+  'crew_availability',
   'shots',
   'location_scene',
   'stripboard_items',

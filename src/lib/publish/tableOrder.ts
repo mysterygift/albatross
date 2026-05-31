@@ -24,6 +24,7 @@ export const PUBLISH_TABLE_ORDER = [
   'vendor_purchase_orders',
   'bookings',
   'cast_availability',
+  'crew_availability',
   'shots',
   'location_scene',
   'stripboard_items',

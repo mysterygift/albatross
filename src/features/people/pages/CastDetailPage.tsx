@@ -55,6 +55,7 @@ import {
   updatePersonForActor,
 } from '@/lib/access/projectDomainService'
 import { PersonForm, type PersonFormValues } from '@/features/people/components/PersonForm'
+import { PersonUnavailabilityDialog } from '@/features/people/components/PersonUnavailabilityDialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -87,6 +88,7 @@ export function CastDetailPage() {
   const authSession = useAuthSession()
   const queryClient = useQueryClient()
   const [editOpen, setEditOpen] = useState(false)
+  const [unavailabilityOpen, setUnavailabilityOpen] = useState(false)
   const [addScenesOpen, setAddScenesOpen] = useState(false)
   const [sceneSearchFilter, setSceneSearchFilter] = useState('')
   const [selectedSceneIdsToAdd, setSelectedSceneIdsToAdd] = useState<Set<string>>(new Set())
@@ -697,8 +699,10 @@ export function CastDetailPage() {
         </Card>
         <Card className="border-border bg-card min-w-0 overflow-hidden">
           <CardContent className="px-4 pt-4 pb-4 min-w-0">
-            <p className="text-xs text-muted-foreground truncate">Availability entries</p>
-            <p className="text-lg font-semibold text-foreground">{availability.length}</p>
+            <p className="text-xs text-muted-foreground truncate">Unavailable entries</p>
+            <p className="text-lg font-semibold text-foreground">
+              {availability.filter((a) => a.availability === 'UNAVAILABLE').length}
+            </p>
           </CardContent>
         </Card>
         {person.is_cast && (
@@ -814,28 +818,32 @@ export function CastDetailPage() {
 
       {/* Availability */}
       <Card className="border-border bg-card">
-        <CardHeader className="border-b border-border py-1">
-          <CardTitle className="text-base">Availability</CardTitle>
+        <CardHeader className="border-b border-border py-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="text-base">Unavailable dates</CardTitle>
+          <Button variant="outline" size="sm" onClick={() => setUnavailabilityOpen(true)}>
+            <Plus className="mr-2 size-4" />
+            Manage unavailable dates
+          </Button>
         </CardHeader>
         <CardContent className="pt-4">
-          {availability.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No availability entries.</p>
+          {availability.filter((a) => a.availability === 'UNAVAILABLE').length === 0 ? (
+            <p className="text-sm text-muted-foreground">No unavailable dates recorded.</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Start</TableHead>
                   <TableHead>End</TableHead>
-                  <TableHead>Status</TableHead>
                   <TableHead>Notes</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {availability.map((a) => (
+                {availability
+                  .filter((a) => a.availability === 'UNAVAILABLE')
+                  .map((a) => (
                   <TableRow key={a.id}>
                     <TableCell>{new Date(a.start_date).toLocaleDateString('en-GB')}</TableCell>
                     <TableCell>{new Date(a.end_date).toLocaleDateString('en-GB')}</TableCell>
-                    <TableCell>{a.availability}</TableCell>
                     <TableCell className="max-w-[200px] truncate">{a.notes ?? '—'}</TableCell>
                   </TableRow>
                 ))}
@@ -1243,6 +1251,16 @@ export function CastDetailPage() {
       </Card>
 
       {/* Edit dialog */}
+      {currentProductionId && person && (
+        <PersonUnavailabilityDialog
+          open={unavailabilityOpen}
+          onOpenChange={setUnavailabilityOpen}
+          person={person}
+          productionId={currentProductionId}
+          kind="cast"
+        />
+      )}
+
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <PersonForm

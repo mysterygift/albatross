@@ -14,10 +14,12 @@ import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import {
   createPersonForActor,
   deletePersonForActor,
+  listCrewAvailabilityByProductionForActor,
   listCrewForActor,
   listTasksByProductionForActor,
   updatePersonForActor,
 } from '@/lib/access/projectDomainService'
+import { listCrewAvailabilityByProduction } from '@/lib/db/repositories/crew-availability'
 import {
   getEffectiveCrewHierarchyOrDefault,
   getDefaultCrewHierarchyConfig,
@@ -54,9 +56,13 @@ import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog'
-import { Search, Plus, Pencil, Eye, Trash2 } from 'lucide-react'
+import { Search, Plus, Pencil, Eye, Trash2, CalendarOff } from 'lucide-react'
 import { CrewForm, type CrewFormValues } from '@/features/people/components/CrewForm'
 import { PersonDeleteConfirmDialog } from '@/features/people/components/PersonDeleteConfirmDialog'
+import {
+  countUnavailableWindows,
+  PersonUnavailabilityDialog,
+} from '@/features/people/components/PersonUnavailabilityDialog'
 import { CrewSetupWizard } from '@/features/people/crew-manager/CrewSetupWizard'
 
 function getCanonicalDepartment(
@@ -105,7 +111,7 @@ function trimOrNull(s: string | undefined): string | null {
 
 type DepartmentFilter = 'all' | 'other' | string
 type HodFilter = 'all' | 'hod_only' | 'non_hod'
-type MissingFilter = 'all' | 'missing_department' | 'missing_role'
+type MissingFilter = 'all' | 'missing_department' | 'missing_role' | 'has_unavailability'
 
 const defaultHierarchy = getDefaultCrewHierarchyConfig()
 
@@ -121,6 +127,7 @@ export function CrewManagerPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [personToDelete, setPersonToDelete] = useState<Person | null>(null)
+  const [unavailabilityPerson, setUnavailabilityPerson] = useState<Person | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const hasAutoOpenedWizardRef = useRef(false)
   const [tutorialOpen, setTutorialOpen] = useState(false)
@@ -168,6 +175,23 @@ export function CrewManagerPage() {
         })
       }
       return listTasksByProduction(currentProductionId)
+    },
+    enabled: !!currentProductionId,
+  })
+
+  const { data: crewAvailabilityList = [] } = useQuery({
+    queryKey: ['crew-availability', currentProductionId],
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCrewAvailabilityByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listCrewAvailabilityByProduction(currentProductionId)
     },
     enabled: !!currentProductionId,
   })
@@ -273,6 +297,9 @@ export function CrewManagerPage() {
         getCanonicalDepartment(hierarchy, p) &&
         !isRoleInCanonicalHierarchy(hierarchy, p)
     ).length
+    const withUnavailability = crew.filter(
+      (p) => countUnavailableWindows(crewAvailabilityList, p.id) > 0
+    ).length
     return {
       total,
       departmentCount: canonicalDepts.size,
@@ -280,8 +307,9 @@ export function CrewManagerPage() {
       missingDept,
       missingRole,
       nonStandardRole,
+      withUnavailability,
     }
-  }, [crew, hierarchy])
+  }, [crew, hierarchy, crewAvailabilityList])
 
   const filteredCrew = useMemo(() => {
     let list = crew
@@ -321,9 +349,12 @@ export function CrewManagerPage() {
 
     if (missingFilter === 'missing_department') list = list.filter((p) => !p.department?.trim())
     else if (missingFilter === 'missing_role') list = list.filter((p) => !p.role_name?.trim())
+    else if (missingFilter === 'has_unavailability') {
+      list = list.filter((p) => countUnavailableWindows(crewAvailabilityList, p.id) > 0)
+    }
 
     return list
-  }, [crew, hierarchy, search, departmentFilter, hodFilter, missingFilter])
+  }, [crew, hierarchy, search, departmentFilter, hodFilter, missingFilter, crewAvailabilityList])
 
   const sortedCrew = useMemo(() => {
     const canonicalNames = getResolvedCrewDepartmentNames(hierarchy)
@@ -440,8 +471,8 @@ export function CrewManagerPage() {
         </Card>
         <Card>
           <CardContent className="py-3 px-4">
-            <p className="text-muted-foreground text-xs">Missing role</p>
-            <p className="text-lg font-medium">{summary.missingRole}</p>
+            <p className="text-muted-foreground text-xs">With unavailability</p>
+            <p className="text-lg font-medium">{summary.withUnavailability}</p>
           </CardContent>
         </Card>
       </div>
@@ -563,6 +594,7 @@ export function CrewManagerPage() {
             <SelectItem value="all">All</SelectItem>
             <SelectItem value="missing_department">Missing department</SelectItem>
             <SelectItem value="missing_role">Missing role</SelectItem>
+            <SelectItem value="has_unavailability">Has unavailability</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -611,7 +643,8 @@ export function CrewManagerPage() {
                   <TableHead className="w-16">HOD</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead className="w-24 text-right">Actions</TableHead>
+                  <TableHead className="w-24">Unavailable</TableHead>
+                  <TableHead className="w-28 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -667,12 +700,23 @@ export function CrewManagerPage() {
                     <TableCell className="text-sm text-muted-foreground">
                       {p.email?.trim() || '—'}
                     </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {countUnavailableWindows(crewAvailabilityList, p.id) || '—'}
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" asChild>
                           <Link to={`/people/crew/${p.id}`} aria-label="View">
                             <Eye className="size-4" />
                           </Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setUnavailabilityPerson(p)}
+                          aria-label="Unavailable dates"
+                        >
+                          <CalendarOff className="size-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -712,6 +756,18 @@ export function CrewManagerPage() {
         }}
         isPending={deleteMutation.isPending}
       />
+
+      {currentProductionId && (
+        <PersonUnavailabilityDialog
+          open={!!unavailabilityPerson}
+          onOpenChange={(open) => {
+            if (!open) setUnavailabilityPerson(null)
+          }}
+          person={unavailabilityPerson}
+          productionId={currentProductionId}
+          kind="crew"
+        />
+      )}
 
       <Dialog
         open={addOpen || !!editingId}

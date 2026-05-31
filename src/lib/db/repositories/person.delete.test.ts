@@ -89,6 +89,18 @@ async function makeDb(): Promise<Database> {
       updated_at TEXT NOT NULL,
       deleted_at TEXT
     );
+    CREATE TABLE crew_availability (
+      id TEXT PRIMARY KEY,
+      production_id TEXT NOT NULL,
+      person_id TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      availability TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
     CREATE TABLE floats (
       id TEXT PRIMARY KEY,
       production_id TEXT NOT NULL,

@@ -11,9 +11,11 @@ import { listCast, createPerson, updatePerson, deletePerson } from '@/lib/db/rep
 import {
   createPersonForActor,
   deletePersonForActor,
+  listAvailabilityByProductionForActor,
   listCastForActor,
   updatePersonForActor,
 } from '@/lib/access/projectDomainService'
+import { listAvailabilityByProduction } from '@/lib/db/repositories/cast-availability'
 import {
   Table,
   TableBody,
@@ -36,10 +38,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, Plus, Pencil, Eye, Trash2 } from 'lucide-react'
+import { Search, Plus, Pencil, Eye, Trash2, CalendarOff } from 'lucide-react'
 import type { Person } from '@/lib/db/types'
 import { CastForm, type CastFormValues } from '@/features/people/components/CastForm'
 import { PersonDeleteConfirmDialog } from '@/features/people/components/PersonDeleteConfirmDialog'
+import {
+  countUnavailableWindows,
+  PersonUnavailabilityDialog,
+} from '@/features/people/components/PersonUnavailabilityDialog'
 
 const CONTRIBUTOR_FORM_LABELS: Record<Person['contributor_form_status'], string> = {
   not_requested: 'Not requested',
@@ -49,7 +55,7 @@ const CONTRIBUTOR_FORM_LABELS: Record<Person['contributor_form_status'], string>
 }
 
 type ContributorFilter = 'all' | Person['contributor_form_status']
-type MissingFilter = 'all' | 'missing_role' | 'missing_cast_number' | 'missing_agent'
+type MissingFilter = 'all' | 'missing_role' | 'missing_cast_number' | 'missing_agent' | 'has_unavailability'
 
 function hasRole(p: Person): boolean {
   return !!p.role_name?.trim()
@@ -86,6 +92,7 @@ export function CastManagerPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [personToDelete, setPersonToDelete] = useState<Person | null>(null)
+  const [unavailabilityPerson, setUnavailabilityPerson] = useState<Person | null>(null)
   const [tutorialOpen, setTutorialOpen] = useState(false)
 
   useEffect(() => {
@@ -111,13 +118,33 @@ export function CastManagerPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: availabilityList = [] } = useQuery({
+    queryKey: ['cast-availability', currentProductionId],
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listAvailabilityByProductionForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+        })
+      }
+      return listAvailabilityByProduction(currentProductionId)
+    },
+    enabled: !!currentProductionId,
+  })
+
   const summary = useMemo(() => {
     const total = cast.length
     const missingCastNumber = cast.filter((p) => !hasCastNumber(p)).length
     const missingRole = cast.filter((p) => !hasRole(p)).length
     const missingAgent = cast.filter((p) => !hasAgentInfo(p)).length
-    return { total, missingCastNumber, missingRole, missingAgent }
-  }, [cast])
+    const withUnavailability = cast.filter(
+      (p) => countUnavailableWindows(availabilityList, p.id) > 0
+    ).length
+    return { total, missingCastNumber, missingRole, missingAgent, withUnavailability }
+  }, [cast, availabilityList])
 
   const filteredCast = useMemo(() => {
     let list = cast
@@ -140,9 +167,12 @@ export function CastManagerPage() {
     if (missingFilter === 'missing_role') list = list.filter((p) => !hasRole(p))
     else if (missingFilter === 'missing_cast_number') list = list.filter((p) => !hasCastNumber(p))
     else if (missingFilter === 'missing_agent') list = list.filter((p) => !hasAgentInfo(p))
+    else if (missingFilter === 'has_unavailability') {
+      list = list.filter((p) => countUnavailableWindows(availabilityList, p.id) > 0)
+    }
 
     return list
-  }, [cast, search, contributorFilter, missingFilter])
+  }, [cast, search, contributorFilter, missingFilter, availabilityList])
 
   const createMutation = useMutation({
     mutationFn: async (d: CastFormValues) => {
@@ -275,11 +305,17 @@ export function CastManagerPage() {
       </div>
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Card>
           <CardContent className="py-3 px-4">
             <p className="text-muted-foreground text-xs">Cast</p>
             <p className="text-lg font-medium">{summary.total}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3 px-4">
+            <p className="text-muted-foreground text-xs">With unavailability</p>
+            <p className="text-lg font-medium">{summary.withUnavailability}</p>
           </CardContent>
         </Card>
         <Card>
@@ -335,6 +371,7 @@ export function CastManagerPage() {
             <SelectItem value="missing_role">Missing role</SelectItem>
             <SelectItem value="missing_cast_number">Missing cast #</SelectItem>
             <SelectItem value="missing_agent">Missing agent info</SelectItem>
+            <SelectItem value="has_unavailability">Has unavailability</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -364,7 +401,8 @@ export function CastManagerPage() {
                   <TableHead>Agent phone</TableHead>
                   <TableHead>Contact</TableHead>
                   <TableHead className="w-32">Contributor form</TableHead>
-                  <TableHead className="w-24 text-right">Actions</TableHead>
+                  <TableHead className="w-24">Unavailable</TableHead>
+                  <TableHead className="w-28 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -393,12 +431,23 @@ export function CastManagerPage() {
                     <TableCell className="text-sm">
                       {CONTRIBUTOR_FORM_LABELS[p.contributor_form_status]}
                     </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {countUnavailableWindows(availabilityList, p.id) || '—'}
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" asChild>
                           <Link to={`/people/${p.id}`} aria-label="View">
                             <Eye className="size-4" />
                           </Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setUnavailabilityPerson(p)}
+                          aria-label="Unavailable dates"
+                        >
+                          <CalendarOff className="size-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -438,6 +487,18 @@ export function CastManagerPage() {
         }}
         isPending={deleteMutation.isPending}
       />
+
+      {currentProductionId && (
+        <PersonUnavailabilityDialog
+          open={!!unavailabilityPerson}
+          onOpenChange={(open) => {
+            if (!open) setUnavailabilityPerson(null)
+          }}
+          person={unavailabilityPerson}
+          productionId={currentProductionId}
+          kind="cast"
+        />
+      )}
 
       {/* Add / Edit cast dialog */}
       <Dialog

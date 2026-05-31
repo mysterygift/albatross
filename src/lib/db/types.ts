@@ -475,6 +475,9 @@ export type ShotCast = {
 
 export type CastAvailabilityStatus = 'AVAILABLE' | 'UNAVAILABLE' | 'TENTATIVE'
 
+/** Shared availability status for cast and crew windows. */
+export type PersonAvailabilityStatus = CastAvailabilityStatus
+
 export type CastAvailability = {
   id: string
   production_id: string
@@ -482,6 +485,16 @@ export type CastAvailability = {
   start_date: string
   end_date: string
   availability: CastAvailabilityStatus
+  notes: string | null
+} & SoftDeletable
+
+export type CrewAvailability = {
+  id: string
+  production_id: string
+  person_id: string
+  start_date: string
+  end_date: string
+  availability: PersonAvailabilityStatus
   notes: string | null
 } & SoftDeletable
 

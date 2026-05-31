@@ -21,8 +21,18 @@ import {
 } from '@/lib/db/repositories/booking'
 import {
   createAvailability,
+  deleteAvailability,
   listAvailabilityByPerson,
+  listAvailabilityByProduction,
+  updateAvailability,
 } from '@/lib/db/repositories/cast-availability'
+import {
+  createCrewAvailability,
+  deleteCrewAvailability,
+  listCrewAvailabilityByPerson,
+  listCrewAvailabilityByProduction,
+  updateCrewAvailability,
+} from '@/lib/db/repositories/crew-availability'
 import {
   getCrewHierarchyConfigByProduction,
   resetCrewHierarchyConfigToDefault,
@@ -182,6 +192,43 @@ describe('postgres core production graph validation', () => {
       const availability = await listAvailabilityByPerson(cast.id)
       expect(availability).toHaveLength(1)
       expect(availability[0]?.availability).toBe('UNAVAILABLE')
+
+      const updatedCastAvailability = await updateAvailability(availability[0]!.id, {
+        end_date: '2026-02-06',
+        notes: 'Holiday',
+      })
+      expect(updatedCastAvailability.end_date).toBe('2026-02-06')
+      expect(updatedCastAvailability.notes).toBe('Holiday')
+
+      const productionAvailability = await listAvailabilityByProduction(production.id)
+      expect(productionAvailability.some((a) => a.person_id === cast.id)).toBe(true)
+
+      await deleteAvailability(availability[0]!.id)
+      expect(await listAvailabilityByPerson(cast.id)).toHaveLength(0)
+
+      const crewAvailability = await createCrewAvailability({
+        production_id: production.id,
+        person_id: crew.id,
+        start_date: '2026-03-01',
+        end_date: '2026-03-03',
+        availability: 'UNAVAILABLE',
+        notes: 'Away',
+      })
+      expect(crewAvailability.person_id).toBe(crew.id)
+
+      const crewWindows = await listCrewAvailabilityByPerson(crew.id)
+      expect(crewWindows).toHaveLength(1)
+
+      const updatedCrewAvailability = await updateCrewAvailability(crewAvailability.id, {
+        end_date: '2026-03-05',
+      })
+      expect(updatedCrewAvailability.end_date).toBe('2026-03-05')
+
+      const productionCrewAvailability = await listCrewAvailabilityByProduction(production.id)
+      expect(productionCrewAvailability.some((a) => a.person_id === crew.id)).toBe(true)
+
+      await deleteCrewAvailability(crewAvailability.id)
+      expect(await listCrewAvailabilityByPerson(crew.id)).toHaveLength(0)
 
       await resetCrewHierarchyConfigToDefault(production.id)
       const hierarchy = await getCrewHierarchyConfigByProduction(production.id)

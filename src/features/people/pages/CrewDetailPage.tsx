@@ -9,6 +9,7 @@ import { getDb } from '@/lib/db/client'
 import { getPersonById, updatePerson } from '@/lib/db/repositories/person'
 import { listCrew } from '@/lib/db/repositories/person'
 import { listBookingsByPerson } from '@/lib/db/repositories/booking'
+import { listCrewAvailabilityByPerson } from '@/lib/db/repositories/crew-availability'
 import { getPersonBookingsSummary } from '@/lib/people/bookingsSummary'
 import { listShootDaysByProduction } from '@/lib/db/repositories/schedule'
 import { listShootDayUnitsByProduction } from '@/lib/db/repositories/shoot-day-units'
@@ -29,6 +30,7 @@ import {
 import {
   getPersonByIdForActor,
   listBookingsByPersonForActor,
+  listCrewAvailabilityByPersonForActor,
   listCrewForActor,
   listShootDaysByProductionForActor,
   listShootDayUnitsByProductionForActor,
@@ -51,8 +53,9 @@ import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog'
-import { ArrowLeft, Pencil, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Pencil, ExternalLink, Plus } from 'lucide-react'
 import { CrewForm, type CrewFormValues } from '@/features/people/components/CrewForm'
+import { PersonUnavailabilityDialog } from '@/features/people/components/PersonUnavailabilityDialog'
 
 function empty(s: string | null | undefined): string {
   const t = s?.trim()
@@ -67,6 +70,7 @@ export function CrewDetailPage() {
   const authSession = useAuthSession()
   const queryClient = useQueryClient()
   const [editOpen, setEditOpen] = useState(false)
+  const [unavailabilityOpen, setUnavailabilityOpen] = useState(false)
 
   const { data: person, isLoading: personLoading } = useQuery({
     queryKey: ['person', personId],
@@ -136,6 +140,22 @@ export function CrewDetailPage() {
         })
       }
       return listBookingsByPerson(personId!)
+    },
+    enabled: !!personId,
+  })
+
+  const { data: crewAvailability = [] } = useQuery({
+    queryKey: ['crew-availability-by-person', personId],
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCrewAvailabilityByPersonForActor({
+          db,
+          actor: authSession.currentUser,
+          personId: personId!,
+        })
+      }
+      return listCrewAvailabilityByPerson(personId!)
     },
     enabled: !!personId,
   })
@@ -563,6 +583,49 @@ export function CrewDetailPage() {
           </CardContent>
         </Card>
 
+        {/* Card C2: Unavailable dates */}
+        <Card className="border border-border bg-card border-l-4 border-l-destructive/40">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-sm font-semibold">Unavailable dates</CardTitle>
+            <Button variant="outline" size="sm" onClick={() => setUnavailabilityOpen(true)}>
+              <Plus className="mr-1 size-3.5" />
+              Manage
+            </Button>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {crewAvailability.filter((a) => a.availability === 'UNAVAILABLE').length === 0 ? (
+              <p className="text-sm text-muted-foreground">No unavailable dates recorded.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border">
+                    <TableHead className="text-muted-foreground text-xs">Start</TableHead>
+                    <TableHead className="text-muted-foreground text-xs">End</TableHead>
+                    <TableHead className="text-muted-foreground text-xs">Notes</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {crewAvailability
+                    .filter((a) => a.availability === 'UNAVAILABLE')
+                    .map((a) => (
+                      <TableRow key={a.id} className="border-border">
+                        <TableCell className="text-sm">
+                          {new Date(a.start_date).toLocaleDateString('en-GB')}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {new Date(a.end_date).toLocaleDateString('en-GB')}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-[140px] truncate">
+                          {empty(a.notes)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Card D: Notes & operational */}
         <Card className="border border-border bg-card border-l-4 border-l-muted-foreground/40">
           <CardHeader className="pb-2">
@@ -606,6 +669,16 @@ export function CrewDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {currentProductionId && person && (
+        <PersonUnavailabilityDialog
+          open={unavailabilityOpen}
+          onOpenChange={setUnavailabilityOpen}
+          person={person}
+          productionId={currentProductionId}
+          kind="crew"
+        />
+      )}
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>

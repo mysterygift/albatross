@@ -45,6 +45,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     vendorPurchaseOrders,
     bookings,
     castAvailability,
+    crewAvailability,
     shots,
     locationScene,
     stripboardItems,
@@ -177,6 +178,10 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     ),
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM cast_availability WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM crew_availability WHERE production_id = $1 AND deleted_at IS NULL`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -358,6 +363,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     vendor_purchase_orders: asRows(vendorPurchaseOrders),
     bookings: asRows(bookings),
     cast_availability: asRows(castAvailability),
+    crew_availability: asRows(crewAvailability),
     shots: asRows(shots),
     location_scene: asRows(locationScene),
     stripboard_items: asRows(stripboardItems),

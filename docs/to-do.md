@@ -5,7 +5,7 @@ TO–DO
 
 PEOPLE
 1. Fix CrewDetailPage/CastDetailPage returning user back to the UNUSED Person page when clicking on the back arrow, should return user to Crew/Cast page respectively.
-2. Cast availability – this should be editable via the Cast Manager. Allow users to enter HOLD dates and any UNAVAILABLE dates (this will flag as a clash in the DooD page)
+2. ~~Cast availability – this should be editable via the Cast Manager. Allow users to enter HOLD dates and any UNAVAILABLE dates (this will flag as a clash in the DooD page)~~
 3. Generate credit lists, with support for episodes (so if they're scheduled for a particular episode, they should be included in the credit list for that episode).
 
 BUDGET

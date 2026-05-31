@@ -44,7 +44,13 @@ import {
 } from '@/lib/db/repositories/person'
 import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import { listBookingsByPerson } from '@/lib/db/repositories/booking'
-import { listAvailabilityByPerson, listAvailabilityByProduction } from '@/lib/db/repositories/cast-availability'
+import {
+  createAvailability as createCastAvailability,
+  deleteAvailability as deleteCastAvailability,
+  listAvailabilityByPerson,
+  listAvailabilityByProduction,
+  updateAvailability as updateCastAvailability,
+} from '@/lib/db/repositories/cast-availability'
 import {
   addSceneCast,
   getCastIdsBySceneIds,
@@ -67,6 +73,13 @@ import {
   setShootDayUnitLocked,
 } from '@/lib/db/repositories/shoot-day-units'
 import { ensureMainUnit, listUnitsByProduction } from '@/lib/db/repositories/units'
+import {
+  createCrewAvailability,
+  deleteCrewAvailability,
+  listCrewAvailabilityByPerson,
+  listCrewAvailabilityByProduction,
+  updateCrewAvailability,
+} from '@/lib/db/repositories/crew-availability'
 import { listRecentPersonActivity } from '@/lib/db/repositories/personActivity'
 import {
   bulkAssignShotsToDay,
@@ -172,6 +185,26 @@ async function resolveProductionIdForBooking(db: DatabaseAdapter, bookingId: str
   )
   const productionId = rows[0]?.production_id
   if (!productionId) throw new Error('Booking not found')
+  return productionId
+}
+
+async function resolveProductionIdForCastAvailability(db: DatabaseAdapter, availabilityId: string): Promise<string> {
+  const rows = await db.select<Array<{ production_id: string }>>(
+    `SELECT production_id FROM cast_availability WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+    [availabilityId]
+  )
+  const productionId = rows[0]?.production_id
+  if (!productionId) throw new Error('Cast availability not found')
+  return productionId
+}
+
+async function resolveProductionIdForCrewAvailability(db: DatabaseAdapter, availabilityId: string): Promise<string> {
+  const rows = await db.select<Array<{ production_id: string }>>(
+    `SELECT production_id FROM crew_availability WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+    [availabilityId]
+  )
+  const productionId = rows[0]?.production_id
+  if (!productionId) throw new Error('Crew availability not found')
   return productionId
 }
 
@@ -715,6 +748,107 @@ export async function listAvailabilityByProductionForActor(args: {
 }) {
   await requireProjectViewAccess(args.db, args.actor, args.productionId)
   return listAvailabilityByProduction(args.productionId)
+}
+
+export async function createCastAvailabilityForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  personId: string
+  startDate: string
+  endDate: string
+  notes?: string | null
+}) {
+  await requireProjectEditAccess(args.db, args.actor, args.productionId)
+  return createCastAvailability({
+    production_id: args.productionId,
+    person_id: args.personId,
+    start_date: args.startDate,
+    end_date: args.endDate,
+    availability: 'UNAVAILABLE',
+    notes: args.notes ?? null,
+  })
+}
+
+export async function updateCastAvailabilityForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  availabilityId: string
+  data: Parameters<typeof updateCastAvailability>[1]
+}) {
+  const productionId = await resolveProductionIdForCastAvailability(args.db, args.availabilityId)
+  await requireProjectEditAccess(args.db, args.actor, productionId)
+  return updateCastAvailability(args.availabilityId, args.data)
+}
+
+export async function deleteCastAvailabilityForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  availabilityId: string
+}) {
+  const productionId = await resolveProductionIdForCastAvailability(args.db, args.availabilityId)
+  await requireProjectEditAccess(args.db, args.actor, productionId)
+  await deleteCastAvailability(args.availabilityId)
+}
+
+export async function listCrewAvailabilityByPersonForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  personId: string
+}) {
+  const productionId = await resolveProductionIdForPerson(args.db, args.personId)
+  await requireProjectViewAccess(args.db, args.actor, productionId)
+  return listCrewAvailabilityByPerson(args.personId)
+}
+
+export async function listCrewAvailabilityByProductionForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+}) {
+  await requireProjectViewAccess(args.db, args.actor, args.productionId)
+  return listCrewAvailabilityByProduction(args.productionId)
+}
+
+export async function createCrewAvailabilityForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  personId: string
+  startDate: string
+  endDate: string
+  notes?: string | null
+}) {
+  await requireProjectEditAccess(args.db, args.actor, args.productionId)
+  return createCrewAvailability({
+    production_id: args.productionId,
+    person_id: args.personId,
+    start_date: args.startDate,
+    end_date: args.endDate,
+    availability: 'UNAVAILABLE',
+    notes: args.notes ?? null,
+  })
+}
+
+export async function updateCrewAvailabilityForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  availabilityId: string
+  data: Parameters<typeof updateCrewAvailability>[1]
+}) {
+  const productionId = await resolveProductionIdForCrewAvailability(args.db, args.availabilityId)
+  await requireProjectEditAccess(args.db, args.actor, productionId)
+  return updateCrewAvailability(args.availabilityId, args.data)
+}
+
+export async function deleteCrewAvailabilityForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  availabilityId: string
+}) {
+  const productionId = await resolveProductionIdForCrewAvailability(args.db, args.availabilityId)
+  await requireProjectEditAccess(args.db, args.actor, productionId)
+  await deleteCrewAvailability(args.availabilityId)
 }
 
 export async function getBookingCoverageByShootDayForActor(args: {
