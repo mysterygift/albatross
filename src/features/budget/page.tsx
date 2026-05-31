@@ -1324,7 +1324,7 @@ export function BudgetPage() {
               className="border-border bg-background no-print"
             >
               <Settings2 className="mr-2 size-4" />
-              Manage derived costs
+              Manage Fringes and Contingency
             </Button>
             <Button variant="outline" size="sm" onClick={exportCsv} className="no-print">
             <Download className="mr-2 size-4" />
@@ -1756,7 +1756,7 @@ export function BudgetPage() {
             configureButton={
               <Button variant="outline" size="sm" onClick={() => setProductionTotalsModalOpen(true)} className="no-print">
                 <SlidersHorizontal className="mr-2 size-4" />
-                Configure production totals
+                Configure Subtotals
               </Button>
             }
           />
@@ -3191,7 +3191,7 @@ function ProductionTotalsModal({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Production totals</DialogTitle>
+          <DialogTitle>Subtotals</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="rounded-md border">
@@ -3206,7 +3206,7 @@ function ProductionTotalsModal({
                 {productionTotals.length === 0 && !showForm ? (
                   <TableRow>
                     <TableCell colSpan={2} className="text-muted-foreground text-sm">
-                      No production totals yet.
+                      No subtotals yet.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -3820,10 +3820,10 @@ function ManageDerivedCostsDialog({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Manage derived costs</DialogTitle>
-        <p className="text-muted-foreground text-sm">
-          Fringes and contingency are computed from account totals. Derived amounts are budget-side overlays only.
-        </p>
+        <DialogTitle>Manage Fringes and Contingency</DialogTitle>
+        {/* <p className="text-muted-foreground text-sm">
+          Fringes and Contingency are computed from account totals. Derived amounts are budget-side overlays only.
+        </p> */}
       </DialogHeader>
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'fringes' | 'contingency')} className="flex flex-col flex-1 min-h-0">
         <TabsList className="bg-muted/50 border border-border w-full grid grid-cols-2">

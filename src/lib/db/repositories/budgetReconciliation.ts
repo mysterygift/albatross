@@ -12,6 +12,7 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import type { BudgetItemExpenseLink } from '../types'
 import { resolveBudgetRevisionId } from './budgetRevisions'
+import { moneyExceeds, roundMoney } from '@/lib/money/roundMoney'
 
 const TABLE = 'budget_item_expense_links'
 
@@ -124,7 +125,7 @@ export async function createBudgetItemExpenseLink(data: {
       budgetRevisionId,
       data.budgetItemId,
       data.expenseId,
-      data.matchedAmount,
+      roundMoney(data.matchedAmount),
       ts,
       ts,
     ]
@@ -176,7 +177,7 @@ export async function createBudgetItemExpenseLinks(
         [expenseId]
       ),
       db.select<Record<string, unknown>[]>(
-        `SELECT matched_amount FROM ${TABLE} WHERE expense_id = $1 AND deleted_at IS NULL`,
+        `SELECT id, budget_item_id, matched_amount FROM ${TABLE} WHERE expense_id = $1 AND deleted_at IS NULL`,
         [expenseId]
       ),
     ])
@@ -187,14 +188,24 @@ export async function createBudgetItemExpenseLinks(
       throw new Error('Expense does not belong to this production')
     }
 
-    const expenseAmount = (expense.amount as number) ?? 0
-    const currentAllocated = existingLinksRows.reduce(
-      (sum, r) => sum + (Number((r as { matched_amount: unknown }).matched_amount) || 0),
-      0
+    const expenseAmount = roundMoney((expense.amount as number) ?? 0)
+    const currentAllocated = roundMoney(
+      existingLinksRows.reduce(
+        (sum, r) => sum + (Number((r as { matched_amount: unknown }).matched_amount) || 0),
+        0
+      )
     )
-    const unallocated = expenseAmount - currentAllocated
-    const sumNew = allocations.reduce((s, a) => s + a.matchedAmount, 0)
-    if (sumNew > unallocated) {
+    const unallocated = roundMoney(expenseAmount - currentAllocated)
+    const sumNew = roundMoney(allocations.reduce((s, a) => s + a.matchedAmount, 0))
+    const existingByBudgetItem = new Map<string, { id: string; matched_amount: number }>()
+    for (const r of existingLinksRows) {
+      const row = r as { id: string; budget_item_id: string; matched_amount: unknown }
+      existingByBudgetItem.set(row.budget_item_id, {
+        id: row.id,
+        matched_amount: Number(row.matched_amount) || 0,
+      })
+    }
+    if (moneyExceeds(sumNew, unallocated)) {
       throw new Error(
         `Total allocation (${sumNew}) exceeds the expense's current unallocated amount (${unallocated})`
       )
@@ -214,21 +225,31 @@ export async function createBudgetItemExpenseLinks(
 
     const ts = now()
     const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
-    // One multi-row INSERT = one combined db.execute (DATABASE_LAYER.md §3); avoids explicit
-    // BEGIN/COMMIT inside the batch, which can interact badly with the pooled driver (see
-    // demoProductionSeed verifyCascades note and §8 demo booking seed pattern).
+    const batchStatements: Array<{ sql: string; bindValues: unknown[] }> = []
     const valueGroups: string[] = []
     const insertBind: unknown[] = []
     let param = 1
     for (const a of allocations) {
-      valueGroups.push(
-        `($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7})`
-      )
-      param += 8
-      insertBind.push(uuid(), productionId, budgetRevisionId, a.budgetItemId, expenseId, a.matchedAmount, ts, ts)
+      const amount = roundMoney(a.matchedAmount)
+      const existing = existingByBudgetItem.get(a.budgetItemId)
+      if (existing) {
+        batchStatements.push({
+          sql: `UPDATE ${TABLE} SET matched_amount = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
+          bindValues: [roundMoney(existing.matched_amount + amount), ts, existing.id],
+        })
+      } else {
+        valueGroups.push(
+          `($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4}, $${param + 5}, $${param + 6}, $${param + 7})`
+        )
+        param += 8
+        insertBind.push(uuid(), productionId, budgetRevisionId, a.budgetItemId, expenseId, amount, ts, ts)
+      }
     }
-    const insertSql = `INSERT INTO ${TABLE} (id, production_id, budget_revision_id, budget_item_id, expense_id, matched_amount, created_at, updated_at) VALUES ${valueGroups.join(', ')}`
-    await executeBatch(db, [{ sql: insertSql, bindValues: insertBind }])
+    if (valueGroups.length > 0) {
+      const insertSql = `INSERT INTO ${TABLE} (id, production_id, budget_revision_id, budget_item_id, expense_id, matched_amount, created_at, updated_at) VALUES ${valueGroups.join(', ')}`
+      batchStatements.push({ sql: insertSql, bindValues: insertBind })
+    }
+    await executeBatch(db, batchStatements)
 
     const links = await db.select<Record<string, unknown>[]>(
       `SELECT * FROM ${TABLE} WHERE expense_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
@@ -272,22 +293,25 @@ export async function updateBudgetItemExpenseLink(data: {
   ])
   const expense = expenseRows[0]
   if (!expense) throw new Error('Expense not found or deleted')
-  const expenseAmount = (expense.amount as number) ?? 0
-  const otherLinksSum = (allLinksRows as Array<{ id: string; matched_amount: number }>).reduce(
-    (sum, r) => (r.id === data.id ? sum : sum + (r.matched_amount ?? 0)),
-    0
+  const expenseAmount = roundMoney((expense.amount as number) ?? 0)
+  const otherLinksSum = roundMoney(
+    (allLinksRows as Array<{ id: string; matched_amount: number }>).reduce(
+      (sum, r) => (r.id === data.id ? sum : sum + (r.matched_amount ?? 0)),
+      0
+    )
   )
-  const maxAllowed = expenseAmount - otherLinksSum
-  if (data.matchedAmount > maxAllowed) {
+  const maxAllowed = roundMoney(expenseAmount - otherLinksSum)
+  const matchedAmount = roundMoney(data.matchedAmount)
+  if (moneyExceeds(matchedAmount, maxAllowed)) {
     throw new Error(
-      `Updated amount (${data.matchedAmount}) would exceed the expense's available unallocated amount (max ${maxAllowed} for this link)`
+      `Updated amount (${matchedAmount}) would exceed the expense's available unallocated amount (max ${maxAllowed} for this link)`
     )
   }
 
   const ts = now()
   await db.execute(
     `UPDATE ${TABLE} SET matched_amount = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
-    [data.matchedAmount, ts, data.id]
+    [matchedAmount, ts, data.id]
   )
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [data.id])
   if (!rows.length) throw new Error('Link not found or deleted')

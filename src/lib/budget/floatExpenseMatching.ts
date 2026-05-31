@@ -11,11 +11,13 @@ import type {
   PettyCashFloatReconciliationStatus,
 } from '@/lib/db/types'
 import { sumAllocatedAmountForExpense } from '@/lib/budget/reconciliation'
+import { roundMoney } from '@/lib/money/roundMoney'
 
 export function sumFloatMatchedForExpense(expenseId: string, links: FloatExpenseLink[]): number {
-  return links
+  const sum = links
     .filter((l) => l.expense_id === expenseId)
     .reduce((sum, l) => sum + l.matched_amount, 0)
+  return roundMoney(sum)
 }
 
 export function getPettyCashFloatDerived(
@@ -27,9 +29,9 @@ export function getPettyCashFloatDerived(
   remaining: number
   status: PettyCashFloatReconciliationStatus
 } {
-  const allocated = float.amount
-  const matched = linksForFloat.reduce((s, l) => s + l.matched_amount, 0)
-  const remaining = allocated - matched
+  const allocated = roundMoney(float.amount)
+  const matched = roundMoney(linksForFloat.reduce((s, l) => s + l.matched_amount, 0))
+  const remaining = roundMoney(allocated - matched)
   let status: PettyCashFloatReconciliationStatus
   if (matched === 0) status = 'unmatched'
   else if (matched < allocated) status = 'partial'
@@ -46,5 +48,5 @@ export function getExpenseUnallocatedForFloatMatching(
 ): number {
   const budget = sumAllocatedAmountForExpense(expense.id, budgetLinks)
   const floatPart = sumFloatMatchedForExpense(expense.id, floatLinks)
-  return expense.amount - budget - floatPart
+  return roundMoney(expense.amount - budget - floatPart)
 }

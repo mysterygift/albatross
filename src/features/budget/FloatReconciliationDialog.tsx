@@ -27,6 +27,7 @@ import {
   getExpenseUnallocatedForFloatMatching,
   getPettyCashFloatDerived,
 } from '@/lib/budget/floatExpenseMatching'
+import { moneyExceeds, roundMoney } from '@/lib/money/roundMoney'
 import { formatIssuedDaysAgo, issuedDateToAgeDays } from '@/lib/budget/floatReminders'
 import type { Expense, LineItemType, PettyCashFloat } from '@/lib/db/types'
 import { AlertTriangle, Trash2 } from 'lucide-react'
@@ -122,17 +123,18 @@ export function FloatReconciliationDialog({
   }, [expenses, expenseIdsLinkedToAnyFloat, budgetLinks, floatLinks])
 
   const allocatingNow = useMemo(() => {
-    return selectedExpenseIds.reduce((sum, id) => {
+    const sum = selectedExpenseIds.reduce((sum, id) => {
       const n = parseFloat(amounts[id] ?? '')
       return sum + (Number.isFinite(n) && n > 0 ? n : 0)
     }, 0)
+    return roundMoney(sum)
   }, [selectedExpenseIds, amounts])
 
   const sameCurrency = Boolean(
     pettyCashFloat && pettyCashFloat.currency === productionCurrency
   )
   const wouldOverspendFloat = Boolean(
-    pettyCashFloat && sameCurrency && allocatingNow > derived.remaining + 1e-9
+    pettyCashFloat && sameCurrency && moneyExceeds(allocatingNow, derived.remaining)
   )
 
   const validation = (() => {
@@ -141,14 +143,14 @@ export function FloatReconciliationDialog({
 
     const allocations: { expenseId: string; matchedAmount: number }[] = []
     for (const id of selectedExpenseIds) {
-      const n = parseFloat(amounts[id] ?? '')
+      const n = roundMoney(parseFloat(amounts[id] ?? ''))
       if (!Number.isFinite(n) || n <= 0) {
         return { canSave: false as const, payload: null }
       }
       const exp = expenseById.get(id)
       if (!exp) return { canSave: false as const, payload: null }
       const max = getExpenseUnallocatedForFloatMatching(exp, budgetLinks, floatLinks)
-      if (n > max + 1e-9) {
+      if (moneyExceeds(n, max)) {
         return { canSave: false as const, payload: null }
       }
       allocations.push({ expenseId: id, matchedAmount: n })

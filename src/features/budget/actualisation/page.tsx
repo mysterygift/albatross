@@ -21,6 +21,7 @@ import {
   sumMatchedAmountForBudgetItem,
 } from '@/lib/budget/reconciliation'
 import { getExpenseUnallocatedForFloatMatching, sumFloatMatchedForExpense } from '@/lib/budget/floatExpenseMatching'
+import { moneyExceeds, roundMoney } from '@/lib/money/roundMoney'
 import { listFloatExpenseLinksByExpense, listFloatExpenseLinksByProduction } from '@/lib/db/repositories/floatReconciliation'
 import { listFloatsByProduction } from '@/lib/db/repositories/floats'
 import { listPeopleByProduction } from '@/lib/db/repositories/person'
@@ -334,11 +335,13 @@ export function ActualisationPage() {
       links,
       floatLinksForSelectedExpense
     )
-    const allocatingNow = selectedAllocationItemIds.reduce(
-      (sum, id) =>
-        sum +
-        (Number.isFinite(parseFloat(allocationAmounts[id] ?? '')) ? parseFloat(allocationAmounts[id]!) : 0),
-      0
+    const allocatingNow = roundMoney(
+      selectedAllocationItemIds.reduce(
+        (sum, id) =>
+          sum +
+          (Number.isFinite(parseFloat(allocationAmounts[id] ?? '')) ? parseFloat(allocationAmounts[id]!) : 0),
+        0
+      )
     )
     const allValid =
       selectedAllocationItemIds.length >= 1 &&
@@ -346,14 +349,14 @@ export function ActualisationPage() {
         const n = parseFloat(allocationAmounts[id] ?? '')
         return Number.isFinite(n) && n > 0
       })
-    const canSave = allValid && allocatingNow <= unallocated + 1e-9
+    const canSave = allValid && !moneyExceeds(allocatingNow, unallocated)
     const payload =
       selectedAllocationItemIds.length >= 1
         ? {
             expenseId: selectedExpenseForModal.id,
             allocations: selectedAllocationItemIds.map((id) => ({
               budgetItemId: id,
-              matchedAmount: parseFloat(allocationAmounts[id] ?? '0') || 0,
+              matchedAmount: roundMoney(parseFloat(allocationAmounts[id] ?? '0') || 0),
             })),
           }
         : null

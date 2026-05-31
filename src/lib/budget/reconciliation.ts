@@ -11,15 +11,17 @@ import type {
   Expense,
   ExpenseReconciliationStatus,
 } from '@/lib/db/types'
+import { roundMoney } from '@/lib/money/roundMoney'
 
 /** Sum all link.matched_amount for the given budget item (caller passes non-deleted links). */
 export function sumMatchedAmountForBudgetItem(
   budgetItemId: string,
   links: BudgetItemExpenseLink[]
 ): number {
-  return links
+  const sum = links
     .filter((l) => l.budget_item_id === budgetItemId)
     .reduce((sum, l) => sum + l.matched_amount, 0)
+  return roundMoney(sum)
 }
 
 /** Sum all link.matched_amount for the given expense (caller passes non-deleted links). */
@@ -27,9 +29,10 @@ export function sumAllocatedAmountForExpense(
   expenseId: string,
   links: BudgetItemExpenseLink[]
 ): number {
-  return links
+  const sum = links
     .filter((l) => l.expense_id === expenseId)
     .reduce((sum, l) => sum + l.matched_amount, 0)
+  return roundMoney(sum)
 }
 
 /** estimated_cost - matched_sum; may be negative if overspent. */
@@ -38,7 +41,7 @@ export function getBudgetItemRemainingEstimate(
   links: BudgetItemExpenseLink[]
 ): number {
   const matched = sumMatchedAmountForBudgetItem(budgetItem.id, links)
-  return budgetItem.estimated_cost - matched
+  return roundMoney(budgetItem.estimated_cost - matched)
 }
 
 /** expense.amount - allocated_sum. */
@@ -47,7 +50,7 @@ export function getExpenseUnallocatedAmount(
   links: BudgetItemExpenseLink[]
 ): number {
   const allocated = sumAllocatedAmountForExpense(expense.id, links)
-  return expense.amount - allocated
+  return roundMoney(expense.amount - allocated)
 }
 
 /** Line item match status from matched sum vs estimated_cost. */
@@ -56,9 +59,10 @@ export function getBudgetItemMatchStatus(
   links: BudgetItemExpenseLink[]
 ): BudgetItemReconciliationStatus {
   const matched = sumMatchedAmountForBudgetItem(budgetItem.id, links)
+  const estimated = roundMoney(budgetItem.estimated_cost)
   if (matched === 0) return 'unmatched'
-  if (matched < budgetItem.estimated_cost) return 'partial'
-  if (matched === budgetItem.estimated_cost) return 'matched'
+  if (matched < estimated) return 'partial'
+  if (matched === estimated) return 'matched'
   return 'overspent'
 }
 
@@ -68,8 +72,9 @@ export function getExpenseAllocationStatus(
   links: BudgetItemExpenseLink[]
 ): ExpenseReconciliationStatus {
   const allocated = sumAllocatedAmountForExpense(expense.id, links)
+  const amount = roundMoney(expense.amount)
   if (allocated === 0) return 'unallocated'
-  if (allocated < expense.amount) return 'partial'
+  if (allocated < amount) return 'partial'
   return 'allocated'
 }
 
