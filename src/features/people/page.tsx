@@ -9,6 +9,12 @@ import {
   listPeopleByProductionForActor,
   updatePersonForActor,
 } from '@/lib/access/projectDomainService'
+import {
+  listPeopleByProduction,
+  createPerson,
+  updatePerson,
+  deletePerson,
+} from '@/lib/db/repositories/person'
 import { serializePhases } from '@/lib/people/productionPhases'
 import {
   useReactTable,

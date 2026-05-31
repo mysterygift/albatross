@@ -8,6 +8,7 @@ import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { castTutorialSteps } from '@/features/tutorial/sections/castTutorial'
 import { listCast, createPerson, updatePerson, deletePerson } from '@/lib/db/repositories/person'
+import { listAvailabilityByProduction } from '@/lib/db/repositories/cast-availability'
 import {
   createPersonForActor,
   deletePersonForActor,

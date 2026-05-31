@@ -33,6 +33,7 @@ import {
   getDepartmentsWithTasksButNoHod,
 } from '@/lib/people/crewTaskIntegration'
 import type { Person } from '@/lib/db/types'
+import type { CrewHierarchyConfig } from '@/lib/people/crewHierarchyTypes'
 import {
   Table,
   TableBody,
