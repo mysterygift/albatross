@@ -7,6 +7,26 @@ import {
   resolveAuthGateMode,
   verifySetupCommitPredicates,
 } from '@/lib/auth/initialSetupStatus'
+import type { DbEncryptionMeta } from '@/lib/security/dbFileEncryption'
+import type { InstanceKeyWrapperEntry, InstanceKeyWrappersMeta } from '@/lib/security/instanceKey'
+
+function stubWrappersMeta(
+  wrappers: Array<Pick<InstanceKeyWrapperEntry, 'revoked_at'>>
+): InstanceKeyWrappersMeta {
+  return {
+    version: 1,
+    wrappers: wrappers.map((partial) => ({
+      user_id: 'user-1',
+      username: 'admin',
+      wrap_salt: 'aa'.repeat(16),
+      wrapped_instance_key: 'wrap1:abc',
+      version: 1,
+      created_at: '2026-01-01T00:00:00.000Z',
+      rotated_at: null,
+      ...partial,
+    })),
+  }
+}
 
 const statusMocks = vi.hoisted(() => ({
   getLocalDbStatus: vi.fn(async () => ({
@@ -14,7 +34,7 @@ const statusMocks = vi.hoisted(() => ({
     encryptionMetaExists: false,
     isPlainSqlite: true,
   })),
-  readDbEncryptionMeta: vi.fn(async () => null),
+  readDbEncryptionMeta: vi.fn<() => Promise<DbEncryptionMeta | null>>(async () => null),
 }))
 
 const dbMocks = vi.hoisted(() => ({
@@ -34,7 +54,7 @@ const recoveryMocks = vi.hoisted(() => ({
 }))
 
 const instanceKeyMocks = vi.hoisted(() => ({
-  readInstanceKeyWrappersMeta: vi.fn(async () => null),
+  readInstanceKeyWrappersMeta: vi.fn<() => Promise<InstanceKeyWrappersMeta | null>>(async () => null),
 }))
 
 vi.mock('@/lib/security/dbFileEncryption', async (importOriginal) => {
@@ -161,10 +181,9 @@ describe('initialSetupStatus', () => {
         key_mode: 'instance_key',
       })
       recoveryMocks.recoveryKeyMetaExists.mockResolvedValue(false)
-      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue({
-        version: 1,
-        wrappers: [{ revoked_at: null }],
-      })
+      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue(
+        stubWrappersMeta([{ revoked_at: null }])
+      )
 
       await expect(isInitialSetupComplete()).resolves.toBe(false)
     })
@@ -180,10 +199,9 @@ describe('initialSetupStatus', () => {
         key_mode: 'instance_key',
       })
       recoveryMocks.recoveryKeyMetaExists.mockResolvedValue(true)
-      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue({
-        version: 1,
-        wrappers: [{ revoked_at: '2026-01-01T00:00:00.000Z' }],
-      })
+      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue(
+        stubWrappersMeta([{ revoked_at: '2026-01-01T00:00:00.000Z' }])
+      )
 
       await expect(isInitialSetupComplete()).resolves.toBe(false)
     })
@@ -196,10 +214,9 @@ describe('initialSetupStatus', () => {
       })
       statusMocks.readDbEncryptionMeta.mockResolvedValue(null)
       recoveryMocks.recoveryKeyMetaExists.mockResolvedValue(true)
-      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue({
-        version: 1,
-        wrappers: [{ revoked_at: null }],
-      })
+      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue(
+        stubWrappersMeta([{ revoked_at: null }])
+      )
 
       await expect(isInitialSetupComplete()).resolves.toBe(false)
     })
@@ -215,10 +232,9 @@ describe('initialSetupStatus', () => {
         key_mode: 'instance_key',
       })
       recoveryMocks.recoveryKeyMetaExists.mockResolvedValue(true)
-      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue({
-        version: 1,
-        wrappers: [{ revoked_at: null }],
-      })
+      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue(
+        stubWrappersMeta([{ revoked_at: null }])
+      )
 
       await expect(isInitialSetupComplete()).resolves.toBe(true)
       expect(dbMocks.openPlainDbIfExists).not.toHaveBeenCalled()
@@ -235,10 +251,9 @@ describe('initialSetupStatus', () => {
         select: vi.fn(async () => [{ count: 1 }]),
       })
       recoveryMocks.recoveryKeyMetaExists.mockResolvedValue(true)
-      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue({
-        version: 1,
-        wrappers: [{ revoked_at: null }],
-      })
+      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue(
+        stubWrappersMeta([{ revoked_at: null }])
+      )
 
       await expect(isInitialSetupComplete()).resolves.toBe(true)
     })
@@ -256,10 +271,9 @@ describe('initialSetupStatus', () => {
         key_mode: 'instance_key',
       })
       recoveryMocks.recoveryKeyMetaExists.mockResolvedValue(true)
-      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue({
-        version: 1,
-        wrappers: [{ revoked_at: null }],
-      })
+      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue(
+        stubWrappersMeta([{ revoked_at: null }])
+      )
 
       await expect(resolveAuthGateMode()).resolves.toBe('sign_in')
     })
@@ -295,10 +309,9 @@ describe('initialSetupStatus', () => {
         select: vi.fn(async () => [{ count: 0 }]),
       })
       recoveryMocks.recoveryKeyMetaExists.mockResolvedValue(true)
-      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue({
-        version: 1,
-        wrappers: [{ revoked_at: null }],
-      })
+      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue(
+        stubWrappersMeta([{ revoked_at: null }])
+      )
       statusMocks.getLocalDbStatus.mockResolvedValue({
         dbFileExists: true,
         encryptionMetaExists: true,
@@ -318,10 +331,9 @@ describe('initialSetupStatus', () => {
         select: vi.fn(async () => [{ count: 1 }]),
       })
       recoveryMocks.recoveryKeyMetaExists.mockResolvedValue(true)
-      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue({
-        version: 1,
-        wrappers: [{ revoked_at: null }],
-      })
+      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue(
+        stubWrappersMeta([{ revoked_at: null }])
+      )
       statusMocks.getLocalDbStatus.mockResolvedValue({
         dbFileExists: true,
         encryptionMetaExists: true,

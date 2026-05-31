@@ -8,11 +8,23 @@ const clientMocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/db/client', () => clientMocks)
 
+import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
 import {
   decryptClientField,
   encryptClientField,
 } from '@/lib/security/clientFieldCrypto'
 import { reencryptAllClientFields } from '@/lib/db/migrations/reencryptClientFields'
+
+function mockDbAdapter(overrides: Partial<DatabaseAdapter>): DatabaseAdapter {
+  return {
+    dialect: 'sqlite',
+    select: vi.fn(async () => []) as DatabaseAdapter['select'],
+    execute: vi.fn(async () => ({ rowsAffected: 0, lastInsertId: 0 })),
+    executeBatch: vi.fn(async () => undefined),
+    runInSerializedTransaction: vi.fn(async (fn) => fn()),
+    ...overrides,
+  }
+}
 
 describe('reencryptClientFields', () => {
   const fromDek = new Uint8Array(32).map((_, i) => i)
@@ -25,20 +37,21 @@ describe('reencryptClientFields', () => {
   it('re-encrypts client rows from one DEK to another', async () => {
     const nameEnc = await encryptClientField('Acme Corp', fromDek)
     const emailEnc = await encryptClientField('a@acme.test', fromDek)
-    const db = {
-      dialect: 'sqlite' as const,
+    const batchExecute = vi.fn(
+      async (_query: string, _bindValues?: unknown[]) => ({ rowsAffected: 1, lastInsertId: 0 })
+    )
+    const db = mockDbAdapter({
       select: vi.fn(async () => [
         { id: 'client-1', name: nameEnc, email: emailEnc, phone: null },
-      ]),
-      execute: vi.fn(async () => undefined),
-    }
-    const batchDb = { ...db, execute: vi.fn(async () => undefined) }
+      ]) as DatabaseAdapter['select'],
+    })
+    const batchDb = mockDbAdapter({ execute: batchExecute })
     clientMocks.getDb.mockResolvedValue(batchDb)
 
     const updated = await reencryptAllClientFields(db, { fromDek, toDek })
     expect(updated).toBe(1)
-    expect(batchDb.execute).toHaveBeenCalledTimes(1)
-    const args = batchDb.execute.mock.calls[0]?.[1] as unknown[]
+    expect(batchExecute).toHaveBeenCalledTimes(1)
+    const args = batchExecute.mock.calls[0]?.[1] as unknown[]
     const newName = String(args[0])
     const newEmail = String(args[1])
     expect(await decryptClientField(newName, toDek)).toBe('Acme Corp')
@@ -46,13 +59,13 @@ describe('reencryptClientFields', () => {
   })
 
   it('returns zero when no encrypted rows exist', async () => {
-    const db = {
-      dialect: 'sqlite' as const,
-      select: vi.fn(async () => []),
-      execute: vi.fn(async () => undefined),
-    }
+    const execute = vi.fn(async () => ({ rowsAffected: 0, lastInsertId: 0 }))
+    const db = mockDbAdapter({
+      select: vi.fn(async () => []) as DatabaseAdapter['select'],
+      execute,
+    })
     const updated = await reencryptAllClientFields(db, { fromDek, toDek })
     expect(updated).toBe(0)
-    expect(db.execute).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
   })
 })

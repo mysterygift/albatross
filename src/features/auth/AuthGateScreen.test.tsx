@@ -4,13 +4,14 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { AuthGateScreen } from '@/features/auth/AuthGateScreen'
+import type { AuthGateMode } from '@/lib/auth/initialSetupStatus'
 import {
   armSetupWorkspaceHandoff,
   resetSetupWorkspaceHandoffForTests,
 } from '@/lib/auth/setupWorkspaceHandoff'
 
 const gateMocks = vi.hoisted(() => ({
-  resolveAuthGateMode: vi.fn(async () => 'sign_in' as const),
+  resolveAuthGateMode: vi.fn(async (): Promise<AuthGateMode> => 'sign_in'),
 }))
 
 const statusMocks = vi.hoisted(() => ({

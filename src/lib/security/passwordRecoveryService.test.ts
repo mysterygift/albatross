@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { DbEncryptionMeta } from '@/lib/security/dbFileEncryption'
+
 const recoveryMocks = vi.hoisted(() => ({
   recoveryKeyMetaExists: vi.fn(async () => true),
   readRecoveryKeyMeta: vi.fn(),
@@ -32,7 +34,10 @@ const instanceKeyMocks = vi.hoisted(() => ({
 }))
 
 const dbFileMocks = vi.hoisted(() => ({
-  readDbEncryptionMeta: vi.fn(async () => ({ version: 1 as const, kdf_salt: 'f'.repeat(32) })),
+  readDbEncryptionMeta: vi.fn<() => Promise<DbEncryptionMeta | null>>(async () => ({
+    version: 1,
+    kdf_salt: 'f'.repeat(32),
+  })),
   deriveSqlCipherPassphraseFromPassword: vi.fn(async () => 'n'.repeat(64)),
   rekeySqlCipherDatabase: vi.fn(async () => undefined),
 }))
@@ -146,7 +151,7 @@ describe('passwordRecoveryService', () => {
       version: 2,
       key_mode: 'instance_key',
     })
-    const db = mockDb()
+    mockDb()
     await recoverAdminPasswordWithRecoveryKey({
       recoveryKey: '11111111-22222222-33333333-44444444-55555555-66666666-77777777-88888888',
       newPassword: 'newpass123',

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
+import type { DbEncryptionMeta } from '@/lib/security/dbFileEncryption'
 import { resetUserPasswordAsAdmin } from '@/lib/auth/adminUserManagementService'
 import {
   ADMIN_PASSWORD_RESET_NO_KEY_ACCESS_MESSAGE,
@@ -23,7 +24,7 @@ const clientMocks = vi.hoisted(() => ({
 }))
 
 const dbFileMocks = vi.hoisted(() => ({
-  readDbEncryptionMeta: vi.fn(async () => ({
+  readDbEncryptionMeta: vi.fn<() => Promise<DbEncryptionMeta | null>>(async () => ({
     version: 2 as const,
     key_mode: 'instance_key' as const,
   })),
@@ -94,11 +95,17 @@ type AuditRow = {
   metadata: string | null
 }
 
+type MemoryTestDb = DatabaseAdapter & {
+  getAuditRows: () => AuditRow[]
+  getUsers: () => UserRow[]
+  getSessions: () => SessionRow[]
+}
+
 function createMemoryDb(
   initialUsers: UserRow[],
   sessions: SessionRow[] = [],
   options?: { failBatchOnCommit?: boolean }
-): DatabaseAdapter {
+): MemoryTestDb {
   const users = [...initialUsers]
   const sessionRows = [...sessions]
   const auditRows: AuditRow[] = []
@@ -161,10 +168,6 @@ function createMemoryDb(
     getAuditRows: () => auditRows,
     getUsers: () => users,
     getSessions: () => sessionRows,
-  } as DatabaseAdapter & {
-    getAuditRows: () => AuditRow[]
-    getUsers: () => UserRow[]
-    getSessions: () => SessionRow[]
   }
 }
 

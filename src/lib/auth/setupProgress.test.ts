@@ -12,7 +12,7 @@ import {
 const fsMocks = vi.hoisted(() => ({
   exists: vi.fn(async () => false),
   readTextFile: vi.fn(async () => ''),
-  writeTextFile: vi.fn(async () => undefined),
+  writeTextFile: vi.fn<(path: string, contents: string) => Promise<void>>(async () => undefined),
   remove: vi.fn(async () => undefined),
 }))
 
@@ -35,7 +35,7 @@ describe('setupProgress', () => {
   })
 
   it('writes and reads non-secret setup progress', async () => {
-    fsMocks.writeTextFile.mockImplementation(async (_path, contents) => {
+    fsMocks.writeTextFile.mockImplementation(async (_path: string, contents: string) => {
       fsMocks.readTextFile.mockResolvedValue(contents)
       fsMocks.exists.mockResolvedValue(true)
     })

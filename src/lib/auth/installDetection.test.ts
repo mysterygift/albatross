@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { detectInstallState } from '@/lib/auth/installDetection'
+import type { DbEncryptionMeta } from '@/lib/security/dbFileEncryption'
 
 const statusMocks = vi.hoisted(() => ({
   getLocalDbStatus: vi.fn(async () => ({
@@ -8,7 +9,7 @@ const statusMocks = vi.hoisted(() => ({
     encryptionMetaExists: false,
     isPlainSqlite: true,
   })),
-  readDbEncryptionMeta: vi.fn(async () => null),
+  readDbEncryptionMeta: vi.fn<() => Promise<DbEncryptionMeta | null>>(async () => null),
 }))
 
 const setupStatusMocks = vi.hoisted(() => ({
@@ -98,7 +99,7 @@ describe('installDetection', () => {
     statusMocks.readDbEncryptionMeta.mockResolvedValue({
       version: 2,
       key_mode: 'unknown_mode',
-    })
+    } as unknown as DbEncryptionMeta)
 
     const result = await detectInstallState()
     expect(result.kind).toBe('encrypted_incomplete')

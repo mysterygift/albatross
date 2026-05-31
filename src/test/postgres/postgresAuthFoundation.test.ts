@@ -106,7 +106,7 @@ describe('postgres auth foundation (UAM1)', () => {
       })
       expect(firstBootstrap.user.role).toBe('admin')
       expect(firstBootstrap.user.username).toBe('admin')
-      expect(firstBootstrap.sessionToken.length).toBeGreaterThan(20)
+      expect(firstBootstrap.sessionToken!.length).toBeGreaterThan(20)
 
       await expect(
         bootstrapFirstAdmin(adapter, {
@@ -234,12 +234,12 @@ describe('postgres auth foundation (UAM1)', () => {
       await createUserAccount(adapter, { username: 'producer', password: 'producer-password' })
       const auth = await login(adapter, { username: 'Producer', password: 'producer-password' })
       expect(auth.user.username).toBe('producer')
-      expect(auth.session.user_id).toBe(auth.user.id)
-      expect(auth.sessionToken.length).toBeGreaterThan(20)
+      expect(auth.session!.user_id).toBe(auth.user.id)
+      expect(auth.sessionToken!.length).toBeGreaterThan(20)
 
       const tokenRows = await adapter.select<Array<{ token_hash: string }>>(
         `SELECT token_hash FROM sessions WHERE id = $1`,
-        [auth.session.id]
+        [auth.session!.id]
       )
       expect(tokenRows).toHaveLength(1)
       expect(tokenRows[0]!.token_hash).not.toBe(auth.sessionToken)
@@ -268,12 +268,12 @@ describe('postgres auth foundation (UAM1)', () => {
       await createUserAccount(adapter, { username: 'assistant', password: 'assistant-password' })
       const auth = await login(adapter, { username: 'assistant', password: 'assistant-password' })
 
-      const resolvedBefore = await resolveAuthenticatedUserFromSessionToken(adapter, auth.sessionToken)
+      const resolvedBefore = await resolveAuthenticatedUserFromSessionToken(adapter, auth.sessionToken!)
       expect(resolvedBefore?.user.username).toBe('assistant')
 
-      await logout(adapter, auth.sessionToken)
-      await logout(adapter, auth.sessionToken)
-      await expect(resolveAuthenticatedUserFromSessionToken(adapter, auth.sessionToken)).resolves.toBeNull()
+      await logout(adapter, auth.sessionToken!)
+      await logout(adapter, auth.sessionToken!)
+      await expect(resolveAuthenticatedUserFromSessionToken(adapter, auth.sessionToken!)).resolves.toBeNull()
 
       const second = await login(adapter, {
         username: 'assistant',
@@ -281,7 +281,7 @@ describe('postgres auth foundation (UAM1)', () => {
         sessionTtlMs: 1,
       })
       await new Promise((resolve) => setTimeout(resolve, 10))
-      await expect(resolveAuthenticatedUserFromSessionToken(adapter, second.sessionToken)).resolves.toBeNull()
+      await expect(resolveAuthenticatedUserFromSessionToken(adapter, second.sessionToken!)).resolves.toBeNull()
     })
   })
 
@@ -290,7 +290,7 @@ describe('postgres auth foundation (UAM1)', () => {
       await createUserAccount(adapter, { username: 'coordinator', password: 'coordinator-password' })
       const auth = await login(adapter, { username: 'coordinator', password: 'coordinator-password' })
       await adapter.execute(`UPDATE users SET disabled_at = CURRENT_TIMESTAMP WHERE id = $1`, [auth.user.id])
-      await expect(resolveAuthenticatedUserFromSessionToken(adapter, auth.sessionToken)).resolves.toBeNull()
+      await expect(resolveAuthenticatedUserFromSessionToken(adapter, auth.sessionToken!)).resolves.toBeNull()
     })
   })
 

@@ -59,7 +59,7 @@ describe('encryption lifecycle (ENC8)', () => {
   it('recovery key generation matches verifier and is never stored in sidecars', async () => {
     const recoveryKey =
       'aaaaaaaa-bbbbcccc-dddddddd-eeeeeeee-ffffffff-gggggggg-hhhhhhhh-iiiiiiii'
-    const install = await createFreshEncryptedInstall({ recoveryKey })
+    await createFreshEncryptedInstall({ recoveryKey })
     expect(await assertRecoveryKeyValid(recoveryKey)).toBe(true)
     assertNoPlaintextSecretsInSidecars([recoveryKey.replace(/-/g, ''), recoveryKey])
   })
@@ -67,7 +67,7 @@ describe('encryption lifecycle (ENC8)', () => {
   it('normal login, client access, logout, and re-login preserve plaintext', async () => {
     const install = await createFreshEncryptedInstall()
     await performLoginSequence({ username: install.username, password: install.password })
-    const db = await getDb()
+    await getDb()
     const client = await createClient({
       name: 'Lifecycle Client',
       email: 'life@test.example',
@@ -92,7 +92,7 @@ describe('encryption lifecycle (ENC8)', () => {
   it('recovery with key resets password without SQLCipher rekey and preserves client PII', async () => {
     const install = await createFreshEncryptedInstall()
     await performLoginSequence({ username: install.username, password: install.password })
-    const db = await getDb()
+    await getDb()
     const client = await createClient({
       name: 'Recover Me',
       email: 'recover@test.example',

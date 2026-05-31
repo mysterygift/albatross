@@ -5,7 +5,6 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { Client, Pool } from 'pg'
 
 import { PostgresDatabaseAdapter } from '@/lib/db/postgresDatabaseAdapter'
-import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
 import { deterministicSchemaName } from '@/test/postgres/schemaAudit'
 import { resolvePostgresTestConfig } from '@/test/postgres/pgTestEnv'
 

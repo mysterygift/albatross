@@ -4,6 +4,8 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { SetupWizard } from '@/features/auth/setup/SetupWizard'
+import type { InstallDetectionResult } from '@/lib/auth/installDetection'
+import type { SetupProgressState } from '@/lib/auth/setupProgress'
 import {
   getSetupWorkspaceHandoffSnapshot,
   resetSetupWorkspaceHandoffForTests,
@@ -13,14 +15,14 @@ const TEST_RECOVERY_KEY =
   '11111111-22222222-33333333-44444444-55555555-66666666-77777777-88888888'
 
 const detectionMocks = vi.hoisted(() => ({
-  detectInstallState: vi.fn(async () => ({
-    kind: 'fresh_install' as const,
-    route: 'admin' as const,
+  detectInstallState: vi.fn(async (): Promise<InstallDetectionResult> => ({
+    kind: 'fresh_install',
+    route: 'admin',
     diagnostics: {
       dbFileExists: false,
       encryptionMetaExists: false,
       isPlainSqlite: true,
-      encryptionMode: 'none' as const,
+      encryptionMode: 'none',
       recoveryMetaExists: false,
       activeWrapperCount: 0,
       plainAdminCount: 0,
@@ -30,7 +32,7 @@ const detectionMocks = vi.hoisted(() => ({
 }))
 
 const progressMocks = vi.hoisted(() => ({
-  readSetupProgress: vi.fn(async () => null),
+  readSetupProgress: vi.fn(async (): Promise<SetupProgressState | null> => null),
   writeSetupProgress: vi.fn(async (phase: string) => ({
     version: 1 as const,
     phase,

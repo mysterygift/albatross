@@ -46,6 +46,10 @@ export async function encryptAesGcmBlob(plaintext: string, keyBytes: Uint8Array)
 export async function decryptAesGcmBlob(blob: string, keyBytes: Uint8Array): Promise<string> {
   const { iv, ciphertext } = decodeBlob(blob)
   const key = await importAesGcmKey(keyBytes)
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext as BufferSource)
+  const plain = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: new Uint8Array(iv) },
+    key,
+    new Uint8Array(ciphertext)
+  )
   return new TextDecoder().decode(plain)
 }

@@ -55,8 +55,6 @@ const ARGON2_PARAMS = {
 
 const RECOVERY_KEY_GROUP_LENGTH = 8
 const RECOVERY_KEY_GROUP_COUNT = 8
-const DEK_HEX_LENGTH = 64
-
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
@@ -504,7 +502,7 @@ export async function refreshRecoveryEscrowAfterRecovery(args: {
 }
 
 /** @deprecated Use persistRecoveryKeyMaterial */
-export async function persistRecoveryKeyVerifier(args: {
+export async function persistRecoveryKeyVerifier(_args: {
   db: DatabaseAdapter
   actorUserId: string
   verifier: string

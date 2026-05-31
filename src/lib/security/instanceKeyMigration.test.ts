@@ -63,9 +63,14 @@ import {
   migrateToInstanceKeyModeIfNeeded,
 } from '@/lib/security/instanceKeyMigration'
 
-const mockDb = {
-  dialect: 'sqlite' as const,
-  select: vi.fn(async () => [{ ok: 1 }]),
+import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
+
+const mockDb: DatabaseAdapter = {
+  dialect: 'sqlite',
+  select: vi.fn(async () => [{ ok: 1 }]) as DatabaseAdapter['select'],
+  execute: vi.fn(async () => ({ rowsAffected: 0, lastInsertId: 0 })),
+  executeBatch: vi.fn(async () => undefined),
+  runInSerializedTransaction: vi.fn(async (fn) => fn()),
 }
 
 describe('instanceKeyMigration', () => {

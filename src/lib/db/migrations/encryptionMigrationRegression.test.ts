@@ -9,13 +9,11 @@ import {
   readSidecarSnapshot,
   resetEncryptionHarness,
   setHarnessPlainDb,
-  writeSidecarFile,
 } from '@/test/encryption/encryptionTestHarness'
 import { prepareEncryptedDatabaseForFirstAdmin } from '@/lib/db/dbUnlock'
 import { runSetupEncryption } from '@/lib/auth/setupEncryptionService'
 import { setupInitialAdmin } from '@/lib/auth/authService'
 import { createUserAsAdmin } from '@/lib/auth/adminUserManagementService'
-import { unlockLocalDatabaseWithPassword } from '@/lib/db/dbUnlock'
 import { getDb } from '@/lib/db/client'
 import { isEncryptedClientField } from '@/lib/security/clientFieldCrypto'
 import { backfillClientEncryptionIfNeeded } from '@/lib/db/migrations/backfillClientEncryption'
@@ -27,13 +25,11 @@ import {
   exportDataEncryptionKeyHex,
 } from '@/lib/security/dataEncryptionContext'
 import {
-  DB_META_FILENAME,
   generateInstanceKdfSaltHex,
   writeDbEncryptionMeta,
 } from '@/lib/security/dbFileEncryption'
 import {
   hashRecoveryKey,
-  persistRecoveryKeyMaterial,
   writeRecoveryKeyMeta,
   type RecoveryKeyMetaV2,
 } from '@/lib/security/recoveryKey'
@@ -97,7 +93,7 @@ describe('encryption migration regression (ENC8)', () => {
     await writeDbEncryptionMeta({ version: 1, kdf_salt: kdfSalt })
 
     const db = getHarnessDbAdapter()!
-    const admin = await setupInitialAdmin(db, {
+    await setupInitialAdmin(db, {
       username: 'admin',
       password,
       confirmPassword: password,

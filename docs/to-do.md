@@ -10,6 +10,7 @@ PEOPLE
 
 BUDGET
 1. Importing/Exporting to MovieMagic Budgeting. Examine file structure to make sure that the budget from albatross gets imported/exported in the correct format.
+2. Improve data validation across all modal windows and cleanup some of the cramped layout of the modals.
 
 CALL SHEET
 ~~1. Need to add text field to Call Sheet Form for safety information.~~
@@ -26,6 +27,8 @@ BEFORE V1:
 ~~Encrypt Production DB + User Access Management~~
 ~~Migrate to PostgreSQL, and pressure test multi-user db read/write.~~
 Check performance on local server. NB to advise users that at this stage we provide no guarantees RE data storage as this is all being stored on your computer just like any other file.
+
+Improve error messaging in sign-in, covering "incorrect password", reasons why database wouldn't unlock, remove link to helper page (it connects to a .md file).
 
 REFACTOR DB –
 ~~Plan new DB structure & research options that best support local and remote access.~~

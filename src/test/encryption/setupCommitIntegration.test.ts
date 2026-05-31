@@ -4,7 +4,6 @@ import {
   assertNoPlaintextSecretsInSidecars,
   createFreshEncryptedInstallViaSetupCommit,
   getHarnessDbAdapter,
-  initSqlJsDatabase,
   readSidecarSnapshot,
   resetEncryptionHarness,
 } from '@/test/encryption/encryptionTestHarness'

@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-
 import { SetupDetectStep } from '@/features/auth/setup/SetupDetectStep'
 
 describe('SetupDetectStep', () => {

@@ -76,6 +76,9 @@ export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }:
         password: loginPassword,
       })
       const { repairedPeople } = result
+      if (!result.sessionToken) {
+        throw new Error('Login succeeded but no session token was issued')
+      }
       await persistSessionAndRefresh(result.sessionToken)
       if (repairedPeople > 0) {
         await queryClient.invalidateQueries({ queryKey: ['crew'] })

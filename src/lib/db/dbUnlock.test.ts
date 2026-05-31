@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { DbEncryptionMeta } from '@/lib/security/dbFileEncryption'
+import type { InstanceKeyWrappersMeta } from '@/lib/security/instanceKey'
+
 const clientMocks = vi.hoisted(() => ({
   closeDb: vi.fn(async () => undefined),
   openDbWithFileKey: vi.fn(async () => undefined),
@@ -9,15 +12,15 @@ const clientMocks = vi.hoisted(() => ({
 
 const instanceKeyMocks = vi.hoisted(() => ({
   generateInstanceKeyHex: vi.fn(() => 'd'.repeat(64)),
-  readInstanceKeyWrappersMeta: vi.fn(async () => ({
-    version: 1 as const,
+  readInstanceKeyWrappersMeta: vi.fn<() => Promise<InstanceKeyWrappersMeta | null>>(async () => ({
+    version: 1,
     wrappers: [
       {
         user_id: 'user-1',
         username: 'admin',
         wrap_salt: 'aa'.repeat(16),
         wrapped_instance_key: 'wrap1:abc',
-        version: 1 as const,
+        version: 1,
         created_at: '2020-01-01T00:00:00.000Z',
         rotated_at: null,
         revoked_at: null,
@@ -29,7 +32,7 @@ const instanceKeyMocks = vi.hoisted(() => ({
 
 const dbFileMocks = vi.hoisted(() => ({
   needsPlainToEncryptedMigration: vi.fn(async () => false),
-  readDbEncryptionMeta: vi.fn(async () => null),
+  readDbEncryptionMeta: vi.fn<() => Promise<DbEncryptionMeta | null>>(async () => null),
   deriveSqlCipherPassphraseFromPassword: vi.fn(async () => 'legacy-pass-hex'),
   probeSqlCipherPassphrase: vi.fn(async () => true),
   migratePlainDbToSqlcipher: vi.fn(async () => undefined),

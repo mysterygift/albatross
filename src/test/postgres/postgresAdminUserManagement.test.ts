@@ -247,7 +247,7 @@ describe('postgres admin user-management service (UAM3)', () => {
       })
       const firstSession = await login(db, { username: 'session-target', password: 'targetpass123' })
       await disableUserAsAdmin({ db, actor: admin, targetUserId: target.id })
-      await expect(resolveAuthenticatedUserFromSessionToken(db, firstSession.sessionToken)).resolves.toBeNull()
+      await expect(resolveAuthenticatedUserFromSessionToken(db, firstSession.sessionToken!)).resolves.toBeNull()
 
       await enableUserAsAdmin({ db, actor: admin, targetUserId: target.id })
       await resetUserPasswordAsAdmin({
@@ -263,7 +263,7 @@ describe('postgres admin user-management service (UAM3)', () => {
         targetUserId: target.id,
         role: 'admin',
       })
-      await expect(resolveAuthenticatedUserFromSessionToken(db, secondSession.sessionToken)).resolves.toBeNull()
+      await expect(resolveAuthenticatedUserFromSessionToken(db, secondSession.sessionToken!)).resolves.toBeNull()
     })
   })
 

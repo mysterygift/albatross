@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { DbEncryptionMeta } from '@/lib/security/dbFileEncryption'
+
 const instanceKeyMocks = vi.hoisted(() => ({
   readInstanceKeyWrappersMeta: vi.fn(),
   findWrapperForUsername: vi.fn(),
@@ -20,7 +22,10 @@ const dekMocks = vi.hoisted(() => ({
 }))
 
 const dbFileMocks = vi.hoisted(() => ({
-  readDbEncryptionMeta: vi.fn(async () => ({ version: 1 as const, kdf_salt: 'f'.repeat(32) })),
+  readDbEncryptionMeta: vi.fn<() => Promise<DbEncryptionMeta | null>>(async () => ({
+    version: 1,
+    kdf_salt: 'f'.repeat(32),
+  })),
   deriveSqlCipherPassphraseFromPassword: vi.fn(async () => 'a'.repeat(64)),
 }))
 
