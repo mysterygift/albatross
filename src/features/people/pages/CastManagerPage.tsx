@@ -15,7 +15,7 @@ import {
   listCastForActor,
   updatePersonForActor,
 } from '@/lib/access/projectDomainService'
-import { listAvailabilityByProduction } from '@/lib/db/repositories/cast-availability'
+import { serializePhases } from '@/lib/people/productionPhases'
 import {
   Table,
   TableBody,
@@ -189,7 +189,7 @@ export function CastManagerPage() {
         agent_phone: trimOrNull(d.agent_phone),
         contributor_form_status: d.contributor_form_status,
         notes: trimOrNull(d.notes),
-        phases: trimOrNull(d.phases),
+        phases: serializePhases(d.phases),
       }
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
@@ -222,7 +222,7 @@ export function CastManagerPage() {
         agent_phone: trimOrNull(data.agent_phone),
         contributor_form_status: data.contributor_form_status,
         notes: trimOrNull(data.notes),
-        phases: trimOrNull(data.phases),
+        phases: serializePhases(data.phases),
       }
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()

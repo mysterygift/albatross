@@ -55,7 +55,9 @@ import {
 } from '@/components/ui/dialog'
 import { ArrowLeft, Pencil, ExternalLink, Plus } from 'lucide-react'
 import { CrewForm, type CrewFormValues } from '@/features/people/components/CrewForm'
+import { PhaseTagsDisplay } from '@/features/people/components/PhaseTagsDisplay'
 import { PersonUnavailabilityDialog } from '@/features/people/components/PersonUnavailabilityDialog'
+import { serializePhases } from '@/lib/people/productionPhases'
 
 function empty(s: string | null | undefined): string {
   const t = s?.trim()
@@ -297,7 +299,7 @@ export function CrewDetailPage() {
         role_name: data.role_name?.trim() ?? null,
         email: data.email?.trim() || null,
         phone: data.phone?.trim() || null,
-        phases: data.phases?.trim() || null,
+        phases: serializePhases(data.phases),
         notes: data.notes?.trim() || null,
       }
       if (authSession.authSupported && authSession.currentUser) {
@@ -474,7 +476,9 @@ export function CrewDetailPage() {
               </div>
               <div>
                 <dt className="text-muted-foreground">Phases</dt>
-                <dd className="font-medium">{empty(person.phases)}</dd>
+                <dd className="font-medium">
+                  <PhaseTagsDisplay phases={person.phases} />
+                </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">HOD status</dt>
@@ -642,7 +646,7 @@ export function CrewDetailPage() {
               <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide mb-1">
                 Phases
               </p>
-              <p className="text-foreground">{empty(person.phases)}</p>
+              <PhaseTagsDisplay phases={person.phases} />
             </div>
             <div className="flex flex-col gap-1.5 pt-1">
               {!person.phone?.trim() && (

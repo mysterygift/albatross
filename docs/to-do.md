@@ -4,7 +4,7 @@ TO–DO
 9. Source alpha testers & collate feedback.
 
 PEOPLE
-1. Fix CrewDetailPage/CastDetailPage returning user back to the UNUSED Person page when clicking on the back arrow, should return user to Crew/Cast page respectively.
+1. ~~Fix CrewDetailPage/CastDetailPage returning user back to the UNUSED Person page when clicking on the back arrow, should return user to Crew/Cast page respectively.~~
 2. ~~Cast availability – this should be editable via the Cast Manager. Allow users to enter HOLD dates and any UNAVAILABLE dates (this will flag as a clash in the DooD page)~~
 3. Generate credit lists, with support for episodes (so if they're scheduled for a particular episode, they should be included in the credit list for that episode).
 
@@ -17,7 +17,7 @@ CALL SHEET
 
 SCHEDULE
 5. The script parser should look for taglines "INT./EXT. – LOCATIONAME – TIMEOFDAY" and there must be copy informing the user that this is expected formatting. Currently the parser does detect some of this but the logic is not correctly extracting the location name (AD to check regex).
-6. DooD UI Cleanup
+~~6. DooD UI Cleanup~~
 7. Generate script sides, to be shared alongside call sheet.
 
 NICE TO HAVES:

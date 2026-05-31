@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
@@ -55,7 +55,9 @@ import {
   updatePersonForActor,
 } from '@/lib/access/projectDomainService'
 import { PersonForm, type PersonFormValues } from '@/features/people/components/PersonForm'
+import { PhaseTagsDisplay } from '@/features/people/components/PhaseTagsDisplay'
 import { PersonUnavailabilityDialog } from '@/features/people/components/PersonUnavailabilityDialog'
+import { serializePhases } from '@/lib/people/productionPhases'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -605,6 +607,7 @@ export function CastDetailPage() {
         agent_name: data.agent_name !== undefined ? (data.agent_name?.trim() || null) : undefined,
         agent_email: data.agent_email !== undefined ? (data.agent_email?.trim() || null) : undefined,
         agent_phone: data.agent_phone !== undefined ? (data.agent_phone?.trim() || null) : undefined,
+        phases: data.phases !== undefined ? serializePhases(data.phases) : undefined,
       }
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
@@ -648,6 +651,10 @@ export function CastDetailPage() {
     )
   }
 
+  if (person.is_cast !== 1) {
+    return <Navigate to={`/people/crew/${personId}`} replace />
+  }
+
   const nextBookedDay = bookingsSummary?.start_date ?? null
   const typeLabel = person.is_cast ? 'Cast' : 'Crew'
 
@@ -656,7 +663,7 @@ export function CastDetailPage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" className="shrink-0" asChild>
-          <Link to="/people/cast" aria-label="Back to People">
+          <Link to="/people/cast-manager" aria-label="Back to Cast Manager">
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
@@ -737,7 +744,7 @@ export function CastDetailPage() {
             <div><dt className="text-muted-foreground">Department</dt><dd className="font-medium">{person.department ?? '—'}</dd></div>
             <div><dt className="text-muted-foreground">Email</dt><dd className="font-medium">{person.email ?? '—'}</dd></div>
             <div><dt className="text-muted-foreground">Phone</dt><dd className="font-medium">{person.phone ?? '—'}</dd></div>
-            <div><dt className="text-muted-foreground">Phases</dt><dd className="font-medium">{person.phases ?? '—'}</dd></div>
+            <div><dt className="text-muted-foreground">Phases</dt><dd className="font-medium"><PhaseTagsDisplay phases={person.phases} /></dd></div>
             <div className="sm:col-span-2"><dt className="text-muted-foreground">Notes</dt><dd className="font-medium">{person.notes ?? '—'}</dd></div>
           </dl>
           {person.is_cast && (

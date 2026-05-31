@@ -58,8 +58,9 @@ In the app, **People** in the main navigation opens a submenu with three entries
 - **Bookings** — See and manage who is assigned to which shoot days. This is the default People landing page.
 - **Day Out of Days** — A matrix of cast × shoot days (WORK, HOLD, OFF, CLASH) with PDF/CSV export.
 - **Cast Manager** — A cast-only list where you add and edit cast members, assign roles (e.g. character names), and manage agent and contact info.
+- **Crew Manager** — A crew-only list for departments, roles, HOD status, and crew availability.
 
-The full **People list** (all people, cast and crew together) lives at **People → Cast** in the app (route `/people/cast`). You can reach it from the app; from Cast Manager you can open individual person detail pages.
+Open cast or crew person detail from the respective manager; the back arrow returns to that manager (not a combined People list).
 
 ### 3. Cast Manager: managing cast and roles
 
@@ -75,9 +76,9 @@ The full **People list** (all people, cast and crew together) lives at **People 
 
 The form is organised into: **Identity** (name, cast number, role), **Direct contact** (email, phone), **Agent** (name, email, phone), and **Production / admin** (contributor form status, phases, notes). Cast Manager uses the same underlying people data as the rest of the app (Call Sheets, scene/shot participation, etc.); there is no separate cast system.
 
-### 4. People list: cast and crew in one place
+### 4. Legacy People list (redirect only)
 
-The **People list** (route `/people/cast`) shows **all** people for the production — both cast and crew. You can filter by All, Crew, or Cast; create, edit, and delete any person; and open Person detail. The form here is the generic person form (including a cast/crew toggle). Use **Cast Manager** when you want a cast-focused workflow (roles, agent, completeness); use the **People list** when you need to manage crew or work with everyone in one list.
+The legacy combined People list at `/people/cast` is **not** in the sidebar. That URL redirects to **Cast Manager**. Use **Cast Manager** for cast and **Crew Manager** for crew.
 
 ### 5. Bookings and Day Out of Days
 
@@ -86,7 +87,7 @@ The **People list** (route `/people/cast`) shows **all** people for the producti
 
 ### 6. Person detail: single-person hub
 
-Opening a person (e.g. from the People list or Cast Manager) takes you to **Person detail** (`/people/:personId` for cast, `/people/crew/:personId` for crew). There you see summary cards (bookings count, next booked, clashes, DooD work days for cast), the list of their bookings, booking need summary, **unavailable dates** (editable), **Scene participation** (which scenes they are in), **Shot participation** (which shots; cast only), Day out of Days summary (cast), and recent activity. Crew person detail also supports unavailable dates (crew-only; not shown in DooD). You can edit the person via the edit dialog.
+Opening a person from **Cast Manager** (`/people/:personId`, back → Cast Manager) or **Crew Manager** (`/people/crew/:personId`, back → Crew Manager) takes you to person detail. There you see summary cards (bookings count, next booked, clashes, DooD work days for cast), the list of their bookings, booking need summary, **unavailable dates** (editable), **Scene participation** (which scenes they are in), **Shot participation** (which shots; cast only), Day out of Days summary (cast), and recent activity. Crew person detail also supports unavailable dates (crew-only; not shown in DooD). You can edit the person via the edit dialog.
 
 ---
 
@@ -99,14 +100,14 @@ Opening a person (e.g. from the People list or Cast Manager) takes you to **Pers
   1. **Scene participation (`scene_cast`)** — Scene-level source of truth: which cast members are in which scenes. DooD work days are derived from scheduled stripboard scenes + `scene_cast`.
   2. **Shot participation (`shot_cast`)** — Refinement layer: which cast members are in which shots within a scene. Used for scheduling intelligence and future logic; **DooD does not use `shot_cast`**.
   3. **Bookings** — Operational assignment of a person to a shoot day. Stored in `bookings`; not used by DooD for work-day derivation.
-- **Routes:** `/people` redirects to `/people/bookings`. Child routes: `/people/bookings`, `/people/day-out-of-days`, `/people/cast-manager`, `/people/cast`, `/people/:personId` (Person detail). Cast Manager is in the People sub-nav.
-- **Navigation:** "People" (Users icon) in app nav with sub-items: **Bookings**, **Day Out of Days**, and **Cast Manager**. The full People list (cast and crew) is at `/people/cast`. Person detail is reached via `/people/:personId` (e.g. from the People list or Cast Manager).
+- **Routes:** `/people` redirects to `/people/bookings`. Child routes: `/people/bookings`, `/people/day-out-of-days`, `/people/cast-manager`, `/people/crew-manager`, `/people/crew/:personId` (crew detail), `/people/:personId` (cast detail). `/people/cast` redirects to Cast Manager (legacy URL, not in nav).
+- **Navigation:** "People" (Users icon) in app nav with sub-items: **Bookings**, **Day Out of Days**, **Cast Manager**, and **Crew Manager**. Cast detail is reached via `/people/:personId` (e.g. from Cast Manager); crew detail via `/people/crew/:personId` (from Crew Manager). Detail back arrows return to the respective manager.
 - **Cast and roles:** Cast records can store a **role** (e.g. character name) in the `role_name` field on the person record. Cast Manager is the main place to manage cast and roles; the generic People list also supports `role_name` for compatibility.
 - **Context:** All pages require a current production via `useCurrentProduction()`. Data is scoped by `production_id`.
 
-### 2. People (Cast) list page
+### 2. People (Cast) list page (legacy, not user-facing)
 
-- **Route:** `/people/cast`.
+- **Route:** `/people/cast` redirects to `/people/cast-manager`.
 - **File:** [src/features/people/page.tsx](src/features/people/page.tsx).
 - **Purpose:** Generic list of **all** people (cast and crew) for the production; filter by all/crew/cast; create, edit, delete persons. Rows can link to Person detail (`/people/:personId`). Distinct from **Cast Manager**, which is cast-only and role-focused.
 - **Form fields:** name, is_cast, email, phone, department, phases, notes, contributor_form_status; for cast: **cast_number**, **role_name**, **agent_name**, **agent_email**, **agent_phone** (role_name supported for compatibility).
@@ -170,8 +171,8 @@ Opening a person (e.g. from the People list or Cast Manager) takes you to **Pers
 
 ### 9. Router and navigation
 
-- **Router:** [src/app/router.tsx](src/app/router.tsx) — `/people` → Navigate to `/people/bookings`; `/people/bookings` → BookingsPage; `/people/day-out-of-days` → DayOutOfDaysPage; `/people/cast-manager` → CastManagerPage (from people/pages); `/people/cast` → PeoplePage; `/people/:personId` → CastDetailPage.
-- **Navigation:** [src/app/navigation.ts](src/app/navigation.ts) — People group with `defaultChild: '/people/bookings'`, sub-items "Bookings", "Day Out of Days", and "Cast Manager". The full People list is at `/people/cast`; Person detail is reached via `/people/:personId`.
+- **Router:** [src/app/router.tsx](src/app/router.tsx) — `/people` → Navigate to `/people/bookings`; `/people/bookings` → BookingsPage; `/people/day-out-of-days` → DayOutOfDaysPage; `/people/cast-manager` → CastManagerPage; `/people/crew-manager` → CrewManagerPage; `/people/crew/:personId` → CrewDetailPage (back → Crew Manager); `/people/cast` → redirect to Cast Manager; `/people/:personId` → CastDetailPage (back → Cast Manager; crew records redirect to `/people/crew/:personId`).
+- **Navigation:** [src/app/navigation.ts](src/app/navigation.ts) — People group with `defaultChild: '/people/bookings'`, sub-items "Bookings", "Day Out of Days", "Cast Manager", and "Crew Manager". No sidebar entry for `/people/cast`.
 
 ### 10. Data flow: DooD work days and clashes
 
@@ -268,9 +269,11 @@ When changing People, Booking, or DooD:
 | Item | Path or route |
 |------|----------------|
 | Cast Manager page | [src/features/people/pages/CastManagerPage.tsx](src/features/people/pages/CastManagerPage.tsx) — `/people/cast-manager` |
+| Crew Manager page | [src/features/people/crew-manager/page.tsx](src/features/people/crew-manager/page.tsx) — `/people/crew-manager` |
 | Cast form (cast-specific) | [src/features/people/components/CastForm.tsx](src/features/people/components/CastForm.tsx) — used by Cast Manager only |
-| People (Cast) list page | [src/features/people/page.tsx](src/features/people/page.tsx) — `/people/cast` |
-| Person detail (People hub) | [src/features/people/pages/CastDetailPage.tsx](src/features/people/pages/CastDetailPage.tsx) — `/people/:personId` |
+| Legacy People list (redirect) | [src/features/people/page.tsx](src/features/people/page.tsx) — `/people/cast` → Cast Manager |
+| Cast person detail | [src/features/people/pages/CastDetailPage.tsx](src/features/people/pages/CastDetailPage.tsx) — `/people/:personId` |
+| Crew person detail | [src/features/people/pages/CrewDetailPage.tsx](src/features/people/pages/CrewDetailPage.tsx) — `/people/crew/:personId` |
 | Bookings page | [src/features/people/pages/BookingsPage.tsx](src/features/people/pages/BookingsPage.tsx) — `/people/bookings` |
 | DooD page | [src/features/people/pages/DayOutOfDaysPage.tsx](src/features/people/pages/DayOutOfDaysPage.tsx) — `/people/day-out-of-days` |
 | Person repo | [src/lib/db/repositories/person.ts](src/lib/db/repositories/person.ts) |

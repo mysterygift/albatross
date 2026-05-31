@@ -8,7 +8,6 @@ import { StripboardPage } from '@/features/schedule/stripboard-page'
 import { ShotListPage } from '@/features/schedule/shot-list-page'
 import { StoryboardPage } from '@/features/schedule/storyboard-page'
 import { ScriptImportPage } from '@/features/schedule/script-import-page'
-import { PeoplePage } from '@/features/people/page'
 import { BookingsPage } from '@/features/people/pages/BookingsPage'
 import { DayOutOfDaysPage } from '@/features/people/pages/DayOutOfDaysPage'
 import { CastDetailPage } from '@/features/people/pages/CastDetailPage'
@@ -53,7 +52,7 @@ export const router = createBrowserRouter([
       { path: 'people/cast-manager', element: <CastManagerPage /> },
       { path: 'people/crew-manager', element: <CrewManagerPage /> },
       { path: 'people/crew/:personId', element: <CrewDetailPage /> },
-      { path: 'people/cast', element: <PeoplePage /> },
+      { path: 'people/cast', element: <Navigate to="/people/cast-manager" replace /> },
       { path: 'people/:personId', element: <CastDetailPage /> },
       { path: 'locations', element: <LocationsPage /> },
       { path: 'equipment', element: <EquipmentPage /> },

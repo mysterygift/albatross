@@ -27,7 +27,7 @@ import {
   getResolvedCrewRolesForDepartment,
   isResolvedHodRole,
 } from '@/lib/people/crewHierarchyResolver'
-import type { CrewHierarchyConfig } from '@/lib/people/crewHierarchyTypes'
+import { serializePhases } from '@/lib/people/productionPhases'
 import {
   getHodResponsibilitySummary,
   getDepartmentsWithTasksButNoHod,
@@ -206,7 +206,7 @@ export function CrewManagerPage() {
         role_name: trimOrNull(d.role_name) ?? null,
         email: trimOrNull(d.email),
         phone: trimOrNull(d.phone),
-        phases: trimOrNull(d.phases),
+        phases: serializePhases(d.phases),
         notes: trimOrNull(d.notes),
       }
       if (authSession.authSupported && authSession.currentUser) {
@@ -235,7 +235,7 @@ export function CrewManagerPage() {
         role_name: trimOrNull(data.role_name) ?? null,
         email: trimOrNull(data.email),
         phone: trimOrNull(data.phone),
-        phases: trimOrNull(data.phases),
+        phases: serializePhases(data.phases),
         notes: trimOrNull(data.notes),
       }
       if (authSession.authSupported && authSession.currentUser) {

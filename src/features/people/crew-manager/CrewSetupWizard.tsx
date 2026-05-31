@@ -105,7 +105,7 @@ export function CrewSetupWizard({
           role_name: row.role.trim() || getResolvedHodRoleForDepartment(hierarchy, row.department),
           email: row.email || '',
           phone: row.phone || '',
-          phases: '',
+          phases: [],
           notes: '',
         })
       }

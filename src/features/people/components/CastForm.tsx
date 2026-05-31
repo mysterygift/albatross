@@ -1,4 +1,4 @@
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Input } from '@/components/ui/input'
@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import type { Person } from '@/lib/db/types'
+import { parsePhases } from '@/lib/people/productionPhases'
+import { PhaseTagsInput } from '@/features/people/components/PhaseTagsInput'
 
 const emailRefine = (v: string | undefined) =>
   !v || v.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
@@ -38,7 +40,7 @@ export const castFormSchema = z.object({
   agent_phone: z.string().optional(),
   contributor_form_status: z.enum(['not_requested', 'requested', 'signed', 'expired']),
   notes: z.string().optional(),
-  phases: z.string().optional(),
+  phases: z.array(z.string()),
 })
 
 export type CastFormValues = z.infer<typeof castFormSchema>
@@ -55,7 +57,7 @@ function personToCastFormValues(p: Partial<Person>): CastFormValues {
     agent_phone: p.agent_phone ?? '',
     contributor_form_status: p.contributor_form_status ?? 'not_requested',
     notes: p.notes ?? '',
-    phases: p.phases ?? '',
+    phases: parsePhases(p.phases),
   }
 }
 
@@ -172,10 +174,13 @@ export function CastForm({
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Phases</Label>
-              <Input {...form.register('phases')} placeholder="e.g. pre, production, post" />
-            </div>
+            <Controller
+              name="phases"
+              control={form.control}
+              render={({ field }) => (
+                <PhaseTagsInput value={field.value} onChange={field.onChange} disabled={isLoading} />
+              )}
+            />
             <div>
               <Label>Notes</Label>
               <Input {...form.register('notes')} placeholder="Internal notes" />

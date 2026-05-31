@@ -1,6 +1,6 @@
 'use client'
 
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMemo } from 'react'
@@ -26,6 +26,8 @@ import {
 } from '@/lib/people/crewHierarchyResolver'
 import type { CrewHierarchyConfig } from '@/lib/people/crewHierarchyTypes'
 import type { Person } from '@/lib/db/types'
+import { parsePhases } from '@/lib/people/productionPhases'
+import { PhaseTagsInput } from '@/features/people/components/PhaseTagsInput'
 
 const emailRefine = (v: string | undefined) =>
   !v || v.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
@@ -40,7 +42,7 @@ export const crewFormSchema = z
       .optional()
       .refine(emailRefine, { message: 'Invalid email' }),
     phone: z.string().optional(),
-    phases: z.string().optional(),
+    phases: z.array(z.string()),
     notes: z.string().optional(),
   })
   .refine(
@@ -63,7 +65,7 @@ function personToCrewFormValues(
     role_name: p.role_name ?? '',
     email: p.email ?? '',
     phone: p.phone ?? '',
-    phases: p.phases ?? '',
+    phases: parsePhases(p.phases),
     notes: p.notes ?? '',
   }
 }
@@ -225,13 +227,13 @@ export function CrewForm({
             Production / admin
           </p>
           <div className="grid grid-cols-1 gap-3">
-            <div>
-              <Label>Phases</Label>
-              <Input
-                {...form.register('phases')}
-                placeholder="e.g. pre, production, post"
-              />
-            </div>
+            <Controller
+              name="phases"
+              control={form.control}
+              render={({ field }) => (
+                <PhaseTagsInput value={field.value} onChange={field.onChange} disabled={isLoading} />
+              )}
+            />
             <div>
               <Label>Notes</Label>
               <Input {...form.register('notes')} placeholder="Internal notes" />

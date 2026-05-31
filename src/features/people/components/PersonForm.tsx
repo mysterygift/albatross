@@ -1,4 +1,4 @@
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Input } from '@/components/ui/input'
@@ -18,6 +18,8 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import type { Person } from '@/lib/db/types'
+import { parsePhases } from '@/lib/people/productionPhases'
+import { PhaseTagsInput } from '@/features/people/components/PhaseTagsInput'
 
 export const personSchema = z.object({
   name: z.string().min(1),
@@ -25,7 +27,7 @@ export const personSchema = z.object({
   email: z.string().optional(),
   phone: z.string().optional(),
   department: z.string().optional(),
-  phases: z.string().optional(),
+  phases: z.array(z.string()),
   notes: z.string().optional(),
   contributor_form_status: z.enum(['not_requested', 'requested', 'signed', 'expired']),
   cast_number: z.string().optional(),
@@ -56,7 +58,7 @@ export function PersonForm({
       email: defaultValues.email ?? '',
       phone: defaultValues.phone ?? '',
       department: defaultValues.department ?? '',
-      phases: defaultValues.phases ?? '',
+      phases: parsePhases(defaultValues.phases),
       notes: defaultValues.notes ?? '',
       contributor_form_status: defaultValues.contributor_form_status ?? 'not_requested',
       cast_number: defaultValues.cast_number ?? '',
@@ -98,10 +100,13 @@ export function PersonForm({
           <Label>Department</Label>
           <Input {...form.register('department')} />
         </div>
-        <div>
-          <Label>Phases</Label>
-          <Input {...form.register('phases')} placeholder="pre/production/post" />
-        </div>
+        <Controller
+          name="phases"
+          control={form.control}
+          render={({ field }) => (
+            <PhaseTagsInput value={field.value} onChange={field.onChange} disabled={isLoading} />
+          )}
+        />
         {form.watch('is_cast') && (
           <div>
             <Label>Contributor form status</Label>

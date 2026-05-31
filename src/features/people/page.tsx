@@ -9,12 +9,7 @@ import {
   listPeopleByProductionForActor,
   updatePersonForActor,
 } from '@/lib/access/projectDomainService'
-import {
-  listPeopleByProduction,
-  createPerson,
-  updatePerson,
-  deletePerson,
-} from '@/lib/db/repositories/person'
+import { serializePhases } from '@/lib/people/productionPhases'
 import {
   useReactTable,
   getCoreRowModel,
@@ -85,7 +80,7 @@ export function PeoplePage() {
         email: d.email ?? null,
         phone: d.phone ?? null,
         department: d.department ?? null,
-        phases: d.phases ?? null,
+        phases: serializePhases(d.phases),
         notes: d.notes ?? null,
         contributor_form_status: d.contributor_form_status,
         cast_number: d.cast_number?.trim() || null,
@@ -116,6 +111,7 @@ export function PeoplePage() {
         agent_email: data.agent_email !== undefined ? (data.agent_email?.trim() || null) : undefined,
         agent_phone: data.agent_phone !== undefined ? (data.agent_phone?.trim() || null) : undefined,
         role_name: data.role_name !== undefined ? (data.role_name?.trim() || null) : undefined,
+        phases: data.phases !== undefined ? serializePhases(data.phases) : undefined,
       }
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
