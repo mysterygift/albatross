@@ -196,4 +196,4 @@ When adding new settings-backed features, use a key pattern like `['settings', k
 | DB perf module | `src/lib/db/perf.ts`; toggle key `enable_db_perf_logging` |
 | Currency hook | `src/hooks/useCurrency.ts`; keys `display_currency`, `enable_currency_conversion_api` |
 
-For app-wide setup, migrations, and data location, see [GETTING_STARTED.md](./GETTING_STARTED.md) and the main [README](../README.md).
+For app-wide setup, migrations, and data location, see the main [README](../README.md).
