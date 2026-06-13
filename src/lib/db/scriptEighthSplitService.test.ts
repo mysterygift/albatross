@@ -2,13 +2,130 @@ import { describe, expect, it } from 'vitest'
 
 import {
   enrichRangeWithPageOffsets,
+  formatDialogueToActionSpacing,
+  formatPageContentSpacing,
+  joinScriptElements,
   offsetsForEighthRangeInContent,
   splitPageIntoEighths,
   splitSceneContentAcrossPages,
   splitSceneContentFromPdfElements,
 } from './scriptEighthSplitService'
 
+describe('formatDialogueToActionSpacing', () => {
+  it('inserts a blank before action after punctuated dialogue in plain text', () => {
+    const content = formatDialogueToActionSpacing(
+      ['INT. ROOM - DAY', '', 'JANE', 'Hello there.', 'She turns away.'].join('\n')
+    )
+    expect(content).toContain('Hello there.\n\nShe turns away.')
+  })
+
+  it('does not insert a blank between consecutive dialogue lines', () => {
+    const content = formatDialogueToActionSpacing(
+      ['JANE', 'Hello there.', 'How are you?'].join('\n'),
+      new Set(['Hello there.\nHow are you?'])
+    )
+    expect(content).toContain('Hello there.\nHow are you?')
+    expect(content).not.toContain('Hello there.\n\nHow are you?')
+  })
+
+  it('does not insert a blank before a character cue or scene heading', () => {
+    const content = formatDialogueToActionSpacing(
+      ['JANE', 'Hello there.', 'JOHN', 'INT. HALL - DAY'].join('\n')
+    )
+    expect(content).toContain('Hello there.\nJOHN')
+    expect(content).toContain('JOHN\nINT. HALL - DAY')
+  })
+})
+
+describe('joinScriptElements', () => {
+  it('inserts blank lines after scene headings and dialogue blocks', () => {
+    const content = joinScriptElements([
+      { type: 'scene_heading', text: 'INT. ROOM - DAY' },
+      { type: 'action', text: 'JANE walks.' },
+      { type: 'character', text: 'JANE' },
+      { type: 'dialogue', text: 'Hello there.' },
+      { type: 'character', text: 'JOHN' },
+      { type: 'dialogue', text: 'Hi back.' },
+    ])
+    expect(content).toContain('INT. ROOM - DAY\n\nJANE walks.')
+    expect(content).toContain('Hello there.\n\nJOHN')
+    expect(content).toContain('JANE\nHello there.')
+  })
+
+  it('inserts a blank line between dialogue and following action', () => {
+    const content = joinScriptElements([
+      { type: 'scene_heading', text: 'INT. ROOM - DAY' },
+      { type: 'character', text: 'JANE' },
+      { type: 'dialogue', text: 'Hello there.' },
+      { type: 'action', text: 'She turns away.' },
+    ])
+    expect(content).toContain('Hello there.\n\nShe turns away.')
+  })
+
+  it('inserts a blank when action is misclassified as unknown', () => {
+    const content = joinScriptElements([
+      { type: 'character', text: 'JANE' },
+      { type: 'dialogue', text: 'Hello there.' },
+      { type: 'unknown', text: 'She turns away.' },
+    ])
+    expect(content).toContain('Hello there.\n\nShe turns away.')
+  })
+
+  it('preserves multi-line dialogue without blanks between speech lines', () => {
+    const content = joinScriptElements([
+      { type: 'character', text: 'JANE' },
+      { type: 'dialogue', text: 'Hello there.' },
+      { type: 'dialogue', text: 'How are you?' },
+      { type: 'action', text: 'She exits.' },
+    ])
+    expect(content).toContain('Hello there.\nHow are you?')
+    expect(content).toContain('How are you?\n\nShe exits.')
+  })
+})
+
 describe('splitPageIntoEighths', () => {
+  it('rounds section ends to the close of a multi-line dialogue block', () => {
+    const content = joinScriptElements([
+      { type: 'scene_heading', text: 'INT. ROOM - DAY' },
+      ...Array.from({ length: 6 }, (_, i) => ({ type: 'action', text: `Action line ${i + 1}` })),
+      { type: 'character', text: 'JANE' },
+      { type: 'dialogue', text: 'Hello there.' },
+      { type: 'dialogue', text: 'This is more dialogue.' },
+      { type: 'dialogue', text: 'And even more.' },
+      { type: 'action', text: 'She exits.' },
+    ])
+    const spans = splitPageIntoEighths(content)
+    for (let i = 0; i < spans.length - 1; i++) {
+      const slice = content.slice(spans[i]!.startOffset, spans[i]!.endOffset)
+      const lines = slice.split('\n').filter((l) => l.trim())
+      const lastLine = lines[lines.length - 1] ?? ''
+      if (lastLine === 'JANE') {
+        expect(slice).toContain('Hello there.')
+      }
+      if (lastLine === 'Hello there.' || lastLine === 'This is more dialogue.') {
+        expect(slice).toContain('And even more.')
+      }
+    }
+  })
+
+  it('does not split character cues from their dialogue', () => {
+    const content = joinScriptElements([
+      { type: 'scene_heading', text: 'INT. ROOM - DAY' },
+      ...Array.from({ length: 8 }, (_, i) => ({ type: 'action', text: `Action line ${i + 1}` })),
+      { type: 'character', text: 'JANE' },
+      { type: 'dialogue', text: 'Hello there.' },
+      { type: 'character', text: 'JOHN' },
+      { type: 'dialogue', text: 'Hi back.' },
+    ])
+    const spans = splitPageIntoEighths(content)
+    for (let i = 0; i < spans.length - 1; i++) {
+      const a = content.slice(spans[i]!.startOffset, spans[i]!.endOffset).trimEnd()
+      const b = content.slice(spans[i + 1]!.startOffset, spans[i + 1]!.endOffset).trimStart()
+      expect(a.endsWith('JANE') && b.startsWith('Hello')).toBe(false)
+      expect(a.endsWith('JOHN') && b.startsWith('Hi back')).toBe(false)
+    }
+  })
+
   it('returns no spans for empty content', () => {
     expect(splitPageIntoEighths('')).toEqual([])
     expect(splitPageIntoEighths('   \n\n  ')).toEqual([])
@@ -91,6 +208,15 @@ describe('enrichRangeWithPageOffsets', () => {
 })
 
 describe('splitSceneContentAcrossPages', () => {
+  it('formats dialogue-to-action spacing in plain-text slices', () => {
+    const slices = splitSceneContentAcrossPages(
+      ['INT. ROOM - DAY', '', 'JANE', 'Hello there.', 'She turns away.'].join('\n'),
+      '1',
+      '1'
+    )
+    expect(slices[0]!.content).toContain('Hello there.\n\nShe turns away.')
+  })
+
   it('splits multi-page scenes proportionally', () => {
     const lines = Array.from({ length: 20 }, (_, i) => `Line ${i + 1}`)
     const slices = splitSceneContentAcrossPages(lines.join('\n'), '10', '11')
@@ -101,7 +227,7 @@ describe('splitSceneContentAcrossPages', () => {
 })
 
 describe('splitSceneContentFromPdfElements', () => {
-  it('groups elements by page', () => {
+  it('groups elements by page with screenplay spacing', () => {
     const slices = splitSceneContentFromPdfElements(
       [
         { type: 'scene_heading', text: 'INT. ROOM - DAY', page: 5 },
@@ -115,6 +241,7 @@ describe('splitSceneContentFromPdfElements', () => {
     expect(slices).toHaveLength(2)
     expect(slices[0]!.pageNumber).toBe('5')
     expect(slices[0]!.content).toContain('INT. ROOM')
+    expect(slices[0]!.content).toContain('INT. ROOM - DAY\n\nJANE walks.')
     expect(slices[1]!.pageNumber).toBe('6')
   })
 

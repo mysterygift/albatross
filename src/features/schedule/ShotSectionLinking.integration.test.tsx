@@ -6,7 +6,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 
 import { ShotListPage } from '@/features/schedule/shot-list-page'
-import type { Scene, ScriptSection, Shot } from '@/lib/db/types'
+import type { Scene, ScriptPage, ScriptSection, ScriptSectionRange, Shot } from '@/lib/db/types'
 
 const soft = { created_at: 't', updated_at: 't', deleted_at: null as string | null }
 
@@ -26,11 +26,22 @@ const sectionsSvc = vi.hoisted(() => ({
   listSectionsByScene: vi.fn(),
   listSectionsByShot: vi.fn(),
   listRangesBySectionIds: vi.fn(),
+  listCharactersBySectionIds: vi.fn(),
   getLinkedSectionCountsByShotIds: vi.fn(),
   replaceShotSectionLinks: vi.fn(),
 }))
 
 vi.mock('@/lib/db/repositories/scriptSections', () => sectionsSvc)
+
+const listPages = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/db/repositories/scriptPages', () => ({
+  listScriptPagesByScriptVersion: listPages,
+}))
+
+vi.mock('@/lib/db/repositories/scriptVersions', () => ({
+  listScriptVersionsByProduction: vi.fn(async () => []),
+}))
 
 vi.mock('@/lib/db/repositories/location', () => ({
   listLocationsByProduction: vi.fn(async () => []),
@@ -141,6 +152,35 @@ function section(over: Partial<ScriptSection> = {}): ScriptSection {
   }
 }
 
+function range(over: Partial<ScriptSectionRange> = {}): ScriptSectionRange {
+  return {
+    id: 'range-1',
+    section_id: 'sec-1',
+    start_page: '1',
+    start_eighth: 0,
+    end_page: '1',
+    end_eighth: 8,
+    start_offset: null,
+    end_offset: null,
+    ...soft,
+    ...over,
+  }
+}
+
+function scriptPage(over: Partial<ScriptPage> = {}): ScriptPage {
+  return {
+    id: 'page-1',
+    script_version_id: 'ver-1',
+    scene_id: 'scene-1',
+    page_number: '1',
+    page_index: 0,
+    content: 'Hello there.',
+    eighths: 8,
+    ...soft,
+    ...over,
+  }
+}
+
 async function selectScene(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getAllByRole('combobox')[0]!)
   await user.click(await screen.findByRole('option', { name: /^\s*1\./ }))
@@ -166,7 +206,26 @@ describe('ShotListPage script-section linking', () => {
       section({ id: 'sec-2', label: 'Action B', section_type: 'action', is_manual: 0 }),
     ])
     sectionsSvc.listSectionsByShot.mockResolvedValue([])
-    sectionsSvc.listRangesBySectionIds.mockResolvedValue(new Map())
+    sectionsSvc.listRangesBySectionIds.mockResolvedValue(
+      new Map([
+        ['sec-1', [range({ id: 'range-1', section_id: 'sec-1', start_page: '1', end_page: '1' })]],
+        ['sec-2', [range({ id: 'range-2', section_id: 'sec-2', start_page: '2', end_page: '2' })]],
+      ])
+    )
+    sectionsSvc.listCharactersBySectionIds.mockResolvedValue(
+      new Map([
+        ['sec-1', [{ id: 'char-1', section_id: 'sec-1', person_id: null, character_name: 'ALICE', ...soft }]],
+      ])
+    )
+    listPages.mockResolvedValue([
+      scriptPage({ id: 'page-1', page_number: '1', page_index: 0, content: 'Hello there.' }),
+      scriptPage({
+        id: 'page-2',
+        page_number: '2',
+        page_index: 1,
+        content: 'MICHAEL enters the room.',
+      }),
+    ])
     sectionsSvc.getLinkedSectionCountsByShotIds.mockResolvedValue(new Map<string, number>())
     sectionsSvc.replaceShotSectionLinks.mockResolvedValue(undefined)
   })
@@ -210,7 +269,7 @@ describe('ShotListPage script-section linking', () => {
     expect(within(dlg).getByText('Dialogue A')).toBeTruthy()
     expect(within(dlg).getByText('Action B')).toBeTruthy()
 
-    await user.click(within(dlg).getByText('Dialogue A'))
+    await user.click(within(dlg).getByRole('checkbox', { name: 'Link section Dialogue A' }))
     await user.click(within(dlg).getByRole('button', { name: /Save links/ }))
 
     await waitFor(() => expect(sectionsSvc.replaceShotSectionLinks).toHaveBeenCalledTimes(1))
@@ -230,11 +289,35 @@ describe('ShotListPage script-section linking', () => {
     await user.click(screen.getByRole('button', { name: 'Sections' }))
     const dlg = await screen.findByRole('dialog')
 
-    // Toggle the already-linked section off, then save -> empties the links.
-    await user.click(within(dlg).getByText('Dialogue A'))
+    // Toggle the already-linked section off via checkbox, then save -> empties the links.
+    await user.click(within(dlg).getByRole('checkbox', { name: 'Link section Dialogue A' }))
     await user.click(within(dlg).getByRole('button', { name: /Save links/ }))
 
     await waitFor(() => expect(sectionsSvc.replaceShotSectionLinks).toHaveBeenCalledTimes(1))
     expect(sectionsSvc.replaceShotSectionLinks.mock.calls[0]).toEqual(['shot-1', []])
+  })
+
+  it('shows script text preview when clicking a section row', async () => {
+    const user = userEvent.setup()
+    render(wrap(<ShotListPage />))
+    await waitFor(() => expect(schedSvc.listScenesByProduction).toHaveBeenCalled())
+    await selectScene(user)
+
+    await waitFor(() => expect(screen.getByText('1A')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: 'Sections' }))
+
+    const dlg = await screen.findByRole('dialog')
+    await waitFor(() => expect(listPages).toHaveBeenCalled())
+
+    expect(within(dlg).getByText('Hello there.')).toBeTruthy()
+    expect(within(dlg).getByText(/Characters: ALICE/)).toBeTruthy()
+    expect(within(dlg).getByText(/showing pages for .Dialogue A/)).toBeTruthy()
+
+    await user.click(within(dlg).getByRole('button', { name: /Action B/ }))
+
+    await waitFor(() =>
+      expect(within(dlg).getByText(/showing pages for .Action B/)).toBeTruthy()
+    )
+    expect(within(dlg).getByText('MICHAEL enters the room.')).toBeTruthy()
   })
 })

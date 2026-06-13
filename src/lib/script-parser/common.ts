@@ -131,6 +131,27 @@ export function estimateSceneEighths(bodyLineCount: number): number {
   return Math.max(1, raw)
 }
 
+/** True when a trimmed line reads as an uppercase character cue. */
+export function isCharacterCueLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+  if (SCENE_HEADING.test(trimmed)) return false
+  if (TRANSITION.test(trimmed)) return false
+  if (isContinuationLine(trimmed)) return false
+  if (trimmed.endsWith(':')) return false
+  const name = trimmed.replace(/\(.*?\)/g, '').trim()
+  if (!name || name.length > 40) return false
+  if (!/[A-Z]/.test(name)) return false
+  if (/[a-z]/.test(name)) return false
+  return true
+}
+
+/** True when a line is a parenthetical (e.g. "(O.S.)", "(beat)"). */
+export function isParentheticalLine(line: string): boolean {
+  const trimmed = line.trim()
+  return trimmed.startsWith('(') && trimmed.endsWith(')')
+}
+
 /**
  * Extracts uppercase character cues from a scene body. A cue is a short, all-uppercase line
  * that is not a scene heading or transition. Parentheticals (e.g. "(CONT'D)", "(O.S.)") are
@@ -142,14 +163,8 @@ export function extractCharacterCues(body: string): string[] {
   for (const rawLine of body.split(/\r?\n/)) {
     const line = rawLine.trim()
     if (!line) continue
-    if (SCENE_HEADING.test(line)) continue
-    if (TRANSITION.test(line)) continue
-    if (line.endsWith(':')) continue
+    if (!isCharacterCueLine(line)) continue
     const name = line.replace(/\(.*?\)/g, '').trim()
-    if (!name || name.length > 40) continue
-    // Must contain an uppercase letter and no lowercase letters (cues are all caps).
-    if (!/[A-Z]/.test(name)) continue
-    if (/[a-z]/.test(name)) continue
     const key = name.toUpperCase()
     if (seen.has(key)) continue
     seen.add(key)

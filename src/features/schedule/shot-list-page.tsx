@@ -23,16 +23,15 @@ import {
 import { listCast } from '@/lib/db/repositories/person'
 import {
   getLinkedSectionCountsByShotIds,
+  listCharactersBySectionIds,
   listRangesBySectionIds,
   listSectionsByScene,
   listSectionsByShot,
   replaceShotSectionLinks,
 } from '@/lib/db/repositories/scriptSections'
 import { listScriptVersionsByProduction } from '@/lib/db/repositories/scriptVersions'
-import { formatScriptVersionLabel } from '@/lib/db/scriptSectionReconciliationService'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
-import { SbRemoteNotice } from './sbRemoteNotice'
-import { formatSectionStatus } from './script-section-edit-dialog'
+import { ShotScriptSectionLinkDialog } from './shot-script-section-link-dialog'
 import {
   listEpisodesByProduction,
   getEpisodeByIdForProductionIncludeArchived,
@@ -60,7 +59,7 @@ import {
   updateShotForActor,
   upsertEquipmentTermForActor,
 } from '@/lib/access/projectDomainService'
-import type { Shot, Scene, ShotCast, ScriptSection, ScriptSectionRange } from '@/lib/db/types'
+import type { Shot, Scene, ShotCast } from '@/lib/db/types'
 import { SHOT_SIZE_VALUES, CAMERA_MOVEMENT_VALUES } from '@/lib/db/types'
 import {
   Table,
@@ -130,31 +129,6 @@ function formatDuration(sec: number | null): string {
   const m = Math.floor(sec / 60)
   const s = sec % 60
   return `${m}:${s.toString().padStart(2, '0')}`
-}
-
-/** Compact "p1 0/8–4/8" style label for a section's first range; "—" when no page/eighth data. */
-function formatSectionRange(ranges: ScriptSectionRange[] | undefined): string {
-  const r = ranges?.[0]
-  if (!r) return '—'
-  const startPage = r.start_page ?? null
-  const endPage = r.end_page ?? null
-  if (startPage == null && endPage == null && r.start_eighth == null && r.end_eighth == null) {
-    return '—'
-  }
-  const startE = r.start_eighth != null ? `${r.start_eighth}/8` : ''
-  const endE = r.end_eighth != null ? `${r.end_eighth}/8` : ''
-  if (startPage != null && startPage === endPage) {
-    const eighths = [startE, endE].filter(Boolean).join('–')
-    return `p${startPage}${eighths ? ` ${eighths}` : ''}`
-  }
-  const start = startPage != null ? `p${startPage}${startE ? ` ${startE}` : ''}` : startE
-  const end = endPage != null ? `p${endPage}${endE ? ` ${endE}` : ''}` : endE
-  return [start, end].filter(Boolean).join(' – ') || '—'
-}
-
-/** Short label for a section in the linking UI. */
-function sectionDisplayLabel(section: ScriptSection): string {
-  return section.label?.trim() || 'Section'
 }
 
 function latestVersionForEpisodeScope(
@@ -605,9 +579,15 @@ export function ShotListPage() {
   })
 
   const sceneSectionIds = useMemo(() => sceneSections.map((s) => s.id), [sceneSections])
-  const { data: sceneSectionRanges = new Map<string, ScriptSectionRange[]>() } = useQuery({
+  const { data: sceneSectionRanges = new Map() } = useQuery({
     queryKey: ['section-ranges', sceneSectionIds.join(',')],
     queryFn: async () => listRangesBySectionIds(sceneSectionIds),
+    enabled: sceneSectionIds.length > 0,
+  })
+
+  const { data: sceneSectionCharacters = new Map() } = useQuery({
+    queryKey: ['section-characters', sceneSectionIds.join(',')],
+    queryFn: async () => listCharactersBySectionIds(sceneSectionIds),
     enabled: sceneSectionIds.length > 0,
   })
 
@@ -629,10 +609,6 @@ export function ShotListPage() {
     () => latestVersionForEpisodeScope(scriptVersions, scopedEpisodeId),
     [scriptVersions, scopedEpisodeId]
   )
-  const scriptVersionById = useMemo(
-    () => new Map(scriptVersions.map((v) => [v.id, v])),
-    [scriptVersions]
-  )
 
   const { data: outdatedLinkShotIds = new Set<string>() } = useQuery({
     queryKey: ['shot-outdated-section-links', shotIds.join(','), latestScriptVersion?.id],
@@ -651,7 +627,6 @@ export function ShotListPage() {
   })
 
   const [manageSectionsShotId, setManageSectionsShotId] = useState<string | null>(null)
-  const [sectionSelection, setSectionSelection] = useState<Set<string>>(new Set())
   const [sectionLinkError, setSectionLinkError] = useState<string | null>(null)
 
   const { data: linkedSectionsForShot = [] } = useQuery({
@@ -663,12 +638,10 @@ export function ShotListPage() {
     enabled: !!manageSectionsShotId,
   })
 
-  const linkedSectionIdsKey = linkedSectionsForShot.map((s) => s.id).join(',')
-  useEffect(() => {
-    if (manageSectionsShotId) {
-      setSectionSelection(new Set(linkedSectionIdsKey ? linkedSectionIdsKey.split(',') : []))
-    }
-  }, [manageSectionsShotId, linkedSectionIdsKey])
+  const linkedSectionIds = useMemo(
+    () => linkedSectionsForShot.map((s) => s.id),
+    [linkedSectionsForShot]
+  )
 
   const replaceShotSectionsMutation = useMutation({
     mutationFn: async ({ shotId, sectionIds }: { shotId: string; sectionIds: string[] }) => {
@@ -2424,120 +2397,25 @@ export function ShotListPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <ShotScriptSectionLinkDialog
         open={manageSectionsShotId != null}
         onOpenChange={(open) => !open && setManageSectionsShotId(null)}
-      >
-        <DialogContent className="max-h-[85vh] flex flex-col bg-zinc-800 border-zinc-600">
-          <h3 className="text-base font-semibold text-zinc-100">Link script sections</h3>
-          <p className="text-sm text-zinc-400">
-            {manageSectionsShotId
-              ? `Select the script sections covered by shot ${shots.find((s) => s.id === manageSectionsShotId)?.shot_number ?? ''}.`
-              : ''}
-          </p>
-          {isRemoteProduction && <SbRemoteNotice className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-100" />}
-          {sectionLinkError && (
-            <p role="alert" className="text-sm text-red-400">
-              {sectionLinkError}
-            </p>
-          )}
-          {manageSectionsShotId &&
-            (sceneSections.length === 0 ? (
-              <p className="py-4 text-sm text-zinc-500">
-                No script sections for this scene yet. Generate or add sections on the Script
-                Sections page first.
-              </p>
-            ) : (
-              <>
-                <div className="flex-1 min-h-0 overflow-auto py-2">
-                  <div className="flex flex-col gap-1">
-                    {sceneSections.map((section) => {
-                      const checked = sectionSelection.has(section.id)
-                      const isEstimated = section.is_manual === 0
-                      const toggle = () =>
-                        setSectionSelection((prev) => {
-                          const next = new Set(prev)
-                          if (next.has(section.id)) next.delete(section.id)
-                          else next.add(section.id)
-                          return next
-                        })
-                      return (
-                        <div
-                          key={section.id}
-                          role="button"
-                          tabIndex={0}
-                          aria-pressed={checked}
-                          className={cn(
-                            'flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-left hover:bg-zinc-700/70',
-                            checked && 'bg-zinc-700/50'
-                          )}
-                          onClick={toggle}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault()
-                              toggle()
-                            }
-                          }}
-                        >
-                          <Checkbox checked={checked} className="mt-0.5 pointer-events-none" />
-                          <span className="flex flex-col gap-0.5">
-                            <span className="text-sm text-zinc-100">
-                              {sectionDisplayLabel(section)}
-                            </span>
-                            <span className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-400">
-                              <span className="rounded bg-zinc-700/80 px-1.5 py-0.5">
-                                {formatSectionStatus(section.status)}
-                              </span>
-                              <span>{formatSectionRange(sceneSectionRanges.get(section.id))}</span>
-                              {scriptVersionById.get(section.script_version_id) && (
-                                <span className="rounded bg-zinc-700/80 px-1.5 py-0.5">
-                                  {formatScriptVersionLabel(scriptVersionById.get(section.script_version_id)!)}
-                                </span>
-                              )}
-                              {latestScriptVersion &&
-                                section.script_version_id !== latestScriptVersion.id && (
-                                  <span className="rounded bg-amber-900/40 px-1.5 py-0.5 text-amber-300">
-                                    older revision
-                                  </span>
-                                )}
-                              {isEstimated && (
-                                <span
-                                  className="rounded bg-amber-900/40 px-1.5 py-0.5 text-amber-300"
-                                  title="Page/eighth range is best-effort (auto-generated)"
-                                >
-                                  est.
-                                </span>
-                              )}
-                            </span>
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-                <div className="mt-2 flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => setManageSectionsShotId(null)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    className="bg-emerald-600 hover:bg-emerald-700"
-                    disabled={isRemoteProduction || replaceShotSectionsMutation.isPending}
-                    onClick={() =>
-                      manageSectionsShotId &&
-                      replaceShotSectionsMutation.mutate({
-                        shotId: manageSectionsShotId,
-                        sectionIds: [...sectionSelection],
-                      })
-                    }
-                  >
-                    <Check className="mr-1 size-3.5" />
-                    Save links
-                  </Button>
-                </div>
-              </>
-            ))}
-        </DialogContent>
-      </Dialog>
+        shotNumber={shots.find((s) => s.id === manageSectionsShotId)?.shot_number ?? ''}
+        scene={selectedSceneForScope ?? null}
+        sections={sceneSections}
+        rangesBySectionId={sceneSectionRanges}
+        charactersBySectionId={sceneSectionCharacters}
+        scriptVersions={scriptVersions}
+        latestScriptVersion={latestScriptVersion ?? null}
+        initialSectionIds={linkedSectionIds}
+        isRemoteProduction={isRemoteProduction}
+        isSaving={replaceShotSectionsMutation.isPending}
+        error={sectionLinkError}
+        onSave={(sectionIds) => {
+          if (!manageSectionsShotId) return
+          replaceShotSectionsMutation.mutate({ shotId: manageSectionsShotId, sectionIds })
+        }}
+      />
     </div>
   )
 }

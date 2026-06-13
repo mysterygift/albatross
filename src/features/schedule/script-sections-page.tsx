@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -63,14 +63,14 @@ import { loadSceneCoverage } from '@/lib/db/coverageAnalysisService'
 import type { ScriptSectionRangeInput } from '@/lib/db/repositories/scriptSections'
 import { enrichRangeWithPageOffsets } from '@/lib/db/scriptEighthSplitService'
 import {
-  buildPageHighlightSegments,
   conflictingSectionIds,
   findOverlappingSectionPairs,
-  intersectTextSlices,
-  rangeSliceOnPage,
-  type TextOffsetSlice,
 } from '@/lib/db/scriptSectionMatching'
 import { parseLeadingPageNumber } from '@/lib/db/sidesBuilderService'
+import {
+  formatScriptSectionRange,
+  ScriptSectionScriptPanel,
+} from './script-section-script-panel'
 
 const SELECT_NONE = '__none__'
 const ALL_SCENES = '__all_scenes__'
@@ -83,19 +83,6 @@ type DetailMap = Record<string, SectionDetail>
 function sceneLabel(scene: Scene): string {
   const title = scene.title ?? scene.heading
   return `Scene ${scene.scene_number}${title ? ` — ${title}` : ''}`
-}
-
-function formatRange(range: ScriptSectionRange | undefined): string {
-  if (!range) return '—'
-  const start = [range.start_page ? `p${range.start_page}` : null, range.start_eighth != null ? `${range.start_eighth}/8` : null]
-    .filter(Boolean)
-    .join(' ')
-  const end = [range.end_page ? `p${range.end_page}` : null, range.end_eighth != null ? `${range.end_eighth}/8` : null]
-    .filter(Boolean)
-    .join(' ')
-  if (!start && !end) return '—'
-  if (!end || end === start) return start || '—'
-  return `${start || '?'} – ${end}`
 }
 
 function buildRangeInput(values: SectionEditorValues): ScriptSectionRangeInput | null {
@@ -123,96 +110,6 @@ function sectionToValues(section: ScriptSection, detail: SectionDetail | undefin
     end_eighth: range?.end_eighth != null ? String(range.end_eighth) : '',
     characterNames: (detail?.characters ?? []).map((c) => c.character_name ?? '').filter(Boolean),
   }
-}
-
-/** Renders page content with selected and conflict highlights. */
-function renderPageContentHighlights(
-  content: string,
-  pageNumber: string | null,
-  selectedRange: ScriptSectionRange | undefined,
-  conflictRanges: ScriptSectionRange[]
-): ReactNode {
-  const pageNum =
-    parseLeadingPageNumber(pageNumber) ?? (pageNumber != null ? Number(pageNumber) : null)
-  if (pageNum == null || !Number.isFinite(pageNum)) return content
-
-  const len = content.length
-  const selectedSlice = selectedRange ? rangeSliceOnPage(selectedRange, pageNum, len) : null
-  const conflictSlices = conflictRanges
-    .map((r) => rangeSliceOnPage(r, pageNum, len))
-    .filter((s): s is TextOffsetSlice => s != null)
-
-  const segments = buildPageHighlightSegments(len, selectedSlice, conflictSlices)
-  if (segments.length === 0) return content
-
-  const nodes: ReactNode[] = []
-  let cursor = 0
-  for (const seg of segments) {
-    if (cursor < seg.start) nodes.push(content.slice(cursor, seg.start))
-    const text = content.slice(seg.start, seg.end)
-    if (seg.kind === 'overlap') {
-      nodes.push(
-        <mark
-          key={`${seg.start}-${seg.end}`}
-          className="rounded-sm bg-destructive/25 px-0.5 outline outline-2 outline-destructive"
-        >
-          {text}
-        </mark>
-      )
-    } else if (seg.kind === 'conflict') {
-      nodes.push(
-        <mark
-          key={`${seg.start}-${seg.end}`}
-          className="rounded-sm bg-destructive/15 px-0.5 outline outline-2 outline-destructive"
-        >
-          {text}
-        </mark>
-      )
-    } else {
-      nodes.push(
-        <mark key={`${seg.start}-${seg.end}`} className="rounded-sm bg-primary/25 px-0.5">
-          {text}
-        </mark>
-      )
-    }
-    cursor = seg.end
-  }
-  if (cursor < len) nodes.push(content.slice(cursor))
-  return <>{nodes}</>
-}
-
-function pageHasConflictOverlap(
-  page: { page_number: string | null; page_index: number; content: string | null },
-  selectedRange: ScriptSectionRange | undefined,
-  conflictRanges: ScriptSectionRange[]
-): boolean {
-  const pageNum = pageDisplayNumber(page)
-  if (pageNum == null || !selectedRange) return false
-  const len = (page.content ?? '').length
-  const selectedSlice = rangeSliceOnPage(selectedRange, pageNum, len)
-  if (!selectedSlice) return false
-  return conflictRanges.some((r) => {
-    const other = rangeSliceOnPage(r, pageNum, len)
-    return other != null && intersectTextSlices(selectedSlice, other) != null
-  })
-}
-
-/** Numeric page numbers covered by a section's first range (for text-panel highlighting). */
-function pagesForRange(range: ScriptSectionRange | undefined): Set<number> {
-  const result = new Set<number>()
-  if (!range) return result
-  const start = parseLeadingPageNumber(range.start_page)
-  const end = parseLeadingPageNumber(range.end_page ?? range.start_page)
-  if (start != null && end != null && start <= end) {
-    for (let p = start; p <= end; p++) result.add(p)
-  } else if (start != null) {
-    result.add(start)
-  }
-  return result
-}
-
-function pageDisplayNumber(page: { page_number: string | null; page_index: number }): number | null {
-  return parseLeadingPageNumber(page.page_number) ?? page.page_index + 1
 }
 
 function enrichRangeForSave(
@@ -530,7 +427,6 @@ export function ScriptSectionsPage() {
 
   const selectedSection = sections.find((s) => s.id === selectedSectionId) ?? null
   const selectedRange = details[selectedSection?.id ?? '']?.ranges[0]
-  const highlightedPages = pagesForRange(selectedRange)
 
   const rangeBySectionId = useMemo(() => {
     const map = new Map<string, ScriptSectionRange | undefined>()
@@ -557,12 +453,6 @@ export function ScriptSectionsPage() {
       .map((id) => details[id]?.ranges[0])
       .filter((r): r is ScriptSectionRange => r != null)
   }, [selectedSectionId, conflictPairs, details])
-
-  const scriptTextPages = useMemo(() => {
-    if (!selectedSection) return pages
-    const scenePages = pages.filter((p) => p.scene_id === selectedSection.scene_id)
-    return scenePages.length > 0 ? scenePages : pages
-  }, [pages, selectedSection])
 
   const selectedHasConflict = selectedSectionId != null && conflictSectionIds.has(selectedSectionId)
 
@@ -634,49 +524,51 @@ export function ScriptSectionsPage() {
         </p>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div>
-          <Label className="mb-2 block text-sm text-muted-foreground">Script version</Label>
-          <Select
-            value={selectedVersionId ?? SELECT_NONE}
-            onValueChange={(v) => {
-              setSelectedVersionId(v === SELECT_NONE ? null : v)
-              setSelectedSceneFilterId(ALL_SCENES)
-              setSelectedSectionId(null)
-            }}
-          >
-            <SelectTrigger className="bg-input border-border" aria-label="Script version">
-              <SelectValue placeholder="Select a script version…" />
-            </SelectTrigger>
-            <SelectContent>
-              {versions.length === 0 && <SelectItem value={SELECT_NONE}>No script versions</SelectItem>}
-              {versions.map((v) => (
-                <SelectItem key={v.id} value={v.id}>
-                  {versionPickerLabel(v)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="mb-2 block text-sm text-muted-foreground">Scene</Label>
-          <Select
-            value={selectedSceneFilterId}
-            onValueChange={handleSceneFilterChange}
-            disabled={!selectedVersionId}
-          >
-            <SelectTrigger className="bg-input border-border" aria-label="Scene">
-              <SelectValue placeholder="All scenes" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_SCENES}>All scenes</SelectItem>
-              {sceneFilterOptions.map((scene) => (
-                <SelectItem key={scene.id} value={scene.id}>
-                  {sceneLabel(scene)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-6">
+          <div className="min-w-0 flex-1">
+            <Label className="mb-2 block text-sm text-muted-foreground">Script version</Label>
+            <Select
+              value={selectedVersionId ?? SELECT_NONE}
+              onValueChange={(v) => {
+                setSelectedVersionId(v === SELECT_NONE ? null : v)
+                setSelectedSceneFilterId(ALL_SCENES)
+                setSelectedSectionId(null)
+              }}
+            >
+              <SelectTrigger className="bg-input border-border" aria-label="Script version">
+                <SelectValue placeholder="Select a script version…" />
+              </SelectTrigger>
+              <SelectContent>
+                {versions.length === 0 && <SelectItem value={SELECT_NONE}>No script versions</SelectItem>}
+                {versions.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {versionPickerLabel(v)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="min-w-0 flex-1">
+            <Label className="mb-2 block text-sm text-muted-foreground">Scene</Label>
+            <Select
+              value={selectedSceneFilterId}
+              onValueChange={handleSceneFilterChange}
+              disabled={!selectedVersionId}
+            >
+              <SelectTrigger className="bg-input border-border" aria-label="Scene">
+                <SelectValue placeholder="All scenes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_SCENES}>All scenes</SelectItem>
+                {sceneFilterOptions.map((scene) => (
+                  <SelectItem key={scene.id} value={scene.id}>
+                    {sceneLabel(scene)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <div className="flex flex-wrap items-end gap-2 md:justify-end">
           {selectedVersion?.previous_script_version_id && (
@@ -726,7 +618,8 @@ export function ScriptSectionsPage() {
                 Sections{sectionsCountLabel}
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-4 space-y-2">
+            <CardContent className="pt-4">
+              <div className="max-h-[60vh] space-y-2 overflow-y-auto">
               {sections.length === 0 && <p className="text-sm text-muted-foreground">No sections in this version.</p>}
               {sections.length > 0 && filteredSections.length === 0 && (
                 <p className="text-sm text-muted-foreground">No sections for this scene in this version.</p>
@@ -787,7 +680,7 @@ export function ScriptSectionsPage() {
                           )}
                         </div>
                         <div className="mt-1 text-sm text-muted-foreground">
-                          {scene ? sceneLabel(scene) : 'Unknown scene'} · {formatRange(detail?.ranges[0])}
+                          {scene ? sceneLabel(scene) : 'Unknown scene'} · {formatScriptSectionRange(detail?.ranges[0])}
                         </div>
                         {detail && detail.characters.length > 0 && (
                           <div className="mt-1 text-xs text-muted-foreground">
@@ -821,70 +714,22 @@ export function ScriptSectionsPage() {
                   </div>
                 )
               })}
+              </div>
             </CardContent>
           </Card>
 
           {/* Script text panel */}
-          <Card className="border-border bg-card">
-            <CardHeader className="border-b border-border py-2">
-              <CardTitle className="text-base">
-                Script text
-                {selectedSection && (
-                  <span className="ml-2 text-sm font-normal text-muted-foreground">
-                    showing pages for “{selectedSection.label ?? 'section'}”
-                    {selectedHasConflict ? ' — overlap conflict' : ''}
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {scriptTextPages.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No page text available for this version.</p>
-              ) : (
-                <div className="max-h-[60vh] space-y-3 overflow-y-auto">
-                  {scriptTextPages.map((page) => {
-                    const pageNum = pageDisplayNumber(page)
-                    const inRange =
-                      !!selectedSection && pageNum != null && highlightedPages.has(pageNum)
-                    const hasConflictOnPage =
-                      selectedHasConflict &&
-                      pageHasConflictOverlap(page, selectedRange, conflictRangesForSelected)
-                    const showHighlights = inRange || hasConflictOnPage
-                    return (
-                      <div
-                        key={page.id}
-                        className={`rounded-md border p-3 ${
-                          hasConflictOnPage
-                            ? 'border-destructive bg-destructive/5 outline outline-2 outline-destructive/50'
-                            : inRange
-                              ? 'border-primary bg-primary/5'
-                              : 'border-border'
-                        }`}
-                      >
-                        <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>Page {page.page_number ?? page.page_index + 1}</span>
-                          {page.eighths != null && <span>· {page.eighths}/8</span>}
-                          {hasConflictOnPage && (
-                            <span className="text-destructive">· overlapping range</span>
-                          )}
-                        </div>
-                        <pre className="whitespace-pre-wrap font-mono text-xs text-foreground">
-                          {showHighlights
-                            ? renderPageContentHighlights(
-                                page.content ?? '',
-                                page.page_number,
-                                selectedRange,
-                                conflictRangesForSelected
-                              )
-                            : (page.content ?? '')}
-                        </pre>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <ScriptSectionScriptPanel
+            pages={pages}
+            previewSection={selectedSection}
+            previewRange={selectedRange}
+            conflictRanges={conflictRangesForSelected}
+            subtitle={
+              selectedSection
+                ? `showing pages for “${selectedSection.label ?? 'section'}”${selectedHasConflict ? ' — overlap conflict' : ''}`
+                : null
+            }
+          />
         </div>
       )}
 
