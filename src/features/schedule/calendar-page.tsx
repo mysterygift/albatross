@@ -35,6 +35,11 @@ import {
   ensureCallWrapStripsForProduction,
 } from '@/lib/db/repositories/schedule'
 import { invalidateStripboardCaches, stripboardQueryKeys } from '@/features/schedule/stripboard-hooks'
+import { ShootDayScriptSectionsPanel } from '@/features/schedule/shoot-day-script-sections-panel'
+import { SidesBuilderSheet } from '@/features/schedule/sides-builder-sheet'
+import { listSidesExportsByShootDay } from '@/lib/db/repositories/sidesExports'
+import { getDocumentById } from '@/lib/db/repositories/document'
+import { getFileUrl, openInSystem } from '@/lib/files'
 import type { CalendarShootDayEvent } from '@/lib/db/types'
 import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
 import { listStripsByProduction } from '@/lib/db/repositories/stripboard-strips'
@@ -453,6 +458,39 @@ function DroppableDayCell({
   )
 }
 
+function ShootDaySidesExportsList({ shootDayId }: { shootDayId: string }) {
+  const { data: exports = [] } = useQuery({
+    queryKey: ['sides-exports', shootDayId],
+    queryFn: () => listSidesExportsByShootDay(shootDayId),
+    enabled: !!shootDayId,
+  })
+
+  if (exports.length === 0) return null
+
+  const openPdf = async (documentId: string | null) => {
+    if (!documentId) return
+    const doc = await getDocumentById(documentId)
+    if (!doc?.file_path) return
+    const url = await getFileUrl(doc.file_path)
+    await openInSystem(url)
+  }
+
+  return (
+    <ul className="mt-2 space-y-1">
+      {exports.map((row) => (
+        <li key={row.id} className="flex items-center justify-between gap-2 text-xs">
+          <span className="text-muted-foreground">{row.export_label ?? 'Sides export'}</span>
+          {row.document_id && (
+            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openPdf(row.document_id)}>
+              Open PDF
+            </Button>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function DaySummaryDrawer({
   event,
   open,
@@ -489,6 +527,7 @@ function DaySummaryDrawer({
   episodesOnUnitSummary?: string | null
 }) {
   const [isEditing, setIsEditing] = useState(false)
+  const [sidesBuilderOpen, setSidesBuilderOpen] = useState(false)
   const [callTimeInput, setCallTimeInput] = useState('')
   const [wrapTimeInput, setWrapTimeInput] = useState('')
   const [notesInput, setNotesInput] = useState('')
@@ -963,6 +1002,39 @@ function DaySummaryDrawer({
                 </div>
               )}
             </div>
+
+            <ShootDayScriptSectionsPanel
+              shootDayId={event.shootDayId}
+              shootDayUnitId={event.shootDayUnitId}
+            />
+
+            <div className="rounded-lg border border-border/60 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Sides
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSidesBuilderOpen(true)}
+                >
+                  Open Sides Builder
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Assemble, filter, and review script sections for this day before export.
+              </p>
+              <ShootDaySidesExportsList shootDayId={event.shootDayId} />
+            </div>
+
+            <SidesBuilderSheet
+              open={sidesBuilderOpen}
+              onOpenChange={setSidesBuilderOpen}
+              shootDayId={event.shootDayId}
+              shootDayUnitId={event.shootDayUnitId}
+              shootDate={event.date}
+              unitName={event.unitName}
+            />
           </div>
         </div>
       </SheetContent>

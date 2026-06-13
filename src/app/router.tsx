@@ -8,6 +8,7 @@ import { StripboardPage } from '@/features/schedule/stripboard-page'
 import { ShotListPage } from '@/features/schedule/shot-list-page'
 import { StoryboardPage } from '@/features/schedule/storyboard-page'
 import { ScriptImportPage } from '@/features/schedule/script-import-page'
+import { ScriptSectionsPage } from '@/features/schedule/script-sections-page'
 import { BookingsPage } from '@/features/people/pages/BookingsPage'
 import { DayOutOfDaysPage } from '@/features/people/pages/DayOutOfDaysPage'
 import { CastDetailPage } from '@/features/people/pages/CastDetailPage'
@@ -46,6 +47,7 @@ export const router = createBrowserRouter([
       { path: 'schedule/shots', element: <ShotListPage /> },
       { path: 'schedule/storyboard', element: <StoryboardPage /> },
       { path: 'schedule/script-import', element: <ScriptImportPage /> },
+      { path: 'schedule/script-sections', element: <ScriptSectionsPage /> },
       { path: 'people', element: <Navigate to="/people/bookings" replace /> },
       { path: 'people/bookings', element: <BookingsPage /> },
       { path: 'people/day-out-of-days', element: <DayOutOfDaysPage /> },

@@ -14,6 +14,7 @@ import {
   updateStoryboardImportForActor,
 } from '@/lib/access/projectDomainService'
 import { listScenesByProduction, listShotsByProduction } from '@/lib/db/repositories/schedule'
+import { getLinkedSectionCountsByShotIds } from '@/lib/db/repositories/scriptSections'
 import {
   applyAthenaImportToStoryboard,
   createStoryboardImage,
@@ -66,6 +67,28 @@ function sceneDisplayLabel(scene: Scene): string {
 
 function shotSummary(shot: Shot): string {
   return shot.subject?.trim() || shot.shot_description?.trim() || shot.description?.trim() || 'No shot description'
+}
+
+/** Small script-coverage indicator for a storyboard shot card. */
+function CoverageBadge({ count }: { count: number }) {
+  if (count > 0) {
+    return (
+      <span
+        className="inline-flex items-center rounded bg-emerald-700/70 px-1.5 py-0.5 text-xs text-emerald-100"
+        title={`${count} linked script section${count === 1 ? '' : 's'}`}
+      >
+        {count} section{count === 1 ? '' : 's'}
+      </span>
+    )
+  }
+  return (
+    <span
+      className="inline-flex items-center rounded bg-amber-900/40 px-1.5 py-0.5 text-xs text-amber-300"
+      title="This shot is not linked to any script section"
+    >
+      No coverage
+    </span>
+  )
 }
 
 async function cleanupImportCandidates(candidates: AthenaPanelCandidate[]): Promise<void> {
@@ -157,6 +180,13 @@ export function StoryboardPage() {
     }
     return ids
   }, [shotsByScene])
+
+  const shotIdsKey = useMemo(() => [...shotIds].sort().join(','), [shotIds])
+  const { data: sectionCountByShotId = new Map<string, number>() } = useQuery({
+    queryKey: ['storyboard-shot-section-counts', shotIdsKey],
+    queryFn: () => getLinkedSectionCountsByShotIds([...shotIds]),
+    enabled: shotIds.size > 0,
+  })
 
   const imagesByShot = useMemo(() => {
     const grouped = new Map<string, StoryboardImage[]>()
@@ -694,6 +724,7 @@ export function StoryboardPage() {
                                 <span className="font-medium">Shot {shot.shot_number}</span>
                                 <span className="text-muted-foreground">{shot.shot_size ?? '-'}</span>
                                 <span className="text-muted-foreground">{shotSummary(shot)}</span>
+                                <CoverageBadge count={sectionCountByShotId.get(shot.id) ?? 0} />
                               </div>
                               <Button
                                 size="sm"
@@ -795,6 +826,7 @@ export function StoryboardPage() {
                                   <div className="space-y-1">
                                     <p className="text-sm font-medium">Shot {shot.shot_number}</p>
                                     <p className="text-xs text-muted-foreground">{shot.shot_size ?? '-'}</p>
+                                    <CoverageBadge count={sectionCountByShotId.get(shot.id) ?? 0} />
                                   </div>
                                 </TableCell>
                                 <TableCell className="align-top text-sm text-muted-foreground">

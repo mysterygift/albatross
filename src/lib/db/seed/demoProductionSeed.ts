@@ -27,6 +27,7 @@ import { seedDemoTasks } from './demoTaskSeed'
 import { seedDemoVendorFinance } from './demoVendorFinanceSeed'
 import { seedDemoVendors } from './demoVendorSeed'
 import { seedDemoEquipment } from './demoEquipmentSeed'
+import { seedDemoScriptSections } from './demoScriptSectionsSeed'
 import { DEMO_CREW_MEMBER_COUNT, NORTH_SHORE_EPISODIC_CREW, seedDemoCrew } from './demoCrewSeed'
 import { listDocumentsByProduction } from '../repositories/document'
 import { listEpisodesByProduction } from '../repositories/episodes'
@@ -237,6 +238,9 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'script_documents',
     'shooting_blocs',
     'equipment_terms',
+    'script_versions',
+    'script_sections',
+    'shoot_day_sides_exports',
   ]
   try {
     const result = await runInSerializedTransaction(async () => {
@@ -1090,6 +1094,10 @@ async function runDemoContentSeed(
     crewRoster: isNorthShoreEpisodicProd ? NORTH_SHORE_EPISODIC_CREW : undefined,
   })
   await seedDemoCrewBookings(productionId, ts, idSource)
+
+  if (isSingletonDemo) {
+    await seedDemoScriptSections(productionId)
+  }
 
   const hods = northShoreLayout
     ? ([

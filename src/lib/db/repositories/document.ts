@@ -1,8 +1,10 @@
 import { getDb, now, uuid } from '../client'
-import { outboxPush } from '../outbox'
+import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { Document } from '../types'
 
 const TABLE = 'documents'
+
+type Stmt = { sql: string; bindValues: unknown[] }
 
 function rowToDocument(r: Record<string, unknown>): Document {
   return {
@@ -51,6 +53,36 @@ export async function getDocumentById(id: string): Promise<Document | null> {
 
 type DocumentInsert = Pick<Document, 'file_name' | 'file_path'> &
   Partial<Pick<Document, 'production_id' | 'entity_type' | 'entity_id' | 'mime_type'>>
+
+/**
+ * Returns statements to create a document for use in executeBatch (insert + outbox).
+ * Does not include BEGIN/COMMIT. Caller provides id and ts. Use this when the document insert
+ * must be coordinated atomically with other writes (e.g. an export record) in one transaction.
+ */
+export function buildCreateDocumentStatements(id: string, ts: string, data: DocumentInsert): Stmt[] {
+  const insert: Stmt = {
+    sql: `INSERT INTO ${TABLE} (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    bindValues: [
+      id,
+      data.production_id ?? null,
+      data.entity_type ?? null,
+      data.entity_id ?? null,
+      data.file_name,
+      data.file_path,
+      data.mime_type ?? null,
+      ts,
+      ts,
+    ],
+  }
+  const outbox = outboxStatementForRow({
+    entity: TABLE,
+    entityId: id,
+    operation: 'create',
+    payloadJson: JSON.stringify({ ...data, id }),
+  })
+  return [insert, outbox]
+}
 
 export async function createDocument(data: DocumentInsert): Promise<Document> {
   const db = await getDb()

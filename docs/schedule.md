@@ -96,9 +96,10 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 ### 6. Script Import
 
 - **Paste text:** Paste script content; click Parse to extract scenes.
-- **Upload file:** .txt supported; PDF stores file but parsing not implemented.
-- **Parsed scenes:** Preview before creating. Create scenes adds them to the production.
+- **Upload file:** `.txt` and text-layer `.pdf` supported; creates schedule scenes and generates script versions/sections locally.
+- **Parsed scenes:** Preview before creating. Create scenes adds them to the production and runs SB2 section generation.
 - **Parser:** Extracts scene number, heading, int/ext, day/night from standard script format.
+- **Script sections & sides:** See [script-sections-and-sides.md](script-sections-and-sides.md) for the full import → sections → shots → sides data flow.
 
 ### 7. Fundamental workflow
 

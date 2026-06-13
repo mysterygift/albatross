@@ -856,6 +856,24 @@ pub fn run() {
             sql: include_str!("../migrations/0072_equipment_list_item_quantity.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 75,
+            description: "script_sections_and_sides",
+            sql: include_str!("../migrations/0075_script_sections_and_sides.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 76,
+            description: "script_version_previous_revision",
+            sql: include_str!("../migrations/0076_script_version_previous_revision.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 77,
+            description: "script_section_ranges_user_edited",
+            sql: include_str!("../migrations/0077_script_section_ranges_user_edited.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

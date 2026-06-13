@@ -848,6 +848,114 @@ export type OutboxRow = {
   created_at: string
 }
 
+// ─── Script Sections & Sides (SB1) ──────────────────────────────────────────
+
+/** Section classification; mirrors the script_sections.section_type CHECK constraint. */
+export type ScriptSectionType =
+  | 'dialogue'
+  | 'action'
+  | 'stunt'
+  | 'vfx'
+  | 'pickup'
+  | 'insert'
+  | 'custom'
+
+/** Planning lifecycle; mirrors the script_sections.status CHECK constraint. */
+export type ScriptSectionStatus = 'unplanned' | 'planned' | 'scheduled' | 'shot' | 'omitted'
+
+/** A specific version/revision of a script for a production (optionally an episode). */
+export type ScriptVersion = {
+  id: string
+  production_id: string
+  episode_id: string | null
+  title: string | null
+  version_label: string | null
+  /** Industry revision colour (e.g. 'White', 'Blue', 'Pink'); free text. */
+  revision_colour: string | null
+  /** Whether the page set is locked; stored as 0/1. */
+  is_locked: number
+  /** Optional JSON metadata for locked-page tracking. */
+  locked_pages_json: string | null
+  /** Prior script version this revision was imported from, when known. */
+  previous_script_version_id: string | null
+} & SoftDeletable
+
+/** A single page of a script version; may map to a scene where known. */
+export type ScriptPage = {
+  id: string
+  script_version_id: string
+  scene_id: string | null
+  /** Display page number (may be non-numeric, e.g. '12A'). */
+  page_number: string | null
+  /** Zero-based ordering index within the script version. */
+  page_index: number
+  /** Raw or parsed text content for the page. */
+  content: string | null
+  /** Estimated eighths of a page. */
+  eighths: number | null
+} & SoftDeletable
+
+/** A contiguous, schedulable unit of script content within a scene. */
+export type ScriptSection = {
+  id: string
+  production_id: string
+  script_version_id: string
+  scene_id: string
+  episode_id: string | null
+  label: string | null
+  section_type: ScriptSectionType
+  status: ScriptSectionStatus
+  notes: string | null
+  /** Whether the section was created manually rather than parsed; stored as 0/1. */
+  is_manual: number
+  /** Whether the user edited page/eighth ranges on a generated section; stored as 0/1. */
+  ranges_user_edited: number
+} & SoftDeletable
+
+/** Page/eighth (and optional text-offset) extent of a section. */
+export type ScriptSectionRange = {
+  id: string
+  section_id: string
+  start_page: string | null
+  start_eighth: number | null
+  end_page: string | null
+  end_eighth: number | null
+  start_offset: number | null
+  end_offset: number | null
+} & SoftDeletable
+
+/** A character/person appearing in a section. */
+export type ScriptSectionCharacter = {
+  id: string
+  section_id: string
+  /** Link to people(id) where known; null otherwise. */
+  person_id: string | null
+  /** Fallback display name when no person link exists. */
+  character_name: string | null
+} & SoftDeletable
+
+/** Link between a shot and a script section, with optional coverage metadata. */
+export type ShotScriptSection = {
+  id: string
+  shot_id: string
+  script_section_id: string
+  coverage_notes: string | null
+  sort_index: number
+} & SoftDeletable
+
+/** A generated sides export record for a shoot day (document reference only). */
+export type ShootDaySidesExport = {
+  id: string
+  production_id: string
+  shoot_day_id: string
+  unit_id: string | null
+  document_id: string | null
+  script_version_id: string | null
+  export_label: string | null
+  /** JSON metadata: included sections, filters, warnings. */
+  metadata_json: string | null
+} & SoftDeletable
+
 // ─── Calendar (Schedule view) ───────────────────────────────────────────────
 
 /** Unit key for calendar display; derived from unit name. */

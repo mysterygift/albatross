@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { listDocumentsByProduction } from '@/lib/db/repositories/document'
+import { listSidesExportsByProduction } from '@/lib/db/repositories/sidesExports'
 import { pickAndSaveAttachment } from '@/lib/files'
 import { createDocument } from '@/lib/db/repositories/document'
 import { getDb } from '@/lib/db/client'
@@ -21,12 +22,33 @@ import {
 import { Button } from '@/components/ui/button'
 import { Upload, ExternalLink } from 'lucide-react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
+
+function formatEntityType(entityType: string | null): string {
+  if (entityType === 'sides_export') return 'Shoot-day sides'
+  if (entityType === 'script') return 'Script'
+  if (entityType === 'call_sheet') return 'Call sheet'
+  return entityType ?? '—'
+}
 
 export function DocumentsPage() {
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
   const queryClient = useQueryClient()
+
+  const { data: sidesExports = [] } = useQuery({
+    queryKey: ['sides-exports', currentProductionId],
+    queryFn: () => listSidesExportsByProduction(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
+  const exportLabelByDocumentId = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const row of sidesExports) {
+      if (row.document_id && row.export_label) map.set(row.document_id, row.export_label)
+    }
+    return map
+  }, [sidesExports])
 
   const { data: documents = [] } = useQuery({
     queryKey: ['documents', currentProductionId],
@@ -114,8 +136,15 @@ export function DocumentsPage() {
           <TableBody>
             {documents.map((doc) => (
               <TableRow key={doc.id}>
-                <TableCell>{doc.file_name}</TableCell>
-                <TableCell>{doc.entity_type ?? '—'}</TableCell>
+                <TableCell>
+                  {doc.file_name}
+                  {exportLabelByDocumentId.get(doc.id) && (
+                    <span className="block text-xs text-muted-foreground">
+                      {exportLabelByDocumentId.get(doc.id)}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>{formatEntityType(doc.entity_type)}</TableCell>
                 <TableCell>
                   <Button
                     variant="ghost"
