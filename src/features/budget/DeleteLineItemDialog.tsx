@@ -16,11 +16,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { getRelatedExpensesForLineItem } from '@/lib/budget/matching'
 import { listBudgetItemExpenseLinksForBudgetItem } from '@/lib/db/repositories/budgetReconciliation'
 import { listFloatsByBudgetItem } from '@/lib/db/repositories/floats'
 import type { BudgetAccount, BudgetItem, Expense, Person } from '@/lib/db/types'
 import type {
   DeleteBudgetLineItemParams,
+  ExpenseAccountRelink,
   ExpenseRelink,
   FloatRelink,
 } from '@/lib/db/repositories/budgetLineItemDeletion'
@@ -101,9 +103,10 @@ export function DeleteLineItemDialog({
   const defaultTargetId = targetCandidates[0]?.id ?? ''
 
   const { data: linksData, isLoading: linksLoading } = useQuery({
-    queryKey: ['budget-item-expense-links-for-item', lineItemId, revisionId],
-    queryFn: () => listBudgetItemExpenseLinksForBudgetItem(lineItemId!, revisionId ?? undefined),
-    enabled: open && lineItemId != null,
+    queryKey: ['budget-item-expense-links-for-item', lineItemId, productionId, revisionId],
+    queryFn: () =>
+      listBudgetItemExpenseLinksForBudgetItem(lineItemId!, productionId, revisionId ?? undefined),
+    enabled: open && lineItemId != null && productionId.length > 0,
   })
   const links = linksData ?? EMPTY_LINKS
 
@@ -114,28 +117,42 @@ export function DeleteLineItemDialog({
   })
   const floats = floatsData ?? EMPTY_FLOATS
 
+  const postedExpensesToReassign = useMemo(() => {
+    if (!lineItem) return []
+    const linkedExpenseIds = new Set(links.map((l) => l.expense_id))
+    return getRelatedExpensesForLineItem(lineItem, expenses, lineItem.account_id).filter(
+      (e) => !linkedExpenseIds.has(e.id)
+    )
+  }, [lineItem, expenses, links])
+
+  const linkIdsKey = links.map((l) => l.id).join(',')
+  const floatIdsKey = floats.map((f) => f.id).join(',')
+  const postedExpenseIdsKey = postedExpensesToReassign.map((e) => e.id).join(',')
+
   const [expenseTargets, setExpenseTargets] = useState<Record<string, string>>({})
+  const [postedExpenseTargets, setPostedExpenseTargets] = useState<Record<string, string>>({})
   const [floatTargets, setFloatTargets] = useState<Record<string, string>>({})
   const [localError, setLocalError] = useState<string | null>(null)
 
   const associationsLoading = linksLoading || floatsLoading
-  const hasAssociations = links.length > 0 || floats.length > 0
+  const hasAssociations =
+    links.length > 0 || floats.length > 0 || postedExpensesToReassign.length > 0
   const noTargetsAvailable = hasAssociations && targetCandidates.length === 0
 
   useEffect(() => {
     if (!open || !lineItemId) return
     setLocalError(null)
-    setExpenseTargets(
-      Object.fromEntries(links.map((link) => [link.id, defaultTargetId]))
+    setExpenseTargets(Object.fromEntries(links.map((link) => [link.id, defaultTargetId])))
+    setPostedExpenseTargets(
+      Object.fromEntries(postedExpensesToReassign.map((e) => [e.id, defaultTargetId]))
     )
-    setFloatTargets(
-      Object.fromEntries(floats.map((f) => [f.id, defaultTargetId]))
-    )
-  }, [open, lineItemId, links, floats, defaultTargetId])
+    setFloatTargets(Object.fromEntries(floats.map((f) => [f.id, defaultTargetId])))
+  }, [open, lineItemId, linkIdsKey, floatIdsKey, postedExpenseIdsKey, defaultTargetId, links, floats, postedExpensesToReassign])
 
   const allTargetsSelected =
     !hasAssociations ||
     (links.every((l) => Boolean(expenseTargets[l.id])) &&
+      postedExpensesToReassign.every((e) => Boolean(postedExpenseTargets[e.id])) &&
       floats.every((f) => Boolean(floatTargets[f.id])))
 
   const canConfirm =
@@ -153,6 +170,10 @@ export function DeleteLineItemDialog({
       linkId: link.id,
       targetBudgetItemId: expenseTargets[link.id]!,
     }))
+    const expenseAccountRelinks: ExpenseAccountRelink[] = postedExpensesToReassign.map((e) => ({
+      expenseId: e.id,
+      targetBudgetItemId: postedExpenseTargets[e.id]!,
+    }))
     const floatRelinks: FloatRelink[] = floats.map((f) => ({
       floatId: f.id,
       targetBudgetItemId: floatTargets[f.id]!,
@@ -162,6 +183,7 @@ export function DeleteLineItemDialog({
       await onConfirm({
         budgetItemId: lineItem.id,
         expenseRelinks,
+        expenseAccountRelinks,
         floatRelinks,
       })
     } catch (err) {
@@ -197,8 +219,9 @@ export function DeleteLineItemDialog({
               {associationsLoading && <p>Loading associated costs…</p>}
               {!associationsLoading && hasAssociations && (
                 <p>
-                  This line item has matched expenses and/or petty-cash floats. Choose where to move
-                  each one before deleting.
+                  This line item has matched expenses, posted spend, and/or petty-cash floats.
+                  Choose where to move each one before deleting. Expenses will be posted to the
+                  target line item&apos;s account.
                 </p>
               )}
               {!associationsLoading && !hasAssociations && lineItem && (
@@ -229,7 +252,9 @@ export function DeleteLineItemDialog({
                       className="flex flex-col gap-2 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm truncate">{expenseLabel(expense, format, productionCurrency)}</p>
+                        <p className="text-sm truncate">
+                          {expenseLabel(expense, format, productionCurrency)}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           Matched: {format(link.matched_amount, productionCurrency).formatted}
                         </p>
@@ -255,6 +280,44 @@ export function DeleteLineItemDialog({
                     </div>
                   )
                 })}
+              </div>
+            )}
+
+            {postedExpensesToReassign.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Posted spend on this account
+                </p>
+                {postedExpensesToReassign.map((expense) => (
+                  <div
+                    key={expense.id}
+                    className="flex flex-col gap-2 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm truncate">
+                        {expenseLabel(expense, format, productionCurrency)}
+                      </p>
+                    </div>
+                    <Select
+                      value={postedExpenseTargets[expense.id] ?? ''}
+                      onValueChange={(value) =>
+                        setPostedExpenseTargets((prev) => ({ ...prev, [expense.id]: value }))
+                      }
+                      disabled={isPending}
+                    >
+                      <SelectTrigger className="w-full sm:w-[220px]">
+                        <SelectValue placeholder="Move to line item" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {targetCandidates.map((candidate) => (
+                          <SelectItem key={candidate.id} value={candidate.id}>
+                            {budgetItemLabel(candidate, accountById)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
               </div>
             )}
 

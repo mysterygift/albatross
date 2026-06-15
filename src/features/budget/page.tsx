@@ -996,11 +996,12 @@ export function BudgetPage() {
     mutationFn: (args: {
       budgetItemId: string
       expenseRelinks: { linkId: string; targetBudgetItemId: string }[]
+      expenseAccountRelinks: { expenseId: string; targetBudgetItemId: string }[]
       floatRelinks: { floatId: string; targetBudgetItemId: string }[]
     }) =>
       deleteBudgetLineItemWithRelinks({
         productionId: currentProductionId!,
-        revisionId,
+        revisionId: stableRevisionId,
         ...args,
       }),
     onSuccess: (_, variables) => {
@@ -1009,14 +1010,15 @@ export function BudgetPage() {
         setExaminedLineItemId(null)
       }
       if (currentProductionId) {
-        queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId, revisionId] })
-        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, revisionId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId, stableRevisionId] })
+        queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, stableRevisionId] })
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item'] })
         queryClient.invalidateQueries({ queryKey: ['budget-item-with-details', variables.budgetItemId] })
-        queryClient.invalidateQueries({ queryKey: ['floats', currentProductionId, revisionId] })
+        queryClient.invalidateQueries({ queryKey: ['floats', currentProductionId, stableRevisionId] })
         queryClient.invalidateQueries({ queryKey: ['floats-by-budget-item'] })
-        queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', currentProductionId, revisionId] })
-        queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
+        queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', currentProductionId, stableRevisionId] })
+        queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, stableRevisionId) })
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense'] })
       }
     },
@@ -2554,7 +2556,7 @@ export function BudgetPage() {
         expenses={expenses}
         people={people}
         productionId={currentProductionId ?? ''}
-        revisionId={revisionId}
+        revisionId={stableRevisionId}
         productionCurrency={productionCurrency}
         format={format}
         onConfirm={async (args) => {

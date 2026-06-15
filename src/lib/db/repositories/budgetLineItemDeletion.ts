@@ -5,8 +5,10 @@
 
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxStatementForRow } from '../outbox'
+import { getRelatedExpensesForLineItem } from '@/lib/budget/matching'
 import { roundMoney } from '@/lib/money/roundMoney'
-import type { BudgetItemExpenseLink } from '../types'
+import type { BudgetItem, BudgetItemExpenseLink, Expense } from '../types'
+import { getAccountById } from './budgetAccounts'
 import { listBudgetItemExpenseLinksForBudgetItem } from './budgetReconciliation'
 import { listFloatsByBudgetItem } from './floats'
 import { resolveBudgetRevisionId } from './budgetRevisions'
@@ -14,8 +16,10 @@ import { resolveBudgetRevisionId } from './budgetRevisions'
 const ITEM_TABLE = 'budget_items'
 const LINKS_TABLE = 'budget_item_expense_links'
 const FLOATS_TABLE = 'floats'
+const EXP_TABLE = 'expenses'
 
 export type ExpenseRelink = { linkId: string; targetBudgetItemId: string }
+export type ExpenseAccountRelink = { expenseId: string; targetBudgetItemId: string }
 export type FloatRelink = { floatId: string; targetBudgetItemId: string }
 
 export type DeleteBudgetLineItemParams = {
@@ -23,6 +27,7 @@ export type DeleteBudgetLineItemParams = {
   revisionId?: string | null
   budgetItemId: string
   expenseRelinks: ExpenseRelink[]
+  expenseAccountRelinks: ExpenseAccountRelink[]
   floatRelinks: FloatRelink[]
 }
 
@@ -62,11 +67,11 @@ function assertCompleteCoverage<T extends { id: string }>(
 export async function deleteBudgetLineItemWithRelinks(
   params: DeleteBudgetLineItemParams
 ): Promise<void> {
-  const { productionId, revisionId, budgetItemId, expenseRelinks, floatRelinks } = params
+  const { productionId, revisionId, budgetItemId, expenseRelinks, expenseAccountRelinks, floatRelinks } = params
 
   const db = await getDb()
   const itemRows = await db.select<Record<string, unknown>[]>(
-    `SELECT id, production_id FROM ${ITEM_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
+    `SELECT id, production_id, account_id, line_item_type FROM ${ITEM_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
     [budgetItemId]
   )
   const item = itemRows[0]
@@ -75,15 +80,58 @@ export async function deleteBudgetLineItemWithRelinks(
     throw new Error('Budget item does not belong to this production')
   }
 
+  const expenseRows = await db.select<Record<string, unknown>[]>(
+    `SELECT id, production_id, account_id, transaction_type FROM ${EXP_TABLE} WHERE production_id = $1 AND deleted_at IS NULL`,
+    [productionId]
+  )
+  const productionExpenses = expenseRows.map(
+    (r) =>
+      ({
+        id: r.id as string,
+        production_id: r.production_id as string,
+        account_id: (r.account_id as string | null) ?? null,
+        transaction_type: (r.transaction_type as Expense['transaction_type']) ?? null,
+      }) as Expense
+  )
+
   const [links, floats] = await Promise.all([
-    listBudgetItemExpenseLinksForBudgetItem(budgetItemId, revisionId),
+    listBudgetItemExpenseLinksForBudgetItem(budgetItemId, productionId, revisionId),
     listFloatsByBudgetItem(budgetItemId),
   ])
+
+  const deletedBudgetItem = {
+    id: budgetItemId,
+    production_id: productionId,
+    budget_revision_id: null,
+    category_id: null,
+    account_id: (item.account_id as string | null) ?? null,
+    description: '',
+    estimated_cost: 0,
+    actual_cost: 0,
+    vendor: null,
+    status: 'draft',
+    line_item_type: (item.line_item_type as BudgetItem['line_item_type']) ?? null,
+    created_at: '',
+    updated_at: '',
+    deleted_at: null,
+  } satisfies BudgetItem
+
+  const linkedExpenseIds = new Set(links.map((l) => l.expense_id))
+  const relatedUnlinkedExpenses = getRelatedExpensesForLineItem(
+    deletedBudgetItem,
+    productionExpenses,
+    deletedBudgetItem.account_id
+  ).filter((e) => !linkedExpenseIds.has(e.id))
 
   assertCompleteCoverage(
     links,
     expenseRelinks.map((r) => r.linkId),
     'expense link'
+  )
+  assertCompleteCoverage(
+    relatedUnlinkedExpenses.map((e) => ({ id: e.id })),
+    expenseAccountRelinks.map((r) => r.expenseId),
+    'posted expense'
   )
   assertCompleteCoverage(
     floats.map((f) => ({ id: f.id })),
@@ -93,6 +141,12 @@ export async function deleteBudgetLineItemWithRelinks(
 
   const targetItemIds = new Set<string>()
   for (const r of expenseRelinks) {
+    if (r.targetBudgetItemId === budgetItemId) {
+      throw new Error('Cannot relink to the line item being deleted')
+    }
+    targetItemIds.add(r.targetBudgetItemId)
+  }
+  for (const r of expenseAccountRelinks) {
     if (r.targetBudgetItemId === budgetItemId) {
       throw new Error('Cannot relink to the line item being deleted')
     }
@@ -108,6 +162,35 @@ export async function deleteBudgetLineItemWithRelinks(
     await assertBudgetItemInProduction(db, targetId, productionId, 'Target budget item')
   }
 
+  const targetAccountByItemId = new Map<string, string | null>()
+  for (const targetId of targetItemIds) {
+    const rows = await db.select<Record<string, unknown>[]>(
+      `SELECT account_id FROM ${ITEM_TABLE} WHERE id = $1 AND deleted_at IS NULL`,
+      [targetId]
+    )
+    const accountId = (rows[0]?.account_id as string | null) ?? null
+    targetAccountByItemId.set(targetId, accountId)
+    if (!accountId) {
+      throw new Error('Target line item must belong to a postable account before expenses can be moved')
+    }
+    const account = await getAccountById(accountId)
+    if (!account) throw new Error('Account not found')
+    if (!account.is_postable) {
+      throw new Error('Only leaf (postable) accounts may receive expenses')
+    }
+  }
+
+  for (const relink of expenseAccountRelinks) {
+    const expense = productionExpenses.find((e) => e.id === relink.expenseId)
+    if (!expense) throw new Error('Posted expense not found or deleted')
+    if (expense.account_id !== deletedBudgetItem.account_id) {
+      throw new Error('Posted expense does not belong to the deleted line item account')
+    }
+    if (linkedExpenseIds.has(relink.expenseId)) {
+      throw new Error('Posted expense is already covered by a matched expense relink')
+    }
+  }
+
   const linkById = new Map(links.map((l) => [l.id, l]))
   const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
   const ts = now()
@@ -117,6 +200,7 @@ export async function deleteBudgetLineItemWithRelinks(
     const statements: Array<{ sql: string; bindValues: unknown[] }> = [
       { sql: 'BEGIN TRANSACTION', bindValues: [] },
     ]
+    const recodedExpenseIds = new Set<string>()
 
     for (const relink of expenseRelinks) {
       const sourceLink = linkById.get(relink.linkId)!
@@ -129,6 +213,40 @@ export async function deleteBudgetLineItemWithRelinks(
         ts,
         conn,
       })
+      const targetAccountId = targetAccountByItemId.get(relink.targetBudgetItemId)
+      if (targetAccountId && !recodedExpenseIds.has(sourceLink.expense_id)) {
+        recodedExpenseIds.add(sourceLink.expense_id)
+        statements.push({
+          sql: `UPDATE ${EXP_TABLE} SET account_id = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
+          bindValues: [targetAccountId, ts, sourceLink.expense_id],
+        })
+        statements.push(
+          outboxStatementForRow({
+            entity: EXP_TABLE,
+            entityId: sourceLink.expense_id,
+            operation: 'update',
+            payloadJson: JSON.stringify({ account_id: targetAccountId }),
+          })
+        )
+      }
+    }
+
+    for (const relink of expenseAccountRelinks) {
+      const targetAccountId = targetAccountByItemId.get(relink.targetBudgetItemId)
+      if (!targetAccountId || recodedExpenseIds.has(relink.expenseId)) continue
+      recodedExpenseIds.add(relink.expenseId)
+      statements.push({
+        sql: `UPDATE ${EXP_TABLE} SET account_id = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
+        bindValues: [targetAccountId, ts, relink.expenseId],
+      })
+      statements.push(
+        outboxStatementForRow({
+          entity: EXP_TABLE,
+          entityId: relink.expenseId,
+          operation: 'update',
+          payloadJson: JSON.stringify({ account_id: targetAccountId }),
+        })
+      )
     }
 
     for (const relink of floatRelinks) {

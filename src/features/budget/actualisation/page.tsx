@@ -184,7 +184,8 @@ export function ActualisationPage() {
 
   const { data: linksForSelectedItem = [] } = useQuery({
     queryKey: ['budget-item-expense-links-for-item', selectedLineItemId, revisionId],
-    queryFn: () => listBudgetItemExpenseLinksForBudgetItem(selectedLineItemId!, revisionId),
+    queryFn: () =>
+      listBudgetItemExpenseLinksForBudgetItem(selectedLineItemId!, currentProductionId!, revisionId),
     enabled: !!selectedLineItemId,
   })
   const { data: linksForSelectedExpense = [] } = useQuery({

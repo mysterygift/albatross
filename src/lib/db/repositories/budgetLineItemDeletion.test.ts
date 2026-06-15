@@ -23,6 +23,23 @@ vi.mock('@/lib/db/repositories/budgetRevisions', () => ({
   resolveBudgetRevisionId: vi.fn(async () => 'rev-1'),
 }))
 
+vi.mock('@/lib/db/repositories/budgetAccounts', () => ({
+  getAccountById: vi.fn(async (id: string) => ({
+    id,
+    production_id: 'prod-1',
+    code: id === 'acct-1' ? '1001' : '1002',
+    name: id === 'acct-1' ? 'Account 1' : 'Account 2',
+    parent_account_id: null,
+    sort_order: 0,
+    is_postable: true,
+    color_hex: null,
+    archived_at: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    deleted_at: null,
+  })),
+}))
+
 import { setDbAdapterForTests } from '@/lib/db/client'
 import { deleteBudgetLineItemWithRelinks } from '@/lib/db/repositories/budgetLineItemDeletion'
 
@@ -58,8 +75,11 @@ async function makeDb(): Promise<Database> {
     CREATE TABLE expenses (
       id TEXT PRIMARY KEY,
       production_id TEXT NOT NULL,
+      account_id TEXT,
+      transaction_type TEXT,
       amount REAL NOT NULL,
       date TEXT NOT NULL,
+      updated_at TEXT,
       deleted_at TEXT
     );
     CREATE TABLE budget_item_expense_links (
@@ -100,8 +120,8 @@ async function makeDb(): Promise<Database> {
         ('item-a', 'prod-1', 'rev-1', 'acct-1', 'Line A', 100, '${TS}', '${TS}'),
         ('item-b', 'prod-1', 'rev-1', 'acct-1', 'Line B', 200, '${TS}', '${TS}'),
         ('item-c', 'prod-1', 'rev-1', 'acct-2', 'Line C', 300, '${TS}', '${TS}');
-    INSERT INTO expenses (id, production_id, amount, date)
-      VALUES ('exp-1', 'prod-1', 500, '2026-01-15');
+    INSERT INTO expenses (id, production_id, account_id, amount, date, updated_at)
+      VALUES ('exp-1', 'prod-1', 'acct-1', 500, '2026-01-15', '${TS}');
   `)
   return db
 }
@@ -118,17 +138,18 @@ describe('deleteBudgetLineItemWithRelinks', () => {
     await deleteBudgetLineItemWithRelinks({
       productionId: 'prod-1',
       revisionId: 'rev-1',
-      budgetItemId: 'item-a',
+      budgetItemId: 'item-c',
       expenseRelinks: [],
+      expenseAccountRelinks: [],
       floatRelinks: [],
     })
 
     const rows = await queryAll<{ deleted_at: string | null }>(
       dbAdapter,
-      `SELECT deleted_at FROM budget_items WHERE id = 'item-a'`
+      `SELECT deleted_at FROM budget_items WHERE id = 'item-c'`
     )
     expect(rows[0]!.deleted_at).toBeTruthy()
-    const outbox = await queryAll(dbAdapter, `SELECT * FROM outbox WHERE entity_id = 'item-a'`)
+    const outbox = await queryAll(dbAdapter, `SELECT * FROM outbox WHERE entity_id = 'item-c'`)
     expect(outbox).toHaveLength(1)
   })
 
@@ -143,6 +164,7 @@ describe('deleteBudgetLineItemWithRelinks', () => {
       revisionId: 'rev-1',
       budgetItemId: 'item-a',
       expenseRelinks: [{ linkId: 'link-1', targetBudgetItemId: 'item-b' }],
+      expenseAccountRelinks: [],
       floatRelinks: [],
     })
 
@@ -159,6 +181,34 @@ describe('deleteBudgetLineItemWithRelinks', () => {
     expect(activeLinks).toHaveLength(1)
     expect(activeLinks[0]!.budget_item_id).toBe('item-b')
     expect(activeLinks[0]!.matched_amount).toBe(50)
+
+    const expense = await queryAll<{ account_id: string | null }>(
+      dbAdapter,
+      `SELECT account_id FROM expenses WHERE id = 'exp-1'`
+    )
+    expect(expense[0]!.account_id).toBe('acct-1')
+  })
+
+  it('reposts expense to the target line item account when relinking across accounts', async () => {
+    await dbAdapter.execute(`
+      INSERT INTO budget_item_expense_links (id, production_id, budget_revision_id, budget_item_id, expense_id, matched_amount, created_at, updated_at)
+      VALUES ('link-1', 'prod-1', 'rev-1', 'item-a', 'exp-1', 50, '${TS}', '${TS}');
+    `)
+
+    await deleteBudgetLineItemWithRelinks({
+      productionId: 'prod-1',
+      revisionId: 'rev-1',
+      budgetItemId: 'item-a',
+      expenseRelinks: [{ linkId: 'link-1', targetBudgetItemId: 'item-c' }],
+      expenseAccountRelinks: [],
+      floatRelinks: [],
+    })
+
+    const expense = await queryAll<{ account_id: string | null }>(
+      dbAdapter,
+      `SELECT account_id FROM expenses WHERE id = 'exp-1'`
+    )
+    expect(expense[0]!.account_id).toBe('acct-2')
   })
 
   it('merges expense link when target already linked to the same expense', async () => {
@@ -174,6 +224,7 @@ describe('deleteBudgetLineItemWithRelinks', () => {
       revisionId: 'rev-1',
       budgetItemId: 'item-a',
       expenseRelinks: [{ linkId: 'link-a', targetBudgetItemId: 'item-b' }],
+      expenseAccountRelinks: [],
       floatRelinks: [],
     })
 
@@ -197,6 +248,7 @@ describe('deleteBudgetLineItemWithRelinks', () => {
       revisionId: 'rev-1',
       budgetItemId: 'item-a',
       expenseRelinks: [],
+      expenseAccountRelinks: [{ expenseId: 'exp-1', targetBudgetItemId: 'item-b' }],
       floatRelinks: [{ floatId: 'float-1', targetBudgetItemId: 'item-c' }],
     })
 
@@ -225,6 +277,7 @@ describe('deleteBudgetLineItemWithRelinks', () => {
         revisionId: 'rev-1',
         budgetItemId: 'item-a',
         expenseRelinks: [],
+        expenseAccountRelinks: [],
         floatRelinks: [],
       })
     ).rejects.toThrow(/Expected 1 expense link/)
