@@ -6,6 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -277,6 +278,8 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editScheme, setEditScheme] = useState<TaxCreditScheme | null>(null)
+  const [schemeToDelete, setSchemeToDelete] = useState<TaxCreditScheme | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [defaultVatDraft, setDefaultVatDraft] = useState('')
 
@@ -350,7 +353,14 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
 
   const deleteMutation = useMutation({
     mutationFn: deleteTaxCreditScheme,
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate()
+      setSchemeToDelete(null)
+      setDeleteError(null)
+    },
+    onError: (err) => {
+      setDeleteError(err instanceof Error ? err.message : 'Could not delete scheme')
+    },
   })
 
   const enableMutation = useMutation({
@@ -445,9 +455,8 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
                               size="icon"
                               className="h-8 w-8 text-destructive"
                               onClick={() => {
-                                if (window.confirm(`Delete scheme "${s.name}"?`)) {
-                                  deleteMutation.mutate(s.id)
-                                }
+                                setDeleteError(null)
+                                setSchemeToDelete(s)
                               }}
                               aria-label="Delete"
                             >
@@ -581,6 +590,58 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
           error={formError}
         />
       )}
+
+      <Dialog
+        open={schemeToDelete != null}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) {
+            setSchemeToDelete(null)
+            setDeleteError(null)
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={!deleteMutation.isPending}
+          onEscapeKeyDown={(e) => {
+            if (deleteMutation.isPending) e.preventDefault()
+          }}
+          onPointerDownOutside={(e) => {
+            if (deleteMutation.isPending) e.preventDefault()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Delete tax credit scheme?</DialogTitle>
+            <DialogDescription>
+              {schemeToDelete
+                ? `Remove "${schemeToDelete.name}" from this production? This cannot be undone.`
+                : 'Remove this tax credit scheme from this production? This cannot be undone.'}
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError && <p className="text-destructive text-sm">{deleteError}</p>}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSchemeToDelete(null)
+                setDeleteError(null)
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!schemeToDelete || deleteMutation.isPending}
+              onClick={() => schemeToDelete && deleteMutation.mutate(schemeToDelete.id)}
+              aria-label="Confirm delete tax credit scheme"
+            >
+              {deleteMutation.isPending ? 'Deleting…' : 'Confirm'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

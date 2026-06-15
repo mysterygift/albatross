@@ -139,7 +139,7 @@ The Budget page has four tabs: **Budget**, **Cost Report**, **Match Expenses**, 
 
 **Filters**
 
-- **Type** — All, Labour, Purchase, Rental, Allow, Deposit, Untyped.
+- **Type** — All, Labour, Purchase, Rental, Allow, Deposit.
 - **Line item status** — All, Unmatched, Partially matched, Matched, Overspent.
 - **Expense status** — All, Unallocated, Partially allocated, Allocated.
 - **Clear filters** appears when any filter is active. If both columns are empty with filters active, the page shows: “No line items or expenses match the current filters.”

@@ -55,6 +55,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import {
@@ -514,43 +515,58 @@ export function ActualisationPage() {
         </p>
       )}
 
-      <div className="flex flex-wrap gap-4 items-center">
-        <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as ClassificationFilter)}>
-          <SelectTrigger className="w-[140px]">Type</SelectTrigger>
-          <SelectContent>
-            {TYPE_FILTER_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={lineItemStatusFilter}
-          onValueChange={(v) => setLineItemStatusFilter(v as 'all' | BudgetItemReconciliationStatus)}
-        >
-          <SelectTrigger className="w-[180px]">Line item status</SelectTrigger>
-          <SelectContent>
-            {LINE_ITEM_STATUS_FILTER_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={expenseStatusFilter}
-          onValueChange={(v) => setExpenseStatusFilter(v as 'all' | ExpenseReconciliationStatus)}
-        >
-          <SelectTrigger className="w-[180px]">Expense status</SelectTrigger>
-          <SelectContent>
-            {EXPENSE_STATUS_FILTER_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-wrap gap-4 items-end">
+        <div>
+          <Label className="text-xs text-muted-foreground">Type</Label>
+          <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as ClassificationFilter)}>
+            <SelectTrigger className="mt-1 w-[140px]" aria-label="Filter by type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TYPE_FILTER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">Line status</Label>
+          <Select
+            value={lineItemStatusFilter}
+            onValueChange={(v) => setLineItemStatusFilter(v as 'all' | BudgetItemReconciliationStatus)}
+          >
+            <SelectTrigger className="mt-1 w-[180px]" aria-label="Filter by line item status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LINE_ITEM_STATUS_FILTER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">Expense status</Label>
+          <Select
+            value={expenseStatusFilter}
+            onValueChange={(v) => setExpenseStatusFilter(v as 'all' | ExpenseReconciliationStatus)}
+          >
+            <SelectTrigger className="mt-1 w-[180px]" aria-label="Filter by expense status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {EXPENSE_STATUS_FILTER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters}>
             Clear filters
@@ -751,6 +767,7 @@ export function ActualisationPage() {
       )}
 
       <Dialog open={matchSpendModalOpen} onOpenChange={setMatchSpendModalOpen}>
+        {matchSpendModalOpen ? (
         <DialogContent
           className="max-w-2xl max-h-[85vh] flex flex-col gap-0"
           aria-labelledby="match-spend-dialog-title"
@@ -1206,6 +1223,7 @@ export function ActualisationPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
+        ) : null}
       </Dialog>
     </div>
   )

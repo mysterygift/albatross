@@ -57,6 +57,7 @@ import {
   computeFringeTotals,
   computeContingencyTotals,
   getDescendantLeafIds,
+  sortBudgetItemsForExport,
   type AccountTreeNode,
 } from '@/lib/budget/calculations'
 import { computeTaxCreditTotals, computeVatTotals, type TaxCreditTotalsResult } from '@/lib/budget/taxCredits'
@@ -653,13 +654,20 @@ export function BudgetPage() {
   })
 
   useEffect(() => {
+    if (viewMode !== 'budget') return
     if (!untypedClassificationCounts || untypedMigrationDismissed) return
     const total =
       untypedClassificationCounts.untypedExpenses + untypedClassificationCounts.untypedLineItems
     if (total > 0) {
       setUntypedMigrationOpen(true)
     }
-  }, [untypedClassificationCounts, untypedMigrationDismissed])
+  }, [viewMode, untypedClassificationCounts, untypedMigrationDismissed])
+
+  useEffect(() => {
+    if (viewMode !== 'budget' && untypedMigrationOpen) {
+      setUntypedMigrationOpen(false)
+    }
+  }, [viewMode, untypedMigrationOpen])
 
   const migrateUntypedMutation = useMutation({
     mutationFn: () => migrateUntypedToAllow(currentProductionId!),
@@ -1265,9 +1273,10 @@ export function BudgetPage() {
   // Total actual = sum(expenses.amount) only; do not use budget_items.actual_cost.
   // Derived totals (fringes, contingency) are budget-side overlays and are not included in Total actual.
   const exportCsv = useCallback(async () => {
+    const sortedItems = sortBudgetItemsForExport(items, accounts, categories)
     const rows: (string | number)[][] = [
       ['Account / Category', 'Description', 'Estimated', 'Actual', 'Variance'],
-      ...items.map((i) => {
+      ...sortedItems.map((i) => {
         const account = i.account_id ? accounts.find((a) => a.id === i.account_id) : null
         const cat = !account && i.category_id ? categories.find((c) => c.id === i.category_id) : null
         const label = account ? `${account.code} — ${account.name}` : (cat?.code ?? '—')
