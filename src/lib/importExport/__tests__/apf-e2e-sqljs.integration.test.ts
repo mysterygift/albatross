@@ -159,6 +159,47 @@ describe('apf E2E (sql.js + real FS)', () => {
     )
   }
 
+  const REV_ID = 'ffffffff-e2e1-4e21-8f01-a1e2e2e2e201'
+  const BUDGET_ITEM_ID = '99999999-e2e1-4e21-8f01-a1e2e2e2e201'
+
+  it('exports and imports budget revision scoped rows without FK errors', async () => {
+    clearUserData()
+    const adapter = sqlJsApfE2eContext.adapter!
+    await adapter.execute(
+      `INSERT INTO productions (id, name, notes, created_at, updated_at, deleted_at, slug, currency_code, archived_at, wrapped_at, created_from_template)
+       VALUES ($1, $2, NULL, $3, $4, NULL, $5, 'GBP', NULL, NULL, NULL)`,
+      [PROD_ID, 'Budget Revision E2E', TS, TS, 'budget-rev-e2e']
+    )
+    await adapter.execute(
+      `INSERT INTO budget_revisions (id, production_id, name, created_from_revision_id, is_live, approval, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, 'Current budget', NULL, 1, 'unapproved', $3, $3, NULL)`,
+      [REV_ID, PROD_ID, TS]
+    )
+    await adapter.execute(
+      `INSERT INTO budget_items (id, production_id, budget_revision_id, description, estimated_cost, actual_cost, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, $3, 'Line', 100, 0, $4, $4, NULL)`,
+      [BUDGET_ITEM_ID, PROD_ID, REV_ID, TS]
+    )
+
+    await exportProductionAsApf(PROD_ID, apfPath)
+    const exportedBytes = new Uint8Array(await readFile(apfPath))
+    const parsedExport = parseApfArchiveBytes(exportedBytes)
+    expect(parsedExport.normalized.data.tables.budget_revisions).toHaveLength(1)
+    expect(parsedExport.normalized.data.formatVersion).toBe(3)
+
+    clearUserData()
+    const imp = await importProductionFromApf(apfPath)
+    expect(imp.ok).toBe(true)
+    if (!imp.ok) throw imp.error
+
+    const revRows = await adapter.select<Record<string, unknown>[]>(
+      `SELECT id FROM budget_revisions WHERE production_id = $1`,
+      [PROD_ID]
+    )
+    expect(revRows).toHaveLength(1)
+    expect(String(revRows[0]!.id)).toBe(REV_ID)
+  })
+
   it('exports then imports into a wiped DB with restored document bytes and stable UUIDs', async () => {
     await seedRoundTripFixture()
 

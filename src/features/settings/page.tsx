@@ -812,16 +812,6 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Data location</CardTitle>
-          <CardDescription>
-            SQLite database and attachments are stored in the app data directory. See README for paths per platform.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-
       <ClientsSettingsSection />
 
       <Card className="mt-2">

@@ -16,7 +16,7 @@ import { ApfInvalidDataError, ApfUnknownFormatVersionError, ApfUnsupportedFormat
 import { migrateApfToCurrentVersion } from '@/lib/importExport/migrate'
 import { normalizeApfManifestAndData } from '@/lib/importExport/pipeline'
 import { parseApfV1DataFileJson } from '@/lib/importExport/payload'
-import { buildFixtureDataAndManifest, emptyApfTables, minimalProductionRow } from '@/test/apf/fixtures'
+import { buildFixtureDataAndManifest, emptyApfTables, minimalProductionRow, TEST_PRODUCTION_ID } from '@/test/apf/fixtures'
 
 describe('getApfFormatCompatibility', () => {
   it('classifies current version as supported_current', () => {
@@ -122,9 +122,38 @@ describe('migrateApfToCurrentVersion', () => {
     const data = JSON.parse(JSON.stringify(d2)) as (typeof d2 & { formatVersion: number })
     data.formatVersion = 1
     const out = migrateApfToCurrentVersion({ manifest, data })
-    expect(out.manifest.formatVersion).toBe(2)
-    expect(out.data.formatVersion).toBe(2)
+    expect(out.manifest.formatVersion).toBe(3)
+    expect(out.data.formatVersion).toBe(3)
     expect(Array.isArray(out.data.tables.episodes)).toBe(true)
+  })
+
+  it('v2→v3 synthesizes budget_revisions referenced by budget rows', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    const revId = 'rev-import-1'
+    tables.fringe_rules = [
+      {
+        id: 'fr-1',
+        production_id: TEST_PRODUCTION_ID,
+        budget_revision_id: revId,
+        name: 'Fringe',
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+        deleted_at: null,
+      },
+    ]
+    const { manifest: m3, dataFile: d3 } = buildFixtureDataAndManifest({ tables })
+    const manifest = { ...m3, formatVersion: 2 as const }
+    const data = JSON.parse(JSON.stringify(d3)) as (typeof d3 & { formatVersion: number })
+    data.formatVersion = 2
+    delete (data.tables as Record<string, unknown>).budget_revisions
+    delete (data.tables as Record<string, unknown>).floats
+    delete (data.tables as Record<string, unknown>).float_expense_links
+
+    const out = migrateApfToCurrentVersion({ manifest, data })
+    expect(out.data.formatVersion).toBe(3)
+    expect(out.data.tables.budget_revisions).toHaveLength(1)
+    expect(out.data.tables.budget_revisions[0]!.id).toBe(revId)
   })
 })
 

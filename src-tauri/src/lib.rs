@@ -857,6 +857,18 @@ pub fn run() {
             kind: MigrationKind::Up,
         },
         Migration {
+            version: 73,
+            description: "user_instance_key_wrapper",
+            sql: include_str!("../migrations/0073_user_instance_key_wrapper.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 74,
+            description: "crew_availability",
+            sql: include_str!("../migrations/0074_crew_availability.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
             version: 75,
             description: "script_sections_and_sides",
             sql: include_str!("../migrations/0075_script_sections_and_sides.sql"),

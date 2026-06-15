@@ -28,6 +28,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     shootDays,
     budgetCategories,
     budgetAccounts,
+    budgetRevisions,
     vendors,
     keyContacts,
     checklistItems,
@@ -58,12 +59,14 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     budgetItems,
     vendorInvoices,
     expenses,
+    floats,
     technicalSpecs,
     clearances,
     budgetItemDetails,
     expenseTransactionDetails,
     expenseTaxCreditAllocations,
     budgetItemExpenseLinks,
+    floatExpenseLinks,
     vendorInvoiceExpenses,
     vendorPurchaseOrderExpenses,
     equipment,
@@ -113,6 +116,10 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     ),
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM budget_accounts WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM budget_revisions WHERE production_id = $1 AND deleted_at IS NULL`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -245,6 +252,10 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
+      `SELECT * FROM floats WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
       `SELECT ts.* FROM technical_specs ts
        INNER JOIN deliverables d ON d.id = ts.deliverable_id AND d.production_id = $1 AND d.deleted_at IS NULL
        WHERE ts.deleted_at IS NULL`,
@@ -275,6 +286,13 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
        INNER JOIN budget_items bi ON bi.id = l.budget_item_id AND bi.production_id = $1 AND bi.deleted_at IS NULL
        INNER JOIN expenses e ON e.id = l.expense_id AND e.production_id = $1 AND e.deleted_at IS NULL
        WHERE l.deleted_at IS NULL AND l.production_id = $1`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT l.* FROM float_expense_links l
+       INNER JOIN floats f ON f.id = l.float_id AND f.production_id = $1 AND f.deleted_at IS NULL
+       INNER JOIN expenses e ON e.id = l.expense_id AND e.production_id = $1 AND e.deleted_at IS NULL
+       WHERE l.deleted_at IS NULL`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -368,6 +386,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     shoot_days: asRows(shootDays),
     budget_categories: asRows(budgetCategories),
     budget_accounts: asRows(budgetAccounts),
+    budget_revisions: asRows(budgetRevisions),
     vendors: asRows(vendors),
     key_contacts: asRows(keyContacts),
     checklist_items: asRows(checklistItems),
@@ -398,12 +417,14 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     budget_items: asRows(budgetItems),
     vendor_invoices: asRows(vendorInvoices),
     expenses: asRows(expenses),
+    floats: asRows(floats),
     technical_specs: asRows(technicalSpecs),
     clearances: asRows(clearances),
     budget_item_details: asRows(budgetItemDetails),
     expense_transaction_details: asRows(expenseTransactionDetails),
     expense_tax_credit_allocations: asRows(expenseTaxCreditAllocations),
     budget_item_expense_links: asRows(budgetItemExpenseLinks),
+    float_expense_links: asRows(floatExpenseLinks),
     vendor_invoice_expenses: asRows(vendorInvoiceExpenses),
     vendor_purchase_order_expenses: asRows(vendorPurchaseOrderExpenses),
     equipment: asRows(equipment),

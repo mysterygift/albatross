@@ -157,7 +157,7 @@ export async function duplicateProduction(
     { sql: 'BEGIN TRANSACTION', bindValues: [] },
     {
       sql: `INSERT INTO ${TABLE_PRODUCTIONS} (id, name, slug, currency_code, notes, client_id, delivery_date, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      bindValues: [newProdId, newName, slug, currencyCode, notes, clientId, deliveryDate, isEpisodic, ts, ts],
+      bindValues: [newProdId, newName, slug, currencyCode, notes, clientId, deliveryDate, isEpisodic ? 1 : 0, ts, ts],
     },
   ]
 
