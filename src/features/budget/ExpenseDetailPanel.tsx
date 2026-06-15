@@ -20,7 +20,6 @@ import {
   ExpenseDetailMetaRow,
   ExpenseTypedSection,
   ExpenseParseErrorCard,
-  UntypedExpenseEditor,
 } from '@/features/budget/expense-shared'
 import { ExpenseTaxFields, type ExpenseTaxCreditDraft, type ExpenseVatReclaimDraft } from '@/features/budget/ExpenseTaxFields'
 import { ExpenseTaxReadSection } from '@/features/budget/ExpenseTaxReadSection'
@@ -43,14 +42,6 @@ export type ExpenseDetailPanelProps = {
   locations: Array<{ id: string; name: string; booked_status?: string }>
   onSaved: () => void
   onSaveRequest: (args: { expenseId: string; details: unknown; type: string }) => Promise<void>
-  /** When set, untyped (legacy) expenses can be edited (amount, date, vendor, notes). */
-  onUpdateExpenseRequest?: (data: {
-    expenseId: string
-    amount: number
-    date: string
-    vendor: string | null
-    notes: string | null
-  }) => Promise<void>
   /** Optional: related line items in same account + same type (informational only). */
   relatedLineItemsInAccount?: { count: number; totalEstimated: number; typeLabel: string }
   /** When set, shows Delete Expense and calls this on confirm. */
@@ -70,7 +61,6 @@ export function ExpenseDetailPanel({
   locations,
   onSaved,
   onSaveRequest,
-  onUpdateExpenseRequest,
   relatedLineItemsInAccount,
   onDeleteRequest,
   hasReconciliationLinks,
@@ -161,9 +151,9 @@ export function ExpenseDetailPanel({
     ? getTypedExpenseConfig(expenseWithDetails.expense.transaction_type)
     : null
   const typedEditable = config?.editable === true && config?.EditComponent != null
-  const untypedEditable = !config && onUpdateExpenseRequest != null
-  const editable = typedEditable || untypedEditable
-  const transactionTypeLabel = config?.label ?? expenseWithDetails?.expense.transaction_type ?? '—'
+  const editable = typedEditable
+  const transactionTypeLabel =
+    config?.label ?? (expenseWithDetails?.expense.transaction_type == null ? 'Allow (legacy)' : '—')
 
   const viewContext: ExpenseViewContext = useMemo(
     () => ({
@@ -216,30 +206,6 @@ export function ExpenseDetailPanel({
     }
   }
 
-  const handleUpdateExpense = async (data: {
-    amount: number
-    date: string
-    vendor: string | null
-    notes: string | null
-  }) => {
-    if (!expenseWithDetails || !onUpdateExpenseRequest) return
-    setSaveError(null)
-    setIsSaving(true)
-    try {
-      await onUpdateExpenseRequest({
-        expenseId: expenseWithDetails.expense.id,
-        ...data,
-      })
-      await saveTaxFields(data.amount)
-      onSaved()
-      setMode('read')
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Save failed')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
   const handleDeleteClick = () => {
     setDeleteError(null)
     setDeleteConfirmOpen(true)
@@ -278,16 +244,7 @@ export function ExpenseDetailPanel({
   const { expense, transaction_details } = expenseWithDetails
 
   let typedContent: ReactNode
-  if (mode === 'edit' && untypedEditable) {
-    typedContent = (
-      <UntypedExpenseEditor
-        expense={expense}
-        onSave={handleUpdateExpense}
-        onCancel={() => setMode('read')}
-        isSaving={isSaving}
-      />
-    )
-  } else if (mode === 'edit' && config?.EditComponent && typedEditable) {
+  if (mode === 'edit' && config?.EditComponent && typedEditable) {
     const EditComponent = config.EditComponent
     typedContent = (
       <EditComponent
@@ -318,6 +275,13 @@ export function ExpenseDetailPanel({
         message="Unknown transaction type. Showing raw JSON."
         rawJson={transaction_details.details_json}
       />
+    )
+  } else if (expense.transaction_type == null) {
+    typedContent = (
+      <p className="text-sm text-muted-foreground">
+        This spend uses a legacy untyped classification. Open the Budget page and convert untyped
+        entries to Allow to edit typed details.
+      </p>
     )
   } else {
     typedContent = (
@@ -352,9 +316,9 @@ export function ExpenseDetailPanel({
                 className="h-8"
                 onClick={() => setMode((m) => (m === 'read' ? 'edit' : 'read'))}
                 title={
-                  !typedEditable && !untypedEditable
+                  !typedEditable
                     ? expense.transaction_type == null
-                      ? 'Add a typed transaction in a follow-up prompt'
+                      ? 'Convert legacy spend to Allow on the Budget page before editing typed details'
                       : 'Editing is not yet available for this transaction type.'
                     : undefined
                 }

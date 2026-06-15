@@ -242,7 +242,7 @@ const VAT_RECLAIM_TYPE_LABELS: Record<VatReclaimTransactionType, string> = {
   rental: 'Rental',
   allow: 'Allow',
   deposit: 'Deposit',
-  untyped: 'Untyped / other',
+  untyped: 'Legacy untyped',
 }
 
 const VAT_RECLAIM_TYPE_ORDER: VatReclaimTransactionType[] = [
@@ -251,7 +251,6 @@ const VAT_RECLAIM_TYPE_ORDER: VatReclaimTransactionType[] = [
   'rental',
   'allow',
   'deposit',
-  'untyped',
 ]
 
 export function TaxCreditsSettingsSection({ productionId }: Props) {

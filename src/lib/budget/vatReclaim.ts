@@ -19,7 +19,7 @@ export type VatReclaimTotalsResult = {
 export function vatReclaimTypeKey(
   transactionType: Expense['transaction_type']
 ): VatReclaimTransactionType {
-  return transactionType ?? 'untyped'
+  return transactionType ?? 'allow'
 }
 
 export function buildVatReclaimRateMap(

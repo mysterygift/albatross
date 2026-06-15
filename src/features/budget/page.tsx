@@ -12,7 +12,6 @@ import {
   listExpensesByProduction,
   createBudgetItem,
   deleteExpense,
-  updateExpense,
   updateExpenseAccount,
   backfillAccountIdsFromLegacyCategories,
 } from '@/lib/db/repositories/budget'
@@ -45,7 +44,10 @@ import {
   listTaxCreditSchemes,
   listAllocationsByProduction,
 } from '@/lib/db/repositories/taxCredits'
-import { listVatReclaimRates } from '@/lib/db/repositories/vatReclaim'
+import {
+  countUntypedBudgetClassifications,
+  migrateUntypedToAllow,
+} from '@/lib/db/migrations/migrateUntypedToAllow'
 import {
   buildAccountTree,
   computeAccountTotals,
@@ -255,6 +257,8 @@ export function BudgetPage() {
   const [createRevisionSourceError, setCreateRevisionSourceError] = useState<string | null>(null)
   const [createRevisionSubmitError, setCreateRevisionSubmitError] = useState<string | null>(null)
   const [liveConfirmOpen, setLiveConfirmOpen] = useState(false)
+  const [untypedMigrationOpen, setUntypedMigrationOpen] = useState(false)
+  const [untypedMigrationDismissed, setUntypedMigrationDismissed] = useState(false)
   const [pendingLiveRevisionId, setPendingLiveRevisionId] = useState<string | null>(null)
   const [liveToggleError, setLiveToggleError] = useState<string | null>(null)
   const [manageRevisionsOpen, setManageRevisionsOpen] = useState(false)
@@ -625,6 +629,10 @@ export function BudgetPage() {
   }, [currentProduction?.currency_code, ensureRate])
 
   useEffect(() => {
+    setUntypedMigrationDismissed(false)
+  }, [currentProductionId])
+
+  useEffect(() => {
     if (!currentProductionId || backfillRanForProduction.current.has(currentProductionId)) return
     backfillRanForProduction.current.add(currentProductionId)
     backfillAccountIdsFromLegacyCategories(currentProductionId).then(() => {
@@ -634,6 +642,39 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['risk-watch', currentProductionId] })
     })
   }, [currentProductionId, queryClient])
+
+  const { data: untypedClassificationCounts } = useQuery({
+    queryKey: ['untyped-budget-classifications', currentProductionId],
+    queryFn: () => countUntypedBudgetClassifications(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
+  useEffect(() => {
+    if (!untypedClassificationCounts || untypedMigrationDismissed) return
+    const total =
+      untypedClassificationCounts.untypedExpenses + untypedClassificationCounts.untypedLineItems
+    if (total > 0) {
+      setUntypedMigrationOpen(true)
+    }
+  }, [untypedClassificationCounts, untypedMigrationDismissed])
+
+  const migrateUntypedMutation = useMutation({
+    mutationFn: () => migrateUntypedToAllow(currentProductionId!),
+    onSuccess: async () => {
+      if (!currentProductionId) return
+      setUntypedMigrationOpen(false)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['untyped-budget-classifications', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['allow-expense-details', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['risk-watch', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['expense-with-details'] }),
+        queryClient.invalidateQueries({ queryKey: ['budget-item-with-details'] }),
+      ])
+    },
+  })
 
   const { data: categories = [] } = useQuery({
     queryKey: ['budget-categories', currentProductionId],
@@ -932,24 +973,6 @@ export function BudgetPage() {
       }
     }
   }, [examinedExpenseId, currentProductionId, queryClient, revisionId])
-
-  const handleUpdateExpenseRequest = useCallback(
-    async (data: {
-      expenseId: string
-      amount: number
-      date: string
-      vendor: string | null
-      notes: string | null
-    }) => {
-      await updateExpense(data.expenseId, {
-        amount: data.amount,
-        date: data.date,
-        vendor: data.vendor,
-        notes: data.notes,
-      })
-    },
-    []
-  )
 
   const deleteExpenseMutation = useMutation({
     mutationFn: (expenseId: string) => deleteExpense(expenseId),
@@ -1423,8 +1446,25 @@ export function BudgetPage() {
             <Download className="mr-2 size-4" />
             Export CSV
           </Button>
+          <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="no-print">
+                <Plus className="mr-2 size-4" />
+                Add line item
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              {addItemOpen && (
+              <BudgetItemForm
+                accounts={postableAccounts}
+                onSubmit={createItemMutation.mutate}
+                onCancel={() => setAddItemOpen(false)}
+                isLoading={createItemMutation.isPending}
+              />
+              )}
+            </DialogContent>
+          </Dialog>
           <Button
-            variant="outline"
             className="no-print"
             onClick={() => setLogSpendOpen(true)}
           >
@@ -1442,24 +1482,6 @@ export function BudgetPage() {
             people={people}
             locations={locations}
           />
-          <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
-            <DialogTrigger asChild>
-              <Button className="no-print">
-                <Plus className="mr-2 size-4" />
-                Add line item
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              {addItemOpen && (
-              <BudgetItemForm
-                accounts={postableAccounts}
-                onSubmit={createItemMutation.mutate}
-                onCancel={() => setAddItemOpen(false)}
-                isLoading={createItemMutation.isPending}
-              />
-              )}
-            </DialogContent>
-          </Dialog>
           </div>
         </div>
       </div>
@@ -1582,6 +1604,71 @@ export function BudgetPage() {
             </Button>
           </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={untypedMigrationOpen}
+        onOpenChange={(open) => {
+          setUntypedMigrationOpen(open)
+          if (!open && !migrateUntypedMutation.isPending) {
+            setUntypedMigrationDismissed(true)
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Update budget classifications</DialogTitle>
+            <DialogDescription>
+              This project has spend and line items using a legacy untyped classification. Albatross now
+              uses <span className="font-medium">Allow</span> as the default type for general budget entries.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            {untypedClassificationCounts && (
+              <p>
+                Found{' '}
+                <span className="font-medium">{untypedClassificationCounts.untypedExpenses}</span>{' '}
+                expense{untypedClassificationCounts.untypedExpenses === 1 ? '' : 's'} and{' '}
+                <span className="font-medium">{untypedClassificationCounts.untypedLineItems}</span>{' '}
+                line item{untypedClassificationCounts.untypedLineItems === 1 ? '' : 's'} to convert.
+              </p>
+            )}
+            {budgetFeatures?.vat_tracking_enabled && (
+              <p className="text-muted-foreground">
+                Migrated expenses will use the <span className="font-medium">Allow</span> VAT reclaim rate
+                (typically 0%) instead of the previous untyped rate (typically 100%). You can adjust the
+                Allow reclaim rate in Settings before or after converting.
+              </p>
+            )}
+            {migrateUntypedMutation.isError && (
+              <p className="text-destructive">
+                {migrateUntypedMutation.error instanceof Error
+                  ? migrateUntypedMutation.error.message
+                  : 'Migration failed'}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setUntypedMigrationOpen(false)
+                setUntypedMigrationDismissed(true)
+              }}
+              disabled={migrateUntypedMutation.isPending}
+            >
+              Not now
+            </Button>
+            <Button
+              type="button"
+              onClick={() => migrateUntypedMutation.mutate()}
+              disabled={migrateUntypedMutation.isPending}
+            >
+              {migrateUntypedMutation.isPending ? 'Converting…' : 'Convert to Allow'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -2155,7 +2242,7 @@ export function BudgetPage() {
                   ? {
                       count: relatedLineItems.length,
                       totalEstimated: sumEstimatedForLineItems(relatedLineItems),
-                      typeLabel: getLineItemTypeConfig(expense.transaction_type)?.label ?? 'Untyped',
+                      typeLabel: getLineItemTypeConfig(expense.transaction_type)?.label ?? 'Allow',
                     }
                   : undefined
               return (
@@ -2170,7 +2257,6 @@ export function BudgetPage() {
                   locations={locations}
                   onSaved={handleExpenseSaved}
                   onSaveRequest={handleExpenseSaveRequest}
-                  onUpdateExpenseRequest={handleUpdateExpenseRequest}
                   relatedLineItemsInAccount={relatedLineItemsInAccount}
                   onDeleteRequest={async (expenseId) => {
                     await deleteExpenseMutation.mutateAsync(expenseId)
@@ -2196,7 +2282,7 @@ export function BudgetPage() {
                   ? {
                       count: relatedExpenses.length,
                       totalActual: sumActualForExpenses(relatedExpenses),
-                      typeLabel: getLineItemTypeConfig(lineItem.line_item_type)?.label ?? 'Untyped',
+                      typeLabel: getLineItemTypeConfig(lineItem.line_item_type)?.label ?? 'Allow',
                     }
                   : undefined
               return (
@@ -2279,7 +2365,6 @@ export function BudgetPage() {
                 { value: 'rental', label: 'Rental' },
                 { value: 'allow', label: 'Allow' },
                 { value: 'deposit', label: 'Deposit' },
-                { value: 'untyped', label: 'Untyped' },
               ]
               return (
                 <>

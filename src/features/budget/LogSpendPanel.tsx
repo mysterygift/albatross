@@ -108,6 +108,12 @@ export function LogSpendPanel({
     }
   }, [budgetFeatures?.vat_tracking_enabled, budgetFeatures?.default_vat_rate_percent, open])
 
+  useEffect(() => {
+    if (selectedAccountId != null && selectedTransactionType == null) {
+      setSelectedTransactionType('allow')
+    }
+  }, [selectedAccountId, selectedTransactionType])
+
   const createMutation = useMutation({
     mutationFn: createTypedExpense,
     onSuccess: (data, variables) => {

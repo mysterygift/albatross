@@ -1,26 +1,26 @@
 /**
  * Groundwork for matching/filtering between typed line items and typed expenses.
  * Same classification types: labour, purchase, rental, allow, deposit.
- * Related = same account_id + same classification type (or both untyped).
+ * Related = same account_id + same classification type.
  */
 import type { BudgetItem, Expense, LineItemType } from '@/lib/db/types'
 
-export type ClassificationFilter = 'all' | LineItemType | 'untyped'
+export type ClassificationFilter = 'all' | LineItemType
 
-/** Classification type for an item; null = untyped. */
+/** Classification type for an item; null treated as allow for legacy rows. */
 export type ClassificationType = LineItemType | null
 
-/** Get line item classification; null when untyped. */
+/** Get line item classification; null when unclassified. */
 export function getLineItemType(item: BudgetItem): LineItemType | null {
   return item.line_item_type ?? null
 }
 
-/** Get expense classification (transaction_type); null when untyped. */
+/** Get expense classification (transaction_type); null when unclassified. */
 export function getExpenseType(expense: Expense): LineItemType | null {
   return expense.transaction_type ?? null
 }
 
-/** Same classification (both typed and equal, or both untyped). */
+/** Same classification (both typed and equal, or both unclassified). */
 export function sameClassification(
   a: ClassificationType,
   b: ClassificationType
@@ -36,8 +36,11 @@ export function filterLineItemsByClassification(
   filter: ClassificationFilter
 ): BudgetItem[] {
   if (filter === 'all') return items
-  if (filter === 'untyped') return items.filter((i) => getLineItemType(i) === null)
-  return items.filter((i) => getLineItemType(i) === filter)
+  return items.filter((i) => {
+    const type = getLineItemType(i)
+    if (filter === 'allow' && type === null) return true
+    return type === filter
+  })
 }
 
 /** Filter expenses by classification filter. */
@@ -46,13 +49,15 @@ export function filterExpensesByClassification(
   filter: ClassificationFilter
 ): Expense[] {
   if (filter === 'all') return expenses
-  if (filter === 'untyped') return expenses.filter((e) => getExpenseType(e) === null)
-  return expenses.filter((e) => getExpenseType(e) === filter)
+  return expenses.filter((e) => {
+    const type = getExpenseType(e)
+    if (filter === 'allow' && type === null) return true
+    return type === filter
+  })
 }
 
 /**
  * Get expenses in the same account with the same classification as the line item.
- * When line item is untyped, only include untyped expenses.
  */
 export function getRelatedExpensesForLineItem(
   lineItem: BudgetItem,
@@ -69,7 +74,6 @@ export function getRelatedExpensesForLineItem(
 
 /**
  * Get line items in the same account with the same classification as the expense.
- * When expense is untyped, only include untyped line items.
  */
 export function getRelatedLineItemsForExpense(
   expense: Expense,

@@ -85,7 +85,6 @@ const TYPE_FILTER_OPTIONS: { value: ClassificationFilter; label: string }[] = [
   { value: 'rental', label: 'Rental' },
   { value: 'allow', label: 'Allow' },
   { value: 'deposit', label: 'Deposit' },
-  { value: 'untyped', label: 'Untyped' },
 ]
 
 const LINE_ITEM_STATUS_FILTER_OPTIONS: { value: 'all' | BudgetItemReconciliationStatus; label: string }[] = [

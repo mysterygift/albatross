@@ -7,6 +7,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -22,12 +30,9 @@ import { getLineItemTypeConfig, lineItemTypeRegistry } from '@/lib/budget/line-i
 import { ExpenseDetailMetaGrid, ExpenseDetailMetaRow, ExpenseEditorFooter } from '@/features/budget/expense-shared'
 import { LineItemParseErrorCard } from '@/features/budget/line-item-views/LineItemParseErrorCard'
 import type { LineItemEditorRef } from '@/features/budget/line-item-views/types'
-const LINE_ITEM_TYPE_SENTINEL_NONE = '__none__'
-
 const LINE_ITEM_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   ...(Object.entries(lineItemTypeRegistry) as [LineItemType, (typeof lineItemTypeRegistry)[LineItemType]][])
     .map(([value, config]) => ({ value, label: config.label })),
-  { value: LINE_ITEM_TYPE_SENTINEL_NONE, label: 'Untyped / None' },
 ]
 
 export type LineItemDetailPanelProps = {
@@ -59,7 +64,7 @@ const lineItemEditSchema = z.object({
 type LineItemEditFormValues = z.infer<typeof lineItemEditSchema>
 
 function formatLineItemType(type: string | null): string {
-  if (type == null) return 'Untyped line item'
+  if (type == null) return 'Allow'
   return getLineItemTypeConfig(type as LineItemType)?.label ?? type
 }
 
@@ -79,6 +84,9 @@ export function LineItemDetailPanel({
   const [mode, setMode] = useState<'read' | 'edit'>('read')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [pendingTypeSwitch, setPendingTypeSwitch] = useState<{ nextType: LineItemType } | null>(
+    null
+  )
   const typedEditorRef = useRef<LineItemEditorRef | null>(null)
 
   const form = useForm<LineItemEditFormValues>({
@@ -90,10 +98,12 @@ export function LineItemDetailPanel({
             estimated_cost: lineItemWithDetails.budget_item.estimated_cost,
             vendor: lineItemWithDetails.budget_item.vendor ?? '',
             lineItemType:
-              lineItemWithDetails.budget_item.line_item_type ?? LINE_ITEM_TYPE_SENTINEL_NONE,
+              lineItemWithDetails.budget_item.line_item_type ?? 'allow',
           }
         : undefined,
   })
+
+  const currentLineItemType = form.watch('lineItemType') as LineItemType
 
   if (isLoading) {
     return (
@@ -122,15 +132,11 @@ export function LineItemDetailPanel({
     setSaveError(null)
     setIsSaving(true)
     try {
-      const lineItemType: LineItemType | null =
-        data.lineItemType === LINE_ITEM_TYPE_SENTINEL_NONE ? null : (data.lineItemType as LineItemType)
-      let typedDetails: unknown = undefined
-      if (lineItemType != null) {
-        typedDetails = typedEditorRef.current?.getDetails() ?? undefined
-        const config = getLineItemTypeConfig(lineItemType)
-        if (config?.serialize && typedDetails !== undefined) {
-          config.serialize(typedDetails)
-        }
+      const lineItemType = data.lineItemType as LineItemType
+      let typedDetails: unknown = typedEditorRef.current?.getDetails() ?? undefined
+      const config = getLineItemTypeConfig(lineItemType)
+      if (config?.serialize && typedDetails !== undefined) {
+        config.serialize(typedDetails)
       }
       await saveBudgetItemWithDetails({
         budgetItemId: item.id,
@@ -141,6 +147,7 @@ export function LineItemDetailPanel({
         details: typedDetails,
       })
       onSaved()
+      setPendingTypeSwitch(null)
       setMode('read')
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Save failed')
@@ -154,11 +161,25 @@ export function LineItemDetailPanel({
       description: item.description,
       estimated_cost: item.estimated_cost,
       vendor: item.vendor ?? '',
-      lineItemType: item.line_item_type ?? LINE_ITEM_TYPE_SENTINEL_NONE,
+      lineItemType: item.line_item_type ?? 'allow',
     })
     setSaveError(null)
+    setPendingTypeSwitch(null)
     setMode('read')
   }
+
+  const confirmTypeSwitch = () => {
+    if (pendingTypeSwitch == null) return
+    form.setValue('lineItemType', pendingTypeSwitch.nextType, { shouldValidate: true })
+    setPendingTypeSwitch(null)
+  }
+
+  const pendingTypeLabel =
+    pendingTypeSwitch != null
+      ? (getLineItemTypeConfig(pendingTypeSwitch.nextType)?.label ?? pendingTypeSwitch.nextType)
+      : null
+  const currentTypeLabel =
+    getLineItemTypeConfig(currentLineItemType)?.label ?? currentLineItemType
 
   return (
     <>
@@ -314,17 +335,12 @@ export function LineItemDetailPanel({
                       onValueChange={(newValue) => {
                         if (newValue === field.value) return
                         const currentType = field.value
-                        const hadType = currentType !== LINE_ITEM_TYPE_SENTINEL_NONE
+                        const hadType = Boolean(currentType)
                         const hadDetails = hadType && details != null
                         const typedDirty = hadType && typedEditorRef.current?.isDirty?.()
                         if (hadDetails || typedDirty) {
-                          if (
-                            !window.confirm(
-                              'Changing the line item type will discard incompatible typed details.'
-                            )
-                          ) {
-                            return
-                          }
+                          setPendingTypeSwitch({ nextType: newValue as LineItemType })
+                          return
                         }
                         field.onChange(newValue)
                       }}
@@ -345,13 +361,11 @@ export function LineItemDetailPanel({
               </div>
             </div>
             {(() => {
-              const selectedType = form.watch('lineItemType') as string
-              const lineItemType =
-                selectedType === LINE_ITEM_TYPE_SENTINEL_NONE ? null : (selectedType as LineItemType)
-              const config =
-                lineItemType != null ? getLineItemTypeConfig(lineItemType) : null
+              const selectedType = form.watch('lineItemType') as LineItemType
+              const lineItemType = selectedType
+              const config = getLineItemTypeConfig(lineItemType)
               const showTypedEditor =
-                config?.editable && config?.EditComponent && lineItemType != null
+                config?.editable && config?.EditComponent
               if (!showTypedEditor) return null
               const initialDetails =
                 lineItemType === item.line_item_type && details
@@ -388,6 +402,30 @@ export function LineItemDetailPanel({
           </form>
         )}
       </div>
+
+      <Dialog
+        open={pendingTypeSwitch != null}
+        onOpenChange={(next) => !next && setPendingTypeSwitch(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change line item type?</DialogTitle>
+            <DialogDescription>
+              {pendingTypeLabel != null
+                ? `Switching from ${currentTypeLabel} to ${pendingTypeLabel} will discard incompatible typed details.`
+                : 'Switching type will discard incompatible typed details.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPendingTypeSwitch(null)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={confirmTypeSwitch}>
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

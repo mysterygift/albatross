@@ -162,7 +162,6 @@ const EXPENSE_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'rental', label: 'Rental' },
   { value: 'allow', label: 'Allow' },
   { value: 'deposit', label: 'Deposit' },
-  { value: 'untyped', label: 'Untyped' },
 ]
 
 export function VendorDetailPage() {
@@ -295,7 +294,7 @@ export function VendorDetailPage() {
     const avg = count > 0 ? totalSpend / count : 0
     const byType: Record<string, number> = {}
     for (const e of expenses) {
-      const t = e.transaction_type ?? 'untyped'
+      const t = e.transaction_type ?? 'allow'
       byType[t] = (byType[t] ?? 0) + e.amount
     }
     const byAccount: Record<string, number> = {}
@@ -332,11 +331,11 @@ export function VendorDetailPage() {
   const filteredExpenses = useMemo(() => {
     let list = expenses
     if (typeFilter !== 'all') {
-      if (typeFilter === 'untyped') {
-        list = list.filter((e) => e.transaction_type == null)
-      } else {
-        list = list.filter((e) => e.transaction_type === typeFilter)
-      }
+      list = list.filter(
+        (e) =>
+          e.transaction_type === typeFilter ||
+          (typeFilter === 'allow' && e.transaction_type == null)
+      )
     }
     if (accountFilter !== 'all') {
       list = list.filter((e) => e.account_id === accountFilter)
@@ -667,10 +666,10 @@ export function VendorDetailPage() {
           <div>
             <h3 className="text-sm font-medium text-foreground mb-2">Spend by type</h3>
             <ul className="text-sm text-muted-foreground space-y-1">
-              {(['labour', 'purchase', 'rental', 'allow', 'deposit', 'untyped'] as const).map((t) => {
+              {(['labour', 'purchase', 'rental', 'allow', 'deposit'] as const).map((t) => {
                 const amt = overview.byType[t] ?? 0
-                if (amt === 0 && t !== 'untyped') return null
-                const label = t === 'untyped' ? 'Untyped' : (getLineItemTypeConfig(t)?.label ?? t)
+                if (amt === 0) return null
+                const label = getLineItemTypeConfig(t)?.label ?? t
                 return (
                   <li key={t} className="flex justify-between gap-4">
                     <span>{label}</span>

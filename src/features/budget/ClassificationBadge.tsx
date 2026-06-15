@@ -10,7 +10,7 @@ export function ClassificationBadge({
   type: LineItemType | null
   className?: string
 }) {
-  const label = type == null ? 'Untyped' : (getLineItemTypeConfig(type)?.label ?? type)
+  const label = type == null ? 'Allow' : (getLineItemTypeConfig(type)?.label ?? type)
   return (
     <Badge variant="secondary" className={className ?? 'text-xs font-normal'}>
       {label}

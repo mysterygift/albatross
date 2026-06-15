@@ -6,8 +6,43 @@ import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../c
 import { outboxStatementForRow } from '../outbox'
 import type { BudgetItem, BudgetItemDetails, BudgetItemWithDetails, LineItemType } from '../types'
 
+import { defaultAllowLineItemDetailsJson } from '@/lib/budget/migrations/untypedToAllow'
+
 const ITEM_TABLE = 'budget_items'
 const DETAILS_TABLE = 'budget_item_details'
+
+export function budgetItemDetailsUpsertStatement(data: {
+  budgetItemId: string
+  lineItemType: LineItemType
+  detailsJson: string
+  ts: string
+  detailsId?: string
+}): { sql: string; bindValues: unknown[] } {
+  return {
+    sql: `
+      INSERT INTO ${DETAILS_TABLE} (id, budget_item_id, line_item_type, details_json, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT(budget_item_id) DO UPDATE SET
+        line_item_type = excluded.line_item_type,
+        details_json = excluded.details_json,
+        updated_at = excluded.updated_at
+    `,
+    bindValues: [
+      data.detailsId ?? uuid(),
+      data.budgetItemId,
+      data.lineItemType,
+      data.detailsJson,
+      data.ts,
+      data.ts,
+    ],
+  }
+}
+
+export function defaultAllowDetailsJsonForNewItem(
+  item: Pick<BudgetItem, 'description' | 'estimated_cost'>
+): string {
+  return defaultAllowLineItemDetailsJson(item)
+}
 
 function rowToItem(r: Record<string, unknown>): BudgetItem {
   return {
