@@ -874,6 +874,18 @@ pub fn run() {
             sql: include_str!("../migrations/0077_script_section_ranges_user_edited.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 78,
+            description: "tax_credits",
+            sql: include_str!("../migrations/0078_tax_credits.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 79,
+            description: "vat_reclaim",
+            sql: include_str!("../migrations/0079_vat_reclaim.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
