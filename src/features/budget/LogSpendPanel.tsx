@@ -23,9 +23,17 @@ import { createTypedExpense } from '@/lib/db/repositories/createTypedExpense'
 import type { ExpenseTransactionType } from '@/lib/db/types'
 import type { BudgetAccount } from '@/lib/db/types'
 import type { ExpenseViewContext, FormatAmount, LogSpendEditorHandle } from '@/features/budget/typed-expense-views/types'
-import { ExpenseTaxFields, type ExpenseTaxCreditDraft } from '@/features/budget/ExpenseTaxFields'
+import { ExpenseTaxFields, type ExpenseTaxCreditDraft, type ExpenseVatReclaimDraft } from '@/features/budget/ExpenseTaxFields'
 import { computeDraftExpenseAmount } from '@/lib/budget/computeDraftExpenseAmount'
 import { getProductionBudgetFeatures } from '@/lib/db/repositories/taxCredits'
+import { listVatReclaimRates, validateExpenseVatReclaim } from '@/lib/db/repositories/vatReclaim'
+import { buildVatReclaimRateMap, computeExpenseVatReclaim } from '@/lib/budget/vatReclaim'
+
+const emptyVatReclaim = (): ExpenseVatReclaimDraft => ({
+  vat_reclaimed_amount: null,
+  vat_reclaim_date: null,
+  vat_reclaim_reference: null,
+})
 
 const TRANSACTION_TYPE_ORDER: ExpenseTransactionType[] = [
   'labour',
@@ -78,6 +86,7 @@ export function LogSpendPanel({
   const saveAndAddAnotherRef = useRef(false)
   const [taxCreditAllocations, setTaxCreditAllocations] = useState<ExpenseTaxCreditDraft[]>([])
   const [vatRatePercent, setVatRatePercent] = useState<number | null>(null)
+  const [vatReclaim, setVatReclaim] = useState<ExpenseVatReclaimDraft>(emptyVatReclaim)
 
   const editorRef = useRef<LogSpendEditorHandle>(null)
   const queryClient = useQueryClient()
@@ -85,6 +94,12 @@ export function LogSpendPanel({
   const { data: budgetFeatures } = useQuery({
     queryKey: ['production-budget-features', productionId],
     queryFn: () => getProductionBudgetFeatures(productionId),
+  })
+
+  const { data: reclaimRates = [] } = useQuery({
+    queryKey: ['vat-reclaim-rates', productionId],
+    queryFn: () => listVatReclaimRates(productionId),
+    enabled: budgetFeatures?.vat_tracking_enabled === true,
   })
 
   useEffect(() => {
@@ -136,6 +151,7 @@ export function LogSpendPanel({
       setPendingTypeSwitch(null)
       setTaxCreditAllocations([])
       setVatRatePercent(null)
+      setVatReclaim(emptyVatReclaim())
       setSaveError(null)
     }
     onOpenChange(next)
@@ -226,6 +242,26 @@ export function LogSpendPanel({
   const handleEditorSave = (details: unknown) => {
     if (!selectedTransactionType || !selectedAccountId) return
     setSaveError(null)
+    const amount = computeDraftExpenseAmount(selectedTransactionType, details)
+    const vatOn = budgetFeatures?.vat_tracking_enabled === true
+    if (vatOn && amount != null && vatReclaim.vat_reclaimed_amount != null) {
+      try {
+        const breakdown = computeExpenseVatReclaim(
+          {
+            id: 'draft',
+            amount,
+            vat_rate_percent: vatRatePercent,
+            transaction_type: selectedTransactionType,
+            vat_reclaimed_amount: vatReclaim.vat_reclaimed_amount,
+          },
+          buildVatReclaimRateMap(reclaimRates)
+        )
+        validateExpenseVatReclaim(breakdown.vatReclaimable, vatReclaim)
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Invalid VAT reclaim')
+        return
+      }
+    }
     setDraftByType((prev) => ({ ...prev, [selectedTransactionType]: details }))
     createMutation.mutate({
       productionId,
@@ -233,8 +269,9 @@ export function LogSpendPanel({
       transactionType: selectedTransactionType,
       draft: details,
       date: new Date().toISOString().slice(0, 10),
-      vatRatePercent: budgetFeatures?.vat_tracking_enabled ? vatRatePercent : null,
+      vatRatePercent: vatOn ? vatRatePercent : null,
       taxCreditAllocations: budgetFeatures?.tax_credits_enabled ? taxCreditAllocations : [],
+      vatReclaim: vatOn ? vatReclaim : undefined,
     })
   }
 
@@ -362,10 +399,13 @@ export function LogSpendPanel({
                   <ExpenseTaxFields
                     productionId={productionId}
                     expenseAmount={previewAmount}
+                    transactionType={selectedTransactionType}
                     value={taxCreditAllocations}
                     onChange={setTaxCreditAllocations}
                     vatRatePercent={vatRatePercent}
                     onVatRateChange={setVatRatePercent}
+                    vatReclaim={vatReclaim}
+                    onVatReclaimChange={setVatReclaim}
                   />
                 </div>
               )}

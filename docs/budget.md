@@ -119,7 +119,7 @@ On the **Budget** route, **Cost Report** is one of four main tabs (with Budget, 
 
 - **Cost report groups** — Card “Cost report groups”: create and edit groups (name, optional code, list of accounts). Groups are for presentation and reporting only (e.g. “By groups” layout on the Cost Report tab). They do not affect posting or totals.
 - **Tax credits** — Enable per production; seed AVEC default schemes on first enable. Configure net rate, caps, and thresholds. Tag qualifying spend on expenses when logging spend. Summaries appear on Budget and Cost Report when enabled (data preserved when disabled).
-- **VAT** — Optional per-expense VAT rate when tracking is enabled; shown separately from account actuals.
+- **VAT** — Optional per-expense VAT rate when tracking is enabled; shown separately from account actuals. Configure reclaim % by transaction type; track VAT paid (computed), reclaimable (computed), reclaimed amount, reclaim date, and reference per expense.
 - **Legacy categories** — Read-only panel for budget categories (ATL, BTL, POST, OTHER). New items and expenses use the chart of accounts; categories are only for legacy item display and backfill.
 
 ---

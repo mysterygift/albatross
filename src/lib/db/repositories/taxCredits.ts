@@ -163,6 +163,17 @@ export async function setVatTrackingEnabled(
   return getProductionBudgetFeatures(productionId)
 }
 
+export async function setVatTrackingEnabledWithSeed(
+  productionId: string,
+  enabled: boolean
+): Promise<ProductionBudgetFeatures> {
+  if (enabled) {
+    const { seedDefaultVatReclaimRates } = await import('../vatReclaimSeedService')
+    await seedDefaultVatReclaimRates(productionId)
+  }
+  return setVatTrackingEnabled(productionId, enabled)
+}
+
 export async function setDefaultVatRatePercent(
   productionId: string,
   ratePercent: number | null
@@ -423,12 +434,34 @@ export async function updateExpenseVatRate(
   await outboxPush('expenses', expenseId, 'update', JSON.stringify({ vat_rate_percent: vatRatePercent }))
 }
 
+export async function updateExpenseTaxVatAndAllocations(
+  expenseId: string,
+  expenseAmount: number,
+  vatRatePercent: number | null,
+  allocations: TaxCreditAllocationInput[],
+  vatReclaim?: ExpenseVatReclaimInput,
+  vatReclaimable?: number
+): Promise<void> {
+  if (vatReclaim && vatReclaimable != null) {
+    const { validateExpenseVatReclaim, updateExpenseVatReclaimFields } = await import('./vatReclaim')
+    validateExpenseVatReclaim(vatReclaimable, vatReclaim)
+    await updateExpenseVatReclaimFields(expenseId, vatReclaim)
+  }
+  await updateExpenseVatRate(expenseId, vatRatePercent)
+  await replaceExpenseTaxCreditAllocations(expenseId, expenseAmount, allocations)
+}
+
+/** @deprecated Use updateExpenseTaxVatAndAllocations */
 export async function updateExpenseTaxAndAllocations(
   expenseId: string,
   expenseAmount: number,
   vatRatePercent: number | null,
   allocations: TaxCreditAllocationInput[]
 ): Promise<void> {
-  await updateExpenseVatRate(expenseId, vatRatePercent)
-  await replaceExpenseTaxCreditAllocations(expenseId, expenseAmount, allocations)
+  await updateExpenseTaxVatAndAllocations(
+    expenseId,
+    expenseAmount,
+    vatRatePercent,
+    allocations
+  )
 }

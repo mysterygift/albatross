@@ -45,6 +45,7 @@ import {
   listTaxCreditSchemes,
   listAllocationsByProduction,
 } from '@/lib/db/repositories/taxCredits'
+import { listVatReclaimRates } from '@/lib/db/repositories/vatReclaim'
 import {
   buildAccountTree,
   computeAccountTotals,
@@ -57,7 +58,9 @@ import {
   type AccountTreeNode,
 } from '@/lib/budget/calculations'
 import { computeTaxCreditTotals, computeVatTotals, type TaxCreditTotalsResult } from '@/lib/budget/taxCredits'
+import { computeVatReclaimTotals, type VatReclaimTotalsResult } from '@/lib/budget/vatReclaim'
 import { TaxCreditSummaryBlock } from '@/features/budget/TaxCreditSummaryBlock'
+import { VatReclaimSummaryBlock } from '@/features/budget/VatReclaimSummaryBlock'
 import {
   listCostReportGroupsWithAccountIds,
   type CostReportGroupWithAccountIds,
@@ -844,6 +847,12 @@ export function BudgetPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: vatReclaimRates = [] } = useQuery({
+    queryKey: ['vat-reclaim-rates', currentProductionId],
+    queryFn: () => listVatReclaimRates(currentProductionId ?? ''),
+    enabled: !!currentProductionId && budgetFeatures?.vat_tracking_enabled === true,
+  })
+
   const createItemMutation = useMutation({
     mutationFn: (data: z.infer<typeof itemSchema>) =>
       createBudgetItem({
@@ -1027,6 +1036,11 @@ export function BudgetPage() {
   )
 
   const vatTotals = useMemo(() => computeVatTotals(expenses), [expenses])
+
+  const vatReclaimTotals = useMemo(
+    () => computeVatReclaimTotals(expenses, vatReclaimRates),
+    [expenses, vatReclaimRates]
+  )
 
   // Production totals: rollups from accountTotals only (reporting); only header accounts.
   const productionTotalAmounts = useMemo(() => {
@@ -1232,7 +1246,12 @@ export function BudgetPage() {
       rows.push(['', 'NET COST AFTER CREDITS', '', taxCreditTotals.netCostAfterCredits, ''])
     }
     if (vatTrackingEnabled && vatTotals.totalVat > 0) {
-      rows.push(['', 'TOTAL VAT (informational)', vatTotals.totalVat, '', ''])
+      rows.push(['', 'TOTAL VAT PAID (informational)', vatTotals.totalVat, '', ''])
+    }
+    if (vatTrackingEnabled && vatReclaimTotals.totalVatReclaimable > 0) {
+      rows.push(['', 'TOTAL VAT RECLAIMABLE', vatReclaimTotals.totalVatReclaimable, '', ''])
+      rows.push(['', 'TOTAL VAT RECLAIMED', vatReclaimTotals.totalVatReclaimed, '', ''])
+      rows.push(['', 'VAT RECLAIM OUTSTANDING', vatReclaimTotals.totalVatOutstanding, '', ''])
     }
     const csv = rows.map((r) => r.join(',')).join('\n')
     await saveFileWithDialog(
@@ -1258,6 +1277,7 @@ export function BudgetPage() {
     taxCreditTotals,
     vatTrackingEnabled,
     vatTotals.totalVat,
+    vatReclaimTotals,
   ])
 
   useEffect(() => {
@@ -1821,6 +1841,7 @@ export function BudgetPage() {
             taxCreditTotals={taxCreditTotals}
             vatTrackingEnabled={vatTrackingEnabled}
             totalVat={vatTotals.totalVat}
+            vatReclaimTotals={vatReclaimTotals}
             totalDerived={totalDerived}
             productionTotalAmounts={productionTotalAmounts}
             productionSubtotalBeforeDerived={productionSubtotalBeforeDerived}
@@ -1913,6 +1934,14 @@ export function BudgetPage() {
               productionCurrency={productionCurrency}
               showVat={vatTrackingEnabled}
               totalVat={vatTotals.totalVat}
+            />
+          )}
+
+          {vatTrackingEnabled && (
+            <VatReclaimSummaryBlock
+              vatReclaimTotals={vatReclaimTotals}
+              format={format}
+              productionCurrency={productionCurrency}
             />
           )}
 
@@ -2851,6 +2880,7 @@ function CostReportView({
   taxCreditTotals,
   vatTrackingEnabled = false,
   totalVat = 0,
+  vatReclaimTotals,
   totalDerived: totalDerivedProp,
   productionTotalAmounts,
   productionSubtotalBeforeDerived,
@@ -2880,6 +2910,7 @@ function CostReportView({
   taxCreditTotals?: TaxCreditTotalsResult
   vatTrackingEnabled?: boolean
   totalVat?: number
+  vatReclaimTotals?: VatReclaimTotalsResult
   totalDerived?: number
   productionTotalAmounts: ProductionTotalAmount[]
   productionSubtotalBeforeDerived: { budget: number; actual: number; variance: number }
@@ -3212,6 +3243,16 @@ function CostReportView({
               showVat={vatTrackingEnabled}
               totalVat={totalVat}
               variant="detailed"
+            />
+          </div>
+        )}
+
+        {vatTrackingEnabled && vatReclaimTotals && (
+          <div className="report-section">
+            <VatReclaimSummaryBlock
+              vatReclaimTotals={vatReclaimTotals}
+              format={format}
+              productionCurrency={productionCurrency}
             />
           </div>
         )}

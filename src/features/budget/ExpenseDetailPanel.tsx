@@ -22,13 +22,15 @@ import {
   ExpenseParseErrorCard,
   UntypedExpenseEditor,
 } from '@/features/budget/expense-shared'
-import { ExpenseTaxFields, type ExpenseTaxCreditDraft } from '@/features/budget/ExpenseTaxFields'
+import { ExpenseTaxFields, type ExpenseTaxCreditDraft, type ExpenseVatReclaimDraft } from '@/features/budget/ExpenseTaxFields'
 import { ExpenseTaxReadSection } from '@/features/budget/ExpenseTaxReadSection'
 import {
   getProductionBudgetFeatures,
   listAllocationsByExpense,
-  updateExpenseTaxAndAllocations,
+  updateExpenseTaxVatAndAllocations,
 } from '@/lib/db/repositories/taxCredits'
+import { listVatReclaimRates } from '@/lib/db/repositories/vatReclaim'
+import { buildVatReclaimRateMap, computeExpenseVatReclaim } from '@/lib/budget/vatReclaim'
 
 export type ExpenseDetailPanelProps = {
   expenseWithDetails: ExpenseWithDetails | null | undefined
@@ -81,6 +83,11 @@ export function ExpenseDetailPanel({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [taxAllocations, setTaxAllocations] = useState<ExpenseTaxCreditDraft[]>([])
   const [vatRatePercent, setVatRatePercent] = useState<number | null>(null)
+  const [vatReclaim, setVatReclaim] = useState<ExpenseVatReclaimDraft>({
+    vat_reclaimed_amount: null,
+    vat_reclaim_date: null,
+    vat_reclaim_reference: null,
+  })
 
   const { data: budgetFeatures } = useQuery({
     queryKey: ['production-budget-features', productionId],
@@ -94,27 +101,59 @@ export function ExpenseDetailPanel({
     enabled: !!expenseId,
   })
 
+  const { data: reclaimRates = [] } = useQuery({
+    queryKey: ['vat-reclaim-rates', productionId],
+    queryFn: () => listVatReclaimRates(productionId),
+    enabled: budgetFeatures?.vat_tracking_enabled === true,
+  })
+
   useEffect(() => {
     if (!expenseWithDetails) return
-    setVatRatePercent(expenseWithDetails.expense.vat_rate_percent)
+    const exp = expenseWithDetails.expense
+    setVatRatePercent(exp.vat_rate_percent)
+    setVatReclaim({
+      vat_reclaimed_amount: exp.vat_reclaimed_amount,
+      vat_reclaim_date: exp.vat_reclaim_date,
+      vat_reclaim_reference: exp.vat_reclaim_reference,
+    })
     setTaxAllocations(
       expenseAllocations.map((a) => ({
         tax_credit_scheme_id: a.tax_credit_scheme_id,
         qualifying_amount: a.qualifying_amount,
       }))
     )
-  }, [expenseWithDetails?.expense.id, expenseWithDetails?.expense.vat_rate_percent, expenseAllocations])
+  }, [
+    expenseWithDetails?.expense.id,
+    expenseWithDetails?.expense.vat_rate_percent,
+    expenseWithDetails?.expense.vat_reclaimed_amount,
+    expenseWithDetails?.expense.vat_reclaim_date,
+    expenseWithDetails?.expense.vat_reclaim_reference,
+    expenseAllocations,
+  ])
 
   const saveTaxFields = async (expenseAmount: number) => {
     if (!expenseWithDetails) return
     const taxOn = budgetFeatures?.tax_credits_enabled === true
     const vatOn = budgetFeatures?.vat_tracking_enabled === true
     if (!taxOn && !vatOn) return
-    await updateExpenseTaxAndAllocations(
+    const breakdown = vatOn
+      ? computeExpenseVatReclaim(
+          {
+            ...expenseWithDetails.expense,
+            amount: expenseAmount,
+            vat_rate_percent: vatOn ? vatRatePercent : null,
+            vat_reclaimed_amount: vatReclaim.vat_reclaimed_amount,
+          },
+          buildVatReclaimRateMap(reclaimRates)
+        )
+      : null
+    await updateExpenseTaxVatAndAllocations(
       expenseWithDetails.expense.id,
       expenseAmount,
       vatOn ? vatRatePercent : null,
-      taxOn ? taxAllocations : []
+      taxOn ? taxAllocations : [],
+      vatOn ? vatReclaim : undefined,
+      breakdown?.vatReclaimable
     )
   }
 
@@ -418,10 +457,13 @@ export function ExpenseDetailPanel({
             <ExpenseTaxFields
               productionId={productionId}
               expenseAmount={expense.amount}
+              transactionType={expense.transaction_type}
               value={taxAllocations}
               onChange={setTaxAllocations}
               vatRatePercent={vatRatePercent}
               onVatRateChange={setVatRatePercent}
+              vatReclaim={vatReclaim}
+              onVatReclaimChange={setVatReclaim}
             />
           )}
         <ExpenseTypedSection>{typedContent}</ExpenseTypedSection>

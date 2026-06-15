@@ -261,6 +261,9 @@ export type VendorPurchaseOrder = {
 
 export type ExpenseTransactionType = 'labour' | 'purchase' | 'rental' | 'allow' | 'deposit'
 
+/** Transaction type key for VAT reclaim rate lookup; includes legacy/untyped spend. */
+export type VatReclaimTransactionType = ExpenseTransactionType | 'untyped'
+
 export type Expense = {
   id: string
   production_id: string
@@ -278,7 +281,23 @@ export type Expense = {
   expense_type: 'petty_cash' | 'per_diem' | 'other'
   /** VAT rate as percent (e.g. 20 for 20%); null when unset or VAT tracking disabled. */
   vat_rate_percent: number | null
+  /** Amount of VAT actually reclaimed from HMRC (or equivalent). */
+  vat_reclaimed_amount: number | null
+  /** Date reclaim was received or submitted (ISO YYYY-MM-DD). */
+  vat_reclaim_date: string | null
+  /** Reference for the reclaim (e.g. HMRC submission ref). */
+  vat_reclaim_reference: string | null
 } & SoftDeletable
+
+/** Per-transaction-type VAT reclaim % for a production (share of VAT paid that is reclaimable). */
+export type VatReclaimRate = {
+  id: string
+  production_id: string
+  transaction_type: VatReclaimTransactionType
+  reclaim_percent: number
+  created_at: string
+  updated_at: string
+}
 
 /** Per-production budget feature toggles (tax credits, VAT). Data preserved when toggles off. */
 export type ProductionBudgetFeatures = {

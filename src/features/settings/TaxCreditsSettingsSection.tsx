@@ -30,9 +30,11 @@ import {
   setDefaultVatRatePercent,
   setTaxCreditSchemeEnabled,
   setTaxCreditsEnabled,
-  setVatTrackingEnabled,
+  setVatTrackingEnabledWithSeed,
   updateTaxCreditScheme,
 } from '@/lib/db/repositories/taxCredits'
+import { listVatReclaimRates, updateVatReclaimRate } from '@/lib/db/repositories/vatReclaim'
+import type { VatReclaimTransactionType } from '@/lib/db/types'
 import { seedAvecTaxCreditSchemes } from '@/lib/db/taxCreditSeedService'
 
 type Props = { productionId: string }
@@ -234,10 +236,29 @@ function SchemeFormDialog({
   )
 }
 
+const VAT_RECLAIM_TYPE_LABELS: Record<VatReclaimTransactionType, string> = {
+  labour: 'Labour',
+  purchase: 'Purchase',
+  rental: 'Rental',
+  allow: 'Allow',
+  deposit: 'Deposit',
+  untyped: 'Untyped / other',
+}
+
+const VAT_RECLAIM_TYPE_ORDER: VatReclaimTransactionType[] = [
+  'labour',
+  'purchase',
+  'rental',
+  'allow',
+  'deposit',
+  'untyped',
+]
+
 export function TaxCreditsSettingsSection({ productionId }: Props) {
   const queryClient = useQueryClient()
   const featuresKey = ['production-budget-features', productionId] as const
   const schemesKey = ['tax-credit-schemes', productionId] as const
+  const reclaimRatesKey = ['vat-reclaim-rates', productionId] as const
 
   const { data: features } = useQuery({
     queryKey: featuresKey,
@@ -247,6 +268,12 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
   const { data: schemes = [] } = useQuery({
     queryKey: schemesKey,
     queryFn: () => listTaxCreditSchemes(productionId),
+  })
+
+  const { data: reclaimRates = [] } = useQuery({
+    queryKey: reclaimRatesKey,
+    queryFn: () => listVatReclaimRates(productionId),
+    enabled: features?.vat_tracking_enabled === true,
   })
 
   const [createOpen, setCreateOpen] = useState(false)
@@ -263,6 +290,7 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: featuresKey })
     queryClient.invalidateQueries({ queryKey: schemesKey })
+    queryClient.invalidateQueries({ queryKey: reclaimRatesKey })
   }
 
   const taxCreditsToggleMutation = useMutation({
@@ -274,8 +302,14 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
   })
 
   const vatToggleMutation = useMutation({
-    mutationFn: (enabled: boolean) => setVatTrackingEnabled(productionId, enabled),
+    mutationFn: (enabled: boolean) => setVatTrackingEnabledWithSeed(productionId, enabled),
     onSuccess: invalidate,
+  })
+
+  const reclaimRateMutation = useMutation({
+    mutationFn: ({ id, percent }: { id: string; percent: number }) =>
+      updateVatReclaimRate(id, percent),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: reclaimRatesKey }),
   })
 
   const defaultVatMutation = useMutation({
@@ -478,6 +512,50 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
               >
                 Save default
               </Button>
+            </div>
+          )}
+          {vatOn && reclaimRates.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-sm">VAT reclaim % by expense type</Label>
+              <p className="text-xs text-muted-foreground">
+                Percentage of VAT paid that is reclaimable for each transaction type.
+              </p>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Expense type</TableHead>
+                      <TableHead className="w-[140px] text-right">Reclaim %</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {VAT_RECLAIM_TYPE_ORDER.map((typeKey) => {
+                      const row = reclaimRates.find((r) => r.transaction_type === typeKey)
+                      if (!row) return null
+                      return (
+                        <TableRow key={row.id}>
+                          <TableCell>{VAT_RECLAIM_TYPE_LABELS[typeKey]}</TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={1}
+                              className="w-[100px] ml-auto h-8"
+                              defaultValue={row.reclaim_percent}
+                              onBlur={(e) => {
+                                const next = Number(e.target.value)
+                                if (!Number.isFinite(next) || next === row.reclaim_percent) return
+                                reclaimRateMutation.mutate({ id: row.id, percent: next })
+                              }}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </CardContent>

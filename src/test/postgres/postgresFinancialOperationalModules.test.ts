@@ -23,7 +23,9 @@ import {
   getProductionBudgetFeatures,
   listTaxCreditSchemes,
   setTaxCreditsEnabled,
+  setVatTrackingEnabledWithSeed,
 } from '@/lib/db/repositories/taxCredits'
+import { listVatReclaimRates } from '@/lib/db/repositories/vatReclaim'
 import { seedAvecTaxCreditSchemes } from '@/lib/db/taxCreditSeedService'
 import { createVendorInvoiceExpenseLink, listExpenseLinksByInvoice } from '@/lib/db/repositories/vendorFinanceLinks'
 import { createTask, getTaskByVendorInvoiceId, updateTask } from '@/lib/db/repositories/tasks'
@@ -586,6 +588,27 @@ describe('postgres financial/operational/asset-heavy module validation', () => {
       features = await getProductionBudgetFeatures(production.id)
       expect(features.tax_credits_enabled).toBe(false)
       expect((await listTaxCreditSchemes(production.id)).length).toBe(4)
+    } finally {
+      await harness.close()
+    }
+  })
+
+  it('seeds VAT reclaim rates when VAT tracking is enabled', async () => {
+    if (connectionError) {
+      console.warn(`Skipping PostgreSQL VAT reclaim seed assertions: ${connectionError}`)
+      return
+    }
+    const harness = await createPostgresRepoHarness('pg_vat_reclaim_seed')
+    setDbAdapterForTests(harness.adapter)
+    try {
+      const production = await createProduction({ name: 'VAT Reclaim PG', notes: null }, { skipBudgetSeed: true })
+      await setVatTrackingEnabledWithSeed(production.id, true)
+      const rates = await listVatReclaimRates(production.id)
+      expect(rates.length).toBe(6)
+      const labour = rates.find((r) => r.transaction_type === 'labour')
+      expect(labour?.reclaim_percent).toBe(0)
+      const purchase = rates.find((r) => r.transaction_type === 'purchase')
+      expect(purchase?.reclaim_percent).toBe(100)
     } finally {
       await harness.close()
     }

@@ -39,6 +39,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     contingencyRules,
     productionBudgetFeatures,
     taxCreditSchemes,
+    vatReclaimRates,
     costReportGroups,
     productionTotals,
     productionCrewHierarchyConfigs,
@@ -155,6 +156,10 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     ),
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM tax_credit_schemes WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM vat_reclaim_rates WHERE production_id = $1`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -374,6 +379,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     contingency_rules: asRows(contingencyRules),
     production_budget_features: asRows(productionBudgetFeatures),
     tax_credit_schemes: asRows(taxCreditSchemes),
+    vat_reclaim_rates: asRows(vatReclaimRates),
     cost_report_groups: asRows(costReportGroups),
     production_totals: asRows(productionTotals),
     production_crew_hierarchy_configs: asRows(productionCrewHierarchyConfigs),

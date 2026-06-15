@@ -18,6 +18,7 @@ export const PUBLISH_TABLE_ORDER = [
   'contingency_rules',
   'production_budget_features',
   'tax_credit_schemes',
+  'vat_reclaim_rates',
   'cost_report_groups',
   'production_totals',
   'production_crew_hierarchy_configs',
