@@ -21,7 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { X } from 'lucide-react'
 import { Pencil } from 'lucide-react'
 import type { BudgetItemWithDetails, LineItemType } from '@/lib/db/types'
 import type { Location, Person } from '@/lib/db/types'
@@ -186,7 +185,7 @@ export function LineItemDetailPanel({
       <SheetHeader className="border-b border-border">
         <div className="flex items-center justify-between gap-3">
           <SheetTitle>Line item details</SheetTitle>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             {mode === 'read' ? (
               <Button
                 type="button"
@@ -199,23 +198,13 @@ export function LineItemDetailPanel({
                 Edit
               </Button>
             ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
         </div>
         {mode === 'read' && (
           <p className="text-xs font-medium text-muted-foreground mt-1">{typeLabel}</p>
         )}
       </SheetHeader>
-      <div className="p-4 space-y-4 overflow-auto">
+      <div className="flex-1 overflow-y-auto space-y-4 px-7 py-4">
         {mode === 'read' ? (
           <>
             <ExpenseDetailMetaGrid>

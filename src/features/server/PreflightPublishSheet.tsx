@@ -162,14 +162,14 @@ export function PreflightPublishSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-lg overflow-y-auto">
+      <SheetContent side="right" variant="floating" className="w-[512px] sm:max-w-lg flex flex-col">
         <SheetHeader>
           <SheetTitle>Publish to server</SheetTitle>
           <p className="text-muted-foreground text-sm">
             {productionName} — review what will be uploaded, then confirm.
           </p>
         </SheetHeader>
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 flex-1 overflow-y-auto">
           {summary && phase !== 'error' && (
             <ul className="text-sm space-y-1 list-disc pl-4">
               <li>Attachments / assets: {summary.assetCount} files</li>

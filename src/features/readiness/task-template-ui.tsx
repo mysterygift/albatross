@@ -88,11 +88,11 @@ export function TaskTemplatesSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="sm:max-w-md">
+      <SheetContent side="right" variant="floating" className="w-[448px] flex flex-col">
         <SheetHeader>
           <SheetTitle>Task Templates</SheetTitle>
         </SheetHeader>
-        <div className="flex flex-col gap-4 py-4">
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto py-4">
           <div className="flex gap-2">
             <Input
               placeholder="New template name"
@@ -257,7 +257,7 @@ export function TaskTemplateEditorSheet({
   if (isLoading || !data) {
     return (
       <Sheet open onOpenChange={() => onClose()}>
-        <SheetContent side="right" className="sm:max-w-lg">
+        <SheetContent side="right" variant="floating" className="w-[512px] flex flex-col">
           <SheetHeader>
             <SheetTitle>Loading...</SheetTitle>
           </SheetHeader>
@@ -268,11 +268,11 @@ export function TaskTemplateEditorSheet({
 
   return (
     <Sheet open onOpenChange={() => onClose()}>
-      <SheetContent side="right" className="sm:max-w-lg">
+      <SheetContent side="right" variant="floating" className="w-[512px] flex flex-col">
         <SheetHeader>
           <SheetTitle>Edit template: {data.template.name}</SheetTitle>
         </SheetHeader>
-        <div className="flex flex-col gap-4 py-4">
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto py-4">
           <div className="flex gap-2">
             <Button
               size="sm"

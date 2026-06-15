@@ -57,13 +57,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -1222,45 +1215,39 @@ export function ProductionsPage() {
         </DialogContent>
       </Dialog>
 
-      <Sheet
+      <Dialog
         open={!!productionToHardDelete}
         onOpenChange={(open) => !open && setProductionToHardDelete(null)}
       >
-        <SheetContent
-          side="bottom"
-          showCloseButton={false}
-          className="rounded-t-2xl border-t bg-zinc-900 text-zinc-100"
-        >
-          <SheetHeader>
-            <SheetTitle className="text-zinc-100">
-              Delete production permanently?
-            </SheetTitle>
-            <p className="text-zinc-400 text-sm">
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete production permanently?</DialogTitle>
+            <p className="text-muted-foreground text-sm">
               {productionToHardDelete
                 ? `"${productionToHardDelete.name}" and all its data (scenes, people, documents, etc.) will be removed and cannot be undone.`
                 : ''}
             </p>
-          </SheetHeader>
-          <SheetFooter className="flex-row gap-3 justify-center sm:justify-center">
-            <button
+          </DialogHeader>
+          <DialogFooter className="flex-row gap-3 sm:justify-end">
+            <Button
               type="button"
-              onClick={() => productionToHardDelete && hardDeleteMutation.mutate(productionToHardDelete.id)}
-              disabled={hardDeleteMutation.isPending}
-              className="rounded-full border-2 border-red-500 bg-transparent px-6 py-2.5 text-red-500 transition-colors hover:bg-red-500/10 disabled:opacity-50"
-            >
-              Yes, Delete
-            </button>
-            <button
-              type="button"
+              variant="outline"
               onClick={() => setProductionToHardDelete(null)}
               disabled={hardDeleteMutation.isPending}
-              className="rounded-full border-2 border-white bg-transparent px-6 py-2.5 text-white transition-colors hover:bg-white/10 disabled:opacity-50"
             >
               Cancel
-            </button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={hardDeleteMutation.isPending}
+              onClick={() => productionToHardDelete && hardDeleteMutation.mutate(productionToHardDelete.id)}
+            >
+              {hardDeleteMutation.isPending ? 'Deleting…' : 'Yes, delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConnectServerDialog
         open={publishActions.connectOpen}
@@ -1287,15 +1274,15 @@ export function ProductionsPage() {
         />
       )}
 
-      <Sheet open={!!unlinkTarget} onOpenChange={(o) => !o && setUnlinkTarget(null)}>
-        <SheetContent side="bottom" className="rounded-t-2xl border-t bg-background">
-          <SheetHeader>
-            <SheetTitle>Unlink from server?</SheetTitle>
+      <Dialog open={!!unlinkTarget} onOpenChange={(o) => !o && setUnlinkTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Unlink from server?</DialogTitle>
             <p className="text-muted-foreground text-sm">
               This device will stop syncing with the shared project on the server. The remote project remains available for your team.
             </p>
-          </SheetHeader>
-          <SheetFooter className="flex flex-row gap-2 sm:justify-end">
+          </DialogHeader>
+          <DialogFooter className="flex flex-row gap-2 sm:justify-end">
             <Button variant="outline" type="button" onClick={() => setUnlinkTarget(null)} disabled={unlinkBusy}>
               Cancel
             </Button>
@@ -1334,9 +1321,9 @@ export function ProductionsPage() {
             >
               {unlinkBusy ? 'Unlinking…' : 'Unlink'}
             </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {import.meta.env.DEV && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm">

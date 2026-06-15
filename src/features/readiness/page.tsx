@@ -841,11 +841,11 @@ function ManageSectionsSheet({
           Manage Sections
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="sm:max-w-sm">
+      <SheetContent side="right" variant="floating" className="w-[384px] flex flex-col">
         <SheetHeader>
           <SheetTitle>Task Sections</SheetTitle>
         </SheetHeader>
-        <div className="flex flex-col gap-4 py-4">
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto py-4">
           <div className="flex gap-2">
             <Input
               placeholder="New section name"

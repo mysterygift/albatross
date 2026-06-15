@@ -668,11 +668,8 @@ function DaySummaryDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className={cn(
-          'top-4 right-4 bottom-4 left-[auto] h-[calc(100vh-2rem)] w-[420px] max-w-[90vw] flex flex-col gap-0 rounded-2xl border border-border shadow-xl overflow-hidden',
-          'transition-[transform] duration-300 ease-out',
-          'data-[state=open]:duration-300 data-[state=closed]:duration-300'
-        )}
+        variant="floating"
+        className="w-[420px]"
       >
         <SheetHeader className="px-7 pt-6 pb-3">
           <div className="pr-8">

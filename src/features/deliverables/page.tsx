@@ -798,7 +798,7 @@ function DeliverableEditSheet({
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="flex flex-col sm:max-w-md">
+      <SheetContent side="right" variant="floating" className="w-[448px] flex flex-col">
         <SheetHeader className="shrink-0 border-b border-border pb-4">
           <SheetTitle className="text-lg">Edit deliverable</SheetTitle>
           {isEpisodic && (

@@ -2276,7 +2276,7 @@ export function BudgetPage() {
           }
         }}
       >
-        <SheetContent side="right" className="w-[520px] sm:max-w-[520px]">
+        <SheetContent side="right" variant="floating" className="w-[520px] sm:max-w-[520px] flex flex-col">
           {examinedExpenseId != null ? (
             (() => {
               const expense = examinedExpenseWithDetails?.expense
@@ -2419,7 +2419,7 @@ export function BudgetPage() {
                   <SheetHeader className="border-b border-border">
                     <SheetTitle>Examine account</SheetTitle>
                   </SheetHeader>
-                  <div className="p-4 space-y-4 overflow-auto">
+                  <div className="flex-1 overflow-y-auto space-y-4 px-7 py-4">
                     <div className="space-y-1">
                       <p className="text-sm font-medium">{account ? `${account.code} — ${account.name}` : 'Account'}</p>
                       {totals && (

@@ -372,7 +372,7 @@ export function ExpenseDetailPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <div className="p-4 space-y-4 overflow-auto">
+      <div className="flex-1 overflow-y-auto space-y-4 px-7 py-4">
         <ExpenseDetailHeader
           expense={expense}
           accountLabel={accountLabel}
