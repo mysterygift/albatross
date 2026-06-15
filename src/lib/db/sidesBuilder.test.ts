@@ -92,6 +92,7 @@ function source(over: Partial<SidesBuilderSource> = {}): SidesBuilderSource {
     latestScriptVersionIdByEpisodeScope: { '': 'sv-1' },
     totalEstimatedEighths: 4,
     entries: [entry()],
+    scriptPagesByVersionId: {},
     sb5Warnings: [],
     ...over,
   }
@@ -130,6 +131,22 @@ describe('sides builder service (SB6)', () => {
       expect(model.totalEstimatedEighths).toBe(8)
       expect(model.groups).toHaveLength(1)
       expect(model.validation).toEqual([])
+    })
+
+    it('attaches deduped collated script text per scene', () => {
+      const src = source({
+        entries: [
+          entry({ section: section({ id: 'sec-1' }), scriptText: 'KITCHEN TEXT' }),
+          entry({
+            section: section({ id: 'sec-2', scene_id: 'scene-2' }),
+            scene: scene({ id: 'scene-2', scene_number: '2', heading: 'EXT. PARK - DAY' }),
+            scriptText: 'PARK TEXT',
+          }),
+        ],
+      })
+      const model = buildSidesDraftModel(src, defaultSidesFilters(), { overrides: {} })
+      expect(model.groups[0]!.scenes[0]!.collatedScriptText).toContain('KITCHEN TEXT')
+      expect(model.groups[0]!.scenes[1]!.collatedScriptText).toContain('PARK TEXT')
     })
   })
 

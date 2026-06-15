@@ -104,6 +104,7 @@ function source(over: Partial<SidesBuilderSource> = {}): SidesBuilderSource {
     latestScriptVersionIdByEpisodeScope: { '': 'sv-1' },
     totalEstimatedEighths: 4,
     entries: [entry()],
+    scriptPagesByVersionId: {},
     sb5Warnings: [],
     ...over,
   }
@@ -148,6 +149,7 @@ describe('buildSidesPdfData', () => {
     expect(pdfSection.linkedShotNumbers).toEqual(['1A'])
     expect(pdfSection.notes).toBe('Watch continuity')
     expect(pdfSection.scriptText).toContain('Jane enters.')
+    expect(sceneGroup.collatedScriptText).toContain('Jane enters.')
     expect(pdfSection.isEstimated).toBe(false)
   })
 

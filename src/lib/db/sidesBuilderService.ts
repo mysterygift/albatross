@@ -32,6 +32,12 @@ import {
   listScriptVersionsByProduction,
 } from './repositories/scriptVersions'
 import { formatScriptVersionLabel } from './scriptSectionReconciliationService'
+import {
+  collateSceneScriptText,
+  extractScriptTextForRange,
+  joinScenePagesFullText,
+  scenePagesForVersion,
+} from './sidesScriptCollation'
 import { getUnitById } from './repositories/units'
 import {
   analyzeExportCoverage,
@@ -43,6 +49,7 @@ import {
   type ShootDaySectionWarning,
   type ShootDayScriptSectionsSummary,
 } from './shootDayScriptSectionsService'
+import type { Scene, ScriptPage, ScriptSection, ScriptSectionRange } from './types'
 
 const EIGHTHS_PER_PAGE = 8
 
@@ -68,7 +75,7 @@ export type SidesSectionEntry = {
   characterNames: string[]
   /** Shot numbers for shots linked to this section (display reference). */
   linkedShotNumbers: string[]
-  /** Best-effort joined script-page text for this scene/version, or null when unavailable. */
+  /** Best-effort range-sliced script text for this section, or null when unavailable. */
   scriptText: string | null
   origin: SidesSectionOrigin
   isPartialScene: boolean
@@ -95,6 +102,8 @@ export type SidesBuilderSource = {
   latestScriptVersionIdByEpisodeScope: Record<string, string>
   totalEstimatedEighths: number
   entries: SidesSectionEntry[]
+  /** Script pages keyed by script version id (for range-based collation). */
+  scriptPagesByVersionId: Record<string, ScriptPage[]>
   /** Pass-through SB5 warnings (incl. shot_no_linked_section, omitted_section_skipped). */
   sb5Warnings: ShootDaySectionWarning[]
 }
@@ -112,7 +121,12 @@ export type SidesFilters = {
 /** Local draft selection. Default = every entry included; an explicit `false` excludes a section. */
 export type SidesSelectionState = { overrides: Record<string, boolean> }
 
-export type SidesPreviewScene = { scene: Scene; entries: SidesSectionEntry[] }
+export type SidesPreviewScene = {
+  scene: Scene
+  entries: SidesSectionEntry[]
+  /** Deduped script body for all selected sections in this scene. */
+  collatedScriptText: string | null
+}
 
 export type SidesPreviewGroup = {
   episodeId: string | null
@@ -272,7 +286,7 @@ export function groupSidesEntries(entries: readonly SidesSectionEntry[]): SidesP
       currentScene = null
     }
     if (!currentScene || currentScene.scene.id !== entry.scene.id) {
-      currentScene = { scene: entry.scene, entries: [] }
+      currentScene = { scene: entry.scene, entries: [], collatedScriptText: null }
       currentGroup.scenes.push(currentScene)
     }
     currentScene.entries.push(entry)
@@ -296,6 +310,23 @@ export function validateSidesDraft(
   )
 }
 
+function enrichSidesGroupsWithCollatedScript(
+  groups: SidesPreviewGroup[],
+  scriptPagesByVersionId: Record<string, ScriptPage[]>
+): SidesPreviewGroup[] {
+  return groups.map((group) => ({
+    ...group,
+    scenes: group.scenes.map((sceneGroup) => ({
+      ...sceneGroup,
+      collatedScriptText: collateSceneScriptText(
+        sceneGroup.scene,
+        sceneGroup.entries,
+        scriptPagesByVersionId
+      ),
+    })),
+  }))
+}
+
 /** Build the full sides draft model from the source plus local filters and manual selection. */
 export function buildSidesDraftModel(
   source: SidesBuilderSource,
@@ -306,9 +337,13 @@ export function buildSidesDraftModel(
   const selectedEntries = filteredEntries.filter((entry) =>
     isSectionSelected(entry.sectionId, selection)
   )
-  const groups = groupSidesEntries(selectedEntries)
+  const groups = enrichSidesGroupsWithCollatedScript(
+    groupSidesEntries(selectedEntries),
+    source.scriptPagesByVersionId ?? {}
+  )
   const totalEstimatedEighths = selectedEntries.reduce((sum, e) => sum + e.estimatedEighths, 0)
   const validation = validateSidesDraft(source, selectedEntries)
+
   return {
     selectedSectionIds: selectedEntries.map((e) => e.sectionId),
     filteredEntries,
@@ -320,22 +355,9 @@ export function buildSidesDraftModel(
 
 // ─── Impure source loader ────────────────────────────────────────────────────
 
-function buildScriptTextByScene(pages: Awaited<ReturnType<typeof listScriptPagesByScriptVersion>>): Map<
-  string,
-  string
-> {
-  const bySceneParts = new Map<string, string[]>()
-  for (const page of pages) {
-    if (!page.scene_id || !page.content) continue
-    const parts = bySceneParts.get(page.scene_id) ?? []
-    parts.push(page.content)
-    bySceneParts.set(page.scene_id, parts)
-  }
-  const byScene = new Map<string, string>()
-  for (const [sceneId, parts] of bySceneParts) {
-    byScene.set(sceneId, parts.join('\n\n'))
-  }
-  return byScene
+type HydratedSidesData = {
+  entries: SidesSectionEntry[]
+  scriptPagesByVersionId: Record<string, ScriptPage[]>
 }
 
 /**
@@ -363,7 +385,7 @@ export async function loadSidesBuilderSource(
     }
   }
 
-  const entries = await hydrateEntries(summary)
+  const { entries, scriptPagesByVersionId } = await hydrateEntries(summary)
 
   const productionVersions = await listScriptVersionsByProduction(summary.productionId)
   const scriptVersionLabelsById: Record<string, string> = {}
@@ -389,20 +411,21 @@ export async function loadSidesBuilderSource(
     latestScriptVersionIdByEpisodeScope,
     totalEstimatedEighths: summary.totalEstimatedEighths,
     entries,
+    scriptPagesByVersionId,
     sb5Warnings: summary.warnings,
   }
 }
 
-async function hydrateEntries(
-  summary: ShootDayScriptSectionsSummary
-): Promise<SidesSectionEntry[]> {
+async function hydrateEntries(summary: ShootDayScriptSectionsSummary): Promise<HydratedSidesData> {
   const originBySectionId = new Map<string, SidesSectionOrigin>()
   for (const id of summary.includedSectionIds) originBySectionId.set(id, 'included')
   for (const id of summary.fallbackSectionIds) {
     if (!originBySectionId.has(id)) originBySectionId.set(id, 'fallback')
   }
   const allSectionIds = [...originBySectionId.keys()]
-  if (allSectionIds.length === 0) return []
+  if (allSectionIds.length === 0) {
+    return { entries: [], scriptPagesByVersionId: {} }
+  }
 
   const sections = await listSectionsByIds(allSectionIds)
   const validSections = sections
@@ -443,7 +466,10 @@ async function hydrateEntries(
   const pageLists = await Promise.all(
     scriptVersionIds.map((id) => listScriptPagesByScriptVersion(id))
   )
-  const scriptTextByScene = buildScriptTextByScene(pageLists.flat())
+  const scriptPagesByVersionId: Record<string, ScriptPage[]> = {}
+  scriptVersionIds.forEach((id, index) => {
+    scriptPagesByVersionId[id] = pageLists[index] ?? []
+  })
 
   const shotLists = await Promise.all(allSectionIds.map((id) => listShotsBySection(id)))
   const shotNumbersBySection = new Map<string, string[]>()
@@ -471,6 +497,20 @@ async function hydrateEntries(
       .map((c) => c.character_name)
       .filter((name): name is string => name != null && name.trim() !== '')
 
+    const origin = originBySectionId.get(section.id) ?? 'included'
+    const pages = scenePagesForVersion(
+      scriptPagesByVersionId,
+      section.script_version_id,
+      section.scene_id
+    )
+    const primaryRange = ranges[0]
+    let scriptText: string | null = null
+    if (origin === 'fallback') {
+      scriptText = joinScenePagesFullText(pages)
+    } else if (primaryRange) {
+      scriptText = extractScriptTextForRange(pages, primaryRange)
+    }
+
     entries.push({
       sectionId: section.id,
       section,
@@ -484,8 +524,8 @@ async function hydrateEntries(
       ranges,
       characterNames: [...new Set(characterNames)].sort((a, b) => a.localeCompare(b)),
       linkedShotNumbers: shotNumbersBySection.get(section.id) ?? [],
-      scriptText: scriptTextByScene.get(section.scene_id) ?? null,
-      origin: originBySectionId.get(section.id) ?? 'included',
+      scriptText,
+      origin,
       isPartialScene: partialSceneIds.has(section.scene_id),
       isViaShotsOnly: viaShotsOnly.has(section.id),
       isEstimated,
@@ -494,5 +534,8 @@ async function hydrateEntries(
     })
   }
 
-  return entries.sort(compareSidesEntries)
+  return {
+    entries: entries.sort(compareSidesEntries),
+    scriptPagesByVersionId,
+  }
 }

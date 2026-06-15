@@ -6,7 +6,12 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 
 import { SidesBuilderSheet } from '@/features/schedule/sides-builder-sheet'
-import type { SidesBuilderSource, SidesSectionEntry } from '@/lib/db/sidesBuilderService'
+import {
+  buildSidesDraftModel,
+  defaultSidesFilters,
+  type SidesBuilderSource,
+  type SidesSectionEntry,
+} from '@/lib/db/sidesBuilderService'
 import type { Scene, ScriptSection } from '@/lib/db/types'
 
 const loadSource = vi.hoisted(() => vi.fn())
@@ -119,6 +124,7 @@ function source(over: Partial<SidesBuilderSource> = {}): SidesBuilderSource {
       }),
     ],
     sb5Warnings: [],
+    scriptPagesByVersionId: {},
     ...over,
   }
 }
@@ -158,40 +164,47 @@ describe('SidesBuilderSheet', () => {
   })
   afterEach(() => cleanup())
 
+  it('builds collated preview script from the mock source', () => {
+    const model = buildSidesDraftModel(source(), defaultSidesFilters(), { overrides: {} })
+    expect(model.groups[0]!.scenes[0]!.collatedScriptText).toContain('KITCHEN TEXT')
+    expect(model.groups[0]!.scenes[1]!.collatedScriptText).toContain('PARK TEXT')
+  })
+
   it('renders the preview from the source', async () => {
     renderSheet()
-    await waitFor(() => expect(screen.getByText('KITCHEN TEXT')).toBeTruthy())
-    expect(screen.getByText('PARK TEXT')).toBeTruthy()
-    expect(screen.getByText(/INT\. KITCHEN - DAY/)).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Preview')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/KITCHEN TEXT/)).toBeTruthy())
+    expect(screen.getByText(/PARK TEXT/)).toBeTruthy()
+    expect(screen.getAllByText(/INT\. KITCHEN - DAY/).length).toBeGreaterThan(0)
     expect(screen.getByText('Coverage')).toBeTruthy()
   })
 
   it('narrows the preview when a filter is applied', async () => {
     const user = userEvent.setup()
     renderSheet()
-    await waitFor(() => expect(screen.getByText('PARK TEXT')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/PARK TEXT/)).toBeTruthy())
 
     await user.click(screen.getByRole('checkbox', { name: 'Linked-shot sections only' }))
 
-    await waitFor(() => expect(screen.queryByText('PARK TEXT')).toBeNull())
-    expect(screen.getByText('KITCHEN TEXT')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText(/PARK TEXT/)).toBeNull())
+    expect(screen.getByText(/KITCHEN TEXT/)).toBeTruthy()
   })
 
   it('excludes a section when its checkbox is toggled off', async () => {
     const user = userEvent.setup()
     renderSheet()
-    await waitFor(() => expect(screen.getByText('KITCHEN TEXT')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/KITCHEN TEXT/)).toBeTruthy())
 
     await user.click(screen.getByRole('checkbox', { name: 'Include Opening' }))
 
-    await waitFor(() => expect(screen.queryByText('KITCHEN TEXT')).toBeNull())
-    expect(screen.getByText('PARK TEXT')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText(/KITCHEN TEXT/)).toBeNull())
+    expect(screen.getByText(/PARK TEXT/)).toBeTruthy()
   })
 
   it('disables export when no sections are selected', async () => {
     const user = userEvent.setup()
     renderSheet()
-    await waitFor(() => expect(screen.getByText('KITCHEN TEXT')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/KITCHEN TEXT/)).toBeTruthy())
 
     await user.click(screen.getByRole('checkbox', { name: 'Include Opening' }))
     await user.click(screen.getByRole('checkbox', { name: 'Include Scene Two' }))
@@ -211,7 +224,7 @@ describe('SidesBuilderSheet', () => {
   it('exports sides and exposes an open action on success', async () => {
     const user = userEvent.setup()
     renderSheet()
-    await waitFor(() => expect(screen.getByText('KITCHEN TEXT')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/KITCHEN TEXT/)).toBeTruthy())
 
     await user.click(screen.getByRole('button', { name: 'Export sides PDF' }))
 

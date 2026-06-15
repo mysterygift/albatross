@@ -50,18 +50,6 @@ function sectionLabel(entry: SidesSectionEntry): string {
   return 'Section'
 }
 
-function rangeMeta(entry: SidesSectionEntry): string | null {
-  if (entry.ranges.length === 0) return null
-  const parts = entry.ranges.map((range) => {
-    const start = range.start_page ?? '?'
-    const end = range.end_page ?? '?'
-    const startE = range.start_eighth ?? 0
-    const endE = range.end_eighth ?? 0
-    return `pp ${start} ${startE}/8 → ${end} ${endE}/8`
-  })
-  return parts.join(', ')
-}
-
 /**
  * SB6 — Daily Sides Builder. Assembles the SB5-derived script sections for a shoot day and lets the
  * user filter, include/exclude, and preview sections before an export handoff. Read-only: filters
@@ -560,53 +548,22 @@ function PreviewGroup({ group }: { group: SidesPreviewGroup }) {
               ? ` — ${sceneGroup.scene.heading ?? sceneGroup.scene.title}`
               : ''}
           </p>
-          <div className="mt-2 space-y-2">
-            {sceneGroup.entries.map((entry) => (
-              <PreviewSection key={entry.sectionId} entry={entry} />
-            ))}
-          </div>
+          {sceneGroup.collatedScriptText ? (
+            <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-border/30 bg-muted/20 p-2 font-mono text-[11px] text-foreground">
+              {sceneGroup.collatedScriptText}
+            </pre>
+          ) : (
+            <p className="mt-2 text-[11px] italic text-muted-foreground">
+              No script text available (best-effort).
+            </p>
+          )}
+          {sceneGroup.entries.some((e) => e.isEstimated) && sceneGroup.collatedScriptText && (
+            <p className="mt-1 text-[10px] italic text-amber-600 dark:text-amber-400">
+              Best-effort text; exact range unavailable.
+            </p>
+          )}
         </div>
       ))}
-    </div>
-  )
-}
-
-function PreviewSection({ entry }: { entry: SidesSectionEntry }) {
-  const meta = rangeMeta(entry)
-  return (
-    <div className="rounded border border-border/30 p-2">
-      <div className="flex flex-wrap items-center gap-1.5 text-xs">
-        <span className="font-medium text-foreground">{sectionLabel(entry)}</span>
-        <SectionBadges entry={entry} />
-      </div>
-      {meta && <p className="mt-1 text-[11px] text-muted-foreground">{meta}</p>}
-      {entry.characterNames.length > 0 && (
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          Characters: {entry.characterNames.join(', ')}
-        </p>
-      )}
-      {entry.linkedShotNumbers.length > 0 && (
-        <p className="text-[11px] text-muted-foreground">
-          Shots: {entry.linkedShotNumbers.join(', ')}
-        </p>
-      )}
-      {entry.section.notes && (
-        <p className="mt-1 text-[11px] text-muted-foreground">Notes: {entry.section.notes}</p>
-      )}
-      {entry.scriptText ? (
-        <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] text-foreground">
-          {entry.scriptText}
-        </pre>
-      ) : (
-        <p className="mt-2 text-[11px] italic text-muted-foreground">
-          No script text available (best-effort).
-        </p>
-      )}
-      {entry.scriptText && entry.isEstimated && (
-        <p className="mt-1 text-[10px] italic text-amber-600 dark:text-amber-400">
-          Best-effort text; exact range unavailable.
-        </p>
-      )}
     </div>
   )
 }

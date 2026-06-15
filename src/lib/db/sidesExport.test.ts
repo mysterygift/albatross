@@ -194,6 +194,7 @@ function buildSource(
     },
     totalEstimatedEighths: 4,
     entries: over.entries ?? [entry()],
+    scriptPagesByVersionId: {},
     sb5Warnings: [],
   }
 }

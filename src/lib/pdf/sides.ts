@@ -55,6 +55,8 @@ export interface SidesPdfScene {
   sceneNumber: string
   heading: string | null
   sections: SidesPdfSection[]
+  /** Deduped script body for all selected sections in this scene. */
+  collatedScriptText: string | null
 }
 
 export interface SidesPdfGroup {
@@ -121,6 +123,7 @@ function mapGroup(group: SidesPreviewGroup): SidesPdfGroup {
     scenes: group.scenes.map((sceneGroup) => ({
       sceneNumber: sceneGroup.scene.scene_number,
       heading: sceneGroup.scene.heading ?? sceneGroup.scene.title ?? null,
+      collatedScriptText: sceneGroup.collatedScriptText,
       sections: sceneGroup.entries.map(mapSection),
     })),
   }
@@ -291,71 +294,30 @@ export async function generateSidesPdf(data: SidesPdfData): Promise<Uint8Array> 
       drawText(`Sc ${scene.sceneNumber}${heading}`, { size: FONT_SECTION, font: bold, color: DARK })
       y -= 14
 
-      for (const section of scene.sections) {
-        ensure(14)
-        const markers: string[] = []
-        if (section.isViaShotsOnly) markers.push('via shots')
-        if (section.isPartialScene) markers.push('partial')
-        if (section.isEstimated) markers.push('estimated')
-        if (section.isOmitted) markers.push('OMITTED')
-        const markerText = markers.length > 0 ? `  [${markers.join(', ')}]` : ''
-        drawText(`${section.label}${markerText}`, { x: MARGIN + 6, size: FONT_BODY, font: bold })
-        y -= 12
-
-        if (section.rangeText) {
-          drawWrapped(section.rangeText, { x: MARGIN + 12, size: FONT_META, color: GRAY, step: 10 })
-        }
-        if (section.characterNames.length > 0) {
-          drawWrapped(`Characters: ${section.characterNames.join(', ')}`, {
-            x: MARGIN + 12,
+      if (scene.collatedScriptText && scene.collatedScriptText.trim() !== '') {
+        y -= 2
+        drawWrapped(scene.collatedScriptText, {
+          x: MARGIN + 6,
+          width: CONTENT_WIDTH - 6,
+          size: FONT_SCRIPT,
+          font: mono,
+          step: SCRIPT_LINE_STEP,
+        })
+        if (scene.sections.some((s) => s.isEstimated)) {
+          drawWrapped('Best-effort text; exact range unavailable.', {
+            x: MARGIN + 6,
             size: FONT_META,
-            color: GRAY,
+            color: AMBER,
             step: 10,
           })
         }
-        if (section.linkedShotNumbers.length > 0) {
-          drawWrapped(`Shots: ${section.linkedShotNumbers.join(', ')}`, {
-            x: MARGIN + 12,
-            size: FONT_META,
-            color: GRAY,
-            step: 10,
-          })
-        }
-        if (section.notes && section.notes.trim() !== '') {
-          drawWrapped(`Notes: ${section.notes}`, {
-            x: MARGIN + 12,
-            size: FONT_META,
-            color: GRAY,
-            step: 10,
-          })
-        }
-
-        if (section.scriptText && section.scriptText.trim() !== '') {
-          y -= 2
-          drawWrapped(section.scriptText, {
-            x: MARGIN + 12,
-            width: CONTENT_WIDTH - 12,
-            size: FONT_SCRIPT,
-            font: mono,
-            step: SCRIPT_LINE_STEP,
-          })
-          if (section.isEstimated) {
-            drawWrapped('Best-effort text; exact range unavailable.', {
-              x: MARGIN + 12,
-              size: FONT_META,
-              color: AMBER,
-              step: 10,
-            })
-          }
-        } else {
-          drawWrapped('No script text available (best-effort).', {
-            x: MARGIN + 12,
-            size: FONT_META,
-            color: GRAY,
-            step: 10,
-          })
-        }
-        y -= 6
+      } else {
+        drawWrapped('No script text available (best-effort).', {
+          x: MARGIN + 6,
+          size: FONT_META,
+          color: GRAY,
+          step: 10,
+        })
       }
       y -= 4
     }
