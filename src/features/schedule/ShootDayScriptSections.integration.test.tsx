@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 
 import { ShootDayScriptSectionsPanel } from '@/features/schedule/shoot-day-script-sections-panel'
 import type { ScriptSection } from '@/lib/db/types'
-import type { ShootDayCoverageLoadResult } from '@/lib/db/coverageAnalysisService'
+import type { ShootDayCoverageLoadResult, ShootDayCoverageSummary } from '@/lib/db/coverageAnalysisService'
 
 const loadCoverage = vi.hoisted(() => vi.fn())
 const listSectionsByIds = vi.hoisted(() => vi.fn())
@@ -51,7 +51,12 @@ function section(over: Partial<ScriptSection> = {}): ScriptSection {
   }
 }
 
-function coverageLoad(over: Partial<ShootDayCoverageLoadResult> = {}): ShootDayCoverageLoadResult {
+function coverageLoad(
+  over: Partial<Omit<ShootDayCoverageLoadResult, 'coverage'>> & {
+    coverage?: Partial<ShootDayCoverageSummary>
+  } = {}
+): ShootDayCoverageLoadResult {
+  const { coverage: coverageOverride, ...rest } = over
   return {
     coverage: {
       shootDayId: 'day-1',
@@ -64,13 +69,13 @@ function coverageLoad(over: Partial<ShootDayCoverageLoadResult> = {}): ShootDayC
       totalEstimatedEighths: 0,
       blockingExportIssues: [],
       issues: [],
-      ...(over.coverage ?? {}),
+      ...(coverageOverride ?? {}),
     },
     includedSectionIds: [],
     fallbackSectionIds: [],
     partialSceneIds: [],
     sectionsScheduledViaShotsOnly: [],
-    ...over,
+    ...rest,
   }
 }
 

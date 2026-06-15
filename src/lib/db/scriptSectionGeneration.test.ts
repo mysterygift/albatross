@@ -67,7 +67,6 @@ import {
   listSectionsByScriptVersion,
   listSectionsByShot,
   replaceSectionRanges,
-  updateScriptSection,
 } from '@/lib/db/repositories/scriptSections'
 import {
   generateScriptVersionFromScenes,

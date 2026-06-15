@@ -6,6 +6,7 @@ import type {
   ProductionBudgetFeatures,
   TaxCreditScheme,
 } from '../types'
+import type { ExpenseVatReclaimInput } from './vatReclaim'
 
 const FEATURES_TABLE = 'production_budget_features'
 const SCHEMES_TABLE = 'tax_credit_schemes'

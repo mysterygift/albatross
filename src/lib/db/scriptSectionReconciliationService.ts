@@ -195,6 +195,7 @@ export async function reconcileScriptVersions(
       const oldCtx = oldGroup[i]!
       const newCtx = newGroup[i]!
       const classification = classifySectionPair(oldCtx.fingerprint, newCtx.fingerprint)
+      if (classification === 'no_match') continue
       const pair: ReconciliationSectionPair = {
         old: oldCtx.ref,
         new: newCtx.ref,

@@ -97,7 +97,7 @@ export function ScriptImportPage() {
   const createScenesMutation = useMutation({
     mutationFn: async (scenes: ParsedScene[]) => {
       if (!currentProductionId) {
-        return { linkedPrior: null as const, versionCreated: false }
+        return { linkedPrior: null, versionCreated: false }
       }
       const epId = importEpisodeId.trim()
       if (isEpisodic && !epId) {

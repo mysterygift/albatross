@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import {
   enrichRangeWithPageOffsets,
   formatDialogueToActionSpacing,
-  formatPageContentSpacing,
   joinScriptElements,
   offsetsForEighthRangeInContent,
   splitPageIntoEighths,

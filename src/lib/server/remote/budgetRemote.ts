@@ -35,6 +35,11 @@ function mapExpense(r: Record<string, unknown>): Expense {
     vendor: r.vendor as string | null,
     notes: r.notes as string | null,
     expense_type: (r.expense_type as Expense['expense_type']) ?? 'other',
+    vat_rate_percent: r.vat_rate_percent == null ? null : coerceNumber(r.vat_rate_percent, 0),
+    vat_reclaimed_amount:
+      r.vat_reclaimed_amount == null ? null : coerceNumber(r.vat_reclaimed_amount, 0),
+    vat_reclaim_date: r.vat_reclaim_date == null ? null : coerceIsoString(r.vat_reclaim_date),
+    vat_reclaim_reference: (r.vat_reclaim_reference as string | null) ?? null,
     created_at: coerceIsoString(r.created_at),
     updated_at: coerceIsoString(r.updated_at),
     deleted_at: r.deleted_at == null ? null : coerceIsoString(r.deleted_at),

@@ -59,7 +59,7 @@ import {
   updateShotForActor,
   upsertEquipmentTermForActor,
 } from '@/lib/access/projectDomainService'
-import type { Shot, Scene, ShotCast } from '@/lib/db/types'
+import type { Shot, Scene, ShotCast, ScriptVersion } from '@/lib/db/types'
 import { SHOT_SIZE_VALUES, CAMERA_MOVEMENT_VALUES } from '@/lib/db/types'
 import {
   Table,
@@ -132,9 +132,9 @@ function formatDuration(sec: number | null): string {
 }
 
 function latestVersionForEpisodeScope(
-  versions: Array<{ id: string; episode_id: string | null; created_at: string }>,
+  versions: ScriptVersion[],
   episodeId: string | null
-): (typeof versions)[number] | null {
+): ScriptVersion | null {
   return versions.find((v) => (v.episode_id ?? null) === episodeId) ?? null
 }
 
