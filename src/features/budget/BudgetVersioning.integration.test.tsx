@@ -277,6 +277,9 @@ vi.mock('@/lib/db/repositories/budget', () => ({
 vi.mock('@/lib/db/repositories/budgetReconciliation', () => ({
   listBudgetItemExpenseLinksForExpense: vi.fn(async () => []),
 }))
+vi.mock('@/lib/db/repositories/budgetLineItemDeletion', () => ({
+  deleteBudgetLineItemWithRelinks: vi.fn(),
+}))
 vi.mock('@/lib/db/repositories/budgetAccounts', () => ({
   listAccounts: vi.fn(async () => []),
   listPostableAccounts: vi.fn(async () => []),

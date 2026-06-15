@@ -126,3 +126,33 @@ export async function softDeleteFloat(id: string): Promise<void> {
   const ts = now()
   await db.execute(`UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`, [ts, ts, id])
 }
+
+/** Move a float to a different budget line item (same production). */
+export async function reassignFloatBudgetItem(
+  floatId: string,
+  newBudgetItemId: string
+): Promise<void> {
+  const db = await getDb()
+  const [floatRows, itemRows] = await Promise.all([
+    db.select<Record<string, unknown>[]>(
+      `SELECT id, production_id FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL`,
+      [floatId]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT id, production_id FROM budget_items WHERE id = $1 AND deleted_at IS NULL`,
+      [newBudgetItemId]
+    ),
+  ])
+  const floatRow = floatRows[0]
+  const itemRow = itemRows[0]
+  if (!floatRow) throw new Error('Float not found or deleted')
+  if (!itemRow) throw new Error('Budget item not found or deleted')
+  if ((floatRow.production_id as string) !== (itemRow.production_id as string)) {
+    throw new Error('Float and budget item must belong to the same production')
+  }
+  const ts = now()
+  await db.execute(
+    `UPDATE ${TABLE} SET budget_item_id = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
+    [newBudgetItemId, ts, floatId]
+  )
+}

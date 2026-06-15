@@ -115,6 +115,8 @@ import { ExpenseDetailPanel } from '@/features/budget/ExpenseDetailPanel'
 import { LineItemDetailPanel } from '@/features/budget/LineItemDetailPanel'
 import { FloatsTab } from '@/features/budget/FloatsTab'
 import { LogSpendPanel } from '@/features/budget/LogSpendPanel'
+import { DeleteLineItemDialog } from '@/features/budget/DeleteLineItemDialog'
+import { deleteBudgetLineItemWithRelinks } from '@/lib/db/repositories/budgetLineItemDeletion'
 import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
 import { getBudgetItemWithDetails } from '@/lib/db/repositories/budgetItemDetails'
 import { getLineItemTypeConfig } from '@/lib/budget/line-items/registry'
@@ -243,6 +245,7 @@ export function BudgetPage() {
   const [examinedExpenseId, setExaminedExpenseId] = useState<string | null>(null)
   const [examinedAccountId, setExaminedAccountId] = useState<string | null>(null)
   const [examinedLineItemId, setExaminedLineItemId] = useState<string | null>(null)
+  const [lineItemToDelete, setLineItemToDelete] = useState<BudgetItem | null>(null)
   const [examineAccountFilter, setExamineAccountFilter] = useState<ClassificationFilter>('all')
   const [viewMode, setViewMode] = useState<BudgetViewMode>(initialBudgetViewModeFromLocation)
   const [costReportExpandedLeafId, setCostReportExpandedLeafId] = useState<string | null>(null)
@@ -985,6 +988,36 @@ export function BudgetPage() {
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId, revisionId] })
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item'] })
         queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
+      }
+    },
+  })
+
+  const deleteLineItemMutation = useMutation({
+    mutationFn: (args: {
+      budgetItemId: string
+      expenseRelinks: { linkId: string; targetBudgetItemId: string }[]
+      floatRelinks: { floatId: string; targetBudgetItemId: string }[]
+    }) =>
+      deleteBudgetLineItemWithRelinks({
+        productionId: currentProductionId!,
+        revisionId,
+        ...args,
+      }),
+    onSuccess: (_, variables) => {
+      setLineItemToDelete(null)
+      if (examinedLineItemId === variables.budgetItemId) {
+        setExaminedLineItemId(null)
+      }
+      if (currentProductionId) {
+        queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId, revisionId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, revisionId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item'] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-with-details', variables.budgetItemId] })
+        queryClient.invalidateQueries({ queryKey: ['floats', currentProductionId, revisionId] })
+        queryClient.invalidateQueries({ queryKey: ['floats-by-budget-item'] })
+        queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', currentProductionId, revisionId] })
+        queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense'] })
       }
     },
   })
@@ -2048,7 +2081,7 @@ export function BudgetPage() {
                   <TableHead className="text-right">Actual</TableHead>
                   <TableHead className="text-right">Variance</TableHead>
                   <TableHead className="text-right w-[70px]">% Spent</TableHead>
-                  <TableHead className="w-[120px]">Actions</TableHead>
+                  <TableHead className="w-[160px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2072,6 +2105,10 @@ export function BudgetPage() {
                       setExaminedExpenseId(null)
                       setExaminedAccountId(null)
                       setExaminedLineItemId(lineItemId)
+                    },
+                    onDeleteLineItem: (lineItemId) => {
+                      const item = items.find((i) => i.id === lineItemId) ?? null
+                      setLineItemToDelete(item)
                     },
                   })
                 )}
@@ -2505,6 +2542,27 @@ export function BudgetPage() {
           ) : null}
         </SheetContent>
       </Sheet>
+
+      <DeleteLineItemDialog
+        open={lineItemToDelete != null}
+        onOpenChange={(open) => {
+          if (!open && !deleteLineItemMutation.isPending) setLineItemToDelete(null)
+        }}
+        lineItem={lineItemToDelete}
+        items={items}
+        accounts={accounts}
+        expenses={expenses}
+        people={people}
+        productionId={currentProductionId ?? ''}
+        revisionId={revisionId}
+        productionCurrency={productionCurrency}
+        format={format}
+        onConfirm={async (args) => {
+          await deleteLineItemMutation.mutateAsync(args)
+        }}
+        isPending={deleteLineItemMutation.isPending}
+        error={deleteLineItemMutation.error instanceof Error ? deleteLineItemMutation.error.message : null}
+      />
 
       <SectionTutorialPanel
         open={tutorialOpen}
@@ -3694,6 +3752,7 @@ function renderAccountRow(
     postableAccounts: BudgetAccount[]
     onExamineAccount: (accountId: string) => void
     onExamineLineItem: (lineItemId: string) => void
+    onDeleteLineItem: (lineItemId: string) => void
   }
 ): ReactNode {
   const { account } = node
@@ -3784,7 +3843,7 @@ function renderAccountRow(
             </TableCell>
             <TableCell className="text-right">{ctx.format(item.estimated_cost, ctx.productionCurrency).formatted}</TableCell>
             <TableCell colSpan={3} />
-            <TableCell className="w-[120px]">
+            <TableCell className="w-[160px]">
               <div className="flex items-center gap-0.5">
                 <Button
                   type="button"
@@ -3795,6 +3854,19 @@ function renderAccountRow(
                   aria-label="Examine line item"
                 >
                   <Eye className="size-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    ctx.onDeleteLineItem(item.id)
+                  }}
+                  aria-label="Delete line item"
+                >
+                  <Trash2 className="size-4" />
                 </Button>
               </div>
             </TableCell>
