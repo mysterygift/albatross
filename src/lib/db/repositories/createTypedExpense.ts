@@ -23,6 +23,8 @@ export type CreateTypedExpenseParams = {
   transactionType: ExpenseTransactionType
   draft: unknown
   date?: string
+  vatRatePercent?: number | null
+  taxCreditAllocations?: Array<{ tax_credit_scheme_id: string; qualifying_amount: number }>
 }
 
 function rowToExpense(r: Record<string, unknown>): Expense {
@@ -38,6 +40,7 @@ function rowToExpense(r: Record<string, unknown>): Expense {
     vendor: (r.vendor as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
     expense_type: (r.expense_type as Expense['expense_type']) ?? 'other',
+    vat_rate_percent: (r.vat_rate_percent as number | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: (r.deleted_at as string | null) ?? null,
@@ -56,6 +59,8 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
     transactionType,
     draft,
     date = new Date().toISOString().slice(0, 10),
+    vatRatePercent,
+    taxCreditAllocations = [],
   } = params
 
   const account = await getAccountById(accountId)
@@ -172,6 +177,7 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
     vendor: null,
     notes,
     expense_type: 'other' as const,
+    vat_rate_percent: params.vatRatePercent ?? null,
     created_at: ts,
     updated_at: ts,
   }
@@ -181,8 +187,8 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
     const statements: Array<{ sql: string; bindValues: unknown[] }> = [
       { sql: 'BEGIN TRANSACTION', bindValues: [] },
       {
-        sql: `INSERT INTO ${EXP_TABLE} (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        sql: `INSERT INTO ${EXP_TABLE} (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, vat_rate_percent, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         bindValues: [
           id,
           productionId,
@@ -195,6 +201,7 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
           null,
           notes,
           'other',
+          vatRatePercent ?? null,
           ts,
           ts,
         ],
@@ -240,6 +247,11 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
     statements.push({ sql: 'COMMIT', bindValues: [] })
 
     await executeBatch(db, statements)
+
+    if (taxCreditAllocations.length > 0) {
+      const { replaceExpenseTaxCreditAllocations } = await import('./taxCredits')
+      await replaceExpenseTaxCreditAllocations(id, amount, taxCreditAllocations)
+    }
   })
 
   return rowToExpense(expensePayload)

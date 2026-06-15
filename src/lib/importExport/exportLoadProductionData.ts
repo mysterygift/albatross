@@ -37,6 +37,8 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     deliverables,
     fringeRules,
     contingencyRules,
+    productionBudgetFeatures,
+    taxCreditSchemes,
     costReportGroups,
     productionTotals,
     productionCrewHierarchyConfigs,
@@ -59,6 +61,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     clearances,
     budgetItemDetails,
     expenseTransactionDetails,
+    expenseTaxCreditAllocations,
     budgetItemExpenseLinks,
     vendorInvoiceExpenses,
     vendorPurchaseOrderExpenses,
@@ -144,6 +147,14 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     ),
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM contingency_rules WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM production_budget_features WHERE production_id = $1`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM tax_credit_schemes WHERE production_id = $1 AND deleted_at IS NULL`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -246,6 +257,12 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     db.select<Record<string, unknown>[]>(
       `SELECT etd.* FROM expense_transaction_details etd
        INNER JOIN expenses e ON e.id = etd.expense_id AND e.production_id = $1 AND e.deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT a.* FROM expense_tax_credit_allocations a
+       INNER JOIN expenses e ON e.id = a.expense_id AND e.production_id = $1 AND e.deleted_at IS NULL
+       WHERE a.deleted_at IS NULL`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -355,6 +372,8 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     deliverables: asRows(deliverables),
     fringe_rules: asRows(fringeRules),
     contingency_rules: asRows(contingencyRules),
+    production_budget_features: asRows(productionBudgetFeatures),
+    tax_credit_schemes: asRows(taxCreditSchemes),
     cost_report_groups: asRows(costReportGroups),
     production_totals: asRows(productionTotals),
     production_crew_hierarchy_configs: asRows(productionCrewHierarchyConfigs),
@@ -377,6 +396,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     clearances: asRows(clearances),
     budget_item_details: asRows(budgetItemDetails),
     expense_transaction_details: asRows(expenseTransactionDetails),
+    expense_tax_credit_allocations: asRows(expenseTaxCreditAllocations),
     budget_item_expense_links: asRows(budgetItemExpenseLinks),
     vendor_invoice_expenses: asRows(vendorInvoiceExpenses),
     vendor_purchase_order_expenses: asRows(vendorPurchaseOrderExpenses),

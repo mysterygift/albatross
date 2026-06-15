@@ -276,6 +276,47 @@ export type Expense = {
   vendor: string | null
   notes: string | null
   expense_type: 'petty_cash' | 'per_diem' | 'other'
+  /** VAT rate as percent (e.g. 20 for 20%); null when unset or VAT tracking disabled. */
+  vat_rate_percent: number | null
+} & SoftDeletable
+
+/** Per-production budget feature toggles (tax credits, VAT). Data preserved when toggles off. */
+export type ProductionBudgetFeatures = {
+  production_id: string
+  tax_credits_enabled: boolean
+  vat_tracking_enabled: boolean
+  /** Default VAT % for new expenses when VAT tracking is enabled. */
+  default_vat_rate_percent: number | null
+  created_at: string
+  updated_at: string
+}
+
+/** Configurable tax credit scheme (e.g. AVEC live action, California Film & TV). */
+export type TaxCreditScheme = {
+  id: string
+  production_id: string
+  name: string
+  /** Net credit rate as decimal (e.g. 0.255 = 25.5%). */
+  net_rate: number
+  /** Max qualifying spend as fraction of total core spend (e.g. 0.80); null = no cap. */
+  cap_percent: number | null
+  /** Minimum qualifying spend as fraction of total core spend (warning threshold). */
+  min_qualifying_percent: number | null
+  /** Absolute cap on qualifying spend for this scheme. */
+  max_qualifying_amount: number | null
+  /** Production ineligible when total core spend exceeds this amount. */
+  max_core_budget: number | null
+  is_vfx: boolean
+  is_enabled: boolean
+  sort_order: number
+} & SoftDeletable
+
+/** Portion of an expense tagged as qualifying for a tax credit scheme. */
+export type ExpenseTaxCreditAllocation = {
+  id: string
+  expense_id: string
+  tax_credit_scheme_id: string
+  qualifying_amount: number
 } & SoftDeletable
 
 export type ExpenseTransactionDetails = {

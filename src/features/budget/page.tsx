@@ -41,6 +41,11 @@ import {
   type ContingencyRuleWithScopes,
 } from '@/lib/db/repositories/budgetDerived'
 import {
+  getProductionBudgetFeatures,
+  listTaxCreditSchemes,
+  listAllocationsByProduction,
+} from '@/lib/db/repositories/taxCredits'
+import {
   buildAccountTree,
   computeAccountTotals,
   uncodedSpendTotal,
@@ -51,6 +56,8 @@ import {
   getDescendantLeafIds,
   type AccountTreeNode,
 } from '@/lib/budget/calculations'
+import { computeTaxCreditTotals, computeVatTotals, type TaxCreditTotalsResult } from '@/lib/budget/taxCredits'
+import { TaxCreditSummaryBlock } from '@/features/budget/TaxCreditSummaryBlock'
 import {
   listCostReportGroupsWithAccountIds,
   type CostReportGroupWithAccountIds,
@@ -819,6 +826,24 @@ export function BudgetPage() {
     enabled: revisionScopedQueriesReady,
   })
 
+  const { data: budgetFeatures } = useQuery({
+    queryKey: ['production-budget-features', currentProductionId],
+    queryFn: () => getProductionBudgetFeatures(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: taxCreditSchemes = [] } = useQuery({
+    queryKey: ['tax-credit-schemes', currentProductionId],
+    queryFn: () => listTaxCreditSchemes(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: taxCreditAllocations = [] } = useQuery({
+    queryKey: ['expense-tax-allocations-production', currentProductionId],
+    queryFn: () => listAllocationsByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
   const createItemMutation = useMutation({
     mutationFn: (data: z.infer<typeof itemSchema>) =>
       createBudgetItem({
@@ -892,6 +917,10 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, revisionId] })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
       queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['expense-tax-allocations-production', currentProductionId] })
+      if (examinedExpenseId) {
+        queryClient.invalidateQueries({ queryKey: ['expense-tax-allocations', examinedExpenseId] })
+      }
     }
   }, [examinedExpenseId, currentProductionId, queryClient, revisionId])
 
@@ -979,6 +1008,25 @@ export function BudgetPage() {
   const totalEstimated = items.reduce((s, i) => s + i.estimated_cost, 0)
   const totalActual = expenses.reduce((s, e) => s + e.amount, 0)
   const variance = totalEstimated - totalActual
+  const totalDerived =
+    fringeTotals.totalFringesAmount + contingencyTotals.totalContingencyAmount
+
+  const taxCreditsEnabled = budgetFeatures?.tax_credits_enabled === true
+  const vatTrackingEnabled = budgetFeatures?.vat_tracking_enabled === true
+
+  const taxCreditTotals = useMemo(
+    () =>
+      computeTaxCreditTotals({
+        schemes: taxCreditSchemes,
+        allocations: taxCreditAllocations,
+        expenses,
+        totalActual,
+        totalDerived,
+      }),
+    [taxCreditSchemes, taxCreditAllocations, expenses, totalActual, totalDerived]
+  )
+
+  const vatTotals = useMemo(() => computeVatTotals(expenses), [expenses])
 
   // Production totals: rollups from accountTotals only (reporting); only header accounts.
   const productionTotalAmounts = useMemo(() => {
@@ -1086,6 +1134,8 @@ export function BudgetPage() {
         floats: baseCompareFloats,
         floatExpenseLinks: baseCompareFloatLinks,
         people,
+        taxCreditSchemes,
+        taxCreditAllocations,
       }),
     [
       accounts,
@@ -1096,6 +1146,8 @@ export function BudgetPage() {
       baseCompareItems,
       expenses,
       people,
+      taxCreditSchemes,
+      taxCreditAllocations,
     ]
   )
 
@@ -1110,6 +1162,8 @@ export function BudgetPage() {
         floats: targetCompareFloats,
         floatExpenseLinks: targetCompareFloatLinks,
         people,
+        taxCreditSchemes,
+        taxCreditAllocations,
       }),
     [
       accounts,
@@ -1120,6 +1174,8 @@ export function BudgetPage() {
       targetCompareFloats,
       targetCompareFringeRules,
       targetCompareItems,
+      taxCreditSchemes,
+      taxCreditAllocations,
     ]
   )
 
@@ -1165,6 +1221,19 @@ export function BudgetPage() {
           totalActual,
       ])
     }
+    if (taxCreditsEnabled && taxCreditTotals.totalTaxCredits > 0) {
+      for (const s of taxCreditTotals.perScheme) {
+        if (s.qualifyingSpend > 0 || s.creditAmount > 0) {
+          rows.push(['', `${s.schemeName} qualifying`, s.qualifyingSpend, '', ''])
+          rows.push(['', `${s.schemeName} credit`, s.creditAmount, '', ''])
+        }
+      }
+      rows.push(['', 'TOTAL TAX CREDITS', taxCreditTotals.totalTaxCredits, '', ''])
+      rows.push(['', 'NET COST AFTER CREDITS', '', taxCreditTotals.netCostAfterCredits, ''])
+    }
+    if (vatTrackingEnabled && vatTotals.totalVat > 0) {
+      rows.push(['', 'TOTAL VAT (informational)', vatTotals.totalVat, '', ''])
+    }
     const csv = rows.map((r) => r.join(',')).join('\n')
     await saveFileWithDialog(
       {
@@ -1185,6 +1254,10 @@ export function BudgetPage() {
     variance,
     fringeTotals.totalFringesAmount,
     contingencyTotals.totalContingencyAmount,
+    taxCreditsEnabled,
+    taxCreditTotals,
+    vatTrackingEnabled,
+    vatTotals.totalVat,
   ])
 
   useEffect(() => {
@@ -1744,6 +1817,11 @@ export function BudgetPage() {
             uncodedTotal={uncodedTotal}
             fringeTotals={fringeTotals}
             contingencyTotals={contingencyTotals}
+            taxCreditsEnabled={taxCreditsEnabled}
+            taxCreditTotals={taxCreditTotals}
+            vatTrackingEnabled={vatTrackingEnabled}
+            totalVat={vatTotals.totalVat}
+            totalDerived={totalDerived}
             productionTotalAmounts={productionTotalAmounts}
             productionSubtotalBeforeDerived={productionSubtotalBeforeDerived}
             layoutMode={costReportLayoutMode}
@@ -1824,6 +1902,18 @@ export function BudgetPage() {
                 </div>
               </div>
             </div>
+          )}
+
+          {taxCreditsEnabled && (
+            <TaxCreditSummaryBlock
+              taxCreditTotals={taxCreditTotals}
+              totalDerived={totalDerived}
+              totalActual={totalActual}
+              format={format}
+              productionCurrency={productionCurrency}
+              showVat={vatTrackingEnabled}
+              totalVat={vatTotals.totalVat}
+            />
           )}
 
           {recodeToast && (
@@ -2757,6 +2847,11 @@ function CostReportView({
   uncodedTotal,
   fringeTotals,
   contingencyTotals,
+  taxCreditsEnabled = false,
+  taxCreditTotals,
+  vatTrackingEnabled = false,
+  totalVat = 0,
+  totalDerived: totalDerivedProp,
   productionTotalAmounts,
   productionSubtotalBeforeDerived,
   layoutMode,
@@ -2781,6 +2876,11 @@ function CostReportView({
   uncodedTotal: number
   fringeTotals: { totalFringesAmount: number }
   contingencyTotals: { totalContingencyAmount: number }
+  taxCreditsEnabled?: boolean
+  taxCreditTotals?: TaxCreditTotalsResult
+  vatTrackingEnabled?: boolean
+  totalVat?: number
+  totalDerived?: number
   productionTotalAmounts: ProductionTotalAmount[]
   productionSubtotalBeforeDerived: { budget: number; actual: number; variance: number }
   layoutMode: CostReportLayoutMode
@@ -2792,7 +2892,9 @@ function CostReportView({
   onToggleLeafDetail: (id: string | null) => void
   configureButton?: ReactNode
 }) {
-  const totalDerived = fringeTotals.totalFringesAmount + contingencyTotals.totalContingencyAmount
+  const totalDerived =
+    totalDerivedProp ??
+    fringeTotals.totalFringesAmount + contingencyTotals.totalContingencyAmount
   const estimatedPlusDerived = totalEstimated + totalDerived
   const hasDerived = totalDerived > 0
 
@@ -3099,11 +3201,36 @@ function CostReportView({
           </div>
         )}
 
+        {taxCreditsEnabled && taxCreditTotals && (
+          <div className="report-section">
+            <TaxCreditSummaryBlock
+              taxCreditTotals={taxCreditTotals}
+              totalDerived={totalDerived}
+              totalActual={totalActual}
+              format={format}
+              productionCurrency={productionCurrency}
+              showVat={vatTrackingEnabled}
+              totalVat={totalVat}
+              variant="detailed"
+            />
+          </div>
+        )}
+
         {/* Final: Total budget incl. derived, Total actual (expenses-only), Variance */}
         <div className="report-section final-totals rounded-lg border border-border p-4 space-y-1">
           <p className="report-section-header text-xs font-medium uppercase tracking-wider text-muted-foreground">Total budget incl. derived</p>
           <p className="text-xl font-semibold">{format(estimatedPlusDerived, productionCurrency).formatted}</p>
           <p className="text-muted-foreground text-sm">Total actual (expenses only): {format(totalActual, productionCurrency).formatted}</p>
+          {taxCreditsEnabled && taxCreditTotals && taxCreditTotals.totalTaxCredits > 0 && (
+            <p className="text-muted-foreground text-sm">
+              Net cost after tax credits: {format(taxCreditTotals.netCostAfterCredits, productionCurrency).formatted}
+            </p>
+          )}
+          {vatTrackingEnabled && totalVat > 0 && (
+            <p className="text-muted-foreground text-sm">
+              Total VAT (informational): {format(totalVat, productionCurrency).formatted}
+            </p>
+          )}
           <p className={`text-sm font-medium ${variance < 0 ? 'text-destructive' : ''}`}>
             Variance vs estimated: {format(variance, productionCurrency).formatted}
           </p>

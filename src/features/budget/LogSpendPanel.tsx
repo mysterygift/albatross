@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -23,6 +23,9 @@ import { createTypedExpense } from '@/lib/db/repositories/createTypedExpense'
 import type { ExpenseTransactionType } from '@/lib/db/types'
 import type { BudgetAccount } from '@/lib/db/types'
 import type { ExpenseViewContext, FormatAmount, LogSpendEditorHandle } from '@/features/budget/typed-expense-views/types'
+import { ExpenseTaxFields, type ExpenseTaxCreditDraft } from '@/features/budget/ExpenseTaxFields'
+import { computeDraftExpenseAmount } from '@/lib/budget/computeDraftExpenseAmount'
+import { getProductionBudgetFeatures } from '@/lib/db/repositories/taxCredits'
 
 const TRANSACTION_TYPE_ORDER: ExpenseTransactionType[] = [
   'labour',
@@ -73,9 +76,22 @@ export function LogSpendPanel({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [formKey, setFormKey] = useState(0)
   const saveAndAddAnotherRef = useRef(false)
+  const [taxCreditAllocations, setTaxCreditAllocations] = useState<ExpenseTaxCreditDraft[]>([])
+  const [vatRatePercent, setVatRatePercent] = useState<number | null>(null)
 
   const editorRef = useRef<LogSpendEditorHandle>(null)
   const queryClient = useQueryClient()
+
+  const { data: budgetFeatures } = useQuery({
+    queryKey: ['production-budget-features', productionId],
+    queryFn: () => getProductionBudgetFeatures(productionId),
+  })
+
+  useEffect(() => {
+    if (budgetFeatures?.vat_tracking_enabled && budgetFeatures.default_vat_rate_percent != null) {
+      setVatRatePercent(budgetFeatures.default_vat_rate_percent)
+    }
+  }, [budgetFeatures?.vat_tracking_enabled, budgetFeatures?.default_vat_rate_percent, open])
 
   const createMutation = useMutation({
     mutationFn: createTypedExpense,
@@ -84,6 +100,7 @@ export function LogSpendPanel({
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', variables.productionId, revisionId] })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(variables.productionId, revisionId) })
       queryClient.invalidateQueries({ queryKey: ['expense-with-details', data.id] })
+      queryClient.invalidateQueries({ queryKey: ['expense-tax-allocations-production', variables.productionId] })
       if (variables.transactionType === 'allow') {
         queryClient.invalidateQueries({ queryKey: ['allow-expense-details', variables.productionId] })
       }
@@ -116,6 +133,9 @@ export function LogSpendPanel({
       setSelectedTransactionType(null)
       setPendingTypeSwitch(null)
       setDraftByType({})
+      setPendingTypeSwitch(null)
+      setTaxCreditAllocations([])
+      setVatRatePercent(null)
       setSaveError(null)
     }
     onOpenChange(next)
@@ -213,8 +233,19 @@ export function LogSpendPanel({
       transactionType: selectedTransactionType,
       draft: details,
       date: new Date().toISOString().slice(0, 10),
+      vatRatePercent: budgetFeatures?.vat_tracking_enabled ? vatRatePercent : null,
+      taxCreditAllocations: budgetFeatures?.tax_credits_enabled ? taxCreditAllocations : [],
     })
   }
+
+  const currentDraft =
+    selectedTransactionType && draftByType[selectedTransactionType] != null
+      ? draftByType[selectedTransactionType]
+      : null
+  const previewAmount =
+    selectedTransactionType && currentDraft != null
+      ? computeDraftExpenseAmount(selectedTransactionType, currentDraft)
+      : null
 
   const detailsJsonForType =
     selectedTransactionType && draftByType[selectedTransactionType] != null
@@ -325,6 +356,19 @@ export function LogSpendPanel({
                   </div>
                 ) : null}
               </div>
+
+              {(budgetFeatures?.tax_credits_enabled || budgetFeatures?.vat_tracking_enabled) && (
+                <div className="mt-4">
+                  <ExpenseTaxFields
+                    productionId={productionId}
+                    expenseAmount={previewAmount}
+                    value={taxCreditAllocations}
+                    onChange={setTaxCreditAllocations}
+                    vatRatePercent={vatRatePercent}
+                    onVatRateChange={setVatRatePercent}
+                  />
+                </div>
+              )}
             </section>
 
             {saveError && (

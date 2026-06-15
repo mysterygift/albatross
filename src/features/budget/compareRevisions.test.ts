@@ -153,6 +153,7 @@ describe('comparison metrics and deltas', () => {
       'Actuals',
       'Variance',
       'Derived costs',
+      'Tax credits',
       'Float exposure',
     ])
     const estimateRow = rows.find((r) => r.key === 'estimate')!
@@ -168,6 +169,7 @@ describe('comparison metrics and deltas', () => {
         actuals: 40,
         variance: 60,
         derivedCosts: 5,
+        taxCredits: 0,
         floatExposure: 10,
       },
       {
@@ -175,6 +177,7 @@ describe('comparison metrics and deltas', () => {
         actuals: 40,
         variance: 60,
         derivedCosts: 5,
+        taxCredits: 0,
         floatExposure: 10,
       }
     )

@@ -62,6 +62,7 @@ function rowToExpense(r: Record<string, unknown>): Expense {
     vendor: r.vendor as string | null,
     notes: r.notes as string | null,
     expense_type: (r.expense_type as Expense['expense_type']) ?? 'other',
+    vat_rate_percent: r.vat_rate_percent == null ? null : coerceNumber(r.vat_rate_percent, 0),
     created_at: coerceIsoString(r.created_at),
     updated_at: coerceIsoString(r.updated_at),
     deleted_at: r.deleted_at == null ? null : coerceIsoString(r.deleted_at),

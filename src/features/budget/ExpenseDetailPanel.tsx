@@ -1,4 +1,5 @@
-import { useState, useMemo, type ReactNode } from 'react'
+import { useState, useMemo, useEffect, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -21,6 +22,13 @@ import {
   ExpenseParseErrorCard,
   UntypedExpenseEditor,
 } from '@/features/budget/expense-shared'
+import { ExpenseTaxFields, type ExpenseTaxCreditDraft } from '@/features/budget/ExpenseTaxFields'
+import { ExpenseTaxReadSection } from '@/features/budget/ExpenseTaxReadSection'
+import {
+  getProductionBudgetFeatures,
+  listAllocationsByExpense,
+  updateExpenseTaxAndAllocations,
+} from '@/lib/db/repositories/taxCredits'
 
 export type ExpenseDetailPanelProps = {
   expenseWithDetails: ExpenseWithDetails | null | undefined
@@ -71,6 +79,44 @@ export function ExpenseDetailPanel({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [taxAllocations, setTaxAllocations] = useState<ExpenseTaxCreditDraft[]>([])
+  const [vatRatePercent, setVatRatePercent] = useState<number | null>(null)
+
+  const { data: budgetFeatures } = useQuery({
+    queryKey: ['production-budget-features', productionId],
+    queryFn: () => getProductionBudgetFeatures(productionId),
+  })
+
+  const expenseId = expenseWithDetails?.expense.id
+  const { data: expenseAllocations = [] } = useQuery({
+    queryKey: ['expense-tax-allocations', expenseId],
+    queryFn: () => listAllocationsByExpense(expenseId!),
+    enabled: !!expenseId,
+  })
+
+  useEffect(() => {
+    if (!expenseWithDetails) return
+    setVatRatePercent(expenseWithDetails.expense.vat_rate_percent)
+    setTaxAllocations(
+      expenseAllocations.map((a) => ({
+        tax_credit_scheme_id: a.tax_credit_scheme_id,
+        qualifying_amount: a.qualifying_amount,
+      }))
+    )
+  }, [expenseWithDetails?.expense.id, expenseWithDetails?.expense.vat_rate_percent, expenseAllocations])
+
+  const saveTaxFields = async (expenseAmount: number) => {
+    if (!expenseWithDetails) return
+    const taxOn = budgetFeatures?.tax_credits_enabled === true
+    const vatOn = budgetFeatures?.vat_tracking_enabled === true
+    if (!taxOn && !vatOn) return
+    await updateExpenseTaxAndAllocations(
+      expenseWithDetails.expense.id,
+      expenseAmount,
+      vatOn ? vatRatePercent : null,
+      taxOn ? taxAllocations : []
+    )
+  }
 
   const config = expenseWithDetails
     ? getTypedExpenseConfig(expenseWithDetails.expense.transaction_type)
@@ -121,6 +167,7 @@ export function ExpenseDetailPanel({
         details,
         type: config.type,
       })
+      await saveTaxFields(expenseWithDetails.expense.amount)
       onSaved()
       setMode('read')
     } catch (err) {
@@ -144,6 +191,7 @@ export function ExpenseDetailPanel({
         expenseId: expenseWithDetails.expense.id,
         ...data,
       })
+      await saveTaxFields(data.amount)
       onSaved()
       setMode('read')
     } catch (err) {
@@ -358,6 +406,24 @@ export function ExpenseDetailPanel({
             </p>
           </div>
         )}
+        {mode === 'read' && (
+          <ExpenseTaxReadSection
+            productionId={productionId}
+            expense={expense}
+            allocations={expenseAllocations}
+          />
+        )}
+        {mode === 'edit' &&
+          (budgetFeatures?.tax_credits_enabled || budgetFeatures?.vat_tracking_enabled) && (
+            <ExpenseTaxFields
+              productionId={productionId}
+              expenseAmount={expense.amount}
+              value={taxAllocations}
+              onChange={setTaxAllocations}
+              vatRatePercent={vatRatePercent}
+              onVatRateChange={setVatRatePercent}
+            />
+          )}
         <ExpenseTypedSection>{typedContent}</ExpenseTypedSection>
         {saveError && (
           <p className="text-sm text-destructive">{saveError}</p>

@@ -82,6 +82,7 @@ import { enableEpisodicProduction } from '@/lib/db/episodicProductionService'
 import { getSetting, setSetting, FIRST_LAUNCH_TUTORIAL_SEEN_KEY, setFirstLaunchTutorialSeen } from '@/lib/db/repositories/settings'
 import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
 import { EpisodesSettingsSection } from '@/features/settings/EpisodesSettingsSection'
+import { TaxCreditsSettingsSection } from '@/features/settings/TaxCreditsSettingsSection'
 import { ShootingBlocsSettingsSection } from '@/features/settings/ShootingBlocsSettingsSection'
 import { ClientsSettingsSection } from '@/features/settings/ClientsSettingsSection'
 import {
@@ -537,6 +538,10 @@ export function SettingsPage() {
             </Dialog>
           </CardContent>
         </Card>
+      )}
+
+      {currentProductionId && (
+        <TaxCreditsSettingsSection productionId={currentProductionId} />
       )}
 
       {currentProductionId && (
