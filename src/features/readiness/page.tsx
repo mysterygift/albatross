@@ -24,7 +24,12 @@ import {
   type UpdateTaskSectionPatch,
 } from '@/lib/db/repositories/taskSections'
 import { applyTaskTemplateToProduction } from '@/lib/db/repositories/taskTemplates'
-import { buildTaskTree, flattenTaskTreeForDisplay, getSubtaskProgress } from '@/lib/tasks/tree'
+import {
+  buildTaskTree,
+  flattenTaskTreeForDisplay,
+  getSubtaskProgress,
+  resolveTaskSectionId,
+} from '@/lib/tasks/tree'
 import {
   TaskTemplatesSheet,
   TaskTemplateEditorSheet,
@@ -167,7 +172,7 @@ export function ReadinessPage() {
     bySection.set(null, [])
     for (const s of sections) bySection.set(s.id, [])
     for (const t of filteredTasks) {
-      const key = t.section_id ?? null
+      const key = resolveTaskSectionId(t, taskById)
       if (!bySection.has(key)) bySection.set(key, [])
       bySection.get(key)!.push(t)
     }
@@ -218,9 +223,17 @@ export function ReadinessPage() {
 
   const createMutation = useMutation({
     mutationFn: (data: CreateTaskData) => createTask(data),
-    onSuccess: () => {
+    onSuccess: (_task, variables) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       setCreateOpen(false)
+      if (variables.parent_task_id) {
+        setCollapsedTaskIds((prev) => {
+          if (!prev.has(variables.parent_task_id!)) return prev
+          const next = new Set(prev)
+          next.delete(variables.parent_task_id!)
+          return next
+        })
+      }
     },
   })
 
@@ -348,6 +361,7 @@ export function ReadinessPage() {
           <NewTaskDialog
             productionId={currentProductionId}
             parentTaskId={addSubtaskParent?.id ?? null}
+            sections={sections}
             open={createOpen || !!addSubtaskParent}
             onOpenChange={(open) => {
               setCreateOpen(open)
@@ -362,19 +376,23 @@ export function ReadinessPage() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
-        <div className="relative flex-1 sm:max-w-[240px]">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
-          <Input
-            placeholder="Search tasks..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-8"
-          />
+      <div className="flex flex-wrap gap-4 items-end">
+        <div className="flex-1 sm:max-w-[240px]">
+          
+          <div className="relative mt-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search tasks..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8 h-8"
+            />
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div>
+          <Label className="text-xs text-muted-foreground">Status</Label>
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as TaskFilters['status'])}>
-            <SelectTrigger className="h-8 w-[120px]">
+            <SelectTrigger className="mt-1 h-8 w-[120px]" aria-label="Filter by status">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -383,11 +401,14 @@ export function ReadinessPage() {
               <SelectItem value="complete">Complete</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">Department</Label>
           <Select
             value={departmentFilter ?? 'all'}
             onValueChange={(v) => setDepartmentFilter(v === 'all' ? null : v)}
           >
-            <SelectTrigger className="h-8 w-[140px]">
+            <SelectTrigger className="mt-1 h-8 w-[140px]" aria-label="Filter by department">
               <SelectValue placeholder="Department" />
             </SelectTrigger>
             <SelectContent>
@@ -399,13 +420,16 @@ export function ReadinessPage() {
               ))}
             </SelectContent>
           </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">Priority</Label>
           <Select
             value={priorityFilter?.toString() ?? 'all'}
             onValueChange={(v) =>
               setPriorityFilter(v === 'all' ? null : (parseInt(v, 10) as 1 | 2 | 3))
             }
           >
-            <SelectTrigger className="h-8 w-[100px]">
+            <SelectTrigger className="mt-1 h-8 w-[100px]" aria-label="Filter by priority">
               <SelectValue placeholder="Priority" />
             </SelectTrigger>
             <SelectContent>
@@ -415,11 +439,14 @@ export function ReadinessPage() {
               <SelectItem value="3">Low</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">Due</Label>
           <Select
             value={dueTimingFilter}
             onValueChange={(v) => setDueTimingFilter(v as TaskFilters['dueTiming'])}
           >
-            <SelectTrigger className="h-8 w-[120px]">
+            <SelectTrigger className="mt-1 h-8 w-[120px]" aria-label="Filter by due date">
               <SelectValue placeholder="Due" />
             </SelectTrigger>
             <SelectContent>
@@ -429,18 +456,18 @@ export function ReadinessPage() {
               <SelectItem value="no_due_date">No due date</SelectItem>
             </SelectContent>
           </Select>
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearFilters}
-              className="h-8 gap-1.5 text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-3.5" />
-              Clear filters
-            </Button>
-          )}
         </div>
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="h-8 gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-3.5" />
+            Clear filters
+          </Button>
+        )}
       </div>
 
       <div className="rounded-lg border overflow-hidden">
@@ -842,10 +869,10 @@ function ManageSectionsSheet({
         </Button>
       </SheetTrigger>
       <SheetContent side="right" variant="floating" className="w-[384px] flex flex-col">
-        <SheetHeader>
+        <SheetHeader className="px-6">
           <SheetTitle>Task Sections</SheetTitle>
         </SheetHeader>
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto py-4">
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
           <div className="flex gap-2">
             <Input
               placeholder="New section name"
@@ -922,6 +949,7 @@ function ManageSectionsSheet({
 function NewTaskDialog({
   productionId,
   parentTaskId,
+  sections,
   open,
   onOpenChange,
   onSubmit,
@@ -929,6 +957,7 @@ function NewTaskDialog({
 }: {
   productionId: string
   parentTaskId: string | null
+  sections: ProductionTaskSection[]
   open: boolean
   onOpenChange: (open: boolean) => void
   onSubmit: (data: CreateTaskData) => void
@@ -939,6 +968,7 @@ function NewTaskDialog({
   const [dueDate, setDueDate] = useState('')
   const [department, setDepartment] = useState<string | null>(null)
   const [priority, setPriority] = useState<1 | 2 | 3 | null>(null)
+  const [sectionId, setSectionId] = useState<string | null>(null)
 
   const handleSubmit = () => {
     onSubmit({
@@ -949,12 +979,14 @@ function NewTaskDialog({
       assigned_department: department || null,
       priority,
       parent_task_id: parentTaskId,
+      ...(parentTaskId ? {} : { section_id: sectionId }),
     })
     setDescription('')
     setNotes('')
     setDueDate('')
     setDepartment(null)
     setPriority(null)
+    setSectionId(null)
   }
 
   return (
@@ -1037,6 +1069,27 @@ function NewTaskDialog({
               </SelectContent>
             </Select>
           </div>
+          {!parentTaskId && sections.length > 0 && (
+            <div className="space-y-2">
+              <Label>Section</Label>
+              <Select
+                value={sectionId ?? 'none'}
+                onValueChange={(v) => setSectionId(v === 'none' ? null : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select section" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {sections.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
