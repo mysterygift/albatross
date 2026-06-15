@@ -295,46 +295,15 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
 
   const taxCreditsToggleMutation = useMutation({
     mutationFn: async (enabled: boolean) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4f656f'},body:JSON.stringify({sessionId:'4f656f',location:'TaxCreditsSettingsSection.tsx:taxCreditsToggleMutation',message:'mutationFn start',data:{productionId,enabled},timestamp:Date.now(),hypothesisId:'H1-H4'})}).catch(()=>{});
-      // #endregion
       if (enabled) await seedAvecTaxCreditSchemes(productionId)
-      const result = await setTaxCreditsEnabled(productionId, enabled)
-      // #region agent log
-      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4f656f'},body:JSON.stringify({sessionId:'4f656f',location:'TaxCreditsSettingsSection.tsx:taxCreditsToggleMutation',message:'mutationFn success',data:{tax_credits_enabled:result.tax_credits_enabled,vat_tracking_enabled:result.vat_tracking_enabled},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
-      return result
+      return setTaxCreditsEnabled(productionId, enabled)
     },
-    onSuccess: (result) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4f656f'},body:JSON.stringify({sessionId:'4f656f',location:'TaxCreditsSettingsSection.tsx:taxCreditsToggleMutation',message:'onSuccess before invalidate',data:{tax_credits_enabled:result.tax_credits_enabled},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
-      invalidate()
-    },
-    onError: (err) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4f656f'},body:JSON.stringify({sessionId:'4f656f',location:'TaxCreditsSettingsSection.tsx:taxCreditsToggleMutation',message:'onError',data:{error:err instanceof Error?err.message:String(err)},timestamp:Date.now(),hypothesisId:'H1-H4'})}).catch(()=>{});
-      // #endregion
-    },
+    onSuccess: invalidate,
   })
 
   const vatToggleMutation = useMutation({
-    mutationFn: async (enabled: boolean) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4f656f'},body:JSON.stringify({sessionId:'4f656f',location:'TaxCreditsSettingsSection.tsx:vatToggleMutation',message:'mutationFn start',data:{productionId,enabled},timestamp:Date.now(),hypothesisId:'H1-H4'})}).catch(()=>{});
-      // #endregion
-      const result = await setVatTrackingEnabledWithSeed(productionId, enabled)
-      // #region agent log
-      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4f656f'},body:JSON.stringify({sessionId:'4f656f',location:'TaxCreditsSettingsSection.tsx:vatToggleMutation',message:'mutationFn success',data:{vat_tracking_enabled:result.vat_tracking_enabled},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
-      return result
-    },
+    mutationFn: (enabled: boolean) => setVatTrackingEnabledWithSeed(productionId, enabled),
     onSuccess: invalidate,
-    onError: (err) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4f656f'},body:JSON.stringify({sessionId:'4f656f',location:'TaxCreditsSettingsSection.tsx:vatToggleMutation',message:'onError',data:{error:err instanceof Error?err.message:String(err)},timestamp:Date.now(),hypothesisId:'H1-H4'})}).catch(()=>{});
-      // #endregion
-    },
   })
 
   const reclaimRateMutation = useMutation({
@@ -394,12 +363,6 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
   const taxCreditsOn = features?.tax_credits_enabled ?? false
   const vatOn = features?.vat_tracking_enabled ?? false
 
-  useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4f656f'},body:JSON.stringify({sessionId:'4f656f',location:'TaxCreditsSettingsSection.tsx:features',message:'features query updated',data:{productionId,taxCreditsOn,vatOn,hasFeaturesRow:features!=null},timestamp:Date.now(),hypothesisId:'H3-H5'})}).catch(()=>{});
-    // #endregion
-  }, [productionId, taxCreditsOn, vatOn, features])
-
   return (
     <>
       <Card>
@@ -416,12 +379,9 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
             <Checkbox
               id="tax-credits-enabled"
               checked={taxCreditsOn}
-              onCheckedChange={(c) => {
-                // #region agent log
-                fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4f656f'},body:JSON.stringify({sessionId:'4f656f',location:'TaxCreditsSettingsSection.tsx:taxCreditsCheckbox',message:'onCheckedChange',data:{checked:c,willEnable:c===true,isPending:taxCreditsToggleMutation.isPending},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-                // #endregion
+              onCheckedChange={(c) =>
                 taxCreditsToggleMutation.mutate(c === true)
-              }}
+              }
               disabled={taxCreditsToggleMutation.isPending}
             />
             <Label htmlFor="tax-credits-enabled">Enable tax credits for this production</Label>
@@ -519,12 +479,7 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
             <Checkbox
               id="vat-tracking-enabled"
               checked={vatOn}
-              onCheckedChange={(c) => {
-                // #region agent log
-                fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4f656f'},body:JSON.stringify({sessionId:'4f656f',location:'TaxCreditsSettingsSection.tsx:vatCheckbox',message:'onCheckedChange',data:{checked:c,willEnable:c===true,isPending:vatToggleMutation.isPending},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-                // #endregion
-                vatToggleMutation.mutate(c === true)
-              }}
+              onCheckedChange={(c) => vatToggleMutation.mutate(c === true)}
               disabled={vatToggleMutation.isPending}
             />
             <Label htmlFor="vat-tracking-enabled">Track VAT on spend</Label>

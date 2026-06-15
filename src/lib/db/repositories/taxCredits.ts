@@ -93,9 +93,6 @@ export async function setTaxCreditsEnabled(
   productionId: string,
   enabled: boolean
 ): Promise<ProductionBudgetFeatures> {
-  // #region agent log
-  fetch('http://127.0.0.1:7530/ingest/a9c70180-8925-49f9-9e35-9c55fc3480ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4f656f'},body:JSON.stringify({sessionId:'4f656f',location:'taxCredits.ts:setTaxCreditsEnabled',message:'entry',data:{productionId,enabled},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-  // #endregion
   const db = await getDb()
   const ts = now()
   const existing = await db.select<Record<string, unknown>[]>(
