@@ -5,18 +5,12 @@
  * in SQL to avoid N+1. Primary location derived from scheduled SHOT strips.
  */
 import { getDb } from '../client'
+import { unitNameToKey } from '@/lib/schedule/unitKey'
 import type {
   CalendarShootDayEvent,
   CalendarDateRange,
   CalendarEventFilters,
-  CalendarUnitKey,
 } from '../types'
-
-function unitNameToKey(name: string): CalendarUnitKey {
-  const lower = name.toLowerCase()
-  if (lower.includes('second') || lower.includes('2nd')) return 'second'
-  return 'main'
-}
 
 /**
  * Extract lunch time from meal_times_json array.

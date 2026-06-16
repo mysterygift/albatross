@@ -1,3 +1,4 @@
+import { unitNameToKey } from '@/lib/schedule/unitKey'
 import { getDb, now, uuid } from '../client'
 import { outboxPush } from '../outbox'
 import type { Unit } from '../types'
@@ -50,6 +51,13 @@ export async function ensureMainUnit(productionId: string): Promise<Unit> {
   const main = units.find((u) => u.name === 'Main Unit')
   if (main) return main
   return createUnit({ production_id: productionId, name: 'Main Unit' })
+}
+
+export async function ensureSecondUnit(productionId: string): Promise<Unit> {
+  const units = await listUnitsByProduction(productionId)
+  const second = units.find((u) => unitNameToKey(u.name) === 'second')
+  if (second) return second
+  return createUnit({ production_id: productionId, name: 'Second Unit' })
 }
 
 export async function updateUnit(id: string, data: { name: string }): Promise<Unit> {

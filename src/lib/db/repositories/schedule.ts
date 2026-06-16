@@ -28,8 +28,8 @@ import {
 } from './episodes'
 import { getProductionById } from './production'
 import { getPersonById } from './person'
-import { getShootDayUnitById, listShootDayUnitsByShootDay } from './shoot-day-units'
-import { ensureMainUnit } from './units'
+import { getShootDayUnitById, getOrCreateShootDayUnit, listShootDayUnitsByShootDay } from './shoot-day-units'
+import { ensureMainUnit, ensureSecondUnit } from './units'
 import {
   cleanupStoryboardImagesForDeletedScene,
   cleanupStoryboardImagesForDeletedShot,
@@ -609,6 +609,46 @@ export async function createShootDayWithDefaultMainUnit(args: CreateShootDayWith
   if (!shootDay) throw new Error('Shoot day not found after create')
 
   return { shootDay, mainUnitId: mainUnit.id, shootDayUnitId }
+}
+
+type AddSecondUnitToShootDaysArgs = {
+  productionId: string
+  shootDayIds: string[]
+}
+
+/**
+ * Ensure the production has a Second Unit and link it to the given shoot days.
+ * Idempotent per day; seeds CALL + WRAP strips for newly linked unit columns.
+ */
+export async function addSecondUnitToShootDays(
+  args: AddSecondUnitToShootDaysArgs
+): Promise<{ secondUnitId: string; linkedShootDayUnitIds: string[] }> {
+  const { productionId, shootDayIds } = args
+  if (!productionId) throw new Error('productionId is required')
+  if (shootDayIds.length === 0) throw new Error('shootDayIds is required')
+
+  const uniqueShootDayIds = [...new Set(shootDayIds)]
+  for (const shootDayId of uniqueShootDayIds) {
+    const shootDay = await getShootDayById(shootDayId)
+    if (!shootDay || shootDay.production_id !== productionId) {
+      throw new Error('INVALID_SHOOT_DAY')
+    }
+  }
+
+  const secondUnit = await ensureSecondUnit(productionId)
+  const linkedShootDayUnitIds: string[] = []
+
+  for (const shootDayId of uniqueShootDayIds) {
+    const existingDayUnits = await listShootDayUnitsByShootDay(shootDayId)
+    const alreadyLinked = existingDayUnits.some((du) => du.unit_id === secondUnit.id)
+    if (alreadyLinked) continue
+    const shootDayUnit = await getOrCreateShootDayUnit(shootDayId, secondUnit.id)
+    linkedShootDayUnitIds.push(shootDayUnit.id)
+  }
+
+  await ensureCallWrapStripsForProduction(productionId)
+
+  return { secondUnitId: secondUnit.id, linkedShootDayUnitIds }
 }
 
 /**

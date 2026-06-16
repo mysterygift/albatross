@@ -30,6 +30,7 @@ import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
 import {
   createShootDayWithDefaultMainUnitForActor,
+  addSecondUnitToShootDaysForActor,
   getOrCreateShootDayUnitForActor,
   listEpisodesByProductionForActor,
   listLocationsByProductionForActor,
@@ -44,7 +45,8 @@ import { BoneyardPanel } from './boneyard-panel'
 import { StripboardDayColumn, type ColumnFilter } from './stripboard-day-column'
 import { StripItem } from './strip-item'
 import { Button } from '@/components/ui/button'
-import { Plus } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Plus, Layers2 } from 'lucide-react'
 import {
   Popover,
   PopoverContent,
@@ -60,7 +62,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { StripboardStrip, StripType } from '@/lib/db/types'
-import { createShootDayWithDefaultMainUnit } from '@/lib/db/repositories/schedule'
+import { createShootDayWithDefaultMainUnit, addSecondUnitToShootDays } from '@/lib/db/repositories/schedule'
 import { listShootingBlocsByProduction } from '@/lib/db/repositories/shootingBlocs'
 import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
 import {
@@ -72,6 +74,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import type { ShotWithScene } from '@/lib/db/repositories/stripboard-strips'
 import { SmartSchedulingInsightsPanel } from './smart-scheduling-insights-panel'
 import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
+import { unitNameToKey } from '@/lib/schedule/unitKey'
 
 const STRIP_TYPES: { type: StripType; label: string }[] = [
   { type: 'MOVE', label: 'Move / Setup' },
@@ -319,6 +322,10 @@ export function StripboardPage() {
   const [newDayError, setNewDayError] = useState<string | null>(null)
   const [newlyCreatedShootDayId, setNewlyCreatedShootDayId] = useState<string | null>(null)
   const [newDaySuccessToast, setNewDaySuccessToast] = useState(false)
+  const [addSecondUnitOpen, setAddSecondUnitOpen] = useState(false)
+  const [selectedSecondUnitDayIds, setSelectedSecondUnitDayIds] = useState<Set<string>>(new Set())
+  const [addSecondUnitError, setAddSecondUnitError] = useState<string | null>(null)
+  const [addSecondUnitSuccessToast, setAddSecondUnitSuccessToast] = useState<string | null>(null)
   const [deleteShootDayTarget, setDeleteShootDayTarget] = useState<{
     id: string
     shoot_date: string
@@ -326,6 +333,15 @@ export function StripboardPage() {
   } | null>(null)
   const [deleteShootDayDialogOpen, setDeleteShootDayDialogOpen] = useState(false)
   const [deleteShootDayError, setDeleteShootDayError] = useState<string | null>(null)
+  const [removeSecondUnitTarget, setRemoveSecondUnitTarget] = useState<{
+    shootDayUnitId: string
+    shootDate: string
+    dayNumber: number | null
+    unitName: string
+  } | null>(null)
+  const [removeSecondUnitDialogOpen, setRemoveSecondUnitDialogOpen] = useState(false)
+  const [removeSecondUnitError, setRemoveSecondUnitError] = useState<string | null>(null)
+  const [removeSecondUnitSuccessToast, setRemoveSecondUnitSuccessToast] = useState(false)
   const newDayColumnRef = useRef<HTMLDivElement | null>(null)
   const columnsScrollRef = useRef<HTMLDivElement | null>(null)
   const [showColumnsLeftFeather, setShowColumnsLeftFeather] = useState(false)
@@ -406,6 +422,7 @@ export function StripboardPage() {
     moveToBoneyardMutation,
     deleteStripMutation,
     deleteShootDayMutation,
+    removeSecondUnitMutation,
     moveStripMutation,
     reorderStripMutation,
     createStripMutation,
@@ -423,6 +440,20 @@ export function StripboardPage() {
   )
 
   const mainUnit = units.find((u) => u.name === 'Main Unit') ?? units[0]
+
+  const secondUnit = useMemo(
+    () => units.find((u) => unitNameToKey(u.name) === 'second'),
+    [units]
+  )
+
+  const shootDaysEligibleForSecond = useMemo(() => {
+    const shootDayIdsWithSecond = new Set(
+      dayUnits
+        .filter((du) => du.unit_id === secondUnit?.id)
+        .map((du) => du.shoot_day_id)
+    )
+    return shootDays.filter((d) => !shootDayIdsWithSecond.has(d.id))
+  }, [shootDays, dayUnits, secondUnit?.id])
 
   const createShootDayMutation = useMutation({
     mutationFn: async () => {
@@ -463,6 +494,59 @@ export function StripboardPage() {
         setNewDayError('A shoot day already exists on this date.')
       } else {
         setNewDayError('Could not create shoot day. Please try again.')
+      }
+    },
+  })
+
+  const addSecondUnitMutation = useMutation({
+    mutationFn: async (shootDayIds: string[]) => {
+      if (!currentProductionId) {
+        throw new Error('No production selected')
+      }
+      if (shootDayIds.length === 0) {
+        throw new Error('Select at least one shoot day')
+      }
+      setAddSecondUnitError(null)
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return addSecondUnitToShootDaysForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          shootDayIds,
+        })
+      }
+      return addSecondUnitToShootDays({
+        productionId: currentProductionId,
+        shootDayIds,
+      })
+    },
+    onSuccess: (result, shootDayIds) => {
+      setAddSecondUnitOpen(false)
+      setSelectedSecondUnitDayIds(new Set())
+      setAddSecondUnitError(null)
+      const linkedCount = result.linkedShootDayUnitIds.length
+      setAddSecondUnitSuccessToast(
+        linkedCount === 1
+          ? 'Second Unit added to 1 shoot day.'
+          : `Second Unit added to ${linkedCount} shoot day(s).`
+      )
+      if (shootDayIds.length > 0) {
+        setNewlyCreatedShootDayId(shootDayIds[0]!)
+      }
+      void invalidateStripboardCaches(queryClient, currentProductionId)
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : 'Could not add Second Unit. Please try again.'
+      if (message === 'No production selected') {
+        setAddSecondUnitError('Select a production before adding Second Unit.')
+      } else if (message === 'Select at least one shoot day') {
+        setAddSecondUnitError('Select at least one shoot day.')
+      } else if (message === 'INVALID_SHOOT_DAY') {
+        setAddSecondUnitError('One or more selected shoot days are invalid.')
+      } else {
+        setAddSecondUnitError('Could not add Second Unit. Please try again.')
       }
     },
   })
@@ -602,6 +686,18 @@ export function StripboardPage() {
     const t = setTimeout(() => setNewDaySuccessToast(false), 3000)
     return () => clearTimeout(t)
   }, [newDaySuccessToast])
+
+  useEffect(() => {
+    if (!addSecondUnitSuccessToast) return
+    const t = setTimeout(() => setAddSecondUnitSuccessToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [addSecondUnitSuccessToast])
+
+  useEffect(() => {
+    if (!removeSecondUnitSuccessToast) return
+    const t = setTimeout(() => setRemoveSecondUnitSuccessToast(false), 3000)
+    return () => clearTimeout(t)
+  }, [removeSecondUnitSuccessToast])
 
   useEffect(() => {
     const onMenuNewShootDay = () => {
@@ -748,6 +844,16 @@ export function StripboardPage() {
           Shoot day created.
         </div>
       )}
+      {addSecondUnitSuccessToast && (
+        <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">
+          {addSecondUnitSuccessToast}
+        </div>
+      )}
+      {removeSecondUnitSuccessToast && (
+        <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">
+          Second Unit removed. Shots moved to Unscheduled.
+        </div>
+      )}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold">Schedule — Stripboard</h1>
         <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -770,6 +876,24 @@ export function StripboardPage() {
               </SelectContent>
             </Select>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => {
+              setAddSecondUnitError(null)
+              setSelectedSecondUnitDayIds(new Set())
+              setAddSecondUnitOpen(true)
+            }}
+            disabled={
+              !currentProductionId ||
+              shootDays.length === 0 ||
+              shootDaysEligibleForSecond.length === 0
+            }
+          >
+            <Layers2 className="size-4" />
+            Add Second Unit
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -849,6 +973,181 @@ export function StripboardPage() {
               disabled={createShootDayMutation.isPending}
             >
               {createShootDayMutation.isPending ? 'Creating…' : 'Create shoot day'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={addSecondUnitOpen}
+        onOpenChange={(open) => {
+          setAddSecondUnitOpen(open)
+          if (!open) {
+            setSelectedSecondUnitDayIds(new Set())
+            setAddSecondUnitError(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-md bg-zinc-900 border-zinc-700">
+          <h3 className="text-base font-semibold text-zinc-100">Add Second Unit</h3>
+          <p className="text-sm text-zinc-400">
+            Add a Second Unit column to selected shoot days. Main Unit columns are unchanged.
+          </p>
+          {addSecondUnitError && (
+            <p className="mt-2 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">
+              {addSecondUnitError}
+            </p>
+          )}
+          <div className="mt-3 space-y-3">
+            {shootDaysEligibleForSecond.length > 1 && (
+              <div className="flex items-center gap-3 text-sm">
+                <button
+                  type="button"
+                  className="text-primary hover:underline"
+                  onClick={() =>
+                    setSelectedSecondUnitDayIds(
+                      new Set(shootDaysEligibleForSecond.map((d) => d.id))
+                    )
+                  }
+                  disabled={addSecondUnitMutation.isPending}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="text-zinc-400 hover:underline"
+                  onClick={() => setSelectedSecondUnitDayIds(new Set())}
+                  disabled={addSecondUnitMutation.isPending}
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+            <div className="max-h-64 space-y-2 overflow-y-auto">
+              {shootDaysEligibleForSecond.map((day) => {
+                const checked = selectedSecondUnitDayIds.has(day.id)
+                const label =
+                  day.day_number != null
+                    ? `${day.shoot_date} (Day ${day.day_number})`
+                    : day.shoot_date
+                return (
+                  <label
+                    key={day.id}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1.5 hover:bg-zinc-800/60"
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(value) => {
+                        setSelectedSecondUnitDayIds((prev) => {
+                          const next = new Set(prev)
+                          if (value === true) next.add(day.id)
+                          else next.delete(day.id)
+                          return next
+                        })
+                      }}
+                      disabled={addSecondUnitMutation.isPending}
+                    />
+                    <span className="text-sm text-zinc-200">{label}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setAddSecondUnitOpen(false)}
+              disabled={addSecondUnitMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={() =>
+                addSecondUnitMutation.mutate([...selectedSecondUnitDayIds])
+              }
+              disabled={
+                addSecondUnitMutation.isPending || selectedSecondUnitDayIds.size === 0
+              }
+            >
+              {addSecondUnitMutation.isPending ? 'Adding…' : 'Add Second Unit'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={removeSecondUnitDialogOpen}
+        onOpenChange={(open) => {
+          setRemoveSecondUnitDialogOpen(open)
+          if (!open) {
+            setRemoveSecondUnitTarget(null)
+            setRemoveSecondUnitError(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-md bg-zinc-900 border-zinc-700">
+          <h3 className="text-base font-semibold text-zinc-100">Remove Second Unit</h3>
+          {removeSecondUnitTarget && (
+            <>
+              <p className="text-sm text-zinc-300 mt-1">
+                Remove Second Unit from shoot day{' '}
+                <span className="font-medium text-zinc-100">{removeSecondUnitTarget.shootDate}</span>
+                {removeSecondUnitTarget.dayNumber != null
+                  ? ` (Day ${removeSecondUnitTarget.dayNumber})`
+                  : ''}
+                ?
+              </p>
+              <p className="text-sm text-zinc-400 mt-2">
+                All shots scheduled on {removeSecondUnitTarget.unitName} for this day will move to
+                Unscheduled. Main Unit is unchanged.
+              </p>
+            </>
+          )}
+          {removeSecondUnitError && (
+            <p className="mt-2 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive" role="alert">
+              {removeSecondUnitError}
+            </p>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setRemoveSecondUnitDialogOpen(false)}
+              disabled={removeSecondUnitMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={removeSecondUnitMutation.isPending || !removeSecondUnitTarget}
+              onClick={() => {
+                if (!removeSecondUnitTarget) return
+                setRemoveSecondUnitError(null)
+                removeSecondUnitMutation.mutate(removeSecondUnitTarget.shootDayUnitId, {
+                  onSuccess: () => {
+                    setRemoveSecondUnitDialogOpen(false)
+                    setRemoveSecondUnitTarget(null)
+                    setRemoveSecondUnitSuccessToast(true)
+                  },
+                  onError: (error) => {
+                    const message =
+                      error instanceof Error ? error.message : 'Could not remove Second Unit.'
+                    if (message === 'CANNOT_REMOVE_MAIN_UNIT') {
+                      setRemoveSecondUnitError('Main Unit cannot be removed from a shoot day.')
+                    } else if (message === 'SHOOT_DAY_UNIT_NOT_FOUND') {
+                      setRemoveSecondUnitError('Second Unit is no longer on this shoot day.')
+                    } else {
+                      setRemoveSecondUnitError('Could not remove Second Unit. Please try again.')
+                    }
+                  },
+                })
+              }}
+            >
+              {removeSecondUnitMutation.isPending ? 'Removing…' : 'Remove Second Unit'}
             </Button>
           </div>
         </DialogContent>
@@ -1004,6 +1303,16 @@ export function StripboardPage() {
                         })
                         setDeleteShootDayError(null)
                         setDeleteShootDayDialogOpen(true)
+                      }}
+                      onRemoveSecondUnit={({ shootDay, shootDayUnit, unit }) => {
+                        setRemoveSecondUnitTarget({
+                          shootDayUnitId: shootDayUnit.id,
+                          shootDate: shootDay.shoot_date,
+                          dayNumber: shootDay.day_number,
+                          unitName: unit.name,
+                        })
+                        setRemoveSecondUnitError(null)
+                        setRemoveSecondUnitDialogOpen(true)
                       }}
                       estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
                       onUpdateStripEstimatedMinutes={(stripId, minutes) =>
