@@ -6,6 +6,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { VendorPicker } from '@/components/vendors/VendorPicker'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { hasMaxTwoDecimalPlaces, POSITIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import {
   DEPOSIT_REFUNDABLE_STATUSES,
   parseDepositDetails,
@@ -18,7 +21,11 @@ const depositEditSchema = z.object({
   deposit_description: z.string().min(1, 'Deposit description is required'),
   amount: z.union([
     z.literal(''),
-    z.coerce.number().finite().positive('Deposit amount must be greater than 0'),
+    z
+      .number()
+      .finite(POSITIVE_MONEY_MESSAGE)
+      .positive('Deposit amount must be greater than 0')
+      .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
   ]),
   refundable_status: z.enum(DEPOSIT_REFUNDABLE_STATUSES, {
     message: 'Select refundable or non-refundable',
@@ -36,7 +43,14 @@ const depositEditSchema = z.object({
   }
 })
 
-type DepositFormValues = z.infer<typeof depositEditSchema>
+type DepositFormValues = {
+  deposit_description: string
+  amount: number | ''
+  refundable_status: (typeof DEPOSIT_REFUNDABLE_STATUSES)[number]
+  vendor_id?: string
+  location_id?: string
+  notes?: string
+}
 
 function toDepositDetails(data: DepositFormValues): DepositDetails {
   const amount = data.amount === '' ? 0 : Number(data.amount)
@@ -118,6 +132,8 @@ export function DepositTransactionEditor({
     onVendorIdChange?.(watchedVendorId?.trim() ? watchedVendorId.trim() : null)
   }, [watchedVendorId, onVendorIdChange])
 
+  const errors = form.formState.errors
+
   return (
     <form
       onSubmit={form.handleSubmit((data) => onSave(toDepositDetails(data)))}
@@ -126,26 +142,32 @@ export function DepositTransactionEditor({
       <div>
         <Label>Deposit description</Label>
         <Input {...form.register('deposit_description')} placeholder="Describe the deposit" />
-        {form.formState.errors.deposit_description && (
-          <p className="text-destructive text-sm">{form.formState.errors.deposit_description.message}</p>
+        {errors.deposit_description && (
+          <p className="text-destructive text-sm">{errors.deposit_description.message}</p>
         )}
       </div>
-      <div>
-        <Label>Deposit amount</Label>
-        <Input
-          type="number"
-          step={0.01}
-          min={0}
-          {...form.register('amount')}
-          placeholder="0.00"
+      <ValidatedField
+        label="Deposit amount"
+        required
+        error={errors.amount?.message}
+        description="Required. Held deposit value recorded on this spend."
+        htmlFor="deposit-amount"
+      >
+        <Controller
+          name="amount"
+          control={form.control}
+          render={({ field }) => (
+            <MoneyAmountInput
+              id="deposit-amount"
+              mode="positive"
+              placeholder="0.00"
+              value={field.value === '' ? null : field.value}
+              onValueChange={(v) => field.onChange(v ?? '')}
+              onBlur={field.onBlur}
+            />
+          )}
         />
-        {form.formState.errors.amount && (
-          <p className="text-destructive text-sm">{form.formState.errors.amount.message}</p>
-        )}
-        <p className="text-muted-foreground text-xs mt-1">
-          Required. Held deposit value recorded on this spend.
-        </p>
-      </div>
+      </ValidatedField>
       <div>
         <Label>Refundable status</Label>
         <Controller
@@ -163,8 +185,8 @@ export function DepositTransactionEditor({
             </Select>
           )}
         />
-        {form.formState.errors.refundable_status && (
-          <p className="text-destructive text-sm">{form.formState.errors.refundable_status.message}</p>
+        {errors.refundable_status && (
+          <p className="text-destructive text-sm">{errors.refundable_status.message}</p>
         )}
       </div>
       <div className="grid grid-cols-2 gap-4">

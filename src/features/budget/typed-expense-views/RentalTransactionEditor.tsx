@@ -5,6 +5,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { VendorPicker } from '@/components/vendors/VendorPicker'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { PositiveIntegerInput } from '@/components/budget/PositiveIntegerInput'
 import {
   parseRentalDetails,
   rentalDetailsSchema,
@@ -84,14 +87,15 @@ export function RentalTransactionEditor({
   const computedDays = computeRentalDays(watchAll.rental_start_date ?? null, watchAll.rental_end_date ?? null)
   const effectiveDays = getEffectiveRentalDays(watchAll)
   const calculatedTotal = calculateRentalExpenseAmount(watchAll)
+  const errors = form.formState.errors
 
   return (
     <form onSubmit={form.handleSubmit((data) => onSave(data))} className="mt-2 space-y-4">
       <div>
         <Label>Rental description</Label>
         <Input {...form.register('rental_description')} />
-        {form.formState.errors.rental_description && (
-          <p className="text-destructive text-sm">{form.formState.errors.rental_description.message}</p>
+        {errors.rental_description && (
+          <p className="text-destructive text-sm">{errors.rental_description.message}</p>
         )}
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -114,82 +118,78 @@ export function RentalTransactionEditor({
             )}
           />
         </div>
-        <div>
-          <Label>Rate amount</Label>
+        <ValidatedField label="Rate amount" error={errors.rental_rate_amount?.message} htmlFor="rental-rate-amount">
           <Controller
             name="rental_rate_amount"
             control={form.control}
             render={({ field }) => (
-              <Input
-                type="number"
-                step={0.01}
-                value={field.value ?? ''}
-                onChange={(e) => {
-                  const v = e.target.value
-                  field.onChange(v === '' ? null : Number(v))
-                }}
+              <MoneyAmountInput
+                id="rental-rate-amount"
+                mode="positive"
+                placeholder="0.00"
+                value={field.value}
+                onValueChange={field.onChange}
+                onBlur={field.onBlur}
               />
             )}
           />
-        </div>
+        </ValidatedField>
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label>Start date</Label>
+        <ValidatedField
+          label="Start date"
+          error={errors.rental_start_date?.message}
+          htmlFor="rental-start-date"
+        >
           <Controller
             name="rental_start_date"
             control={form.control}
             render={({ field }) => (
               <Input
+                id="rental-start-date"
                 type="date"
                 value={field.value ?? ''}
                 onChange={(e) => field.onChange(e.target.value || null)}
+                onBlur={field.onBlur}
               />
             )}
           />
-        </div>
-        <div>
-          <Label>End date</Label>
+        </ValidatedField>
+        <ValidatedField label="End date" error={errors.rental_end_date?.message} htmlFor="rental-end-date">
           <Controller
             name="rental_end_date"
             control={form.control}
             render={({ field }) => (
               <Input
+                id="rental-end-date"
                 type="date"
                 value={field.value ?? ''}
                 onChange={(e) => field.onChange(e.target.value || null)}
+                onBlur={field.onBlur}
               />
             )}
           />
-          {form.formState.errors.rental_end_date && (
-            <p className="text-destructive text-sm">{form.formState.errors.rental_end_date.message}</p>
-          )}
-        </div>
+        </ValidatedField>
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label>Override days (optional)</Label>
+        <ValidatedField
+          label="Override days (optional)"
+          error={errors.rental_period_override_days?.message}
+          htmlFor="rental-override-days"
+        >
           <Controller
             name="rental_period_override_days"
             control={form.control}
             render={({ field }) => (
-              <Input
-                type="number"
-                step={1}
-                value={field.value ?? ''}
-                onChange={(e) => {
-                  const v = e.target.value
-                  field.onChange(v === '' ? null : Number(v))
-                }}
+              <PositiveIntegerInput
+                id="rental-override-days"
+                value={field.value}
+                onValueChange={field.onChange}
+                onBlur={field.onBlur}
               />
             )}
           />
-          {form.formState.errors.rental_period_override_days && (
-            <p className="text-destructive text-sm">
-              {form.formState.errors.rental_period_override_days.message}
-            </p>
-          )}
-        </div>
+        </ValidatedField>
         <div className="flex items-end">
           <div className="text-xs text-muted-foreground space-y-1">
             <p>Computed days: {computedDays ?? '—'}</p>

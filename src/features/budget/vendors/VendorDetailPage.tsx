@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { useForm, type Resolver } from 'react-hook-form'
+import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -104,6 +104,9 @@ import { ArrowLeft, Pencil, Eye, FilePlus, ArchiveIcon, FileText, Link2, X, Rece
 import { GlobalVendorBadge } from '@/features/budget/vendors/GlobalVendorBadge'
 import { getFileUrl, openInSystem } from '@/lib/files'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { hasMaxTwoDecimalPlaces, POSITIVE_MONEY_MESSAGE, NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
 
 const editVendorSchema = z.object({
   company_name: z.string().min(1, 'Company name is required'),
@@ -116,21 +119,25 @@ const invoiceFormSchema = z.object({
   issue_date: z.string().optional(),
   due_date: z.string().optional(),
   amount: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v): number | null => {
-      if (v === '' || v === undefined) return null
-      const n = typeof v === 'string' ? Number(v) : v
-      return typeof n === 'number' && Number.isNaN(n) ? null : n
-    }),
+    .union([
+      z.null(),
+      z
+        .number()
+        .finite(POSITIVE_MONEY_MESSAGE)
+        .positive(POSITIVE_MONEY_MESSAGE)
+        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+    ])
+    .optional(),
   tax: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v): number | null => {
-      if (v === '' || v === undefined) return null
-      const n = typeof v === 'string' ? Number(v) : v
-      return typeof n === 'number' && Number.isNaN(n) ? null : n
-    }),
+    .union([
+      z.null(),
+      z
+        .number()
+        .finite(NON_NEGATIVE_MONEY_MESSAGE)
+        .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
+        .refine(hasMaxTwoDecimalPlaces, { message: 'Tax must have at most 2 decimal places' }),
+    ])
+    .optional(),
   currency_code: z.string().optional(),
   status: z.enum(['draft', 'received', 'approved', 'paid', 'overdue']),
   notes: z.string().optional(),
@@ -159,13 +166,15 @@ const poFormSchema = z.object({
   issue_date: z.string().optional(),
   due_date: z.string().optional(),
   amount: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v): number | null => {
-      if (v === '' || v === undefined) return null
-      const n = typeof v === 'string' ? Number(v) : v
-      return typeof n === 'number' && Number.isNaN(n) ? null : n
-    }),
+    .union([
+      z.null(),
+      z
+        .number()
+        .finite(POSITIVE_MONEY_MESSAGE)
+        .positive(POSITIVE_MONEY_MESSAGE)
+        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+    ])
+    .optional(),
   status: z.enum(['draft', 'issued', 'approved', 'closed', 'cancelled']),
   approval: z.boolean(),
   notes: z.string().optional(),
@@ -2172,28 +2181,40 @@ function CreateInvoiceDialog({
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="inv-amount">Amount</Label>
-              <Input
-                id="inv-amount"
-                type="number"
-                step="any"
-                placeholder="0"
-                {...form.register('amount', { valueAsNumber: true })}
-                className="mt-1"
+            <ValidatedField label="Amount" error={form.formState.errors.amount?.message} htmlFor="inv-amount">
+              <Controller
+                name="amount"
+                control={form.control}
+                render={({ field }) => (
+                  <MoneyAmountInput
+                    id="inv-amount"
+                    mode="positive"
+                    placeholder="0"
+                    className="mt-1"
+                    value={field.value ?? null}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
-            </div>
-            <div>
-              <Label htmlFor="inv-tax">Tax (manual)</Label>
-              <Input
-                id="inv-tax"
-                type="number"
-                step="any"
-                placeholder="0"
-                {...form.register('tax', { valueAsNumber: true })}
-                className="mt-1"
+            </ValidatedField>
+            <ValidatedField label="Tax (manual)" error={form.formState.errors.tax?.message} htmlFor="inv-tax">
+              <Controller
+                name="tax"
+                control={form.control}
+                render={({ field }) => (
+                  <MoneyAmountInput
+                    id="inv-tax"
+                    mode="nonNegative"
+                    placeholder="0"
+                    className="mt-1"
+                    value={field.value ?? null}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
-            </div>
+            </ValidatedField>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -2360,26 +2381,38 @@ function EditInvoiceDialog({
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="edit-inv-amount">Amount</Label>
-              <Input
-                id="edit-inv-amount"
-                type="number"
-                step="any"
-                {...form.register('amount', { valueAsNumber: true })}
-                className="mt-1"
+            <ValidatedField label="Amount" error={form.formState.errors.amount?.message} htmlFor="edit-inv-amount">
+              <Controller
+                name="amount"
+                control={form.control}
+                render={({ field }) => (
+                  <MoneyAmountInput
+                    id="edit-inv-amount"
+                    mode="positive"
+                    className="mt-1"
+                    value={field.value ?? null}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
-            </div>
-            <div>
-              <Label htmlFor="edit-inv-tax">Tax (manual)</Label>
-              <Input
-                id="edit-inv-tax"
-                type="number"
-                step="any"
-                {...form.register('tax', { valueAsNumber: true })}
-                className="mt-1"
+            </ValidatedField>
+            <ValidatedField label="Tax (manual)" error={form.formState.errors.tax?.message} htmlFor="edit-inv-tax">
+              <Controller
+                name="tax"
+                control={form.control}
+                render={({ field }) => (
+                  <MoneyAmountInput
+                    id="edit-inv-tax"
+                    mode="nonNegative"
+                    className="mt-1"
+                    value={field.value ?? null}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
-            </div>
+            </ValidatedField>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -2544,17 +2577,23 @@ function CreatePODialog({
               <Input id="po-due" type="date" {...form.register('due_date')} className="mt-1" />
             </div>
           </div>
-          <div>
-            <Label htmlFor="po-amount">Amount</Label>
-            <Input
-              id="po-amount"
-              type="number"
-              step="any"
-              placeholder="0"
-              {...form.register('amount', { valueAsNumber: true })}
-              className="mt-1"
+          <ValidatedField label="Amount" error={form.formState.errors.amount?.message} htmlFor="po-amount">
+            <Controller
+              name="amount"
+              control={form.control}
+              render={({ field }) => (
+                <MoneyAmountInput
+                  id="po-amount"
+                  mode="positive"
+                  placeholder="0"
+                  className="mt-1"
+                  value={field.value ?? null}
+                  onValueChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
             />
-          </div>
+          </ValidatedField>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="po-status">Status</Label>
@@ -2702,16 +2741,22 @@ function EditPODialog({
               <Input id="edit-po-due" type="date" {...form.register('due_date')} className="mt-1" />
             </div>
           </div>
-          <div>
-            <Label htmlFor="edit-po-amount">Amount</Label>
-            <Input
-              id="edit-po-amount"
-              type="number"
-              step="any"
-              {...form.register('amount', { valueAsNumber: true })}
-              className="mt-1"
+          <ValidatedField label="Amount" error={form.formState.errors.amount?.message} htmlFor="edit-po-amount">
+            <Controller
+              name="amount"
+              control={form.control}
+              render={({ field }) => (
+                <MoneyAmountInput
+                  id="edit-po-amount"
+                  mode="positive"
+                  className="mt-1"
+                  value={field.value ?? null}
+                  onValueChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
             />
-          </div>
+          </ValidatedField>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="edit-po-status">Status</Label>

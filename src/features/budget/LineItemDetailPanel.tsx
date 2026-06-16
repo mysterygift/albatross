@@ -2,9 +2,12 @@ import { useState, useRef } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { hasMaxTwoDecimalPlaces } from '@/lib/budget/fieldValidation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
 import { SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   Dialog,
@@ -55,7 +58,8 @@ const lineItemEditSchema = z.object({
   estimated_cost: z.coerce
     .number()
     .finite('Estimated cost must be a number')
-    .nonnegative('Estimated cost must be 0 or more'),
+    .nonnegative('Estimated cost must be 0 or more')
+    .refine(hasMaxTwoDecimalPlaces, { message: 'Estimated cost must have at most 2 decimal places' }),
   vendor: z.string().optional(),
   lineItemType: z.string(),
 })
@@ -288,22 +292,26 @@ export function LineItemDetailPanel({
                   </p>
                 )}
               </div>
-              <div>
-                <Label htmlFor="line-item-estimated-cost">Estimated cost</Label>
-                <Input
-                  id="line-item-estimated-cost"
-                  type="number"
-                  step="any"
-                  inputMode="decimal"
-                  {...form.register('estimated_cost')}
-                  className="mt-1.5 bg-background"
+              <ValidatedField
+                label="Estimated cost"
+                error={form.formState.errors.estimated_cost?.message}
+                htmlFor="line-item-estimated-cost"
+              >
+                <Controller
+                  name="estimated_cost"
+                  control={form.control}
+                  render={({ field }) => (
+                    <MoneyAmountInput
+                      id="line-item-estimated-cost"
+                      mode="nonNegative"
+                      className="mt-1.5 bg-background"
+                      value={field.value}
+                      onValueChange={(v) => field.onChange(v ?? 0)}
+                      onBlur={field.onBlur}
+                    />
+                  )}
                 />
-                {form.formState.errors.estimated_cost && (
-                  <p className="text-destructive text-sm mt-1">
-                    {form.formState.errors.estimated_cost.message}
-                  </p>
-                )}
-              </div>
+              </ValidatedField>
               <div>
                 <Label htmlFor="line-item-vendor">Vendor (optional)</Label>
                 <Input

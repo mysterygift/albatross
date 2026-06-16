@@ -1,4 +1,8 @@
 import { z } from 'zod'
+import {
+  nullablePositiveIntegerSchema,
+  nullablePositiveMoneySchema,
+} from '@/lib/budget/fieldValidation'
 
 export const LABOUR_RATE_TYPES = ['prep_day', 'shoot_day', 'overtime'] as const
 export type LabourRateType = (typeof LABOUR_RATE_TYPES)[number]
@@ -11,8 +15,8 @@ export const labourDetailsSchema = z.object({
   person_id: z.string().min(1).nullable().optional().default(null),
   labour_role_label: z.string().min(1, 'Labour role is required'),
   labour_rate_type: z.enum(LABOUR_RATE_TYPES),
-  booked_days_count: z.number().finite().nonnegative().nullable().optional().default(null),
-  rate_per_day: z.number().finite().nonnegative().nullable().optional().default(null),
+  booked_days_count: nullablePositiveIntegerSchema(),
+  rate_per_day: nullablePositiveMoneySchema(),
   currency_code: z.string().min(1).nullable().optional().default(null),
   start_date: isoDate.nullable().optional().default(null),
   end_date: isoDate.nullable().optional().default(null),

@@ -13,6 +13,9 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { PercentageInput } from '@/components/budget/PercentageInput'
 import {
   Table,
   TableBody,
@@ -126,20 +129,15 @@ function SchemeFormDialog({
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label htmlFor="scheme-rate">Net rate (%)</Label>
-              <Input
+            <ValidatedField label="Net rate (%)" htmlFor="scheme-rate">
+              <PercentageInput
                 id="scheme-rate"
-                type="number"
-                min={0}
-                max={100}
-                step={0.01}
                 value={form.net_rate_percent}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, net_rate_percent: Number(e.target.value) }))
+                onValueChange={(v) =>
+                  setForm((f) => ({ ...f, net_rate_percent: v ?? 0 }))
                 }
               />
-            </div>
+            </ValidatedField>
             <div className="space-y-1">
               <Label htmlFor="scheme-cap">Cap (% of core spend)</Label>
               <Input
@@ -178,39 +176,27 @@ function SchemeFormDialog({
                 }
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="scheme-max-qual">Max qualifying amount</Label>
-              <Input
+            <ValidatedField label="Max qualifying amount" htmlFor="scheme-max-qual">
+              <MoneyAmountInput
                 id="scheme-max-qual"
-                type="number"
-                min={0}
+                mode="nonNegative"
                 placeholder="None"
-                value={form.max_qualifying_amount ?? ''}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    max_qualifying_amount: e.target.value === '' ? null : Number(e.target.value),
-                  }))
+                value={form.max_qualifying_amount}
+                onValueChange={(v) =>
+                  setForm((f) => ({ ...f, max_qualifying_amount: v }))
                 }
               />
-            </div>
+            </ValidatedField>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="scheme-max-budget">Max core budget</Label>
-            <Input
+          <ValidatedField label="Max core budget" htmlFor="scheme-max-budget">
+            <MoneyAmountInput
               id="scheme-max-budget"
-              type="number"
-              min={0}
+              mode="nonNegative"
               placeholder="None"
-              value={form.max_core_budget ?? ''}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  max_core_budget: e.target.value === '' ? null : Number(e.target.value),
-                }))
-              }
+              value={form.max_core_budget}
+              onValueChange={(v) => setForm((f) => ({ ...f, max_core_budget: v }))}
             />
-          </div>
+          </ValidatedField>
           <div className="flex items-center gap-2">
             <Checkbox
               id="scheme-vfx"

@@ -1,4 +1,8 @@
 import { z } from 'zod'
+import {
+  nullablePositiveIntegerSchema,
+  nullablePositiveMoneySchema,
+} from '@/lib/budget/fieldValidation'
 
 export const RENTAL_LINE_ITEM_RATE_TYPES = ['daily', 'weekly', 'flat'] as const
 export type RentalLineItemRateType = (typeof RENTAL_LINE_ITEM_RATE_TYPES)[number]
@@ -13,10 +17,10 @@ const isoDate = z
 export const rentalLineItemDetailsSchema = z.object({
   rental_description: z.string().nullable().optional().default(null),
   rental_rate_type: z.enum(RENTAL_LINE_ITEM_RATE_TYPES).nullable().optional().default(null),
-  rental_rate_amount: z.number().finite().nonnegative().nullable().optional().default(null),
+  rental_rate_amount: nullablePositiveMoneySchema(),
   rental_start_date: isoDate,
   rental_end_date: isoDate,
-  rental_period_override_days: z.number().finite().nonnegative().nullable().optional().default(null),
+  rental_period_override_days: nullablePositiveIntegerSchema(),
   equipment_description: z.string().nullable().optional().default(null),
   vendor_id: z.string().nullable().optional().default(null),
   primary_contact_override: z.string().nullable().optional().default(null),

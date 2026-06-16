@@ -6,6 +6,8 @@ import { ExternalLink, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
 import {
   Select,
   SelectContent,
@@ -420,30 +422,34 @@ export function ExpenseVendorFinanceSection({
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="log-spend-inv-amount">Amount</Label>
-              <Input
+            <ValidatedField
+              label="Amount"
+              htmlFor="log-spend-inv-amount"
+              description="Optional"
+            >
+              <MoneyAmountInput
                 id="log-spend-inv-amount"
-                type="number"
-                step="any"
+                mode="positive"
                 value={
                   draft.uploadInvoice?.amount != null
-                    ? String(draft.uploadInvoice.amount)
-                    : uploadAmount
+                    ? draft.uploadInvoice.amount
+                    : uploadAmount.trim()
+                      ? Number(uploadAmount)
+                      : null
                 }
-                onChange={(e) =>
+                onValueChange={(amount) =>
                   setDraft({
                     ...draft,
                     uploadInvoice: {
                       ...(draft.uploadInvoice ?? { invoice_number: uploadInvoiceNumber }),
-                      amount: e.target.value.trim() ? Number(e.target.value) : null,
+                      amount,
                       currency_code: productionCurrency,
                     },
                   })
                 }
                 placeholder="Optional"
               />
-            </div>
+            </ValidatedField>
             <VendorFinanceDocumentField
               pendingFile={
                 draft.uploadInvoice?.bytes && draft.uploadInvoice.fileName

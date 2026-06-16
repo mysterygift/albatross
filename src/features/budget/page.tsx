@@ -88,6 +88,10 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { PercentageInput } from '@/components/budget/PercentageInput'
+import { hasMaxTwoDecimalPlaces, NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -205,20 +209,36 @@ function initialBudgetViewModeFromLocation(): BudgetViewMode {
 const itemSchema = z.object({
   account_id: z.string().min(1, 'Select an account'),
   description: z.string().min(1),
-  estimated_cost: z.coerce.number().min(0),
-  actual_cost: z.coerce.number().min(0),
+  estimated_cost: z
+    .number()
+    .finite(NON_NEGATIVE_MONEY_MESSAGE)
+    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
+    .refine(hasMaxTwoDecimalPlaces, { message: 'Estimated cost must have at most 2 decimal places' }),
+  actual_cost: z
+    .number()
+    .finite(NON_NEGATIVE_MONEY_MESSAGE)
+    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
+    .refine(hasMaxTwoDecimalPlaces, { message: 'Actual cost must have at most 2 decimal places' }),
   vendor: z.string().optional(),
 })
 
 const inlineItemSchema = z.object({
   description: z.string().min(1),
-  estimated_cost: z.coerce.number().min(0),
+  estimated_cost: z
+    .number()
+    .finite(NON_NEGATIVE_MONEY_MESSAGE)
+    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
+    .refine(hasMaxTwoDecimalPlaces, { message: 'Estimated cost must have at most 2 decimal places' }),
 })
 
 /** Rate as percentage 0–100; stored as decimal 0–1 in DB. */
 const derivedRuleSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  ratePercent: z.coerce.number().min(0.01, 'Rate must be greater than 0').max(100, 'Rate must be at most 100%'),
+  ratePercent: z
+    .number()
+    .finite('Rate must be a number')
+    .min(0.01, 'Rate must be greater than 0')
+    .max(100, 'Rate must be at most 100%'),
   scope_account_ids: z.array(z.string()).min(1, 'Select at least one account'),
 })
 
@@ -3977,13 +3997,25 @@ function InlineAddItemForm({
             <p className="text-destructive text-sm">{form.formState.errors.description.message}</p>
           )}
         </div>
-        <div>
-          <Label>Estimated cost</Label>
-          <Input type="number" step={0.01} {...form.register('estimated_cost')} />
-          {form.formState.errors.estimated_cost && (
-            <p className="text-destructive text-sm">{form.formState.errors.estimated_cost.message}</p>
-          )}
-        </div>
+        <ValidatedField
+          label="Estimated cost"
+          error={form.formState.errors.estimated_cost?.message}
+          htmlFor="inline-estimated-cost"
+        >
+          <Controller
+            name="estimated_cost"
+            control={form.control}
+            render={({ field }) => (
+              <MoneyAmountInput
+                id="inline-estimated-cost"
+                mode="nonNegative"
+                value={field.value}
+                onValueChange={(v) => field.onChange(v ?? 0)}
+                onBlur={field.onBlur}
+              />
+            )}
+          />
+        </ValidatedField>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
@@ -4063,14 +4095,44 @@ function BudgetItemForm({
           )}
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label>Estimated cost</Label>
-            <Input type="number" step={0.01} {...form.register('estimated_cost')} />
-          </div>
-          <div>
-            <Label>Actual cost</Label>
-            <Input type="number" step={0.01} {...form.register('actual_cost')} />
-          </div>
+          <ValidatedField
+            label="Estimated cost"
+            error={form.formState.errors.estimated_cost?.message}
+            htmlFor="item-estimated-cost"
+          >
+            <Controller
+              name="estimated_cost"
+              control={form.control}
+              render={({ field }) => (
+                <MoneyAmountInput
+                  id="item-estimated-cost"
+                  mode="nonNegative"
+                  value={field.value}
+                  onValueChange={(v) => field.onChange(v ?? 0)}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
+          </ValidatedField>
+          <ValidatedField
+            label="Actual cost"
+            error={form.formState.errors.actual_cost?.message}
+            htmlFor="item-actual-cost"
+          >
+            <Controller
+              name="actual_cost"
+              control={form.control}
+              render={({ field }) => (
+                <MoneyAmountInput
+                  id="item-actual-cost"
+                  mode="nonNegative"
+                  value={field.value}
+                  onValueChange={(v) => field.onChange(v ?? 0)}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
+          </ValidatedField>
         </div>
         <div>
           <Label>Vendor</Label>
@@ -4429,21 +4491,26 @@ function DerivedRuleForm({
           <p className="text-destructive text-sm">{form.formState.errors.name.message}</p>
         )}
       </div>
-      <div>
-        <Label>Rate (%)</Label>
-        <Input
-          type="number"
-          step={0.01}
-          min={0}
-          max={1000}
-          {...form.register('ratePercent')}
-          placeholder="18"
+      <ValidatedField
+        label="Rate (%)"
+        error={form.formState.errors.ratePercent?.message}
+        description="Enter percentage (e.g. 18 for 18%)."
+        htmlFor="derived-rate-percent"
+      >
+        <Controller
+          name="ratePercent"
+          control={form.control}
+          render={({ field }) => (
+            <PercentageInput
+              id="derived-rate-percent"
+              placeholder="18"
+              value={field.value}
+              onValueChange={(v) => field.onChange(v ?? 0)}
+              onBlur={field.onBlur}
+            />
+          )}
         />
-        {form.formState.errors.ratePercent && (
-          <p className="text-destructive text-sm">{form.formState.errors.ratePercent.message}</p>
-        )}
-        <p className="text-muted-foreground text-xs mt-1">Enter percentage (e.g. 18 for 18%).</p>
-      </div>
+      </ValidatedField>
       <div>
         <Label>Scope accounts</Label>
         <p className="text-muted-foreground text-xs mb-2">Selecting a header account includes all child accounts.</p>

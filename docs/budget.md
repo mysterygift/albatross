@@ -22,6 +22,7 @@ This document is both a **user guide** (how to use the Budget feature) and a **d
 - [7. Data model](#7-data-model)
 - [8. Repositories and persistence](#8-repositories-and-persistence)
 - [9. Typed expenses (registry and UI)](#9-typed-expenses-registry-and-ui)
+- [9.1 Field validation](#91-field-validation)
 - [10. Calculations](#10-calculations)
 - [11. Query keys and invalidation](#11-query-keys-and-invalidation)
 - [12. Currency and display](#12-currency-and-display)
@@ -315,6 +316,28 @@ Rules have name, rate (decimal 0–1), base_kind (budget | actual), scope_mode, 
 - **Creation flow** — LogSpendPanel opens from “Log Spend” button as a centered Dialog. User selects account (postable) and transaction type. Dialog renders config.EditComponent (when type has one) with expenseId="create", detailsJson from draft, hideFooter, editorRef. On Save click, dialog calls editorRef.current.submit(); editor validates and calls onSave(details). handleEditorSave calls createMutation.mutate({ productionId, accountId, transactionType, draft: details, date: today }). createTypedExpense runs; on success invalidates ['expenses', productionId], ['expense-with-details', data.id], and for allow ['allow-expense-details', productionId]. Save & Add Another: same mutation, onSuccess keeps dialog open, clears draft for that type, increments formKey to remount editor. Type-switch: if current type has a form, a nested confirmation Dialog asks to discard form values; type changes only on **Continue**.
 
 **Amount behaviour:** Labour: amount = rate_per_day × booked_days_count (or 0). Purchase: amount required > 0 from draft. Rental: amount = calculateRentalExpenseAmount(details). Allow: amount = provisional_amount ?? 0. Deposit: amount required > 0 from draft (held deposit value).
+
+#### 9.1 Field validation
+
+Budget numeric fields use shared utilities and UI components so input is constrained at keystroke and errors are shown inline (red text above the field, red input border via `aria-invalid`).
+
+| Field kind | Rules when entered | Empty allowed? | Examples |
+|------------|-------------------|----------------|----------|
+| Actual spend money | Strictly positive, max 2 decimal places | No when required | Purchase amount, deposit amount, rental rate, labour rate/day, float allocate amount |
+| Planning / optional money | Non-negative, max 2 dp | Yes | Line item estimated cost, allow provisional amount, tax qualifying amounts |
+| Count / days | Strictly positive integer | Yes when optional | Rental override days, labour booked days |
+| Percentage | 0–100, max 1 decimal place | Yes | VAT rate, derived cost rule rate |
+
+**Utilities** — `src/lib/budget/fieldValidation.ts`: `filterMoneyInput`, `filterPositiveIntegerInput`, parse helpers, Zod field builders (`requiredPositiveMoneyField`, `optionalNonNegativeMoneyField`, etc.).
+
+**UI components** — `src/components/budget/`:
+
+- `ValidatedField` — label, error above input, optional description below
+- `MoneyAmountInput` — `mode: 'positive' | 'nonNegative'`, blocks invalid characters while typing
+- `PositiveIntegerInput` — digits only, positive integers when set
+- `PercentageInput` — 0–100 with one decimal place
+
+Domain schemas in `src/lib/budget/transactions/` and `src/lib/budget/line-items/` align with these rules; form editors use the same components so Log Spend, Expense Detail edit, line items, floats, vendors, and Match Spend share behaviour.
 
 ---
 

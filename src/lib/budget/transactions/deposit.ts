@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DEPOSIT_REFUNDABLE_STATUSES } from '@/lib/budget/line-items/deposit'
+import { hasMaxTwoDecimalPlaces } from '@/lib/budget/fieldValidation'
 
 export { DEPOSIT_REFUNDABLE_STATUSES }
 export type { DepositRefundableStatus } from '@/lib/budget/line-items/deposit'
@@ -9,7 +10,11 @@ export const depositDetailsSchema = z.object({
   refundable_status: z.enum(DEPOSIT_REFUNDABLE_STATUSES, {
     message: 'Select refundable or non-refundable',
   }),
-  amount: z.number().finite().positive('Deposit amount must be greater than 0'),
+  amount: z
+    .number()
+    .finite()
+    .positive('Deposit amount must be greater than 0')
+    .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
   vendor_id: z.string().nullable().optional().default(null),
   location_id: z.string().nullable().optional().default(null),
   notes: z.string().nullable().optional().default(null),

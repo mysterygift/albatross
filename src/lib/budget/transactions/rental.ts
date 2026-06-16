@@ -1,4 +1,10 @@
 import { z } from 'zod'
+import {
+  hasMaxTwoDecimalPlaces,
+  nullablePositiveIntegerSchema,
+  nullablePositiveMoneySchema,
+  POSITIVE_INTEGER_MESSAGE,
+} from '@/lib/budget/fieldValidation'
 
 export const RENTAL_RATE_TYPES = ['daily', 'weekly', 'flat'] as const
 export type RentalRateType = (typeof RENTAL_RATE_TYPES)[number]
@@ -13,22 +19,10 @@ export const rentalDetailsSchema = z
     rental_rate_type: z.enum(RENTAL_RATE_TYPES, {
       message: 'Select a rental rate type',
     }),
-    rental_rate_amount: z
-      .number()
-      .finite()
-      .nonnegative()
-      .nullable()
-      .optional()
-      .default(null),
+    rental_rate_amount: nullablePositiveMoneySchema(),
     rental_start_date: isoDate.nullable().optional().default(null),
     rental_end_date: isoDate.nullable().optional().default(null),
-    rental_period_override_days: z
-      .number()
-      .finite()
-      .positive('Override days must be greater than 0')
-      .nullable()
-      .optional()
-      .default(null),
+    rental_period_override_days: nullablePositiveIntegerSchema(POSITIVE_INTEGER_MESSAGE),
     equipment_description: z.string().nullable().optional().default(null),
     vendor_id: z.string().min(1).nullable().optional().default(null),
     primary_contact_override: z.string().nullable().optional().default(null),
@@ -43,6 +37,31 @@ export const rentalDetailsSchema = z
           message: 'End date must be on or after start date',
         })
       }
+    }
+    const rate = val.rental_rate_amount
+    const hasPeriod =
+      val.rental_period_override_days != null ||
+      (val.rental_start_date != null && val.rental_end_date != null)
+    if (rate != null && rate > 0 && !hasPeriod) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['rental_start_date'],
+        message: 'Enter a rental period (start/end dates or override days)',
+      })
+    }
+    if (hasPeriod && (rate == null || rate <= 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['rental_rate_amount'],
+        message: 'Enter a positive rate amount',
+      })
+    }
+    if (rate != null && !hasMaxTwoDecimalPlaces(rate)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['rental_rate_amount'],
+        message: 'Amount must have at most 2 decimal places',
+      })
     }
   })
 

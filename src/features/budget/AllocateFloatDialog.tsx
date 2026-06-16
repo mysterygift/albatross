@@ -14,6 +14,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { hasMaxTwoDecimalPlaces, POSITIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import {
   Select,
   SelectContent,
@@ -38,13 +41,27 @@ import { createFloat } from '@/lib/db/repositories/floats'
 const schema = z.object({
   budget_item_id: z.string().min(1, 'Select a budget line item'),
   person_id: z.string().min(1, 'Select a crew member'),
-  amount: z.coerce.number().finite('Amount must be a number').positive('Amount must be greater than 0'),
+  amount: z
+    .union([z.null(), z.number()])
+    .refine((v): v is number => v != null && Number.isFinite(v) && v > 0, {
+      message: POSITIVE_MONEY_MESSAGE,
+    })
+    .refine((v): v is number => v != null && hasMaxTwoDecimalPlaces(v), {
+      message: 'Amount must have at most 2 decimal places',
+    }),
   currency: z.string().min(1, 'Currency is required'),
   issued_date: z.string().min(1, 'Issued date is required'),
   notes: z.string().optional(),
 })
 
-type FormValues = z.infer<typeof schema>
+type FormValues = {
+  budget_item_id: string
+  person_id: string
+  amount: number | null
+  currency: string
+  issued_date: string
+  notes?: string
+}
 
 function budgetItemLabel(item: BudgetItem, accountById: Map<string, BudgetAccount>): string {
   const acc = item.account_id ? accountById.get(item.account_id) : null
@@ -82,7 +99,7 @@ export function AllocateFloatDialog({
     defaultValues: {
       budget_item_id: '',
       person_id: '',
-      amount: 0,
+      amount: null,
       currency: defaultCurrency,
       issued_date: '',
       notes: '',
@@ -101,7 +118,7 @@ export function AllocateFloatDialog({
     form.reset({
       budget_item_id: '',
       person_id: '',
-      amount: 0,
+      amount: null,
       currency: defaultCurrency,
       issued_date: '',
       notes: '',
@@ -130,7 +147,7 @@ export function AllocateFloatDialog({
       form.reset({
         budget_item_id: '',
         person_id: '',
-        amount: 0,
+        amount: null,
         currency: defaultCurrency,
         issued_date: '',
         notes: '',
@@ -240,20 +257,27 @@ export function AllocateFloatDialog({
               <p className="text-destructive text-sm mt-1">{form.formState.errors.person_id.message}</p>
             )}
           </div>
-          <div>
-            <Label htmlFor="float-amount">Amount</Label>
-            <Input
-              id="float-amount"
-              type="number"
-              step="any"
-              inputMode="decimal"
-              className="mt-1.5 bg-background"
-              {...form.register('amount')}
+          <ValidatedField
+            label="Amount"
+            required
+            error={form.formState.errors.amount?.message}
+            htmlFor="float-amount"
+          >
+            <Controller
+              name="amount"
+              control={form.control}
+              render={({ field }) => (
+                <MoneyAmountInput
+                  id="float-amount"
+                  mode="positive"
+                  className="mt-1.5 bg-background"
+                  value={field.value}
+                  onValueChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
             />
-            {form.formState.errors.amount && (
-              <p className="text-destructive text-sm mt-1">{form.formState.errors.amount.message}</p>
-            )}
-          </div>
+          </ValidatedField>
           <div>
             <Label htmlFor="float-currency">Currency</Label>
             <Input

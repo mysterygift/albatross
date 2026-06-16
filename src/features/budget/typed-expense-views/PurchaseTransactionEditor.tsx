@@ -6,6 +6,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { VendorPicker } from '@/components/vendors/VendorPicker'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { hasMaxTwoDecimalPlaces, POSITIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import { parsePurchaseDetails } from '@/lib/budget/transactions/purchase'
 import type { PurchaseDetails } from '@/lib/budget/transactions/purchase'
 import { ExpenseEditorFooter } from '../expense-shared'
@@ -19,14 +22,38 @@ const purchaseEditSchema = z.object({
   location_id: z.string().optional(),
   vendor_id: z.string().optional(),
   notes: z.string().optional(),
-  amount: z.union([z.coerce.number().finite().nonnegative(), z.literal('')]).optional(),
+  amount: z
+    .union([
+      z.literal(''),
+      z
+        .number()
+        .finite(POSITIVE_MONEY_MESSAGE)
+        .positive(POSITIVE_MONEY_MESSAGE)
+        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+    ])
+    .superRefine((val, ctx) => {
+      if (val === '') {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Purchase amount is required and must be greater than 0',
+        })
+      }
+    }),
 })
 
-type PurchaseFormValues = z.infer<typeof purchaseEditSchema>
+type PurchaseFormValues = {
+  purchase_description: string
+  purchase_category?: string
+  is_service_purchase?: boolean
+  service_description?: string
+  location_id?: string
+  vendor_id?: string
+  notes?: string
+  amount: number | ''
+}
 
 function toPurchaseDetails(data: PurchaseFormValues): PurchaseDetails {
-  const amount =
-    data.amount === '' || data.amount === undefined ? 0 : Number(data.amount)
+  const amount = data.amount === '' ? 0 : data.amount
   return {
     purchase_description: data.purchase_description,
     purchase_category: data.purchase_category?.trim() ? data.purchase_category.trim() : null,
@@ -110,30 +137,39 @@ export function PurchaseTransactionEditor({
   }, [watchedVendorId, onVendorIdChange])
 
   const isService = !!form.watch('is_service_purchase')
+  const errors = form.formState.errors
 
   return (
     <form onSubmit={form.handleSubmit((data) => onSave(toPurchaseDetails(data)))} className="mt-2 space-y-4">
       <div>
         <Label>Purchase description</Label>
         <Input {...form.register('purchase_description')} />
-        {form.formState.errors.purchase_description && (
-          <p className="text-destructive text-sm">{form.formState.errors.purchase_description.message}</p>
+        {errors.purchase_description && (
+          <p className="text-destructive text-sm">{errors.purchase_description.message}</p>
         )}
       </div>
-      <div>
-        <Label>Amount</Label>
-        <Input
-          type="number"
-          step={0.01}
-          min={0}
-          {...form.register('amount')}
-          placeholder="0.00"
+      <ValidatedField
+        label="Amount"
+        required
+        error={errors.amount?.message}
+        description="Required for new spend. This is the actual cost."
+        htmlFor="purchase-amount"
+      >
+        <Controller
+          name="amount"
+          control={form.control}
+          render={({ field }) => (
+            <MoneyAmountInput
+              id="purchase-amount"
+              mode="positive"
+              placeholder="0.00"
+              value={field.value === '' ? null : field.value}
+              onValueChange={(v) => field.onChange(v ?? '')}
+              onBlur={field.onBlur}
+            />
+          )}
         />
-        {form.formState.errors.amount && (
-          <p className="text-destructive text-sm">{form.formState.errors.amount.message}</p>
-        )}
-        <p className="text-muted-foreground text-xs mt-1">Required for new spend. This is the actual cost.</p>
-      </div>
+      </ValidatedField>
       <div>
         <Label className="mb-2 block">Purchase type</Label>
         <Controller

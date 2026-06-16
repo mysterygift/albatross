@@ -3,6 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { PercentageInput } from '@/components/budget/PercentageInput'
+import { PERCENTAGE_MESSAGE } from '@/lib/budget/fieldValidation'
 import {
   getProductionBudgetFeatures,
   listTaxCreditSchemes,
@@ -71,13 +75,9 @@ export function ExpenseTaxFields({
   const taxCreditsOn = features?.tax_credits_enabled === true
   const vatOn = features?.vat_tracking_enabled === true
 
-  const [vatDraft, setVatDraft] = useState(
-    vatRatePercent != null ? String(vatRatePercent) : ''
-  )
-
-  useEffect(() => {
-    setVatDraft(vatRatePercent != null ? String(vatRatePercent) : '')
-  }, [vatRatePercent])
+  const [vatRateError, setVatRateError] = useState<string | null>(null)
+  const [qualifyingErrors, setQualifyingErrors] = useState<Record<string, string | null>>({})
+  const [vatReclaimedError, setVatReclaimedError] = useState<string | null>(null)
 
   const amount = expenseAmount ?? 0
   const reclaimBreakdown = useMemo(() => {
@@ -111,19 +111,29 @@ export function ExpenseTaxFields({
       onChange([...value, { tax_credit_scheme_id: schemeId, qualifying_amount: defaultAmount }])
     } else {
       onChange(value.filter((a) => a.tax_credit_scheme_id !== schemeId))
+      setQualifyingErrors((prev) => {
+        const next = { ...prev }
+        delete next[schemeId]
+        return next
+      })
     }
   }
 
-  const updateQualifying = (schemeId: string, raw: string) => {
-    const num = raw === '' ? 0 : Number(raw)
+  const updateQualifying = (schemeId: string, num: number | null) => {
     onChange(
       value.map((a) =>
         a.tax_credit_scheme_id === schemeId
-          ? { ...a, qualifying_amount: num }
+          ? { ...a, qualifying_amount: num ?? 0 }
           : a
       )
     )
   }
+
+  useEffect(() => {
+    if (vatRatePercent != null && (vatRatePercent < 0 || vatRatePercent > 100)) {
+      setVatRateError(PERCENTAGE_MESSAGE)
+    }
+  }, [vatRatePercent])
 
   if (!taxCreditsOn && !vatOn) return null
 
@@ -152,20 +162,31 @@ export function ExpenseTaxFields({
                       {scheme.name}
                     </Label>
                     {selected && (
-                      <div className="flex items-center gap-1">
-                        <Label htmlFor={`tc-amt-${scheme.id}`} className="text-xs text-muted-foreground">
-                          Qualifying
-                        </Label>
-                        <Input
+                      <ValidatedField
+                        label="Qualifying"
+                        error={qualifyingErrors[scheme.id] ?? undefined}
+                        htmlFor={`tc-amt-${scheme.id}`}
+                        className="flex items-end gap-1"
+                      >
+                        <MoneyAmountInput
                           id={`tc-amt-${scheme.id}`}
-                          type="number"
-                          min={0}
-                          step={0.01}
+                          mode="nonNegative"
                           className="w-[120px] h-8"
-                          value={alloc?.qualifying_amount ?? ''}
-                          onChange={(e) => updateQualifying(scheme.id, e.target.value)}
+                          value={alloc?.qualifying_amount ?? null}
+                          onValueChange={(v) => updateQualifying(scheme.id, v)}
+                          onBlur={() => {
+                            const amt = alloc?.qualifying_amount
+                            if (amt != null && amt < 0) {
+                              setQualifyingErrors((prev) => ({
+                                ...prev,
+                                [scheme.id]: 'Enter an amount of 0 or more (up to 2 decimal places)',
+                              }))
+                            } else {
+                              setQualifyingErrors((prev) => ({ ...prev, [scheme.id]: null }))
+                            }
+                          }}
                         />
-                      </div>
+                      </ValidatedField>
                     )}
                   </div>
                 )
@@ -184,26 +205,20 @@ export function ExpenseTaxFields({
         <div className="space-y-3">
           <Label className="text-sm font-medium">VAT &amp; reclaim</Label>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label htmlFor="expense-vat-rate" className="text-xs text-muted-foreground">
-                VAT rate (%)
-              </Label>
-              <Input
+            <ValidatedField
+              label="VAT rate (%)"
+              error={vatRateError ?? undefined}
+              htmlFor="expense-vat-rate"
+            >
+              <PercentageInput
                 id="expense-vat-rate"
-                type="number"
-                min={0}
-                max={100}
-                step={0.1}
                 className="w-full h-8"
                 placeholder={features?.default_vat_rate_percent?.toString() ?? '20'}
-                value={vatDraft}
-                onChange={(e) => {
-                  setVatDraft(e.target.value)
-                  const raw = e.target.value
-                  onVatRateChange(raw === '' ? null : Number(raw))
-                }}
+                value={vatRatePercent}
+                onValueChange={onVatRateChange}
+                onValidationError={setVatRateError}
               />
-            </div>
+            </ValidatedField>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">VAT paid (computed)</Label>
               <p className="text-sm font-medium tabular-nums h-8 flex items-center">
@@ -216,27 +231,33 @@ export function ExpenseTaxFields({
                 {reclaimBreakdown ? formatMoney(reclaimBreakdown.vatReclaimable) : '—'}
               </p>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="expense-vat-reclaimed" className="text-xs text-muted-foreground">
-                VAT reclaimed
-              </Label>
-              <Input
+            <ValidatedField
+              label="VAT reclaimed"
+              error={vatReclaimedError ?? undefined}
+              htmlFor="expense-vat-reclaimed"
+            >
+              <MoneyAmountInput
                 id="expense-vat-reclaimed"
-                type="number"
-                min={0}
-                step={0.01}
+                mode="nonNegative"
                 className="w-full h-8"
                 placeholder="0"
-                value={vatReclaim.vat_reclaimed_amount ?? ''}
-                onChange={(e) => {
-                  const raw = e.target.value
+                value={vatReclaim.vat_reclaimed_amount}
+                onValueChange={(v) =>
                   onVatReclaimChange({
                     ...vatReclaim,
-                    vat_reclaimed_amount: raw === '' ? null : Number(raw),
+                    vat_reclaimed_amount: v,
                   })
+                }
+                onBlur={() => {
+                  const reclaimed = vatReclaim.vat_reclaimed_amount
+                  if (reclaimed != null && reclaimed < 0) {
+                    setVatReclaimedError('Enter an amount of 0 or more (up to 2 decimal places)')
+                  } else {
+                    setVatReclaimedError(null)
+                  }
                 }}
               />
-            </div>
+            </ValidatedField>
             <div className="space-y-1">
               <Label htmlFor="expense-vat-reclaim-date" className="text-xs text-muted-foreground">
                 Reclaim date

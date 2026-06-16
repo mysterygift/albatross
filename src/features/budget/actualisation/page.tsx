@@ -72,6 +72,8 @@ import { ExpenseAllocationStatusBadge } from '@/features/budget/actualisation/Ex
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { parseMoneyInput } from '@/lib/budget/fieldValidation'
 import { Label } from '@/components/ui/label'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Receipt, AlertTriangle } from 'lucide-react'
@@ -927,18 +929,18 @@ export function ActualisationPage() {
                                   <Label htmlFor={`allocate-${item.id}`} className="text-muted-foreground shrink-0 w-24">
                                     Allocate:
                                   </Label>
-                                  <Input
+                                  <MoneyAmountInput
                                     id={`allocate-${item.id}`}
-                                    type="number"
-                                    min={0}
-                                    step={0.01}
+                                    mode="positive"
                                     placeholder="0.00"
-                                    value={amountStr}
-                                    onChange={(e) => {
-                                      const v = e.target.value
-                                      setAllocationAmounts((prev) => ({ ...prev, [item.id]: v }))
-                                    }}
                                     className="w-32 tabular-nums"
+                                    value={parseMoneyInput(amountStr)}
+                                    onValueChange={(v) => {
+                                      setAllocationAmounts((prev) => ({
+                                        ...prev,
+                                        [item.id]: v == null ? '' : String(v),
+                                      }))
+                                    }}
                                   />
                                 </div>
                               )}
@@ -1092,14 +1094,14 @@ export function ActualisationPage() {
                                     <Label htmlFor={`edit-link-${link.id}`} className="text-muted-foreground shrink-0">
                                       Matched amount:
                                     </Label>
-                                    <Input
+                                    <MoneyAmountInput
                                       id={`edit-link-${link.id}`}
-                                      type="number"
-                                      min={0}
-                                      step={0.01}
-                                      value={editAmountStr}
-                                      onChange={(e) => setEditingLinkAmount(e.target.value)}
+                                      mode="positive"
                                       className="w-32 tabular-nums"
+                                      value={parseMoneyInput(editAmountStr)}
+                                      onValueChange={(v) =>
+                                        setEditingLinkAmount(v == null ? '' : String(v))
+                                      }
                                     />
                                     {remainingIfEdited !== null && (
                                       <span className="text-muted-foreground text-xs">
