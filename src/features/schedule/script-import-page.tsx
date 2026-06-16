@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
 import { SbRemoteNotice } from './sbRemoteNotice'
+import { ScriptImportSceneEditorDialog } from './script-import-scene-editor-dialog'
 import { pickAndSaveAttachment } from '@/lib/files'
 import { documentsQueryKey } from '@/lib/documents/persistDocument'
 import { createDocument } from '@/lib/db/repositories/document'
@@ -11,13 +12,23 @@ import { generateScriptVersionFromScenes } from '@/lib/db/scriptSectionGeneratio
 import { formatScriptVersionLabel } from '@/lib/db/scriptSectionReconciliationService'
 import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
 import { getLatestScriptVersionForScope } from '@/lib/db/repositories/scriptVersions'
-import { defaultParser, parsePdfScript, PdfParseError, extractLocationFromSlug } from '@/lib/script-parser'
-import type { ParsedScene } from '@/lib/script-parser'
+import { listLocationsByProduction } from '@/lib/db/repositories/location'
+import { defaultParser, parsePdfScript, PdfParseError } from '@/lib/script-parser'
 import {
   locationIdForParsedName,
   resolveImportLocations,
 } from '@/lib/db/scriptImportLocationService'
 import { linkLocationScene } from '@/lib/db/repositories/location-scene'
+import {
+  analyzeImportLocations,
+  applyLocationMergeToDrafts,
+  draftToParsedScene,
+  effectiveParsedLocation,
+  hasLocationSpellingVariants,
+  toImportSceneDrafts,
+  type ImportSceneDraft,
+} from '@/lib/schedule/scriptImportReview'
+import { sceneScheduleLabel } from '@/lib/schedule/sceneDisplay'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { BaseDirectory } from '@tauri-apps/plugin-fs'
@@ -28,9 +39,10 @@ import { Label } from '@/components/ui/label'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Upload } from 'lucide-react'
+import { Pencil, Upload, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -58,11 +70,114 @@ const schema = z.object({
   rawText: z.string().optional(),
 })
 
+function ImportLocationSummary({
+  drafts,
+  productionId,
+  onMergeGroup,
+}: {
+  drafts: ImportSceneDraft[]
+  productionId: string
+  onMergeGroup: (sceneIds: string[], canonicalName: string) => void
+}) {
+  const { data: existingLocations = [] } = useQuery({
+    queryKey: ['locations', productionId],
+    queryFn: () => listLocationsByProduction(productionId),
+    enabled: drafts.length > 0,
+  })
+
+  const locationGroups = useMemo(
+    () => analyzeImportLocations(drafts, existingLocations),
+    [drafts, existingLocations]
+  )
+
+  const [mergeNames, setMergeNames] = useState<Record<string, string>>({})
+
+  if (locationGroups.length === 0) return null
+
+  return (
+    <Card className="mt-4 border-border bg-card">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Locations in this import</CardTitle>
+        <CardDescription>
+          {locationGroups.length} unique location{locationGroups.length === 1 ? '' : 's'} detected.
+          Merge variants before importing to avoid duplicate location rows.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {locationGroups.map((group) => {
+          const mergeKey = group.canonicalKey
+          const defaultMergeName =
+            group.matchesExistingLocation?.name ??
+            group.rawVariants[0] ??
+            group.canonicalKey
+          const mergeName = mergeNames[mergeKey] ?? defaultMergeName
+          const hasVariants = group.rawVariants.length > 1
+
+          return (
+            <div
+              key={mergeKey}
+              className="rounded-md border border-border bg-muted/20 px-3 py-2 text-sm space-y-2"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{group.canonicalKey}</span>
+                <Badge variant="secondary" className="text-[10px]">
+                  {group.sceneIds.length} scene{group.sceneIds.length === 1 ? '' : 's'}
+                </Badge>
+                {group.matchesExistingLocation && (
+                  <span className="text-xs text-muted-foreground">
+                    Will link to existing: {group.matchesExistingLocation.name}
+                  </span>
+                )}
+              </div>
+
+              {hasVariants && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  These spellings will map to one location on import:{' '}
+                  {group.rawVariants.map((v) => `"${v}"`).join(', ')}
+                </p>
+              )}
+
+              {hasVariants && (
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="min-w-[12rem] flex-1">
+                    <Label htmlFor={`merge-${mergeKey}`} className="text-xs">
+                      Canonical name
+                    </Label>
+                    <Input
+                      id={`merge-${mergeKey}`}
+                      value={mergeName}
+                      onChange={(e) =>
+                        setMergeNames((prev) => ({ ...prev, [mergeKey]: e.target.value }))
+                      }
+                      className="mt-1 h-8 bg-input border-border text-sm"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!mergeName.trim()}
+                    onClick={() => onMergeGroup(group.sceneIds, mergeName.trim())}
+                  >
+                    Merge {group.sceneIds.length} scene{group.sceneIds.length === 1 ? '' : 's'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
 export function ScriptImportPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const isEpisodic = currentProduction?.is_episodic === true
   const [importEpisodeId, setImportEpisodeId] = useState('')
-  const [importedScenes, setImportedScenes] = useState<ParsedScene[] | null>(null)
+  const [importDrafts, setImportDrafts] = useState<ImportSceneDraft[] | null>(null)
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
+  const [spellingBannerDismissed, setSpellingBannerDismissed] = useState(false)
   const [uploadedDoc, setUploadedDoc] = useState<{ name: string; id: string } | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
@@ -90,13 +205,38 @@ export function ScriptImportPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: existingLocations = [] } = useQuery({
+    queryKey: ['locations', currentProductionId],
+    queryFn: () => listLocationsByProduction(currentProductionId!),
+    enabled: !!currentProductionId && importDrafts != null && importDrafts.length > 0,
+  })
+
+  const locationGroups = useMemo(
+    () => (importDrafts ? analyzeImportLocations(importDrafts, existingLocations) : []),
+    [importDrafts, existingLocations]
+  )
+
+  const showSpellingBanner =
+    importDrafts != null &&
+    importDrafts.length > 0 &&
+    hasLocationSpellingVariants(locationGroups) &&
+    !spellingBannerDismissed
+
+  const editingDraft = importDrafts?.find((d) => d.id === editingDraftId) ?? null
+
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     defaultValues: { rawText: '' },
   })
 
+  const setParsedScenes = (scenes: Parameters<typeof toImportSceneDrafts>[0]) => {
+    setImportDrafts(toImportSceneDrafts(scenes))
+    setSpellingBannerDismissed(false)
+    setEditingDraftId(null)
+  }
+
   const createScenesMutation = useMutation({
-    mutationFn: async (scenes: ParsedScene[]) => {
+    mutationFn: async (drafts: ImportSceneDraft[]) => {
       if (!currentProductionId) {
         return { linkedPrior: null, versionCreated: false }
       }
@@ -104,15 +244,16 @@ export function ScriptImportPage() {
       if (isEpisodic && !epId) {
         throw new Error('Choose an episode before importing scenes.')
       }
-      // Scenes are created via the existing repository (preserves remote-server behaviour).
+
+      const scenes = drafts.map(draftToParsedScene)
       const locationNames = scenes
-        .map((s) => s.location ?? extractLocationFromSlug(s.title))
+        .map((s) => effectiveParsedLocation(s))
         .filter((loc): loc is string => !!loc?.trim())
       const locationMap = await resolveImportLocations(currentProductionId, locationNames)
 
-      const created: Array<{ sceneId: string; parsed: ParsedScene }> = []
+      const created: Array<{ sceneId: string; parsed: ReturnType<typeof draftToParsedScene> }> = []
       for (const s of scenes) {
-        const locationId = locationIdForParsedName(locationMap, s.location)
+        const locationId = locationIdForParsedName(locationMap, effectiveParsedLocation(s))
         const scene = await createScene({
           production_id: currentProductionId,
           scene_number: s.scene_number,
@@ -128,8 +269,7 @@ export function ScriptImportPage() {
         }
         created.push({ sceneId: scene.id, parsed: s })
       }
-      // Generate the SB1 script version, pages, and default sections from the parsed scenes.
-      // No-op for remote-server productions (handled inside the service).
+
       const version = await generateScriptVersionFromScenes({
         productionId: currentProductionId,
         episodeId: isEpisodic ? epId : null,
@@ -152,7 +292,8 @@ export function ScriptImportPage() {
         queryClient.invalidateQueries({ queryKey: ['script-versions-prior', currentProductionId] })
         queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
       }
-      setImportedScenes(null)
+      setImportDrafts(null)
+      setEditingDraftId(null)
       form.setValue('rawText', '')
       setParseError(null)
       setMutationError(null)
@@ -200,13 +341,13 @@ export function ScriptImportPage() {
         const scenes = await parsePdfScript(buffer, {
           onProgress: (page, total) => setParseProgress({ page, total }),
         })
-        setImportedScenes(scenes)
+        setParsedScenes(scenes)
         if (scenes.length === 0) {
           setParseError('No scenes were detected. Check the PDF uses standard INT./EXT. scene headings, or paste the text instead.')
         }
       } catch (e) {
         setParseError(describePdfError(e))
-        setImportedScenes(null)
+        setImportDrafts(null)
       } finally {
         setParseProgress(null)
       }
@@ -217,14 +358,14 @@ export function ScriptImportPage() {
         const content = await readFile(result.relativePath, { baseDir: BaseDirectory.AppData })
         const text = typeof content === 'string' ? content : new TextDecoder().decode(content)
         const scenes = await defaultParser.parse({ type: 'text', content: text })
-        setImportedScenes(scenes)
+        setParsedScenes(scenes)
       } catch (e) {
         setParseError(e instanceof Error ? e.message : 'Failed to read or parse file')
-        setImportedScenes(null)
+        setImportDrafts(null)
       }
       return
     }
-    setImportedScenes(null)
+    setImportDrafts(null)
   }
 
   const handleParseText = async () => {
@@ -233,11 +374,23 @@ export function ScriptImportPage() {
     if (!raw) return
     try {
       const scenes = await defaultParser.parse({ type: 'text', content: raw })
-      setImportedScenes(scenes)
+      setParsedScenes(scenes)
     } catch (e) {
       setParseError(e instanceof Error ? e.message : 'Parse failed')
-      setImportedScenes(null)
+      setImportDrafts(null)
     }
+  }
+
+  const handleSaveDraft = (updated: ImportSceneDraft) => {
+    setImportDrafts((prev) =>
+      prev ? prev.map((draft) => (draft.id === updated.id ? updated : draft)) : prev
+    )
+  }
+
+  const handleMergeLocationGroup = (sceneIds: string[], canonicalName: string) => {
+    setImportDrafts((prev) =>
+      prev ? applyLocationMergeToDrafts(prev, sceneIds, canonicalName) : prev
+    )
   }
 
   if (!currentProductionId) {
@@ -268,6 +421,22 @@ export function ScriptImportPage() {
         <p role="alert" className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">
           {mutationError}
         </p>
+      )}
+
+      {showSpellingBanner && (
+        <div className="flex items-start justify-between gap-3 rounded-md bg-amber-500/15 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          <p>Some locations have multiple spellings — review before importing.</p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0"
+            aria-label="Dismiss"
+            onClick={() => setSpellingBannerDismissed(true)}
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
       )}
 
       {importSuccessMessage && (
@@ -327,23 +496,57 @@ export function ScriptImportPage() {
             />
           </div>
           <Button onClick={handleParseText}>Parse scenes</Button>
-          {importedScenes !== null && (
+          {importDrafts !== null && (
             <div>
               <p className="mb-2 text-sm font-medium">
-                Found {importedScenes.length} scene(s)
+                Found {importDrafts.length} scene(s) — click a scene to edit its header mapping
               </p>
-              <ul className="max-h-48 space-y-1 overflow-y-auto rounded border border-border p-2 text-sm">
-                {importedScenes.map((s, i) => (
-                  <li key={i}>
-                    {s.scene_number}: {s.title.slice(0, 60)}
-                    {s.title.length > 60 ? '...' : ''}
-                    {s.int_ext && ` [${s.int_ext}]`}
-                    {s.location && (
-                      <span className="text-muted-foreground"> → {s.location}</span>
-                    )}
-                  </li>
-                ))}
+              <ul className="max-h-64 space-y-1 overflow-y-auto rounded border border-border p-1 text-sm">
+                {importDrafts.map((draft) => {
+                  const locationName = effectiveParsedLocation(draft)
+                  return (
+                    <li key={draft.id}>
+                      <button
+                        type="button"
+                        className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left hover:bg-muted/60"
+                        onClick={() => setEditingDraftId(draft.id)}
+                      >
+                        <span className="shrink-0 font-medium tabular-nums w-10">
+                          {draft.scene_number}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {sceneScheduleLabel(draft, locationName)}
+                        </span>
+                        <span className="flex shrink-0 gap-1">
+                          {draft.int_ext && (
+                            <Badge variant="secondary" className="text-[10px]">
+                              {draft.int_ext}
+                            </Badge>
+                          )}
+                          {draft.day_night && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {draft.day_night}
+                            </Badge>
+                          )}
+                          {draft.page_eighths != null && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {draft.page_eighths}/8
+                            </Badge>
+                          )}
+                        </span>
+                        <Pencil className="size-3.5 shrink-0 text-muted-foreground mt-0.5" />
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
+
+              <ImportLocationSummary
+                drafts={importDrafts}
+                productionId={currentProductionId}
+                onMergeGroup={handleMergeLocationGroup}
+              />
+
               {isEpisodic && (
                 <div className="mt-3 space-y-2">
                   <Label>
@@ -410,10 +613,10 @@ export function ScriptImportPage() {
               )}
               <Button
                 className="mt-2"
-                onClick={() => createScenesMutation.mutate(importedScenes)}
+                onClick={() => createScenesMutation.mutate(importDrafts)}
                 disabled={
                   createScenesMutation.isPending ||
-                  importedScenes.length === 0 ||
+                  importDrafts.length === 0 ||
                   (isEpisodic && (!importEpisodeId.trim() || importEpisodes.length === 0))
                 }
               >
@@ -423,6 +626,16 @@ export function ScriptImportPage() {
           )}
         </CardContent>
       </Card>
+
+      <ScriptImportSceneEditorDialog
+        draft={editingDraft}
+        open={editingDraftId != null}
+        onOpenChange={(open) => {
+          if (!open) setEditingDraftId(null)
+        }}
+        existingLocations={existingLocations}
+        onSave={handleSaveDraft}
+      />
     </div>
   )
 }

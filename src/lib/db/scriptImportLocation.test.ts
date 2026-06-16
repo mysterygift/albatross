@@ -43,6 +43,12 @@ describe('normalizeLocationKey', () => {
   it('trims, collapses whitespace, and uppercases', () => {
     expect(normalizeLocationKey("  Ship's   Deck  ")).toBe("SHIP'S DECK")
   })
+
+  it('normalizes unicode dashes and apostrophes', () => {
+    expect(normalizeLocationKey('KITCHEN – DAY')).toBe('KITCHEN - DAY')
+    expect(normalizeLocationKey("JOHN'S APARTMENT")).toBe("JOHN'S APARTMENT")
+    expect(normalizeLocationKey('JOHN\u2019S APARTMENT')).toBe("JOHN'S APARTMENT")
+  })
 })
 
 describe('resolveImportLocations', () => {
@@ -86,6 +92,19 @@ describe('resolveImportLocations', () => {
     const locations = await listLocationsByProduction(production.id)
     expect(locations).toHaveLength(1)
     expect(locations[0]!.name).toBe('KITCHEN')
+  })
+
+  it('dedupes punctuation variants within one batch', async () => {
+    const production = await createProduction({ name: 'Loc punct', notes: null }, { skipBudgetSeed: true })
+
+    await resolveImportLocations(production.id, ['KITCHEN', 'kitchen', 'KITCHEN – LOFT'])
+
+    const locations = await listLocationsByProduction(production.id)
+    expect(locations).toHaveLength(2)
+    expect(locations.map((l) => normalizeLocationKey(l.name)).sort()).toEqual([
+      'KITCHEN',
+      'KITCHEN - LOFT',
+    ])
   })
 })
 

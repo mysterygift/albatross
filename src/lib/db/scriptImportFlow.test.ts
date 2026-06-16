@@ -15,6 +15,7 @@ import {
   locationIdForParsedName,
   resolveImportLocations,
 } from '@/lib/db/scriptImportLocationService'
+import { effectiveParsedLocation } from '@/lib/schedule/scriptImportReview'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { linkLocationScene } from '@/lib/db/repositories/location-scene'
 import { listLocationIdsByScene } from '@/lib/db/repositories/location-scene'
@@ -81,13 +82,13 @@ describe('script import flow (parser → scenes → generation)', () => {
     expect(parsed[0]).toMatchObject({ location: 'WAREHOUSE', int_ext: 'INT' })
 
     const locationNames = parsed
-      .map((s) => s.location)
+      .map((s) => effectiveParsedLocation(s))
       .filter((loc): loc is string => !!loc?.trim())
     const locationMap = await resolveImportLocations(production.id, locationNames)
 
     const created: Array<{ sceneId: string; parsed: (typeof parsed)[number] }> = []
     for (const scene of parsed) {
-      const locationId = locationIdForParsedName(locationMap, scene.location)
+      const locationId = locationIdForParsedName(locationMap, effectiveParsedLocation(scene))
       const row = await createScene({
         production_id: production.id,
         scene_number: scene.scene_number,
