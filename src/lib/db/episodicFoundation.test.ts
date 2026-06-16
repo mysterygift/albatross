@@ -273,7 +273,7 @@ describe('episodic production foundation', () => {
     )
     exec(
       db,
-      `INSERT INTO scenes (id, production_id, scene_number, heading, description, created_at, updated_at) VALUES ('sc1', 'np', '1', NULL, NULL, 't', 't')`
+      `INSERT INTO scenes (id, production_id, scene_number, description, created_at, updated_at) VALUES ('sc1', 'np', '1', NULL, 't', 't')`
     )
     exec(db, `INSERT INTO music_tracks (id, production_id, title, created_at, updated_at) VALUES ('mt1', 'np', 'T', 't', 't')`)
     exec(db, `INSERT INTO deliverables (id, production_id, name, created_at, updated_at) VALUES ('del1', 'np', 'D', 't', 't')`)

@@ -42,6 +42,14 @@ describe('extractLocationFromSlug', () => {
     expect(extractLocationFromSlug(slug)).toBe('KITCHEN')
     expect(inferDayNight(slug)).toBe('DAY')
   })
+
+  it('infers DAWN, DUSK, and TIMELESS', () => {
+    expect(inferDayNight('CITY SKYLINE - DAWN')).toBe('DAWN')
+    expect(inferDayNight('HILLTOP - DUSK')).toBe('DUSK')
+    expect(inferDayNight('VOID - TIMELESS')).toBe('TIMELESS')
+    expect(inferDayNight('BEACH - SUNRISE')).toBe('DAWN')
+    expect(inferDayNight('PIER - SUNSET')).toBe('DUSK')
+  })
 })
 
 describe('formatSceneHeading', () => {

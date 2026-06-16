@@ -101,7 +101,6 @@ export const NORTH_SHORE_LOCATIONS: NorthShoreLocationSeed[] = [
 ]
 
 export type NorthShoreSceneSeed = {
-  heading: string
   title: string
   description: string
   int_ext: 'INT' | 'EXT'
@@ -118,7 +117,6 @@ export type NorthShoreSceneSeed = {
 export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
   // Episode 1
   {
-    heading: 'INT. CABIN - DAY',
     title: 'Morning ledgers',
     description:
       'JADE sorts ferry tickets beside a jar of sea glass--proof her uncle still watched the water. A radio weather report cuts in; she kills it.',
@@ -128,7 +126,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 5,
   },
   {
-    heading: "EXT. SHIP'S DECK - DAY",
     title: 'Arrival groove',
     description:
       "ARI helps tourists with bags while scanning the quay for a courier. The ship's horn masks his whispered phone call.",
@@ -138,7 +135,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 6,
   },
   {
-    heading: 'EXT. MARKET - DAY',
     title: 'The wrong envelope',
     description:
       'NAOMI, plain-clothes liaison, intercepts a hand-off meant for ARI. Lemons tumble; crowd covers the switch.',
@@ -148,7 +144,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 7,
   },
   {
-    heading: 'INT. CAR - DAY',
     title: 'Coastal road truth',
     description:
       'JADE drives; ALEX navigates. They argue about whether to involve the police--rear windshield frames passing cliffs.',
@@ -158,7 +153,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 5,
   },
   {
-    heading: 'INT. SCHOOL - DAY',
     title: 'Corridor rumor',
     description:
       "MILO plants a rumor about Elena's family; LEAH overhears and films a thread of whispers for her piece.",
@@ -168,7 +162,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 6,
   },
   {
-    heading: 'EXT. BEACH - NIGHT',
     title: 'Bioluminescence pact',
     description:
       'JADE and TOMASZ drag a dinghy; they agree on a midnight rule--no phones, no shore lights--for ten minutes.',
@@ -178,7 +171,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 8,
   },
   {
-    heading: 'INT. BATHROOM - NIGHT',
     title: 'Sick with fear',
     description:
       'EVELYN steadies herself after a threatening voice note; steam hides her face as she deletes call history.',
@@ -188,7 +180,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 4,
   },
   {
-    heading: 'INT. CABIN - DAY',
     title: 'Hidden chart',
     description:
       'OWEN unfurls a nautical chart marked with pencil crosses--old smuggling routes that now match marina CCTV blind spots.',
@@ -198,7 +189,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 7,
   },
   {
-    heading: 'EXT. MARKET - DAY',
     title: 'Second coffee',
     description:
       'PRIYA buys time with a vendor while SERENA negotiates a penalty clause on a development contract, streets noisy behind them.',
@@ -208,7 +198,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 5,
   },
   {
-    heading: "EXT. SHIP'S DECK - DAY",
     title: "Captain's warning",
     description:
       'MARCUS gets a blunt warning from the ferry master: coast guard is asking questions; someone is feeding them.',
@@ -219,7 +208,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
   },
   // Episode 2
   {
-    heading: 'INT. SCHOOL - DAY',
     title: 'Lab ignition',
     description:
       'A failed Bunsen prank triggers a sprinkler; Nadia shields a child--telephoto parents capture the wrong angle.',
@@ -229,7 +217,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 6,
   },
   {
-    heading: 'EXT. BEACH - NIGHT',
     title: 'Bonfire testimony',
     description:
       'BEN distributes burner phones "for safety"; JADE refuses--public split that the crowd reads as betrayal.',
@@ -239,7 +226,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 8,
   },
   {
-    heading: 'INT. CAR - DAY',
     title: 'Urgent detour',
     description:
       'DCI NAOMI (Reed) reroutes with MARCUS; they compare timestamps from two harbours--someone is duplicating manifests.',
@@ -249,7 +235,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 5,
   },
   {
-    heading: 'INT. CABIN - DAY',
     title: 'Family crest',
     description:
       "THEO finds a crest carved under a bunk--same symbol as a crate in Owen's photos. Wind snaps the shutters.",
@@ -259,7 +244,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 4,
   },
   {
-    heading: 'EXT. MARKET - DAY',
     title: 'Boycott whispers',
     description:
       "LEAH's article goes live; stallholders turn their backs on EVELYN's foundation reps. ARI films the humiliation.",
@@ -269,7 +253,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 7,
   },
   {
-    heading: "EXT. SHIP'S DECK - DAY",
     title: 'Customs walkthrough',
     description:
       'Officials board; MILO stalls with a broken passport scanner routine while PRIYA swaps an SD card in the galley.',
@@ -279,7 +262,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 6,
   },
   {
-    heading: 'INT. BATHROOM - NIGHT',
     title: 'Mirror promise',
     description:
       'JADE practices a statement she may never give; ALEX listens from the hallway--door cracked, blue night light.',
@@ -289,7 +271,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 5,
   },
   {
-    heading: 'INT. SCHOOL - DAY',
     title: 'Counselor door',
     description:
       "SERENA advises suspension for Milo; DCI NAOMI arrives--school isn't neutral ground anymore.",
@@ -299,7 +280,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 6,
   },
   {
-    heading: 'EXT. BEACH - NIGHT',
     title: 'Tide argument',
     description:
       'TOMASZ and BEN fight over who moves a cache; flashlight beams jitter like failing continuity.',
@@ -309,7 +289,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 7,
   },
   {
-    heading: 'INT. CAR - DAY',
     title: 'Recorded confession',
     description:
       'OWEN plays a muffled tape; Nadia realizes the voice is a loop--someone is layering old audio to bait cops.',
@@ -320,7 +299,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
   },
   // Episode 3
   {
-    heading: "EXT. SHIP'S DECK - DAY",
     title: 'Last crossing',
     description:
       'Jade boards early as the rest wake; ALEX catches the gangway as fog lifts--two timelines converge on the same manifest.',
@@ -330,7 +308,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 6,
   },
   {
-    heading: 'INT. CABIN - DAY',
     title: 'Packed bags',
     description:
       'ALEX leaves the chart on the table--deliberately. THEO adds a ferry schedule circled in red.',
@@ -340,7 +317,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 5,
   },
   {
-    heading: 'EXT. MARKET - DAY',
     title: 'Public witness',
     description:
       'LEAH livestreams an apology that fractures: half the crowd wants reconciliation, half demands arrests.',
@@ -350,7 +326,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 8,
   },
   {
-    heading: 'INT. SCHOOL - DAY',
     title: 'Empty corridor',
     description:
       'MILO returns alone after hours; MARCUS waits--juvenile caution vs investigation clock.',
@@ -360,7 +335,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 4,
   },
   {
-    heading: 'INT. BATHROOM - NIGHT',
     title: 'Final scrub',
     description:
       'EVELYN scrubs ink from her hands--contracts signed under pressure; water runs until it sounds like surf.',
@@ -370,7 +344,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 5,
   },
   {
-    heading: 'EXT. BEACH - NIGHT',
     title: 'Hands in the tide',
     description:
       'JADE releases the last phone into the water; ARI stops filming--chooses to be present instead.',
@@ -380,7 +353,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 7,
   },
   {
-    heading: 'INT. CAR - DAY',
     title: 'Escort run',
     description:
       'NAOMI runs code to the dock; PRIYA rides shotgun decoding radio chatter--sirens far, seagulls near.',
@@ -390,7 +362,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 6,
   },
   {
-    heading: 'INT. CABIN - DAY',
     title: 'Letter left behind',
     description:
       'SERENA leaves a sealed letter for the foundation board; OWEN finds it--reads one line, pockets it.',
@@ -400,7 +371,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 4,
   },
   {
-    heading: 'EXT. MARKET - DAY',
     title: 'Bread and truce',
     description:
       'NADIA breaks bread with a vendor who spat at her yesterday--small repair before the season turns.',
@@ -410,7 +380,6 @@ export const NORTH_SHORE_SCENES: NorthShoreSceneSeed[] = [
     page_eighths: 5,
   },
   {
-    heading: "EXT. SHIP'S DECK - DAY",
     title: 'North shore open',
     description:
       'The ferry clears the headland; ensemble on rail--some faces missing, some new. Hold on Jade: she smiles, finally uncertain on purpose.',

@@ -81,7 +81,7 @@ export async function duplicateProduction(
     db.select<Record<string, unknown>[]>(`SELECT * FROM crew_availability WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM budget_categories WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM budget_items WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
-    db.select<Record<string, unknown>[]>(`SELECT * FROM vendors WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM vendors WHERE production_id = $1 AND deleted_at IS NULL AND is_global = 0`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM expenses WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(
       `SELECT d.* FROM expense_transaction_details d INNER JOIN expenses e ON e.id = d.expense_id WHERE e.production_id = $1 AND e.deleted_at IS NULL`,
@@ -222,12 +222,11 @@ export async function duplicateProduction(
     const locId = mapId(locationIdMap, r.location_id as string | null)
     const episodeId = mapId(episodeIdMap, (r.episode_id as string | null) ?? null)
     statements.push({
-      sql: `INSERT INTO scenes (id, production_id, scene_number, heading, title, description, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      sql: `INSERT INTO scenes (id, production_id, scene_number, title, description, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       bindValues: [
         id,
         newProdId,
         r.scene_number,
-        r.heading,
         r.title,
         r.description,
         r.int_ext,
@@ -358,8 +357,8 @@ export async function duplicateProduction(
     const id = newId()
     vendorIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO vendors (id, production_id, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      bindValues: [id, newProdId, r.company_name, r.primary_contact_full_name ?? null, r.primary_contact_email ?? null, ts, ts],
+      sql: `INSERT INTO vendors (id, production_id, is_global, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      bindValues: [id, newProdId, r.is_global ?? 0, r.company_name, r.primary_contact_full_name ?? null, r.primary_contact_email ?? null, ts, ts],
     })
   }
   for (const r of budgetItems) {

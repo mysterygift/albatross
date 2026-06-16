@@ -321,7 +321,8 @@ function enrichSidesGroupsWithCollatedScript(
       collatedScriptText: collateSceneScriptText(
         sceneGroup.scene,
         sceneGroup.entries,
-        scriptPagesByVersionId
+        scriptPagesByVersionId,
+        sceneGroup.entries[0]?.locationName ?? null
       ),
     })),
   }))

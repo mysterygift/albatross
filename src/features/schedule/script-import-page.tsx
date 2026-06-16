@@ -11,7 +11,7 @@ import { generateScriptVersionFromScenes } from '@/lib/db/scriptSectionGeneratio
 import { formatScriptVersionLabel } from '@/lib/db/scriptSectionReconciliationService'
 import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
 import { getLatestScriptVersionForScope } from '@/lib/db/repositories/scriptVersions'
-import { defaultParser, parsePdfScript, PdfParseError, formatSceneHeading } from '@/lib/script-parser'
+import { defaultParser, parsePdfScript, PdfParseError, extractLocationFromSlug } from '@/lib/script-parser'
 import type { ParsedScene } from '@/lib/script-parser'
 import {
   locationIdForParsedName,
@@ -106,7 +106,7 @@ export function ScriptImportPage() {
       }
       // Scenes are created via the existing repository (preserves remote-server behaviour).
       const locationNames = scenes
-        .map((s) => s.location)
+        .map((s) => s.location ?? extractLocationFromSlug(s.title))
         .filter((loc): loc is string => !!loc?.trim())
       const locationMap = await resolveImportLocations(currentProductionId, locationNames)
 
@@ -116,7 +116,6 @@ export function ScriptImportPage() {
         const scene = await createScene({
           production_id: currentProductionId,
           scene_number: s.scene_number,
-          heading: formatSceneHeading(s.int_ext, s.title),
           title: s.title,
           description: null,
           int_ext: s.int_ext ?? undefined,

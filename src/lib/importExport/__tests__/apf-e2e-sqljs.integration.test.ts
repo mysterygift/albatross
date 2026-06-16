@@ -13,9 +13,10 @@ import { ApfImportConflictError } from '@/lib/importExport/errors'
 import { exportProductionAsApf } from '@/lib/importExport/exportProduction'
 import { loadApfV1ProductionTables } from '@/lib/importExport/exportLoadProductionData'
 import { importProductionFromApf } from '@/lib/importExport/importProduction'
+import { buildApfZipBytes } from '@/lib/importExport/buildApfArchive'
 import { parseApfArchiveBytes } from '@/lib/importExport/readApfArchive'
 import { resetApfImportPragmaCache } from '@/lib/importExport/planImportStatements'
-import { buildValidApfZipBytes, emptyApfTables, minimalProductionRow } from '@/test/apf/fixtures'
+import { buildFixtureDataAndManifest, buildValidApfZipBytes, emptyApfTables, minimalProductionRow } from '@/test/apf/fixtures'
 import { apfNodeFsTestContext } from '@/test/apf/apfNodeFsTestContext'
 import { applyAlbatrossMigrationsSqlJs } from '@/test/apf/applyMigrationsSqlJs'
 import { sqlJsApfE2eContext } from '@/test/apf/sqlJsApfE2eContext'
@@ -185,7 +186,7 @@ describe('apf E2E (sql.js + real FS)', () => {
     const exportedBytes = new Uint8Array(await readFile(apfPath))
     const parsedExport = parseApfArchiveBytes(exportedBytes)
     expect(parsedExport.normalized.data.tables.budget_revisions).toHaveLength(1)
-    expect(parsedExport.normalized.data.formatVersion).toBe(3)
+    expect(parsedExport.normalized.data.formatVersion).toBe(4)
 
     clearUserData()
     const imp = await importProductionFromApf(apfPath)
@@ -198,6 +199,49 @@ describe('apf E2E (sql.js + real FS)', () => {
     )
     expect(revRows).toHaveLength(1)
     expect(String(revRows[0]!.id)).toBe(REV_ID)
+  })
+
+  it('imports legacy v3 scenes.heading via file migration into title', async () => {
+    clearUserData()
+    const adapter = sqlJsApfE2eContext.adapter!
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow({ id: PROD_ID, slug: 'legacy-v3-scene', name: 'Legacy v3 Scene' })]
+    tables.scenes = [
+      {
+        id: E2E_SCENE_ID,
+        production_id: PROD_ID,
+        scene_number: '5',
+        heading: 'INT. WAREHOUSE - NIGHT',
+        title: null,
+        description: null,
+        int_ext: 'INT',
+        day_night: 'NIGHT',
+        page_eighths: null,
+        location_id: null,
+        duration_minutes: null,
+        episode_id: null,
+        created_at: TS,
+        updated_at: TS,
+        deleted_at: null,
+      },
+    ]
+    const { manifest, dataFile } = buildFixtureDataAndManifest({ tables })
+    const legacyManifest = { ...manifest, formatVersion: 3 as const }
+    const legacyData = JSON.parse(JSON.stringify(dataFile)) as typeof dataFile
+    legacyData.formatVersion = 3
+    const legacyApfPath = join(workDir, 'legacy-v3-scene.apf')
+    await writeFile(legacyApfPath, buildApfZipBytes(legacyManifest, legacyData, []))
+
+    const imp = await importProductionFromApf(legacyApfPath)
+    expect(imp.ok).toBe(true)
+    if (!imp.ok) throw imp.error
+
+    const rows = await adapter.select<Array<{ title: string | null }>>(
+      `SELECT title FROM scenes WHERE id = $1`,
+      [E2E_SCENE_ID]
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.title).toBe('INT. WAREHOUSE - NIGHT')
   })
 
   it('exports then imports into a wiped DB with restored document bytes and stable UUIDs', async () => {
@@ -268,8 +312,8 @@ describe('apf E2E (sql.js + real FS)', () => {
       [E2E_BLOC_ID, PROD_ID, TS]
     )
     await adapter.execute(
-      `INSERT INTO scenes (id, production_id, scene_number, heading, description, title, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at, deleted_at)
-       VALUES ($1, $2, '1', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, $3, $4, $4, NULL)`,
+      `INSERT INTO scenes (id, production_id, scene_number, description, title, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, '1', NULL, NULL, NULL, NULL, NULL, NULL, NULL, $3, $4, $4, NULL)`,
       [E2E_SCENE_ID, PROD_ID, EP_E2E_ARCH, TS]
     )
     await adapter.execute(

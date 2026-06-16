@@ -106,7 +106,9 @@ describe('postgres phase 6 performance and concurrency hardening', () => {
         const scene = await createScene({
           production_id: production.id,
           scene_number: String(s + 1).padStart(3, '0'),
-          heading: `EXT. COAST ROAD - ${s + 1}`,
+          title: `EXT. COAST ROAD - ${s + 1}`,
+          int_ext: 'EXT',
+          day_night: 'DAY',
           description: 'North Shore load data',
         })
         for (let sh = 0; sh < 4; sh++) {
@@ -196,7 +198,7 @@ describe('postgres phase 6 performance and concurrency hardening', () => {
           run: async () => {
             const scene = await listScenesByProduction(production.id).then((rows) => rows[Math.floor(Math.random() * rows.length)])
             if (!scene) return
-            await updateScene(scene.id, { heading: `${scene.heading ?? 'EXT'} / updated` }, { expectedUpdatedAt: scene.updated_at })
+            await updateScene(scene.id, { title: `${scene.title ?? 'EXT scene'} / updated` }, { expectedUpdatedAt: scene.updated_at })
           },
         },
         {
@@ -302,7 +304,8 @@ describe('postgres phase 6 performance and concurrency hardening', () => {
         const scene = await createScene({
           production_id: production.id,
           scene_number: String(s + 1).padStart(3, '0'),
-          heading: 'EXT. EXPLAIN',
+          title: 'EXT. EXPLAIN',
+          int_ext: 'EXT',
         })
         for (let sh = 0; sh < 5; sh++) {
           await createShot({ scene_id: scene.id, shot_number: String(sh + 1) })
@@ -349,7 +352,7 @@ describe('postgres phase 6 performance and concurrency hardening', () => {
     try {
       const production = await createProduction({ name: 'Phase6 Conflicts', notes: null }, { skipBudgetSeed: true })
       const category = await createBudgetCategory({ production_id: production.id, code: 'ATL', name: 'ATL' })
-      const scene = await createScene({ production_id: production.id, scene_number: '1', heading: 'EXT. BEACH' })
+      const scene = await createScene({ production_id: production.id, scene_number: '1', title: 'EXT. BEACH', int_ext: 'EXT' })
       await createShot({ scene_id: scene.id, shot_number: '1' })
       const budgetItem = await createBudgetItem({
         production_id: production.id,
@@ -359,9 +362,9 @@ describe('postgres phase 6 performance and concurrency hardening', () => {
       })
 
       const [freshScene] = await listScenesByProduction(production.id)
-      await updateScene(freshScene!.id, { heading: 'EXT. UPDATED 1' }, { expectedUpdatedAt: freshScene!.updated_at })
+      await updateScene(freshScene!.id, { title: 'EXT. UPDATED 1' }, { expectedUpdatedAt: freshScene!.updated_at })
       await expect(
-        updateScene(freshScene!.id, { heading: 'EXT. UPDATED 2' }, { expectedUpdatedAt: freshScene!.updated_at })
+        updateScene(freshScene!.id, { title: 'EXT. UPDATED 2' }, { expectedUpdatedAt: freshScene!.updated_at })
       ).rejects.toBeInstanceOf(OptimisticConcurrencyConflictError)
 
       const [freshShot] = await listShotsByProduction(production.id)

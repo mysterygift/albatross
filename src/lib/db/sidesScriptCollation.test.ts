@@ -14,7 +14,6 @@ function scene(over: Partial<Scene> = {}): Scene {
     production_id: 'prod-1',
     episode_id: null,
     scene_number: '2',
-    heading: 'EXT. ROAD - DAY',
     title: null,
     description: null,
     int_ext: 'EXT',
@@ -109,7 +108,8 @@ describe('sidesScriptCollation', () => {
           origin: 'included',
         },
       ],
-      pages
+      pages,
+      'ROAD'
     )
 
     expect(collated).toContain('EXT. ROAD - DAY')

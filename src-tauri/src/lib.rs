@@ -904,6 +904,36 @@ pub fn run() {
             sql: include_str!("../migrations/0080_shots_consolidate_shot_description.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 81,
+            description: "vendors_is_global",
+            sql: include_str!("../migrations/0081_vendors_is_global.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 82,
+            description: "vendor_production_exclusions",
+            sql: include_str!("../migrations/0082_vendor_production_exclusions.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 83,
+            description: "scenes_drop_heading",
+            sql: include_str!("../migrations/0083_scenes_drop_heading.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 84,
+            description: "scenes_day_night_expand",
+            sql: include_str!("../migrations/0084_scenes_day_night_expand.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 85,
+            description: "scenes_int_ext_clear_unk",
+            sql: include_str!("../migrations/0085_scenes_int_ext_clear_unk.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

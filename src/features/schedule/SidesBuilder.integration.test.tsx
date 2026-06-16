@@ -39,7 +39,6 @@ function scene(over: Partial<Scene> = {}): Scene {
     production_id: 'prod-1',
     episode_id: null,
     scene_number: '1',
-    heading: 'INT. KITCHEN - DAY',
     title: null,
     description: null,
     int_ext: 'INT',
@@ -112,13 +111,13 @@ function source(over: Partial<SidesBuilderSource> = {}): SidesBuilderSource {
     entries: [
       entry({
         section: section({ id: 'sec-a', label: 'Opening', scene_id: 'scene-1' }),
-        scene: scene({ id: 'scene-1', scene_number: '1', heading: 'INT. KITCHEN - DAY' }),
+        scene: scene({ id: 'scene-1', scene_number: '1', int_ext: 'INT', day_night: 'DAY', title: 'INT. KITCHEN - DAY' }),
         scriptText: 'KITCHEN TEXT',
         origin: 'included',
       }),
       entry({
         section: section({ id: 'sec-b', label: 'Scene Two', scene_id: 'scene-2' }),
-        scene: scene({ id: 'scene-2', scene_number: '2', heading: 'EXT. PARK - DAY' }),
+        scene: scene({ id: 'scene-2', scene_number: '2', int_ext: 'EXT', day_night: 'DAY', title: 'EXT. PARK - DAY' }),
         scriptText: 'PARK TEXT',
         origin: 'fallback',
       }),

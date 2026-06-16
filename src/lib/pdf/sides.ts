@@ -8,6 +8,7 @@
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import { textForPdf } from '@/lib/pdf/callSheet'
+import { sceneSlugline } from '@/lib/schedule/sceneDisplay'
 import type {
   SidesDraftModel,
   SidesPreviewGroup,
@@ -122,7 +123,7 @@ function mapGroup(group: SidesPreviewGroup): SidesPdfGroup {
     episodeName: group.episodeName,
     scenes: group.scenes.map((sceneGroup) => ({
       sceneNumber: sceneGroup.scene.scene_number,
-      heading: sceneGroup.scene.heading ?? sceneGroup.scene.title ?? null,
+      heading: sceneSlugline(sceneGroup.scene, sceneGroup.entries[0]?.locationName ?? null),
       collatedScriptText: sceneGroup.collatedScriptText,
       sections: sceneGroup.entries.map(mapSection),
     })),

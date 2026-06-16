@@ -1,4 +1,4 @@
-import { formatSceneHeading } from '@/lib/script-parser/common'
+import { sceneSlugline } from '@/lib/schedule/sceneDisplay'
 import { enrichRangeWithPageOffsets } from './scriptEighthSplitService'
 import type { Scene, ScriptPage, ScriptSectionRange } from './types'
 
@@ -42,12 +42,8 @@ export function joinScenePagesFullText(pages: readonly ScriptPage[]): string | n
 }
 
 /** Screenplay scene slug for sides output. */
-export function sceneHeadingForSides(scene: Scene): string | null {
-  const heading = scene.heading?.trim()
-  if (heading) return heading
-  const title = scene.title?.trim()
-  if (title) return formatSceneHeading(scene.int_ext, title)
-  return null
+export function sceneHeadingForSides(scene: Scene, locationName?: string | null): string | null {
+  return sceneSlugline(scene, locationName)
 }
 
 function globalEighthInterval(range: ScriptSectionRange): GlobalEighthInterval | null {
@@ -132,8 +128,8 @@ export function extractScriptTextForRange(
   return parts.length > 0 ? parts.join('\n\n') : null
 }
 
-function ensureSceneHeading(text: string, scene: Scene): string {
-  const heading = sceneHeadingForSides(scene)
+function ensureSceneHeading(text: string, scene: Scene, locationName?: string | null): string {
+  const heading = sceneHeadingForSides(scene, locationName)
   if (!heading) return text
   const normalizedHeading = heading.replace(/\s+/g, ' ').trim().toUpperCase()
   const firstLine = text.split(/\r?\n/).find((line) => line.trim())?.replace(/\s+/g, ' ').trim().toUpperCase()
@@ -145,7 +141,8 @@ function ensureSceneHeading(text: string, scene: Scene): string {
 
 function collateFromRangeSlices(
   scene: Scene,
-  rangeWithPages: RangeWithPages[]
+  rangeWithPages: RangeWithPages[],
+  locationName?: string | null
 ): string | null {
   const intervals = rangeWithPages
     .map(({ range }) => globalEighthInterval(range))
@@ -166,12 +163,13 @@ function collateFromRangeSlices(
   }
 
   if (parts.length === 0) return null
-  return ensureSceneHeading(parts.join('\n\n'), scene)
+  return ensureSceneHeading(parts.join('\n\n'), scene, locationName)
 }
 
 function collateFromEntrySlices(
   scene: Scene,
-  entries: ReadonlyArray<{ scriptText: string | null }>
+  entries: ReadonlyArray<{ scriptText: string | null }>,
+  locationName?: string | null
 ): string | null {
   const parts: string[] = []
   const seen = new Set<string>()
@@ -182,7 +180,7 @@ function collateFromEntrySlices(
     parts.push(text)
   }
   if (parts.length === 0) return null
-  return ensureSceneHeading(parts.join('\n\n'), scene)
+  return ensureSceneHeading(parts.join('\n\n'), scene, locationName)
 }
 
 /**
@@ -197,7 +195,8 @@ export function collateSceneScriptText(
     scriptText: string | null
     origin: 'included' | 'fallback'
   }>,
-  scriptPagesByVersionId: Record<string, ScriptPage[]>
+  scriptPagesByVersionId: Record<string, ScriptPage[]>,
+  locationName?: string | null
 ): string | null {
   if (entries.length === 0) return null
 
@@ -209,7 +208,9 @@ export function collateSceneScriptText(
     const versionId = entries[0]!.section.script_version_id
     const pages = scenePagesForVersion(scriptPagesByVersionId, versionId, scene.id)
     const fullText = joinScenePagesFullText(pages)
-    return fullText ? ensureSceneHeading(fullText, scene) : collateFromEntrySlices(scene, entries)
+    return fullText
+      ? ensureSceneHeading(fullText, scene, locationName)
+      : collateFromEntrySlices(scene, entries, locationName)
   }
 
   const rangeWithPages: RangeWithPages[] = []
@@ -224,7 +225,7 @@ export function collateSceneScriptText(
     }
   }
 
-  const collated = collateFromRangeSlices(scene, rangeWithPages)
+  const collated = collateFromRangeSlices(scene, rangeWithPages, locationName)
   if (collated) return collated
-  return collateFromEntrySlices(scene, entries)
+  return collateFromEntrySlices(scene, entries, locationName)
 }

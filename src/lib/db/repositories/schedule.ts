@@ -13,6 +13,7 @@ import { serverRuntimeMutate } from '@/lib/server/serverClient'
 import { ServerRequestError } from '@/lib/server/serverErrors'
 import { enqueueServerOutbox } from '@/lib/server/serverOutboxRepository'
 import { updateLinkedProjectState } from '@/lib/server/linkedProjectRepository'
+import { normalizeSceneDayNight, normalizeSceneIntExt } from '@/lib/schedule/sceneFields'
 import { OptimisticConcurrencyConflictError } from '../concurrency'
 import {
   outboxPush,
@@ -152,11 +153,10 @@ function rowToScene(r: Record<string, unknown>): Scene {
     production_id: r.production_id as string,
     episode_id: (r.episode_id as string | null) ?? null,
     scene_number: r.scene_number as string,
-    heading: r.heading as string | null,
     title: (r.title as string | null) ?? null,
     description: r.description as string | null,
-    int_ext: (r.int_ext as Scene['int_ext']) ?? null,
-    day_night: (r.day_night as Scene['day_night']) ?? null,
+    int_ext: normalizeSceneIntExt(r.int_ext),
+    day_night: normalizeSceneDayNight(r.day_night),
     page_eighths: (r.page_eighths as number | null) ?? null,
     location_id: (r.location_id as string | null) ?? null,
     duration_minutes: (r.duration_minutes as number | null) ?? null,
@@ -1062,7 +1062,6 @@ export async function getSceneById(id: string, opts?: { productionId?: string })
 export async function createScene(data: {
   production_id: string
   scene_number: string
-  heading?: string | null
   title?: string | null
   description?: string | null
   int_ext?: Scene['int_ext']
@@ -1086,6 +1085,9 @@ export async function createScene(data: {
     throw new Error('Episode cannot be set for non-episodic productions.')
   }
 
+  const intExt = normalizeSceneIntExt(data.int_ext ?? null)
+  const dayNight = normalizeSceneDayNight(data.day_night ?? null)
+
   const rctx = await resolveServerPublishContext(data.production_id)
   if (rctx && (await getEffectiveDataSourceForProduction(data.production_id)) === 'remote_server') {
     const remoteId = uuid()
@@ -1094,11 +1096,10 @@ export async function createScene(data: {
       id: remoteId,
       production_id: data.production_id,
       scene_number: data.scene_number,
-      heading: data.heading ?? null,
       description: data.description ?? null,
       title: data.title ?? null,
-      int_ext: data.int_ext ?? null,
-      day_night: data.day_night ?? null,
+      int_ext: intExt,
+      day_night: dayNight,
       page_eighths: data.page_eighths ?? null,
       location_id: data.location_id ?? null,
       duration_minutes: data.duration_minutes ?? null,
@@ -1143,17 +1144,16 @@ export async function createScene(data: {
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${SCENE_TABLE} (id, production_id, scene_number, heading, description, title, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    `INSERT INTO ${SCENE_TABLE} (id, production_id, scene_number, description, title, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       id,
       data.production_id,
       data.scene_number,
-      data.heading ?? null,
       data.description ?? null,
       data.title ?? null,
-      data.int_ext ?? null,
-      data.day_night ?? null,
+      intExt,
+      dayNight,
       data.page_eighths ?? null,
       data.location_id ?? null,
       data.duration_minutes ?? null,
@@ -1168,7 +1168,6 @@ export async function createScene(data: {
 
 const SCENE_UPDATE_KEYS = [
   'scene_number',
-  'heading',
   'title',
   'description',
   'int_ext',
@@ -1206,7 +1205,16 @@ export async function updateScene(
   if (rctx && (await getEffectiveDataSourceForProduction(existing.production_id)) === 'remote_server') {
     const keys = SCENE_UPDATE_KEYS.filter((k) => data[k] !== undefined)
     if (keys.length === 0) return existing
-    const patch = Object.fromEntries(keys.map((k) => [k, data[k]]))
+    const patch = Object.fromEntries(
+      keys.map((k) => [
+        k,
+        k === 'day_night'
+          ? normalizeSceneDayNight(data[k])
+          : k === 'int_ext'
+            ? normalizeSceneIntExt(data[k])
+            : data[k],
+      ])
+    )
     try {
       const row = await serverRuntimeMutate(
         rctx.baseUrl,
@@ -1248,7 +1256,13 @@ export async function updateScene(
   for (const k of SCENE_UPDATE_KEYS) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(data[k])
+      vals.push(
+        k === 'day_night'
+          ? normalizeSceneDayNight(data[k])
+          : k === 'int_ext'
+            ? normalizeSceneIntExt(data[k])
+            : data[k]
+      )
     }
   }
   if (cols.length === 0) return existing

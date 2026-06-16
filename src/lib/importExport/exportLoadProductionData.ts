@@ -6,6 +6,7 @@ import { getDb } from '@/lib/db/client'
 import type { ApfTableRow, ApfV1Tables } from '@/lib/importExport/payload'
 import type { ApfV1TableKey } from '@/lib/importExport/tableKeys'
 import { APF_V1_TABLE_KEYS } from '@/lib/importExport/tableKeys'
+import { resolveVendorsForExport } from '@/lib/importExport/resolveVendorsForExport'
 
 function asRows(r: Record<string, unknown>[]): ApfTableRow[] {
   return r as ApfTableRow[]
@@ -29,7 +30,6 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     budgetCategories,
     budgetAccounts,
     budgetRevisions,
-    vendors,
     keyContacts,
     checklistItems,
     equipmentTerms,
@@ -120,10 +120,6 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     ),
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM budget_revisions WHERE production_id = $1 AND deleted_at IS NULL`,
-      [$1]
-    ),
-    db.select<Record<string, unknown>[]>(
-      `SELECT * FROM vendors WHERE production_id = $1 AND deleted_at IS NULL`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -376,6 +372,8 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     ),
   ])
 
+  const vendors = await resolveVendorsForExport(productionId)
+
   const raw: Record<ApfV1TableKey, ApfTableRow[]> = {
     productions: asRows(productions),
     episodes: asRows(episodeRows),
@@ -387,7 +385,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     budget_categories: asRows(budgetCategories),
     budget_accounts: asRows(budgetAccounts),
     budget_revisions: asRows(budgetRevisions),
-    vendors: asRows(vendors),
+    vendors,
     key_contacts: asRows(keyContacts),
     checklist_items: asRows(checklistItems),
     equipment_terms: asRows(equipmentTerms),

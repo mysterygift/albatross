@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createSqlJsTauriAdapter } from '@/test/apf/sqlJsTauriAdapter'
-import { defaultParser, formatSceneHeading } from '@/lib/script-parser'
+import { defaultParser } from '@/lib/script-parser'
 import { createProduction } from '@/lib/db/repositories/production'
 import { createScene, listScenesByProduction } from '@/lib/db/repositories/schedule'
 import { generateScriptVersionFromScenes } from '@/lib/db/scriptSectionGenerationService'
@@ -91,7 +91,6 @@ describe('script import flow (parser → scenes → generation)', () => {
       const row = await createScene({
         production_id: production.id,
         scene_number: scene.scene_number,
-        heading: formatSceneHeading(scene.int_ext, scene.title),
         title: scene.title,
         int_ext: scene.int_ext ?? undefined,
         day_night: scene.day_night ?? undefined,

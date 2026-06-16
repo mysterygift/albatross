@@ -21,7 +21,6 @@ function scene(over: Partial<Scene> = {}): Scene {
     production_id: 'prod-1',
     episode_id: null,
     scene_number: '1',
-    heading: 'INT. KITCHEN - DAY',
     title: 'Kitchen',
     description: null,
     int_ext: 'INT',
@@ -139,7 +138,7 @@ describe('sides builder service (SB6)', () => {
           entry({ section: section({ id: 'sec-1' }), scriptText: 'KITCHEN TEXT' }),
           entry({
             section: section({ id: 'sec-2', scene_id: 'scene-2' }),
-            scene: scene({ id: 'scene-2', scene_number: '2', heading: 'EXT. PARK - DAY' }),
+            scene: scene({ id: 'scene-2', scene_number: '2', int_ext: 'EXT', day_night: 'DAY', title: 'EXT. PARK - DAY' }),
             scriptText: 'PARK TEXT',
           }),
         ],

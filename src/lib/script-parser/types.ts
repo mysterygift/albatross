@@ -2,8 +2,8 @@
  * Script parser types. Implementations: TxtParser (INT./EXT.), PdfParser (future).
  */
 
-export type IntExt = 'INT' | 'EXT' | 'MIXED' | 'UNK'
-export type DayNight = 'DAY' | 'NIGHT' | 'MIXED' | 'UNK'
+export type IntExt = 'INT' | 'EXT' | 'MIXED'
+export type DayNight = 'DAY' | 'NIGHT' | 'MIXED' | 'DAWN' | 'DUSK' | 'TIMELESS'
 
 /** Screenplay element type produced by the layout-aware PDF classifier. */
 export type PdfLineType =

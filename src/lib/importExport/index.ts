@@ -48,7 +48,7 @@ export {
   type ApfManifestV1,
 } from '@/lib/importExport/manifest'
 
-export { APF_FILE_MIGRATIONS, migrateApfToCurrentVersion, type ApfFileMigrator, type ApfMigrationContext } from '@/lib/importExport/migrate'
+export { APF_FILE_MIGRATIONS, migrateApfToCurrentVersion, migrateScenesDropHeading, synthesizeMissingBudgetRevisions, type ApfFileMigrator, type ApfMigrationContext } from '@/lib/importExport/migrate'
 
 export { normalizeApfManifestAndData, type NormalizedApfProjectPackage } from '@/lib/importExport/pipeline'
 

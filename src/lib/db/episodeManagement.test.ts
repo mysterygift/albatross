@@ -190,7 +190,6 @@ describe('episode management service', () => {
     const scene = await createScene({
       production_id: p.id,
       scene_number: '1',
-      heading: null,
       episode_id: b.id,
     })
     await archiveEpisode(p.id, b.id)

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ExternalLink, Loader2 } from 'lucide-react'
+import { sceneSlugline } from '@/lib/schedule/sceneDisplay'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -555,9 +556,13 @@ function PreviewGroup({ group }: { group: SidesPreviewGroup }) {
         <div key={sceneGroup.scene.id} className="rounded-md border border-border/40 p-2.5">
           <p className="text-sm font-medium text-foreground">
             Sc {sceneGroup.scene.scene_number}
-            {sceneGroup.scene.heading || sceneGroup.scene.title
-              ? ` — ${sceneGroup.scene.heading ?? sceneGroup.scene.title}`
-              : ''}
+            {(() => {
+              const slug = sceneSlugline(
+                sceneGroup.scene,
+                sceneGroup.entries[0]?.locationName ?? null
+              )
+              return slug ? ` — ${slug}` : ''
+            })()}
           </p>
           {sceneGroup.collatedScriptText ? (
             <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-border/30 bg-muted/20 p-2 font-mono text-[11px] text-foreground">

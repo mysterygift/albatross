@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { GlobalVendorBadge } from '@/features/budget/vendors/GlobalVendorBadge'
 
 const vendorSchema = z.object({
   company_name: z.string().min(1, 'Company name is required'),
@@ -78,7 +79,10 @@ export function VendorPicker({
           <SelectItem value="__no_vendor__">None</SelectItem>
           {options.map((v) => (
             <SelectItem key={v.id} value={v.id}>
-              {v.company_name}
+              <span className="flex items-center gap-1.5">
+                <span>{v.company_name}</span>
+                {v.is_global && <GlobalVendorBadge />}
+              </span>
             </SelectItem>
           ))}
           <SelectItem value="__create__">Create vendor…</SelectItem>

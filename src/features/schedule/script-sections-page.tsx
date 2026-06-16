@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
 import { listScenesByProduction, listShotsByScene } from '@/lib/db/repositories/schedule'
+import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { listScriptVersionsByProduction } from '@/lib/db/repositories/scriptVersions'
 import {
   applySafeShotLinkRemaps,
@@ -31,6 +32,7 @@ import type {
   ScriptSectionCharacter,
   ScriptSectionRange,
 } from '@/lib/db/types'
+import { sceneDisplayLabel } from '@/lib/schedule/sceneDisplay'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -80,9 +82,8 @@ const SCHEDULE_DIALOG_EXIT_MS = 200
 type SectionDetail = { ranges: ScriptSectionRange[]; characters: ScriptSectionCharacter[] }
 type DetailMap = Record<string, SectionDetail>
 
-function sceneLabel(scene: Scene): string {
-  const title = scene.title ?? scene.heading
-  return `Scene ${scene.scene_number}${title ? ` — ${title}` : ''}`
+function sceneLabel(scene: Scene, locationName?: string | null): string {
+  return `Scene ${scene.scene_number} — ${sceneDisplayLabel(scene, locationName ?? null)}`
 }
 
 function buildRangeInput(values: SectionEditorValues): ScriptSectionRangeInput | null {
@@ -201,6 +202,25 @@ export function ScriptSectionsPage() {
     enabled: !!currentProductionId,
   })
 
+  const { data: locations = [] } = useQuery({
+    queryKey: ['locations', currentProductionId],
+    queryFn: () => listLocationsByProduction(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
+  const locationNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const loc of locations) {
+      map.set(loc.id, loc.name)
+    }
+    return map
+  }, [locations])
+
+  const getLocationName = useCallback(
+    (locationId: string | null) => (locationId ? locationNameById.get(locationId) ?? null : null),
+    [locationNameById]
+  )
+
   const { data: sections = [] } = useQuery({
     queryKey: ['script-sections', selectedVersionId],
     queryFn: () => listSectionsByScriptVersion(selectedVersionId!),
@@ -244,8 +264,8 @@ export function ScriptSectionsPage() {
   }, [versions, selectedVersionId])
 
   const sceneOptions: SceneOption[] = useMemo(
-    () => scenes.map((s) => ({ id: s.id, label: sceneLabel(s) })),
-    [scenes]
+    () => scenes.map((s) => ({ id: s.id, label: sceneLabel(s, getLocationName(s.location_id)) })),
+    [scenes, getLocationName]
   )
   const sceneById = useMemo(() => new Map(scenes.map((s) => [s.id, s])), [scenes])
 
@@ -563,7 +583,7 @@ export function ScriptSectionsPage() {
                 <SelectItem value={ALL_SCENES}>All scenes</SelectItem>
                 {sceneFilterOptions.map((scene) => (
                   <SelectItem key={scene.id} value={scene.id}>
-                    {sceneLabel(scene)}
+                    {sceneLabel(scene, getLocationName(scene.location_id))}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -680,7 +700,7 @@ export function ScriptSectionsPage() {
                           )}
                         </div>
                         <div className="mt-1 text-sm text-muted-foreground">
-                          {scene ? sceneLabel(scene) : 'Unknown scene'} · {formatScriptSectionRange(detail?.ranges[0])}
+                          {scene ? sceneLabel(scene, getLocationName(scene.location_id)) : 'Unknown scene'} · {formatScriptSectionRange(detail?.ranges[0])}
                         </div>
                         {detail && detail.characters.length > 0 && (
                           <div className="mt-1 text-xs text-muted-foreground">

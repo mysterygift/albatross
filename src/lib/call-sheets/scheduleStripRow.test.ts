@@ -11,8 +11,7 @@ describe('resolveSceneAndShotForStripboardStrip', () => {
     {
       id: 'scene-1',
       scene_number: '12',
-      heading: 'INT. KITCHEN',
-      title: null,
+      title: 'Kitchen',
       description: null,
       int_ext: 'INT',
       day_night: 'DAY',
@@ -46,8 +45,7 @@ describe('buildCallSheetStripFromStripboard', () => {
     const scene = {
       id: 'scene-1',
       scene_number: '12',
-      heading: 'INT. KITCHEN',
-      title: null,
+      title: 'Kitchen confrontation',
       description: null,
       int_ext: 'INT',
       day_night: 'DAY',

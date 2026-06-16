@@ -9,11 +9,13 @@ import {
   deleteStoryboardImageForActor,
   listScenesByProductionForActor,
   listShotsByProductionForActor,
+  listLocationsByProductionForActor,
   listStoryboardImagesByProductionForActor,
   updateStoryboardImageForActor,
   updateStoryboardImportForActor,
 } from '@/lib/access/projectDomainService'
 import { listScenesByProduction, listShotsByProduction } from '@/lib/db/repositories/schedule'
+import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { getLinkedSectionCountsByShotIds } from '@/lib/db/repositories/scriptSections'
 import {
   applyAthenaImportToStoryboard,
@@ -24,6 +26,7 @@ import {
   updateStoryboardImage,
 } from '@/lib/db/repositories/storyboard'
 import type { Scene, Shot, StoryboardImage } from '@/lib/db/types'
+import { sceneDisplayLabel } from '@/lib/schedule/sceneDisplay'
 import {
   createStoryboardImageObjectUrl,
   getFileUrl,
@@ -60,10 +63,6 @@ const STORYBOARD_VIEW_MODES = [
 
 const ALL_SCENES = '__all_scenes__'
 type StoryboardViewMode = (typeof STORYBOARD_VIEW_MODES)[number]['value']
-
-function sceneDisplayLabel(scene: Scene): string {
-  return scene.heading?.trim() || scene.title?.trim() || scene.description?.trim() || 'No scene heading'
-}
 
 function shotSummary(shot: Shot): string {
   return shot.subject?.trim() || shot.shot_description?.trim() || 'No shot description'
@@ -142,6 +141,30 @@ export function StoryboardPage() {
     },
     enabled: !!currentProductionId,
   })
+
+  const locationsQuery = useQuery({
+    queryKey: ['locations', currentProductionId],
+    queryFn: async () => {
+      if (!currentProductionId) return []
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listLocationsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId })
+      }
+      return listLocationsByProduction(currentProductionId)
+    },
+    enabled: !!currentProductionId,
+  })
+
+  const locationNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const loc of locationsQuery.data ?? []) {
+      map.set(loc.id, loc.name)
+    }
+    return map
+  }, [locationsQuery.data])
+
+  const getLocationName = (locationId: string | null) =>
+    locationId ? locationNameById.get(locationId) ?? null : null
 
   const imagesQuery = useQuery({
     queryKey: ['storyboard-images-by-production', currentProductionId],
@@ -591,7 +614,7 @@ export function StoryboardPage() {
               <SelectItem value={ALL_SCENES}>All scenes</SelectItem>
               {scopedScenes.map((scene) => (
                 <SelectItem key={scene.id} value={scene.id}>
-                  Scene {scene.scene_number} - {sceneDisplayLabel(scene)}
+                  Scene {scene.scene_number} - {sceneDisplayLabel(scene, getLocationName(scene.location_id))}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -701,7 +724,7 @@ export function StoryboardPage() {
             <Card key={scene.id} className="border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">
-                  Scene {scene.scene_number} — {sceneDisplayLabel(scene)}
+                  Scene {scene.scene_number} — {sceneDisplayLabel(scene, getLocationName(scene.location_id))}
                 </CardTitle>
               </CardHeader>
               <CardContent

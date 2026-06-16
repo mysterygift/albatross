@@ -195,6 +195,8 @@ export type PettyCashFloatReconciliationStatus = 'unmatched' | 'partial' | 'matc
 export type Vendor = {
   id: string
   production_id: string
+  /** When true, vendor identity is visible in all productions; finance data stays per-production. */
+  is_global: boolean
   company_name: string
   primary_contact_full_name: string | null
   primary_contact_email: string | null
@@ -501,17 +503,29 @@ export type StripboardStrip = {
   destination_location_id: string | null
 } & SoftDeletable
 
+export const SCENE_INT_EXT_VALUES = ['INT', 'EXT', 'MIXED'] as const
+export type SceneIntExt = (typeof SCENE_INT_EXT_VALUES)[number]
+
+export const SCENE_DAY_NIGHT_VALUES = [
+  'DAY',
+  'NIGHT',
+  'MIXED',
+  'DAWN',
+  'DUSK',
+  'TIMELESS',
+] as const
+export type SceneDayNight = (typeof SCENE_DAY_NIGHT_VALUES)[number]
+
 export type Scene = {
   id: string
   production_id: string
   /** Episodic productions only; scenes reference an episode row (archive = episode soft-delete). */
   episode_id: string | null
   scene_number: string
-  heading: string | null
   title: string | null
   description: string | null
-  int_ext: 'INT' | 'EXT' | 'MIXED' | 'UNK' | null
-  day_night: 'DAY' | 'NIGHT' | 'MIXED' | 'UNK' | null
+  int_ext: SceneIntExt | null
+  day_night: SceneDayNight | null
   page_eighths: number | null
   location_id: string | null
   /** Estimated duration in minutes; NULL = unknown (treated as 0 in runtime sums). */

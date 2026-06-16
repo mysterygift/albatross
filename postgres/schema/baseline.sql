@@ -709,7 +709,6 @@ CREATE TABLE scenes (
   id UUID DEFAULT gen_random_uuid(),
   production_id UUID NOT NULL,
   scene_number TEXT NOT NULL,
-  heading TEXT,
   description TEXT,
   title TEXT,
   int_ext TEXT,
@@ -1057,6 +1056,7 @@ CREATE TABLE vendor_purchase_orders (
 CREATE TABLE vendors (
   id UUID DEFAULT gen_random_uuid(),
   production_id UUID NOT NULL,
+  is_global BOOLEAN NOT NULL DEFAULT FALSE,
   company_name TEXT NOT NULL,
   primary_contact_full_name TEXT,
   primary_contact_email TEXT,
@@ -1065,6 +1065,17 @@ CREATE TABLE vendors (
   deleted_at TIMESTAMPTZ,
   CONSTRAINT pk_vendors PRIMARY KEY (id),
   CONSTRAINT fk_vendors_1_production_id FOREIGN KEY (production_id) REFERENCES productions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+);
+
+CREATE TABLE vendor_production_exclusions (
+  id UUID DEFAULT gen_random_uuid(),
+  vendor_id UUID NOT NULL,
+  production_id UUID NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  CONSTRAINT pk_vendor_production_exclusions PRIMARY KEY (id),
+  CONSTRAINT fk_vendor_production_exclusions_1_vendor_id FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT fk_vendor_production_exclusions_2_production_id FOREIGN KEY (production_id) REFERENCES productions(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT uq_vendor_production_exclusions_vendor_production UNIQUE (vendor_id, production_id)
 );
 
 CREATE INDEX idx_bookings_shoot_day_id ON bookings(shoot_day_id);
@@ -1231,7 +1242,9 @@ CREATE INDEX idx_vendor_purchase_orders_vendor_id
 CREATE INDEX idx_vendor_purchase_orders_production_id
   ON vendor_purchase_orders(production_id);
 CREATE INDEX idx_vendors_company_name ON vendors(production_id, company_name);
+CREATE INDEX idx_vendors_is_global ON vendors(is_global) WHERE deleted_at IS NULL;
 CREATE INDEX idx_vendors_production_id ON vendors(production_id);
+CREATE INDEX idx_vendor_production_exclusions_production_id ON vendor_production_exclusions(production_id);
 CREATE INDEX idx_scenes_production_scene_number_active
   ON scenes(production_id, scene_number)
   WHERE deleted_at IS NULL;

@@ -102,8 +102,42 @@ const migrateV2ToV3: ApfFileMigrator = {
   },
 }
 
+function isBlankCell(value: unknown): boolean {
+  return value == null || String(value).trim() === ''
+}
+
+/** v4 drops redundant `scenes.heading`; preserve label text in `title` when it was the only value. */
+export function migrateScenesDropHeading(tables: ApfV1Tables): void {
+  for (const row of tables.scenes) {
+    const scene = row as Record<string, unknown>
+    const heading = scene.heading
+    if (isBlankCell(scene.title) && !isBlankCell(heading)) {
+      scene.title = String(heading).trim()
+    }
+    delete scene.heading
+    if (scene.day_night === 'UNK') scene.day_night = null
+    if (scene.int_ext === 'UNK') scene.int_ext = null
+  }
+}
+
+const migrateV3ToV4: ApfFileMigrator = {
+  fromVersion: 3,
+  toVersion: 4,
+  migrate: (ctx) => {
+    const next = cloneCtx(ctx)
+    next.manifest.formatVersion = 4
+    next.data.formatVersion = 4
+    migrateScenesDropHeading(next.data.tables)
+    return next
+  },
+}
+
 /** Registered migrators for older `.apf` payloads (sequential v → v+1). */
-export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [migrateV1ToV2, migrateV2ToV3]
+export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [
+  migrateV1ToV2,
+  migrateV2ToV3,
+  migrateV3ToV4,
+]
 
 /**
  * Applies sequential migrators until `manifest.formatVersion === CURRENT_APF_FORMAT_VERSION`.

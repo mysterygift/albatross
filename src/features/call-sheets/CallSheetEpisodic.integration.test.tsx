@@ -120,7 +120,6 @@ const sceneRow = {
   production_id: 'prod-1',
   episode_id: 'ep-1',
   scene_number: '12',
-  heading: 'INT. TEST',
   title: null,
   description: null,
   int_ext: 'INT' as const,

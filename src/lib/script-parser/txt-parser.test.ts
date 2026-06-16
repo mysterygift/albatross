@@ -95,7 +95,12 @@ describe('parseTxtScript', () => {
     const scenes = parseTxtScript(script)
     expect(scenes).toHaveLength(2)
     expect(scenes[0]).toMatchObject({ title: 'CAR - DAY', location: 'CAR', int_ext: 'MIXED', day_night: 'DAY' })
-    expect(scenes[1]).toMatchObject({ title: 'CITY SKYLINE - DAWN', location: 'CITY SKYLINE', int_ext: 'EXT' })
+    expect(scenes[1]).toMatchObject({
+      title: 'CITY SKYLINE - DAWN',
+      location: 'CITY SKYLINE',
+      int_ext: 'EXT',
+      day_night: 'DAWN',
+    })
   })
 
   it('strips continuation tags from scene titles', () => {

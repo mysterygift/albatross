@@ -60,7 +60,7 @@ import {
   upsertEquipmentTermForActor,
 } from '@/lib/access/projectDomainService'
 import type { Shot, Scene, ShotCast, ScriptVersion } from '@/lib/db/types'
-import { SHOT_SIZE_VALUES, CAMERA_MOVEMENT_VALUES } from '@/lib/db/types'
+import { SHOT_SIZE_VALUES, CAMERA_MOVEMENT_VALUES, SCENE_DAY_NIGHT_VALUES, SCENE_INT_EXT_VALUES } from '@/lib/db/types'
 import {
   Table,
   TableBody,
@@ -117,12 +117,13 @@ import {
 import { invalidateStripboardCaches } from './stripboard-hooks'
 import { nextShotNumberForDuplicate } from '@/lib/schedule/shotNumberDuplicate'
 
-function formatSceneLabel(scene: Scene, locationName: string | null): string {
-  const intExt = scene.int_ext ?? '—'
-  const loc = locationName ?? '—'
-  const dayNight = scene.day_night ?? '—'
-  return `${intExt} – ${loc} – ${dayNight}`
-}
+import { sceneScheduleLabel } from '@/lib/schedule/sceneDisplay'
+import {
+  DEFAULT_NEW_SCENE_DAY_NIGHT,
+  DEFAULT_NEW_SCENE_INT_EXT,
+  findDefaultSceneLocationId,
+  resolveDefaultNewSceneLocationId,
+} from '@/lib/schedule/sceneDefaults'
 
 function formatDuration(sec: number | null): string {
   if (sec == null) return '—'
@@ -296,16 +297,14 @@ export function ShotListPage() {
   const [createSceneOpen, setCreateSceneOpen] = useState(false)
   const [createSceneError, setCreateSceneError] = useState<string | null>(null)
   const [newSceneNumber, setNewSceneNumber] = useState('')
-  const [newSceneHeading, setNewSceneHeading] = useState('')
   const [newSceneTitle, setNewSceneTitle] = useState('')
-  const [newSceneIntExt, setNewSceneIntExt] = useState<Scene['int_ext'] | null>(null)
-  const [newSceneDayNight, setNewSceneDayNight] = useState<Scene['day_night'] | null>(null)
+  const [newSceneIntExt, setNewSceneIntExt] = useState<Scene['int_ext']>(DEFAULT_NEW_SCENE_INT_EXT)
+  const [newSceneDayNight, setNewSceneDayNight] = useState<Scene['day_night']>(DEFAULT_NEW_SCENE_DAY_NIGHT)
   const [newSceneLocationId, setNewSceneLocationId] = useState<string | null>(null)
   const [newSceneEpisodeId, setNewSceneEpisodeId] = useState('')
   const [editSceneOpen, setEditSceneOpen] = useState(false)
   const [editSceneError, setEditSceneError] = useState<string | null>(null)
   const [editSceneNumber, setEditSceneNumber] = useState('')
-  const [editSceneHeading, setEditSceneHeading] = useState('')
   const [editSceneTitle, setEditSceneTitle] = useState('')
   const [editSceneIntExt, setEditSceneIntExt] = useState<Scene['int_ext'] | null>(null)
   const [editSceneDayNight, setEditSceneDayNight] = useState<Scene['day_night'] | null>(null)
@@ -736,6 +735,27 @@ export function ShotListPage() {
     },
   })
 
+  const prepareNewSceneForm = useCallback(async () => {
+    setCreateSceneError(null)
+    setNewSceneNumber('')
+    setNewSceneTitle('')
+    setNewSceneIntExt(DEFAULT_NEW_SCENE_INT_EXT)
+    setNewSceneDayNight(DEFAULT_NEW_SCENE_DAY_NIGHT)
+    setNewSceneEpisodeId(activeEpisodes[0]?.id ?? '')
+    if (!currentProductionId) {
+      setNewSceneLocationId(null)
+      return
+    }
+    const existingId = findDefaultSceneLocationId(locations)
+    if (existingId) {
+      setNewSceneLocationId(existingId)
+      return
+    }
+    const id = await resolveDefaultNewSceneLocationId(currentProductionId, locations)
+    setNewSceneLocationId(id)
+    await queryClient.refetchQueries({ queryKey: ['locations', currentProductionId] })
+  }, [activeEpisodes, currentProductionId, locations, queryClient])
+
   const createSceneMutation = useMutation({
     mutationFn: async () => {
       if (!currentProductionId) {
@@ -749,14 +769,20 @@ export function ShotListPage() {
         throw new Error('Episode is required')
       }
       setCreateSceneError(null)
+      const intExt = newSceneIntExt ?? DEFAULT_NEW_SCENE_INT_EXT
+      const dayNight = newSceneDayNight ?? DEFAULT_NEW_SCENE_DAY_NIGHT
+      const title = newSceneTitle.trim() || sceneNumber
+      let locationId = newSceneLocationId
+      if (!locationId) {
+        locationId = await resolveDefaultNewSceneLocationId(currentProductionId, locations)
+      }
       const payload = {
         production_id: currentProductionId,
         scene_number: sceneNumber,
-        heading: newSceneHeading.trim() || null,
-        title: newSceneTitle.trim() || null,
-        int_ext: newSceneIntExt ?? null,
-        day_night: newSceneDayNight ?? null,
-        location_id: newSceneLocationId ?? null,
+        title,
+        int_ext: intExt,
+        day_night: dayNight,
+        location_id: locationId,
         ...(isEpisodicProduction ? { episode_id: newSceneEpisodeId.trim() } : {}),
       }
       const scene =
@@ -776,12 +802,12 @@ export function ShotListPage() {
       setCreateSceneOpen(false)
       setCreateSceneError(null)
       setNewSceneNumber('')
-      setNewSceneHeading('')
       setNewSceneTitle('')
-      setNewSceneIntExt(null)
-      setNewSceneDayNight(null)
+      setNewSceneIntExt(DEFAULT_NEW_SCENE_INT_EXT)
+      setNewSceneDayNight(DEFAULT_NEW_SCENE_DAY_NIGHT)
       setNewSceneLocationId(null)
       setNewSceneEpisodeId('')
+      queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['scenes', currentProductionId] })
       queryClient.invalidateQueries({ queryKey: ['scenes'] })
       setSelectedSceneId(scene.id)
@@ -825,7 +851,6 @@ export function ShotListPage() {
       setEditSceneError(null)
       const payload = {
         scene_number: sceneNumber,
-        heading: editSceneHeading.trim() || null,
         title: editSceneTitle.trim() || null,
         int_ext: editSceneIntExt ?? null,
         day_night: editSceneDayNight ?? null,
@@ -1341,7 +1366,7 @@ export function ShotListPage() {
                   value={s.id}
                   className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100 data-[highlight]:bg-emerald-600/20 data-[highlight]:text-emerald-100"
                 >
-                  {s.scene_number}. {formatSceneLabel(s, getLocationName(s.location_id))}
+                  {s.scene_number}. {sceneScheduleLabel(s, getLocationName(s.location_id))}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1352,9 +1377,8 @@ export function ShotListPage() {
             type="button"
             variant="outline"
             className="h-9 border-zinc-600 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
-            onClick={() => {
-              setCreateSceneError(null)
-              setNewSceneEpisodeId('')
+            onClick={async () => {
+              await prepareNewSceneForm()
               setCreateSceneOpen(true)
             }}
             disabled={!currentProductionId}
@@ -1369,7 +1393,6 @@ export function ShotListPage() {
               className="h-9 border-zinc-600 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
               onClick={() => {
                 setEditSceneNumber(selectedScene.scene_number)
-                setEditSceneHeading(selectedScene.heading ?? '')
                 setEditSceneTitle(selectedScene.title ?? '')
                 setEditSceneIntExt(selectedScene.int_ext ?? null)
                 setEditSceneDayNight(selectedScene.day_night ?? null)
@@ -1705,27 +1728,14 @@ export function ShotListPage() {
               />
             </div>
             <div>
-              <Label htmlFor="scene-heading" className="text-sm text-zinc-200">
-                Heading
-              </Label>
-              <Input
-                id="scene-heading"
-                value={newSceneHeading}
-                onChange={(e) => setNewSceneHeading(e.target.value)}
-                placeholder="e.g. INT. KITCHEN - DAY"
-                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
-                disabled={createSceneMutation.isPending}
-              />
-            </div>
-            <div>
               <Label htmlFor="scene-title" className="text-sm text-zinc-200">
-                Title
+                Title<span className="text-destructive">*</span>
               </Label>
               <Input
                 id="scene-title"
                 value={newSceneTitle}
                 onChange={(e) => setNewSceneTitle(e.target.value)}
-                placeholder="Optional short description"
+                placeholder="Defaults to scene number when empty"
                 className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
                 disabled={createSceneMutation.isPending}
               />
@@ -1761,59 +1771,58 @@ export function ShotListPage() {
             )}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-sm text-zinc-200">INT / EXT</Label>
+                <Label className="text-sm text-zinc-200">
+                  INT / EXT<span className="text-destructive">*</span>
+                </Label>
                 <Select
-                  value={newSceneIntExt ?? SELECT_NONE}
-                  onValueChange={(v) =>
-                    setNewSceneIntExt(v === SELECT_NONE ? null : (v as Scene['int_ext']))
-                  }
+                  value={newSceneIntExt}
+                  onValueChange={(v) => setNewSceneIntExt(v as Scene['int_ext'])}
                 >
                   <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
-                    <SelectValue placeholder="—" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-800 border-zinc-600">
-                    <SelectItem value={SELECT_NONE}>—</SelectItem>
-                    <SelectItem value="INT">INT</SelectItem>
-                    <SelectItem value="EXT">EXT</SelectItem>
-                    <SelectItem value="MIXED">MIXED</SelectItem>
-                    <SelectItem value="UNK">UNK</SelectItem>
+                    {SCENE_INT_EXT_VALUES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-sm text-zinc-200">DAY / NIGHT</Label>
+                <Label className="text-sm text-zinc-200">
+                  Time of day<span className="text-destructive">*</span>
+                </Label>
                 <Select
-                  value={newSceneDayNight ?? SELECT_NONE}
-                  onValueChange={(v) =>
-                    setNewSceneDayNight(v === SELECT_NONE ? null : (v as Scene['day_night']))
-                  }
+                  value={newSceneDayNight}
+                  onValueChange={(v) => setNewSceneDayNight(v as Scene['day_night'])}
                 >
                   <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
-                    <SelectValue placeholder="—" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-800 border-zinc-600">
-                    <SelectItem value={SELECT_NONE}>—</SelectItem>
-                    <SelectItem value="DAY">DAY</SelectItem>
-                    <SelectItem value="NIGHT">NIGHT</SelectItem>
-                    <SelectItem value="MIXED">MIXED</SelectItem>
-                    <SelectItem value="UNK">UNK</SelectItem>
+                    {SCENE_DAY_NIGHT_VALUES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div>
-              <Label className="text-sm text-zinc-200">Location</Label>
+              <Label className="text-sm text-zinc-200">
+                Location<span className="text-destructive">*</span>
+              </Label>
               <Select
-                value={newSceneLocationId ?? SELECT_NONE}
-                onValueChange={(v) =>
-                  setNewSceneLocationId(v === SELECT_NONE ? null : v)
-                }
+                value={newSceneLocationId ?? undefined}
+                onValueChange={(v) => setNewSceneLocationId(v)}
               >
                 <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
-                  <SelectValue placeholder="—" />
+                  <SelectValue placeholder="Default City" />
                 </SelectTrigger>
                 <SelectContent className="bg-zinc-800 border-zinc-600">
-                  <SelectItem value={SELECT_NONE}>—</SelectItem>
                   {locations.map((loc) => (
                     <SelectItem key={loc.id} value={loc.id}>
                       {loc.name}
@@ -1880,19 +1889,6 @@ export function ShotListPage() {
               />
             </div>
             <div>
-              <Label htmlFor="edit-scene-heading" className="text-sm text-zinc-200">
-                Heading
-              </Label>
-              <Input
-                id="edit-scene-heading"
-                value={editSceneHeading}
-                onChange={(e) => setEditSceneHeading(e.target.value)}
-                placeholder="e.g. INT. KITCHEN - DAY"
-                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
-                disabled={updateSceneMutation.isPending}
-              />
-            </div>
-            <div>
               <Label htmlFor="edit-scene-title" className="text-sm text-zinc-200">
                 Title
               </Label>
@@ -1948,15 +1944,16 @@ export function ShotListPage() {
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-800 border-zinc-600">
                     <SelectItem value={SELECT_NONE}>—</SelectItem>
-                    <SelectItem value="INT">INT</SelectItem>
-                    <SelectItem value="EXT">EXT</SelectItem>
-                    <SelectItem value="MIXED">MIXED</SelectItem>
-                    <SelectItem value="UNK">UNK</SelectItem>
+                    {SCENE_INT_EXT_VALUES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-sm text-zinc-200">DAY / NIGHT</Label>
+                <Label className="text-sm text-zinc-200">Time of day</Label>
                 <Select
                   value={editSceneDayNight ?? SELECT_NONE}
                   onValueChange={(v) =>
@@ -1968,10 +1965,11 @@ export function ShotListPage() {
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-800 border-zinc-600">
                     <SelectItem value={SELECT_NONE}>—</SelectItem>
-                    <SelectItem value="DAY">DAY</SelectItem>
-                    <SelectItem value="NIGHT">NIGHT</SelectItem>
-                    <SelectItem value="MIXED">MIXED</SelectItem>
-                    <SelectItem value="UNK">UNK</SelectItem>
+                    {SCENE_DAY_NIGHT_VALUES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

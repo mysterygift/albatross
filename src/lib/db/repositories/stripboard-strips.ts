@@ -846,7 +846,8 @@ export async function listUnscheduledShots(
       (x) =>
         x.scene.scene_number.toLowerCase().includes(search) ||
         x.shot.shot_number.toLowerCase().includes(search) ||
-        (x.scene.heading ?? '').toLowerCase().includes(search) ||
+        (x.scene.int_ext ?? '').toLowerCase().includes(search) ||
+        (x.scene.day_night ?? '').toLowerCase().includes(search) ||
         (x.scene.title ?? '').toLowerCase().includes(search) ||
         (x.shot.shot_description ?? '').toLowerCase().includes(search) ||
         (x.shot.subject ?? '').toLowerCase().includes(search)

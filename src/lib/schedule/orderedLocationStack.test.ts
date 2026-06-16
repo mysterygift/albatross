@@ -47,7 +47,6 @@ const scene = (id: string, locationId: string | null): Scene => ({
   episode_id: null,
   scene_number: '1',
   title: null,
-  heading: null,
   description: null,
   int_ext: null,
   day_night: null,

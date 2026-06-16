@@ -100,7 +100,6 @@ function scene(over: Partial<Scene> = {}): Scene {
     production_id: 'prod-1',
     episode_id: null,
     scene_number: '1',
-    heading: null,
     title: 'Kitchen',
     description: null,
     int_ext: 'INT',

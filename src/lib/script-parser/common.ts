@@ -67,6 +67,9 @@ export function isContinuationLine(text: string): boolean {
 
 export function inferDayNight(title: string): DayNight | null {
   const u = title.toUpperCase()
+  if (/\bTIMELESS\b/.test(u)) return 'TIMELESS'
+  if (/\bDAWN\b/.test(u) || /\bSUNRISE\b/.test(u)) return 'DAWN'
+  if (/\bDUSK\b/.test(u) || /\bSUNSET\b/.test(u)) return 'DUSK'
   if (/\bDAY\b/.test(u) && !/\bNIGHT\b/.test(u)) return 'DAY'
   if (/\bNIGHT\b/.test(u)) return 'NIGHT'
   if (/\bDAY\b/.test(u) && /\bNIGHT\b/.test(u)) return 'MIXED'
@@ -75,7 +78,7 @@ export function inferDayNight(title: string): DayNight | null {
 
 /** Time-of-day segment tokens peeled from the end of a slugline when extracting location. */
 const TIME_SEGMENT =
-  /^(DAY|NIGHT|DAWN|DUSK|MORNING|AFTERNOON|EVENING|SUNRISE|SUNSET|CONTINUOUS|LATER|SAME|MOMENTS LATER)$/i
+  /^(DAY|NIGHT|DAWN|DUSK|TIMELESS|MORNING|AFTERNOON|EVENING|SUNRISE|SUNSET|CONTINUOUS|LATER|SAME|MOMENTS LATER)$/i
 
 function isTimeSegment(segment: string): boolean {
   return TIME_SEGMENT.test(segment.trim())

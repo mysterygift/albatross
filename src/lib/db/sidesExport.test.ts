@@ -98,7 +98,6 @@ function scene(over: Partial<Scene> = {}): Scene {
     production_id: 'prod-1',
     episode_id: null,
     scene_number: '1',
-    heading: 'INT. KITCHEN - DAY',
     title: null,
     description: null,
     int_ext: 'INT',

@@ -163,12 +163,12 @@ describe('North Shore episodic demo seed', () => {
     expect(shootingBlocRangesOverlap(r0[0]!, r0[1]!, r1[0]!, r1[1]!)).toBe(false)
     expect(r0[1]! < r1[0]!).toBe(true)
 
-    for (const row of NORTH_SHORE_SCENES) {
-      const h = row.heading.replace(/'/g, "''")
+    for (const [idx, row] of NORTH_SHORE_SCENES.entries()) {
+      const title = row.title.replace(/'/g, "''")
       expect(
         scalar(
           db,
-          `SELECT COUNT(*) FROM scenes WHERE production_id = '${pid}' AND heading = '${h}' AND deleted_at IS NULL`
+          `SELECT COUNT(*) FROM scenes WHERE production_id = '${pid}' AND scene_number = '${idx + 1}' AND title = '${title}' AND deleted_at IS NULL`
         )
       ).toBeGreaterThanOrEqual(1)
     }

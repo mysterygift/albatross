@@ -728,7 +728,6 @@ async function runDemoContentSeed(
         ? (options.episodeIdForSceneNumber(s) ?? defaultEpisodeId)
         : defaultEpisodeId
     let locId: string | null
-    let heading: string
     let title: string
     let description: string
     let int_ext: 'INT' | 'EXT'
@@ -737,7 +736,6 @@ async function runDemoContentSeed(
     if (northShoreLayout) {
       const def = NORTH_SHORE_SCENES[s - 1]!
       locId = idSource.location(def.locationIndex)
-      heading = def.heading
       title = def.title
       description = def.description
       int_ext = def.int_ext
@@ -745,7 +743,6 @@ async function runDemoContentSeed(
       page_eighths = def.page_eighths
     } else {
       locId = s <= 14 ? idSource.location(((s - 1) % 14) + 1) : null
-      heading = `${intExtMint[(s - 1) % 5]} - ${dayNightMint[(s - 1) % 5]}`
       title = `Scene ${s}`
       description = `Description for scene ${s}`
       int_ext = intExtMint[(s - 1) % 5]
@@ -753,13 +750,12 @@ async function runDemoContentSeed(
       page_eighths = 8 + (s % 4)
     }
     await db.execute(
-      `INSERT INTO scenes (id, production_id, scene_number, heading, title, description, int_ext, day_night, page_eighths, location_id, episode_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      `INSERT INTO scenes (id, production_id, scene_number, title, description, int_ext, day_night, page_eighths, location_id, episode_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         idSource.scene(s),
         productionId,
         String(s),
-        heading,
         title,
         description,
         int_ext,
@@ -1362,7 +1358,7 @@ async function buildCallSheetDataForSeed(
   )
   const locById = new Map((locRows || []).map((r) => [r.id as string, r]))
   const sceneRows = await db.select<Record<string, unknown>[]>(
-    `SELECT id, scene_number, title, heading, description, int_ext, day_night, page_eighths, location_id, episode_id FROM scenes WHERE production_id = $1 AND deleted_at IS NULL`,
+    `SELECT id, scene_number, title, description, int_ext, day_night, page_eighths, location_id, episode_id FROM scenes WHERE production_id = $1 AND deleted_at IS NULL`,
     [productionId]
   )
   const shotRows = await db.select<Record<string, unknown>[]>(
@@ -1410,7 +1406,6 @@ async function buildCallSheetDataForSeed(
         ? {
             id: scRaw.id as string,
             scene_number: scRaw.scene_number as string,
-            heading: (scRaw.heading as string) ?? null,
             title: (scRaw.title as string) ?? null,
             description: (scRaw.description as string) ?? null,
             int_ext: (scRaw.int_ext as string) ?? null,

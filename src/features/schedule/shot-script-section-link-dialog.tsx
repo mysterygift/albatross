@@ -6,6 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { listScriptPagesByScriptVersion } from '@/lib/db/repositories/scriptPages'
 import { formatScriptVersionLabel } from '@/lib/db/scriptSectionReconciliationService'
+import { sceneScheduleLabel } from '@/lib/schedule/sceneDisplay'
 import type {
   Scene,
   ScriptSection,
@@ -21,9 +22,8 @@ import {
 } from './script-section-script-panel'
 import { SbRemoteNotice } from './sbRemoteNotice'
 
-function sceneLabel(scene: Scene): string {
-  const title = scene.title ?? scene.heading
-  return `Scene ${scene.scene_number}${title ? ` — ${title}` : ''}`
+function sceneLabel(scene: Scene, locationName?: string | null): string {
+  return `Scene ${scene.scene_number} — ${sceneScheduleLabel(scene, locationName ?? null)}`
 }
 
 export type ShotScriptSectionLinkDialogProps = {

@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import { useCurrency } from '@/hooks/useCurrency'
-import { getVendorById, updateVendor, softDeleteVendor } from '@/lib/db/repositories/vendors'
+import { getVendorById, updateVendor, softDeleteVendor, promoteVendorToGlobal, removeVendorFromProject } from '@/lib/db/repositories/vendors'
 import {
   listVendorInvoicesByVendorId,
   vendorInvoicesQueryKey,
@@ -53,6 +53,7 @@ import {
   sumAllocatedAmountForExpense,
 } from '@/lib/budget/reconciliation'
 import { getLineItemTypeConfig } from '@/lib/budget/line-items/registry'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -60,6 +61,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -98,7 +100,8 @@ import {
   type VendorFinanceFileInput,
 } from '@/lib/db/vendorFinanceDocumentService'
 import type { BudgetItemExpenseLink, Expense, ExpenseReconciliationStatus, VendorInvoice, VendorPurchaseOrder } from '@/lib/db/types'
-import { ArrowLeft, Pencil, Eye, Archive, FilePlus, ArchiveIcon, FileText, Link2, X, Receipt, Package, Paperclip } from 'lucide-react'
+import { ArrowLeft, Pencil, Eye, FilePlus, ArchiveIcon, FileText, Link2, X, Receipt, Package, Paperclip, Globe, Trash2, Building2 } from 'lucide-react'
+import { GlobalVendorBadge } from '@/features/budget/vendors/GlobalVendorBadge'
 import { getFileUrl, openInSystem } from '@/lib/files'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -191,7 +194,10 @@ export function VendorDetailPage() {
   const [accountFilter, setAccountFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [editOpen, setEditOpen] = useState(false)
-  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
+  const [removeScopeOpen, setRemoveScopeOpen] = useState(false)
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false)
+  const [pendingRemoveScope, setPendingRemoveScope] = useState<'local' | 'all' | null>(null)
+  const [promoteConfirmOpen, setPromoteConfirmOpen] = useState(false)
   const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false)
   const [editInvoice, setEditInvoice] = useState<VendorInvoice | null>(null)
   const [archiveInvoiceId, setArchiveInvoiceId] = useState<string | null>(null)
@@ -368,21 +374,71 @@ export function VendorDetailPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vendor', vendorId] })
-      queryClient.invalidateQueries({ queryKey: ['vendors', currentProductionId] })
+      if (vendor?.is_global) {
+        queryClient.invalidateQueries({ queryKey: ['vendors'] })
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['vendors', currentProductionId] })
+      }
       setEditOpen(false)
     },
   })
 
-  const archiveMutation = useMutation({
-    mutationFn: () => softDeleteVendor(vendorId!),
+  const promoteMutation = useMutation({
+    mutationFn: () => promoteVendorToGlobal(vendorId!, currentProductionId!),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['vendors', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['vendors'] })
       queryClient.invalidateQueries({ queryKey: ['vendor', vendorId] })
-      queryClient.invalidateQueries({ queryKey: ['expenses-by-vendor', currentProductionId, vendorId] })
-      setArchiveConfirmOpen(false)
-      navigate('/budget/vendors')
+      setPromoteConfirmOpen(false)
     },
   })
+
+  const removeMutation = useMutation({
+    mutationFn: async (scope: 'local' | 'all') => {
+      if (scope === 'all') {
+        await softDeleteVendor(vendorId!)
+        return
+      }
+      await removeVendorFromProject(vendorId!, currentProductionId!)
+    },
+    onSuccess: (_data, scope) => {
+      if (vendor?.is_global || scope === 'all') {
+        queryClient.invalidateQueries({ queryKey: ['vendors'] })
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['vendors', currentProductionId] })
+      }
+      queryClient.invalidateQueries({ queryKey: ['vendor', vendorId] })
+      queryClient.invalidateQueries({ queryKey: ['expenses-by-vendor', currentProductionId, vendorId] })
+      setRemoveScopeOpen(false)
+      setRemoveConfirmOpen(false)
+      setPendingRemoveScope(null)
+      const stayedAfterDemote =
+        scope === 'local' && vendor?.is_global && vendor.production_id === currentProductionId
+      if (!stayedAfterDemote) {
+        navigate('/budget/vendors')
+      }
+    },
+  })
+
+  const openRemoveFlow = () => {
+    if (vendor?.is_global) {
+      setPendingRemoveScope(null)
+      setRemoveScopeOpen(true)
+      return
+    }
+    setPendingRemoveScope('local')
+    setRemoveConfirmOpen(true)
+  }
+
+  const chooseRemoveScope = (scope: 'local' | 'all') => {
+    setPendingRemoveScope(scope)
+    setRemoveScopeOpen(false)
+    setRemoveConfirmOpen(true)
+  }
+
+  const closeRemoveConfirm = () => {
+    setRemoveConfirmOpen(false)
+    setPendingRemoveScope(null)
+  }
 
   const invoiceListKey = vendorId && currentProductionId ? vendorInvoicesQueryKey(currentProductionId, vendorId) : []
   const createInvoiceMutation = useMutation({
@@ -579,7 +635,7 @@ export function VendorDetailPage() {
     )
   }
 
-  if (vendor.production_id !== currentProductionId) {
+  if (!vendor.is_global && vendor.production_id !== currentProductionId) {
     return (
       <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
         Vendor not found for this production.
@@ -587,11 +643,31 @@ export function VendorDetailPage() {
     )
   }
 
+  const canPromoteToGlobal =
+    !vendor.is_global && !isArchived && vendor.production_id === currentProductionId
+
+  const isOriginProject = vendor.production_id === currentProductionId
+
+  const localRemoveScopeHint = vendor.is_global
+    ? isOriginProject
+      ? 'Vendor stays in this project only; other projects lose access.'
+      : 'Vendor hidden in this project; other projects keep access.'
+    : 'Vendor removed from this project’s active lists.'
+
+  const localRemoveDescription = vendor.is_global
+    ? isOriginProject
+      ? 'This vendor will only appear in this project. Other projects will no longer see it in their vendor lists.'
+      : 'This vendor will no longer appear in this project. Other projects keep access to it.'
+    : 'This vendor will be removed from this project’s active vendor lists. Linked spend history is preserved.'
+
+  const allProjectsRemoveDescription =
+    'This vendor will be removed from every project’s active vendor lists. Linked spend history is preserved on existing expenses, invoices, and purchase orders.'
+
   return (
     <div className="flex flex-col gap-6">
       {isArchived && (
         <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          This vendor has been archived. Spend history is preserved; the vendor no longer appears in active lists.
+          This vendor has been removed. Spend history is preserved; the vendor no longer appears in active lists.
         </div>
       )}
 
@@ -603,21 +679,31 @@ export function VendorDetailPage() {
           </Link>
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold text-foreground truncate">{vendor.company_name}</h1>
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-xl font-semibold text-foreground truncate">{vendor.company_name}</h1>
+            {vendor.is_global && <GlobalVendorBadge className="size-4" />}
+          </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            {vendor.is_global && <span>Shared across all projects</span>}
             {vendor.primary_contact_full_name && <span>{vendor.primary_contact_full_name}</span>}
             {vendor.primary_contact_email && <span>{vendor.primary_contact_email}</span>}
           </div>
         </div>
         {!isArchived && (
           <>
+            {canPromoteToGlobal && (
+              <Button variant="outline" size="sm" onClick={() => setPromoteConfirmOpen(true)}>
+                <Globe className="mr-2 size-4" />
+                Share across all projects
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
               <Pencil className="mr-2 size-4" />
               Edit
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setArchiveConfirmOpen(true)} className="text-muted-foreground">
-              <Archive className="mr-2 size-4" />
-              Archive
+            <Button variant="outline" size="sm" onClick={openRemoveFlow} className="text-muted-foreground">
+              <Trash2 className="mr-2 size-4" />
+              Remove
             </Button>
           </>
         )}
@@ -1063,26 +1149,121 @@ export function VendorDetailPage() {
         isLoading={updateMutation.isPending}
       />
 
-      <Dialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
-        <DialogContent>
+      <Dialog
+        open={removeScopeOpen}
+        onOpenChange={(open) => {
+          setRemoveScopeOpen(open)
+          if (!open) setPendingRemoveScope(null)
+        }}
+      >
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Archive vendor?</DialogTitle>
-            <p className="text-sm text-muted-foreground">
-              This will remove the vendor from active lists. Linked expense history is preserved and will still show this vendor on existing expenses. You can still open this page from a direct link to view history.
-            </p>
+            <DialogTitle>Remove shared vendor</DialogTitle>
+            <DialogDescription>
+              Choose whether to remove this vendor from this project only, or from all projects.
+            </DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setArchiveConfirmOpen(false)}>
+          <ul className="space-y-2">
+            <li>
+              <button
+                type="button"
+                onClick={() => chooseRemoveScope('local')}
+                className={cn(
+                  'flex w-full items-start gap-3 rounded-lg border px-3 py-3 text-left transition-colors',
+                  'border-border hover:border-muted-foreground/30 hover:bg-muted/30',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2'
+                )}
+              >
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted/30">
+                  <Building2 className="size-4 text-muted-foreground" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium text-foreground">This project only</span>
+                  <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                    {localRemoveScopeHint}
+                  </span>
+                </span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                onClick={() => chooseRemoveScope('all')}
+                className={cn(
+                  'flex w-full items-start gap-3 rounded-lg border px-3 py-3 text-left transition-colors',
+                  'border-border hover:border-muted-foreground/30 hover:bg-muted/30',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2'
+                )}
+              >
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted/30">
+                  <Globe className="size-4 text-muted-foreground" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium text-foreground">All projects</span>
+                  <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                    Removed from every project’s active vendor lists.
+                  </span>
+                </span>
+              </button>
+            </li>
+          </ul>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveScopeOpen(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={removeConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) closeRemoveConfirm()
+          else setRemoveConfirmOpen(true)
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Confirm removal</DialogTitle>
+            <DialogDescription>
+              {pendingRemoveScope === 'all'
+                ? allProjectsRemoveDescription
+                : localRemoveDescription}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeRemoveConfirm}>
               Cancel
             </Button>
             <Button
               variant="destructive"
-              onClick={() => archiveMutation.mutate()}
-              disabled={archiveMutation.isPending}
+              onClick={() => pendingRemoveScope && removeMutation.mutate(pendingRemoveScope)}
+              disabled={removeMutation.isPending || pendingRemoveScope == null}
             >
-              {archiveMutation.isPending ? 'Archiving…' : 'Archive'}
+              {removeMutation.isPending ? 'Removing…' : 'Confirm'}
             </Button>
-          </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={promoteConfirmOpen} onOpenChange={setPromoteConfirmOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Share vendor across all projects?</DialogTitle>
+            <DialogDescription>
+              This vendor’s company name and contact details will be available in every project.
+              Invoices, purchase orders, and spend logged in this project stay here. Edits to this
+              vendor apply everywhere. Removing from all projects takes it out of every project.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPromoteConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => promoteMutation.mutate()} disabled={promoteMutation.isPending}>
+              {promoteMutation.isPending ? 'Sharing…' : 'Share across all projects'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
