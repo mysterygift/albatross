@@ -486,7 +486,7 @@ export function CastDetailPage() {
       const scene = scenesByIdForProduction.get(s.scene_id)
       const sceneNum = (scene?.scene_number ?? '').toLowerCase()
       const shotNum = (s.shot_number ?? '').toLowerCase()
-      const desc = (s.description ?? s.shot_description ?? s.subject ?? '').toLowerCase()
+      const desc = (s.shot_description ?? s.subject ?? '').toLowerCase()
       return sceneNum.includes(q) || shotNum.includes(q) || desc.includes(q)
     })
   }, [shotsAvailableToAdd, shotSearchFilter, scenesByIdForProduction])
@@ -978,7 +978,7 @@ export function CastDetailPage() {
                         <TableCell>{shot.shot_number}</TableCell>
                         <TableCell>{scene!.scene_number}</TableCell>
                         <TableCell className="max-w-[200px] truncate">
-                          {shot.description ?? shot.shot_description ?? shot.subject ?? '—'}
+                          {shot.shot_description ?? shot.subject ?? '—'}
                         </TableCell>
                         {person.is_cast && (
                           <TableCell>
@@ -1148,7 +1148,7 @@ export function CastDetailPage() {
                         <TableCell>{shot.shot_number}</TableCell>
                         <TableCell>{scene?.scene_number ?? '—'}</TableCell>
                         <TableCell className="max-w-[180px] truncate">
-                          {shot.description ?? shot.shot_description ?? shot.subject ?? '—'}
+                          {shot.shot_description ?? shot.subject ?? '—'}
                         </TableCell>
                       </TableRow>
                     )

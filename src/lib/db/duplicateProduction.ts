@@ -291,8 +291,8 @@ export async function duplicateProduction(
       const id = newId()
       shotIdMap.set(r.id as string, id)
       statements.push({
-        sql: `INSERT INTO shots (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-        bindValues: [id, sceneId, r.shot_number, r.description, r.shot_description ?? null, r.subject, r.action_description, r.shot_size, r.support, r.lens, r.duration_seconds, r.estimated_shoot_minutes, r.camera_movement, r.notes, ts, ts],
+        sql: `INSERT INTO shots (id, scene_id, shot_number, shot_description, subject, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        bindValues: [id, sceneId, r.shot_number, r.shot_description ?? null, r.subject, r.shot_size, r.support, r.lens, r.duration_seconds, r.estimated_shoot_minutes, r.camera_movement, r.notes, ts, ts],
       })
     }
   }

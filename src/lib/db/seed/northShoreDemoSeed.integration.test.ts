@@ -197,7 +197,7 @@ describe('North Shore episodic demo seed', () => {
       /\b(slow push|dolly\b|handheld follow|whip pan|establish geography|over-shoulder proofing|lock wide for reset|insert on hands|profile cu)\b/i
     const shotCopy = sqlJsQueryExec(
       db,
-      `SELECT sh.description, sh.shot_description FROM shots sh
+      `SELECT sh.shot_description FROM shots sh
        JOIN scenes sc ON sc.id = sh.scene_id
        WHERE sc.production_id = '${pid}' AND sc.deleted_at IS NULL AND sh.deleted_at IS NULL`
     )[0]

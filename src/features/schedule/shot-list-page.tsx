@@ -139,11 +139,7 @@ function latestVersionForEpisodeScope(
 }
 
 function shotLabelForDeleteConfirm(shot: Shot): string | null {
-  const s =
-    shot.shot_description?.trim() ||
-    shot.subject?.trim() ||
-    shot.description?.trim() ||
-    null
+  const s = shot.shot_description?.trim() || shot.subject?.trim() || null
   return s
 }
 
@@ -162,10 +158,8 @@ type EditableField =
 /** Add shot modal form; maps to `createShot` / `Shot` — no `location_id` on shots. */
 type AddShotModalForm = {
   shot_number: string
-  description: string
   shot_description: string
   subject: string
-  action_description: string
   shot_size: Shot['shot_size'] | null
   support: string
   lens: string
@@ -180,10 +174,8 @@ type AddShotModalForm = {
 function createEmptyAddShotForm(): AddShotModalForm {
   return {
     shot_number: '',
-    description: '',
     shot_description: '',
     subject: '',
-    action_description: '',
     shot_size: null,
     support: '',
     lens: '',
@@ -212,10 +204,8 @@ function buildCreateShotInput(sceneId: string, form: AddShotModalForm): CreateSh
   return {
     scene_id: sceneId,
     shot_number: form.shot_number.trim(),
-    description: trimOrNull(form.description),
     shot_description: trimOrNull(form.shot_description),
     subject: trimOrNull(form.subject),
-    action_description: trimOrNull(form.action_description),
     shot_size: form.shot_size ?? undefined,
     support: trimOrNull(form.support),
     lens: trimOrNull(form.lens),
@@ -235,10 +225,8 @@ function buildDuplicateShotInput(
   return {
     scene_id: source.scene_id,
     shot_number: newShotNumber,
-    description: source.description,
     shot_description: source.shot_description,
     subject: source.subject,
-    action_description: source.action_description,
     shot_size: source.shot_size ?? undefined,
     support: source.support,
     lens: source.lens,
@@ -2078,42 +2066,14 @@ export function ShotListPage() {
               />
             </div>
             <div>
-              <Label htmlFor="add-shot-description" className="text-sm text-zinc-200">
-                Description
-              </Label>
-              <Textarea
-                id="add-shot-description"
-                value={addShotForm.description}
-                onChange={(e) => setAddShotForm((f) => ({ ...f, description: e.target.value }))}
-                className="mt-1 min-h-[56px] bg-zinc-900 border-zinc-600 text-zinc-100"
-                placeholder="Optional"
-                disabled={createShotMutation.isPending}
-              />
-            </div>
-            <div>
               <Label htmlFor="add-shot-shot-description" className="text-sm text-zinc-200">
-                Shot description
+                Shot Description
               </Label>
               <Textarea
                 id="add-shot-shot-description"
                 value={addShotForm.shot_description}
                 onChange={(e) =>
                   setAddShotForm((f) => ({ ...f, shot_description: e.target.value }))
-                }
-                className="mt-1 min-h-[56px] bg-zinc-900 border-zinc-600 text-zinc-100"
-                placeholder="Optional"
-                disabled={createShotMutation.isPending}
-              />
-            </div>
-            <div>
-              <Label htmlFor="add-shot-action-description" className="text-sm text-zinc-200">
-                Action description
-              </Label>
-              <Textarea
-                id="add-shot-action-description"
-                value={addShotForm.action_description}
-                onChange={(e) =>
-                  setAddShotForm((f) => ({ ...f, action_description: e.target.value }))
                 }
                 className="mt-1 min-h-[56px] bg-zinc-900 border-zinc-600 text-zinc-100"
                 placeholder="Optional"

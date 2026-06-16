@@ -24,7 +24,6 @@ describe('resolveSceneAndShotForStripboardStrip', () => {
     {
       id: 'shot-1',
       shot_number: '3',
-      description: null,
       shot_description: 'Hero enters',
       notes: null,
       scene_id: 'scene-1',
@@ -59,7 +58,6 @@ describe('buildCallSheetStripFromStripboard', () => {
       id: 'shot-1',
       scene_id: 'scene-1',
       shot_number: '3',
-      description: null,
       shot_description: 'Hero enters',
       notes: null,
     }

@@ -734,10 +734,8 @@ type ShotRow = {
   id: string
   scene_id: string
   shot_number: string
-  description: string | null
   shot_description: string | null
   subject: string | null
-  action_description: string | null
   shot_size: ShotSize | null
   support: string | null
   lens: string | null
@@ -787,7 +785,6 @@ export function buildNorthShoreShotRows(args: {
 
       const { subject, description: actionLine } = beats[si]!
       const shot_description = actionLine
-      const action_description = actionLine
 
       const notesPool = [
         'Mirror driver orientation on car INTs.',
@@ -805,10 +802,8 @@ export function buildNorthShoreShotRows(args: {
         id: shotId,
         scene_id: sceneId,
         shot_number: shotNumber,
-        description: actionLine,
         shot_description,
         subject,
-        action_description,
         shot_size,
         support,
         lens,

@@ -804,16 +804,14 @@ async function runDemoContentSeed(
     for (const row of northRows) {
       if (!firstShotIdBySceneId.has(row.scene_id)) firstShotIdBySceneId.set(row.scene_id, row.id)
       await db.execute(
-        `INSERT INTO shots (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        `INSERT INTO shots (id, scene_id, shot_number, shot_description, subject, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           row.id,
           row.scene_id,
           row.shot_number,
-          row.description,
           row.shot_description,
           row.subject,
-          row.action_description,
           row.shot_size,
           row.support,
           row.lens,
@@ -858,10 +856,8 @@ async function runDemoContentSeed(
     id: string
     scene_id: string
     shot_number: string
-    description: string | null
     shot_description: string | null
     subject: string | null
-    action_description: string | null
     shot_size: ShotSize | null
     support: string | null
     lens: string | null
@@ -930,30 +926,28 @@ async function runDemoContentSeed(
       else camera_movement = movements[globalShotIndex % movements.length]!
 
       let shot_size: ShotSize | null
-      let action_description: string
+      let actionLine: string
       let subject: string
       if (isCoverageScene && si < 6) {
         shot_size = (shotSizeNull ? null : (['LS', 'FS', 'MFS', 'MS', 'MCU', 'CU'] as const)[si]) ?? null
-        action_description = COVERAGE_ACTIONS[si]!
+        actionLine = COVERAGE_ACTIONS[si]!
         subject = ['Jade', 'Jade', 'Vault Door', 'Jade', 'Guard', 'Hands / Lockpick'][si]!
       } else {
         shot_size = shotSizeNull ? null : shotSizes[globalShotIndex % shotSizes.length]!
-        action_description = ACTION_TEMPLATES[(globalShotIndex + si) % ACTION_TEMPLATES.length]!
+        actionLine = ACTION_TEMPLATES[(globalShotIndex + si) % ACTION_TEMPLATES.length]!
         subject = SUBJECTS[globalShotIndex % SUBJECTS.length]!
       }
 
       const support = isNullTest && globalShotIndex % 5 === 2 ? null : SUPPORTS[globalShotIndex % SUPPORTS.length]!
       const notes = longNoteIdx ?? (SHORT_NOTES[globalShotIndex % SHORT_NOTES.length] ?? null)
 
-      const shot_description = SHOT_DESCRIPTIONS[globalShotIndex % SHOT_DESCRIPTIONS.length] ?? (action_description ? `${action_description.slice(0, 40)}…` : null)
+      const shot_description = SHOT_DESCRIPTIONS[globalShotIndex % SHOT_DESCRIPTIONS.length] ?? (actionLine ? `${actionLine.slice(0, 40)}…` : null)
       shotRows.push({
         id: shotId,
         scene_id: sceneId,
         shot_number: shotNumber,
-        description: `Shot ${globalShotIndex}`,
         shot_description: globalShotIndex <= 10 ? null : shot_description,
         subject,
-        action_description,
         shot_size,
         support,
         lens,
@@ -968,16 +962,14 @@ async function runDemoContentSeed(
   for (const row of shotRows) {
     if (!firstShotIdBySceneId.has(row.scene_id)) firstShotIdBySceneId.set(row.scene_id, row.id)
     await db.execute(
-      `INSERT INTO shots (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      `INSERT INTO shots (id, scene_id, shot_number, shot_description, subject, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         row.id,
         row.scene_id,
         row.shot_number,
-        row.description,
         row.shot_description,
         row.subject,
-        row.action_description,
         row.shot_size,
         row.support,
         row.lens,
@@ -1374,7 +1366,7 @@ async function buildCallSheetDataForSeed(
     [productionId]
   )
   const shotRows = await db.select<Record<string, unknown>[]>(
-    `SELECT sh.id, sh.scene_id, sh.shot_number, sh.description, sh.shot_description, sh.notes
+    `SELECT sh.id, sh.scene_id, sh.shot_number, sh.shot_description, sh.notes
      FROM shots sh
      INNER JOIN scenes sc ON sc.id = sh.scene_id AND sc.production_id = $1 AND sc.deleted_at IS NULL
      WHERE sh.deleted_at IS NULL`,
@@ -1433,7 +1425,6 @@ async function buildCallSheetDataForSeed(
             id: shRaw.id as string,
             scene_id: shRaw.scene_id as string,
             shot_number: shRaw.shot_number as string,
-            description: (shRaw.description as string) ?? null,
             shot_description: (shRaw.shot_description as string) ?? null,
             notes: (shRaw.notes as string) ?? null,
           }

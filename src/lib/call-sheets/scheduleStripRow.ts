@@ -150,7 +150,6 @@ type ShotLike = {
   id: string
   scene_id: string
   shot_number: string
-  description: string | null
   shot_description: string | null
   notes: string | null
 }
@@ -233,15 +232,14 @@ export function buildCallSheetStripFromStripboard(
 
   const castCompact = compactCastForScheduleRow(castIds, castPeople)
 
-  const shotDescription =
-    shot?.shot_description?.trim() || shot?.description?.trim() || null
+  const shotDescription = shot?.shot_description?.trim() || null
 
   const noteParts =
     st === 'SHOT'
       ? [strip.description, shot?.notes].filter(
           (x): x is string => typeof x === 'string' && x.trim().length > 0,
         )
-      : [strip.description, shot?.notes, shot?.shot_description, shot?.description].filter(
+      : [strip.description, shot?.notes, shot?.shot_description].filter(
           (x): x is string => typeof x === 'string' && x.trim().length > 0,
         )
   const rowNotes = noteParts.length ? noteParts.join(' · ').slice(0, 200) : null

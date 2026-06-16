@@ -171,10 +171,8 @@ function rowToShot(r: Record<string, unknown>): Shot {
     id: r.id as string,
     scene_id: r.scene_id as string,
     shot_number: r.shot_number as string,
-    description: r.description as string | null,
     shot_description: (r.shot_description as string | null) ?? null,
     subject: (r.subject as string | null) ?? null,
-    action_description: (r.action_description as string | null) ?? null,
     shot_size: (r.shot_size as Shot['shot_size']) ?? null,
     support: (r.support as string | null) ?? null,
     lens: (r.lens as string | null) ?? null,
@@ -1471,10 +1469,8 @@ function rowToShotCast(r: Record<string, unknown>): ShotCast {
 export type CreateShotInput = {
   scene_id: string
   shot_number: string
-  description?: string | null
   shot_description?: string | null
   subject?: string | null
-  action_description?: string | null
   shot_size?: Shot['shot_size']
   support?: string | null
   lens?: string | null
@@ -1569,10 +1565,8 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
     id,
     sceneId,
     shotNumber,
-    data.description ?? null,
     data.shot_description ?? null,
     data.subject ?? null,
-    data.action_description ?? null,
     data.shot_size ?? null,
     data.support ?? null,
     data.lens ?? null,
@@ -1588,10 +1582,8 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
     id,
     scene_id: sceneId,
     shot_number: shotNumber,
-    description: data.description ?? null,
     shot_description: data.shot_description ?? null,
     subject: data.subject ?? null,
-    action_description: data.action_description ?? null,
     shot_size: data.shot_size ?? null,
     support: data.support ?? null,
     lens: data.lens ?? null,
@@ -1601,8 +1593,8 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
     notes: data.notes ?? null,
   }
 
-  const insertSql = `INSERT INTO ${SHOT_TABLE} (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
+  const insertSql = `INSERT INTO ${SHOT_TABLE} (id, scene_id, shot_number, shot_description, subject, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 
   if (personIds.length === 0) {
     await db.execute(insertSql, insertBinds)
@@ -1692,7 +1684,7 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
 }
 
 const SHOT_UPDATE_KEYS = [
-  'shot_number', 'description', 'shot_description', 'subject', 'action_description', 'shot_size',
+  'shot_number', 'shot_description', 'subject', 'shot_size',
   'support', 'lens', 'duration_seconds', 'estimated_shoot_minutes', 'camera_movement', 'notes',
 ] as const
 

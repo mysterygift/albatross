@@ -66,7 +66,7 @@ function sceneDisplayLabel(scene: Scene): string {
 }
 
 function shotSummary(shot: Shot): string {
-  return shot.subject?.trim() || shot.shot_description?.trim() || shot.description?.trim() || 'No shot description'
+  return shot.subject?.trim() || shot.shot_description?.trim() || 'No shot description'
 }
 
 /** Small script-coverage indicator for a storyboard shot card. */

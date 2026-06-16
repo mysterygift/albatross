@@ -898,6 +898,12 @@ pub fn run() {
             sql: include_str!("../migrations/0079_vat_reclaim.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 80,
+            description: "shots_consolidate_shot_description",
+            sql: include_str!("../migrations/0080_shots_consolidate_shot_description.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

@@ -597,11 +597,9 @@ export type Shot = {
   id: string
   scene_id: string
   shot_number: string
-  description: string | null
   /** Brief under-title line on stripboard; distinct from subject and notes. */
   shot_description: string | null
   subject: string | null
-  action_description: string | null
   shot_size: ShotSize | null
   support: string | null
   lens: string | null
