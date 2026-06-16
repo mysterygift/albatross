@@ -1,4 +1,4 @@
-import { useMemo, useImperativeHandle } from 'react'
+import { useMemo, useImperativeHandle, useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -59,6 +59,7 @@ export function DepositTransactionEditor({
   context,
   hideFooter,
   editorRef,
+  onVendorIdChange,
 }: TypedExpenseEditProps<DepositDetails>) {
   const productionId = context.productionId
   const locations = context.locations ?? []
@@ -111,6 +112,11 @@ export function DepositTransactionEditor({
     }),
     [form, onSave]
   )
+
+  const watchedVendorId = form.watch('vendor_id')
+  useEffect(() => {
+    onVendorIdChange?.(watchedVendorId?.trim() ? watchedVendorId.trim() : null)
+  }, [watchedVendorId, onVendorIdChange])
 
   return (
     <form

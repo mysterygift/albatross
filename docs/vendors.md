@@ -44,10 +44,10 @@ This document is both a **user guide** (how to use Vendor Management) and a **de
 | Feature | Description |
 |---------|-------------|
 | **Vendors** | Create, edit, and archive vendors. Fields: company name (required), primary contact name, primary contact email. |
-| **Vendor invoices** | Add, edit, and archive invoices per vendor. Invoice number, issue/due dates, amount, tax, currency, status (draft → received → approved → paid / overdue). Optional link to a purchase order. |
-| **Vendor purchase orders** | Add, edit, and archive POs per vendor. PO number, description, issue/due dates, amount, status (draft → issued → approved → closed / cancelled), approval flag. |
+| **Vendor invoices** | Add, edit, and archive invoices per vendor. Invoice number, issue/due dates, amount, tax, currency, status (draft → received → approved → paid / overdue). Optional link to a purchase order. Optional file attachment (PDF or image). |
+| **Vendor purchase orders** | Add, edit, and archive POs per vendor. PO number, description, issue/due dates, amount, status (draft → issued → approved → closed / cancelled), approval flag. Optional file attachment. |
 | **Invoice reminder tasks** | Invoices with a due date get a single linked task in the Tasks system (e.g. "Pay invoice INV-2041 — Arri Rental"). Marking the invoice as paid completes the task; archiving the invoice soft-deletes the task. There is no separate reminder engine. |
-| **Expense linking** | From the vendor detail page, link expenses to an invoice and/or to a PO. One invoice or PO can have many linked expenses. Unlink when needed. |
+| **Expense linking** | From the vendor detail page, link expenses to an invoice and/or to a PO. When logging spend (Purchase, Rental, Deposit), optionally match one invoice and/or one PO in the same save. From an expense detail sheet, retroactively link or upload an invoice and link a PO — even after the expense is matched to a budget line item. One invoice or PO can have many linked expenses. Unlink when needed. |
 | **Vendor spend and activity** | Per-vendor total spend (from expenses), a recent activity feed (expenses, invoices, POs), and on the detail page allocation/reconciliation status for linked expenses. |
 | **Dashboard** | "Vendor finance" summary cards (overdue invoices, due soon, open POs, POs awaiting approval). **Risk Watch** shows vendor-finance alerts: overdue/due-soon invoices, POs awaiting approval, large unpaid invoices, vendors with unmatched spend, vendors with no recent activity, open PO exposure. Clicks navigate to vendor detail or the vendors list. |
 
@@ -64,17 +64,30 @@ This document is both a **user guide** (how to use Vendor Management) and a **de
 
 1. Open a vendor’s detail page.
 2. In the **Invoices** section, click **Add invoice**.
-3. Enter invoice number, optional issue/due dates, amount, tax, currency, status, and optional link to a PO.
+3. Enter invoice number, optional issue/due dates, amount, tax, currency, status, optional link to a PO, and optionally **upload a file** (PDF or image).
 4. If you set a **due date**, a reminder task is created in Tasks. Marking the invoice as **paid** completes that task.
-5. Edit or archive invoices from the same section.
+5. Edit or archive invoices from the same section. Use the paperclip on a row to open an attached file.
 
 **Managing purchase orders**
 
 1. On the vendor detail page, open the **Purchase orders** section.
-2. Click **Add PO** and enter PO number, description, dates, amount, status, and approval.
+2. Click **Add PO** and enter PO number, description, dates, amount, status, approval, and optionally **upload a file**.
 3. Edit or archive POs as needed.
 
-**Linking spend**
+**Logging spend with invoice / PO matching**
+
+1. From **Budget**, click **Log Spend** and choose a Purchase, Rental, or Deposit transaction.
+2. Select a **vendor** in the transaction form.
+3. Optionally choose a **purchase order** and/or **invoice** (select an existing one or upload a new invoice with optional file). All steps are optional — cross-check amounts yourself; the app does not validate invoice totals against expense amounts.
+4. Save. New uploaded invoices appear in the vendor’s **Invoices** section.
+
+**Retroactive invoice / PO linking**
+
+1. Open an expense from the Budget tab (expense detail sheet).
+2. When the expense has a vendor, use the **Vendor finance** section to link an existing invoice or PO, or upload a new invoice.
+3. This works independently of **Match Spend** / budget line-item reconciliation.
+
+**Linking spend (vendor detail)**
 
 1. On the vendor detail page, open an invoice or a PO.
 2. Use **Link expense** to attach one or more expenses (logged spend) to that invoice or PO.
@@ -135,6 +148,7 @@ Open the **Dashboard**. The Vendor finance cards show counts (overdue, due soon,
 **Orchestration**
 
 - [src/lib/db/vendorInvoiceReminderService.ts](src/lib/db/vendorInvoiceReminderService.ts) — `createInvoiceWithReminderTask`, `updateInvoiceWithReminderTask`, `archiveInvoiceWithReminderTask`. Keeps invoice and linked task in sync in one transaction (create/complete/reopen/soft-delete task).
+- [src/lib/db/vendorFinanceDocumentService.ts](src/lib/db/vendorFinanceDocumentService.ts) — `createVendorInvoiceWithDocument`, `createVendorPurchaseOrderWithDocument`, `attachDocumentToVendorInvoice`, `attachDocumentToVendorPurchaseOrder`, `linkExpenseVendorFinance`. Attachments use the `documents` table with `entity_type` `vendor_invoice` or `vendor_purchase_order`.
 
 **Dashboard / Risk Watch**
 

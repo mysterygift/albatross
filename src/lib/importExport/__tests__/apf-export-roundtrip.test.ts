@@ -12,6 +12,8 @@ import {
   TEST_DOCUMENT_ID,
   TEST_PRODUCTION_ID,
 } from '@/test/apf/fixtures'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
+import { apfDocumentBundledZipPath } from '@/lib/importExport/documentPaths'
 
 describe('export artifact → parse round-trip (no DB)', () => {
   it('preserves production id and core fields', () => {
@@ -65,5 +67,69 @@ describe('export artifact → parse round-trip (no DB)', () => {
     const zipPath = `files/documents/${TEST_DOCUMENT_ID}/spec.pdf`
     expect(index.has(zipPath)).toBe(true)
     expect(new TextDecoder().decode(index.get(zipPath)!)).toBe('%PDF-1.4 roundtrip')
+  })
+
+  it('round-trips vendor invoice attachment metadata (entity_type vendor_invoice)', () => {
+    const invoiceId = '33333333-3333-4333-8333-333333333333'
+    const vendorId = '44444444-4444-4444-8444-444444444444'
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    tables.vendors = [
+      {
+        id: vendorId,
+        production_id: TEST_PRODUCTION_ID,
+        company_name: 'Fixture Vendor',
+        primary_contact_full_name: null,
+        primary_contact_email: null,
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+        deleted_at: null,
+      },
+    ]
+    tables.vendor_invoices = [
+      {
+        id: invoiceId,
+        production_id: TEST_PRODUCTION_ID,
+        vendor_id: vendorId,
+        po_id: null,
+        invoice_number: 'INV-FIXTURE',
+        issue_date: '2025-01-10',
+        due_date: null,
+        amount: 120,
+        tax: null,
+        currency_code: 'GBP',
+        status: 'received',
+        notes: null,
+        created_at: '2025-01-10T00:00:00.000Z',
+        updated_at: '2025-01-10T00:00:00.000Z',
+        deleted_at: null,
+      },
+    ]
+    tables.documents = [
+      documentFixtureRow({
+        entity_type: DOCUMENT_ENTITY_TYPES.vendorInvoice,
+        entity_id: invoiceId,
+        file_name: 'invoice.pdf',
+      }),
+    ]
+    const pdf = new TextEncoder().encode('%PDF vendor invoice')
+    const doc = tables.documents[0]!
+    const bytes = buildValidApfZipBytes({
+      tables,
+      bundled: [
+        {
+          archivePath: apfDocumentBundledZipPath(String(doc.id), String(doc.file_name)),
+          bytes: pdf,
+        },
+      ],
+      bundledDocumentIds: [String(doc.id)],
+    })
+    const { index, normalized } = parseApfArchiveBytes(bytes)
+    const importedDoc = normalized.data.tables.documents[0]!
+    expect(importedDoc.entity_type).toBe(DOCUMENT_ENTITY_TYPES.vendorInvoice)
+    expect(importedDoc.entity_id).toBe(invoiceId)
+    expect(normalized.data.tables.vendor_invoices).toHaveLength(1)
+    const zipPath = `files/documents/${TEST_DOCUMENT_ID}/invoice.pdf`
+    expect(index.has(zipPath)).toBe(true)
   })
 })

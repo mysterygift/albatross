@@ -30,6 +30,7 @@ import {
 } from '@/lib/db/repositories/taxCredits'
 import { listVatReclaimRates } from '@/lib/db/repositories/vatReclaim'
 import { buildVatReclaimRateMap, computeExpenseVatReclaim } from '@/lib/budget/vatReclaim'
+import { ExpenseVendorFinanceSection } from '@/features/budget/vendors/ExpenseVendorFinanceSection'
 
 export type ExpenseDetailPanelProps = {
   expenseWithDetails: ExpenseWithDetails | null | undefined
@@ -431,6 +432,19 @@ export function ExpenseDetailPanel({
             />
           )}
         <ExpenseTypedSection>{typedContent}</ExpenseTypedSection>
+        {expense.vendor_id && (
+          <ExpenseVendorFinanceSection
+            productionId={productionId}
+            vendorId={expense.vendor_id}
+            vendorCompanyName={
+              expenseWithDetails.vendor?.company_name ?? expense.vendor ?? 'Vendor'
+            }
+            productionCurrency={productionCurrency}
+            mode="edit"
+            expenseId={expense.id}
+            format={format}
+          />
+        )}
         {saveError && (
           <p className="text-sm text-destructive">{saveError}</p>
         )}

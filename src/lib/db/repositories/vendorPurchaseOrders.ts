@@ -87,6 +87,45 @@ export type CreateVendorPurchaseOrderData = {
 }
 
 /**
+ * Returns statements to create a vendor purchase order for use in executeBatch.
+ * Does not include BEGIN/COMMIT. Caller provides id and ts.
+ */
+export function buildCreateVendorPurchaseOrderStatements(
+  id: string,
+  ts: string,
+  data: CreateVendorPurchaseOrderData
+): Array<{ sql: string; bindValues: unknown[] }> {
+  const status = data.status ?? 'draft'
+  const approval = coerceBoolean(data.approval ?? 0, false)
+  const insert = {
+    sql: `INSERT INTO ${TABLE} (id, production_id, vendor_id, po_number, description, issue_date, due_date, amount, status, approval, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    bindValues: [
+      id,
+      data.production_id,
+      data.vendor_id,
+      data.po_number,
+      data.description ?? null,
+      data.issue_date ?? null,
+      data.due_date ?? null,
+      data.amount ?? null,
+      status,
+      approval,
+      data.notes ?? null,
+      ts,
+      ts,
+    ],
+  }
+  const outbox = outboxStatementForRow({
+    entity: TABLE,
+    entityId: id,
+    operation: 'create',
+    payloadJson: JSON.stringify({ ...data, id, status, approval }),
+  })
+  return [insert, outbox]
+}
+
+/**
  * Creates a vendor purchase order. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
  * so the INSERT and outbox row are in the same transaction.
  * production_id, vendor_id, and po_number are required. status defaults to 'draft', approval to 0.
@@ -96,35 +135,9 @@ export async function createVendorPurchaseOrder(
 ): Promise<VendorPurchaseOrder> {
   const id = uuid()
   const ts = now()
-  const status = data.status ?? 'draft'
-  const approval = coerceBoolean(data.approval ?? 0, false)
   const statements: Array<{ sql: string; bindValues: unknown[] }> = [
     { sql: 'BEGIN', bindValues: [] },
-    {
-      sql: `INSERT INTO ${TABLE} (id, production_id, vendor_id, po_number, description, issue_date, due_date, amount, status, approval, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      bindValues: [
-        id,
-        data.production_id,
-        data.vendor_id,
-        data.po_number,
-        data.description ?? null,
-        data.issue_date ?? null,
-        data.due_date ?? null,
-        data.amount ?? null,
-        status,
-        approval,
-        data.notes ?? null,
-        ts,
-        ts,
-      ],
-    },
-    outboxStatementForRow({
-      entity: TABLE,
-      entityId: id,
-      operation: 'create',
-      payloadJson: JSON.stringify({ ...data, id, status, approval }),
-    }),
+    ...buildCreateVendorPurchaseOrderStatements(id, ts, data),
     { sql: 'COMMIT', bindValues: [] },
   ]
   await runInSerializedTransaction(async () => {

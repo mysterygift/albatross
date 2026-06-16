@@ -85,8 +85,21 @@ import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
 import { InvoiceStatusBadge } from '@/features/budget/vendors/InvoiceStatusBadge'
 import { IngestEquipmentFromInvoiceModal } from '@/features/budget/vendors/IngestEquipmentFromInvoiceModal'
 import { PurchaseOrderStatusBadge } from '@/features/budget/vendors/PurchaseOrderStatusBadge'
+import { VendorFinanceDocumentField } from '@/features/budget/vendors/VendorFinanceDocumentField'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
+import { entityDocumentsQueryKey } from '@/lib/documents/pickAndPersistProductionDocument'
+import { documentsQueryKey } from '@/lib/documents/persistDocument'
+import { listDocumentsByEntity } from '@/lib/db/repositories/document'
+import {
+  attachDocumentToVendorInvoice,
+  attachDocumentToVendorPurchaseOrder,
+  createVendorInvoiceWithDocument,
+  createVendorPurchaseOrderWithDocument,
+  type VendorFinanceFileInput,
+} from '@/lib/db/vendorFinanceDocumentService'
 import type { BudgetItemExpenseLink, Expense, ExpenseReconciliationStatus, VendorInvoice, VendorPurchaseOrder } from '@/lib/db/types'
-import { ArrowLeft, Pencil, Eye, Archive, FilePlus, ArchiveIcon, FileText, Link2, X, Receipt, Package } from 'lucide-react'
+import { ArrowLeft, Pencil, Eye, Archive, FilePlus, ArchiveIcon, FileText, Link2, X, Receipt, Package, Paperclip } from 'lucide-react'
+import { getFileUrl, openInSystem } from '@/lib/files'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const editVendorSchema = z.object({
@@ -373,33 +386,61 @@ export function VendorDetailPage() {
 
   const invoiceListKey = vendorId && currentProductionId ? vendorInvoicesQueryKey(currentProductionId, vendorId) : []
   const createInvoiceMutation = useMutation({
-    mutationFn: (data: Parameters<typeof createInvoiceWithReminderTask>[0]) =>
-      createInvoiceWithReminderTask(data, vendor?.company_name ?? 'Vendor'),
-    onSuccess: () => {
+    mutationFn: ({
+      data,
+      file,
+    }: {
+      data: Parameters<typeof createInvoiceWithReminderTask>[0]
+      file?: VendorFinanceFileInput | null
+    }) =>
+      file
+        ? createVendorInvoiceWithDocument(data, vendor?.company_name ?? 'Vendor', file).then(
+            (r) => r.invoice
+          )
+        : createInvoiceWithReminderTask(data, vendor?.company_name ?? 'Vendor'),
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: invoiceListKey })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
       setCreateInvoiceOpen(false)
     },
   })
   const updateInvoiceMutation = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       id,
       patch,
       invoice,
+      file,
     }: {
       id: string
       patch: Parameters<typeof updateInvoiceWithReminderTask>[1]
       invoice: VendorInvoice
-    }) => updateInvoiceWithReminderTask(id, patch, invoice, vendor?.company_name ?? 'Vendor'),
-    onSuccess: () => {
+      file?: VendorFinanceFileInput | null
+    }) => {
+      const updated = await updateInvoiceWithReminderTask(
+        id,
+        patch,
+        invoice,
+        vendor?.company_name ?? 'Vendor'
+      )
+      if (file) {
+        await attachDocumentToVendorInvoice(id, file)
+      }
+      return updated
+    },
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: invoiceListKey })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
+      queryClient.invalidateQueries({
+        queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorInvoice, variables.id),
+      })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
       setEditInvoice(null)
     },
   })
@@ -417,23 +458,50 @@ export function VendorDetailPage() {
 
   const poListKey = vendorId && currentProductionId ? vendorPurchaseOrdersQueryKey(currentProductionId, vendorId) : []
   const createPOMutation = useMutation({
-    mutationFn: (data: Parameters<typeof createVendorPurchaseOrder>[0]) => createVendorPurchaseOrder(data),
+    mutationFn: ({
+      data,
+      file,
+    }: {
+      data: Parameters<typeof createVendorPurchaseOrder>[0]
+      file?: VendorFinanceFileInput | null
+    }) =>
+      file
+        ? createVendorPurchaseOrderWithDocument(data, file).then((r) => r.purchaseOrder)
+        : createVendorPurchaseOrder(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: poListKey })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
       setCreatePOOpen(false)
     },
   })
   const updatePOMutation = useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: Parameters<typeof updateVendorPurchaseOrder>[1] }) =>
-      updateVendorPurchaseOrder(id, patch),
-    onSuccess: () => {
+    mutationFn: async ({
+      id,
+      patch,
+      file,
+    }: {
+      id: string
+      patch: Parameters<typeof updateVendorPurchaseOrder>[1]
+      file?: VendorFinanceFileInput | null
+    }) => {
+      const updated = await updateVendorPurchaseOrder(id, patch)
+      if (file) {
+        await attachDocumentToVendorPurchaseOrder(id, file)
+      }
+      return updated
+    },
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: poListKey })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
+      queryClient.invalidateQueries({
+        queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, variables.id),
+      })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
       setEditPO(null)
     },
   })
@@ -1025,7 +1093,7 @@ export function VendorDetailPage() {
         vendorId={vendorId!}
         currency={currency}
         activePurchaseOrders={activePurchaseOrders}
-        onSubmit={(data) => createInvoiceMutation.mutate(data)}
+        onSubmit={(payload) => createInvoiceMutation.mutate(payload)}
         isLoading={createInvoiceMutation.isPending}
       />
 
@@ -1036,7 +1104,14 @@ export function VendorDetailPage() {
           invoice={editInvoice}
           currency={currency}
           activePurchaseOrders={activePurchaseOrders}
-          onSubmit={(patch) => updateInvoiceMutation.mutate({ id: editInvoice.id, patch, invoice: editInvoice })}
+          onSubmit={(payload) =>
+            updateInvoiceMutation.mutate({
+              id: editInvoice.id,
+              patch: payload.patch,
+              invoice: editInvoice,
+              file: payload.file,
+            })
+          }
           isLoading={updateInvoiceMutation.isPending}
         />
       )}
@@ -1079,7 +1154,7 @@ export function VendorDetailPage() {
         onOpenChange={setCreatePOOpen}
         productionId={currentProductionId!}
         vendorId={vendorId!}
-        onSubmit={(data) => createPOMutation.mutate(data)}
+        onSubmit={(payload) => createPOMutation.mutate(payload)}
         isLoading={createPOMutation.isPending}
       />
 
@@ -1088,7 +1163,9 @@ export function VendorDetailPage() {
           open={!!editPO}
           onOpenChange={(open) => !open && setEditPO(null)}
           po={editPO}
-          onSubmit={(patch) => updatePOMutation.mutate({ id: editPO.id, patch })}
+          onSubmit={(payload) =>
+            updatePOMutation.mutate({ id: editPO.id, patch: payload.patch, file: payload.file })
+          }
           isLoading={updatePOMutation.isPending}
         />
       )}
@@ -1148,6 +1225,36 @@ export function VendorDetailPage() {
         />
       )}
     </div>
+  )
+}
+
+function VendorFinanceAttachmentButton({
+  filePath,
+  label,
+}: {
+  filePath: string
+  label: string
+}) {
+  const handleOpen = async () => {
+    const url = await getFileUrl(filePath)
+    await openInSystem(url)
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 text-muted-foreground"
+          onClick={handleOpen}
+          aria-label={`Open attachment ${label}`}
+        >
+          <Paperclip className="size-3" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -1237,10 +1344,20 @@ function VendorInvoiceRow({
     invoice.status !== 'paid'
   const dateFmt = (d: string | null) =>
     d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
+  const { data: invoiceDocuments = [] } = useQuery({
+    queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorInvoice, invoice.id),
+    queryFn: () => listDocumentsByEntity(DOCUMENT_ENTITY_TYPES.vendorInvoice, invoice.id),
+  })
+  const invoiceDoc = invoiceDocuments[0]
   return (
     <TableRow className="border-border">
       <TableCell className="text-sm py-2 w-[100px] font-medium text-foreground">
-        {invoice.invoice_number}
+        <span className="inline-flex items-center gap-1">
+          {invoice.invoice_number}
+          {invoiceDoc && (
+            <VendorFinanceAttachmentButton filePath={invoiceDoc.file_path} label={invoiceDoc.file_name} />
+          )}
+        </span>
       </TableCell>
       <TableCell className="text-muted-foreground text-sm py-2 w-[88px]">{dateFmt(invoice.issue_date)}</TableCell>
       <TableCell className="text-muted-foreground text-sm py-2 w-[88px]">{dateFmt(invoice.due_date)}</TableCell>
@@ -1316,10 +1433,20 @@ function VendorPORow({
 }) {
   const dateFmt = (d: string | null) =>
     d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
+  const { data: poDocuments = [] } = useQuery({
+    queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, po.id),
+    queryFn: () => listDocumentsByEntity(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, po.id),
+  })
+  const poDoc = poDocuments[0]
   return (
     <TableRow className="border-border">
       <TableCell className="text-sm py-2 w-[90px] font-medium text-foreground">
-        {po.po_number}
+        <span className="inline-flex items-center gap-1">
+          {po.po_number}
+          {poDoc && (
+            <VendorFinanceAttachmentButton filePath={poDoc.file_path} label={poDoc.file_name} />
+          )}
+        </span>
       </TableCell>
       <TableCell className="text-sm py-2 min-w-[100px] text-muted-foreground truncate max-w-[180px]" title={po.description ?? ''}>
         {po.description ?? '—'}
@@ -1770,21 +1897,25 @@ function CreateInvoiceDialog({
   vendorId: string
   currency: string
   activePurchaseOrders: VendorPurchaseOrder[]
-  onSubmit: (data: {
-    production_id: string
-    vendor_id: string
-    invoice_number: string
-    issue_date?: string | null
-    due_date?: string | null
-    amount?: number | null
-    tax?: number | null
-    currency_code?: string | null
-    status?: InvoiceFormValues['status']
-    notes?: string | null
-    po_id?: string | null
+  onSubmit: (payload: {
+    data: {
+      production_id: string
+      vendor_id: string
+      invoice_number: string
+      issue_date?: string | null
+      due_date?: string | null
+      amount?: number | null
+      tax?: number | null
+      currency_code?: string | null
+      status?: InvoiceFormValues['status']
+      notes?: string | null
+      po_id?: string | null
+    }
+    file?: VendorFinanceFileInput | null
   }) => void
   isLoading: boolean
 }) {
+  const [pendingFile, setPendingFile] = useState<VendorFinanceFileInput | null>(null)
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema) as Resolver<InvoiceFormValues>,
     defaultValues: {
@@ -1812,22 +1943,26 @@ function CreateInvoiceDialog({
         notes: '',
         po_id: null,
       })
+      setPendingFile(null)
     }
   }, [open, currency, form])
 
   const handleSubmit = (data: InvoiceFormValues) => {
     onSubmit({
-      production_id: productionId,
-      vendor_id: vendorId,
-      invoice_number: data.invoice_number.trim(),
-      issue_date: data.issue_date?.trim() || null,
-      due_date: data.due_date?.trim() || null,
-      amount: data.amount ?? null,
-      tax: data.tax ?? null,
-      currency_code: data.currency_code?.trim() || null,
-      status: data.status,
-      notes: data.notes?.trim() || null,
-      po_id: data.po_id ?? null,
+      data: {
+        production_id: productionId,
+        vendor_id: vendorId,
+        invoice_number: data.invoice_number.trim(),
+        issue_date: data.issue_date?.trim() || null,
+        due_date: data.due_date?.trim() || null,
+        amount: data.amount ?? null,
+        tax: data.tax ?? null,
+        currency_code: data.currency_code?.trim() || null,
+        status: data.status,
+        notes: data.notes?.trim() || null,
+        po_id: data.po_id ?? null,
+      },
+      file: pendingFile,
     })
   }
 
@@ -1927,6 +2062,10 @@ function CreateInvoiceDialog({
             <Label htmlFor="inv-notes">Notes</Label>
             <Input id="inv-notes" {...form.register('notes')} className="mt-1" placeholder="Optional" />
           </div>
+          <VendorFinanceDocumentField
+            pendingFile={pendingFile}
+            onPendingFileChange={setPendingFile}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -1955,9 +2094,18 @@ function EditInvoiceDialog({
   invoice: VendorInvoice
   currency: string
   activePurchaseOrders: VendorPurchaseOrder[]
-  onSubmit: (patch: Partial<Pick<VendorInvoice, 'invoice_number' | 'issue_date' | 'due_date' | 'amount' | 'tax' | 'currency_code' | 'status' | 'notes' | 'po_id'>>) => void
+  onSubmit: (payload: {
+    patch: Partial<Pick<VendorInvoice, 'invoice_number' | 'issue_date' | 'due_date' | 'amount' | 'tax' | 'currency_code' | 'status' | 'notes' | 'po_id'>>
+    file?: VendorFinanceFileInput | null
+  }) => void
   isLoading: boolean
 }) {
+  const [pendingFile, setPendingFile] = useState<VendorFinanceFileInput | null>(null)
+  const { data: existingDocuments = [] } = useQuery({
+    queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorInvoice, invoice.id),
+    queryFn: () => listDocumentsByEntity(DOCUMENT_ENTITY_TYPES.vendorInvoice, invoice.id),
+    enabled: open,
+  })
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema) as Resolver<InvoiceFormValues>,
     defaultValues: {
@@ -1985,20 +2133,24 @@ function EditInvoiceDialog({
         notes: invoice.notes ?? '',
         po_id: invoice.po_id ?? null,
       })
+      setPendingFile(null)
     }
   }, [open, invoice, currency, form])
 
   const handleSubmit = (data: InvoiceFormValues) => {
     onSubmit({
-      invoice_number: data.invoice_number.trim(),
-      issue_date: data.issue_date?.trim() || null,
-      due_date: data.due_date?.trim() || null,
-      amount: data.amount ?? null,
-      tax: data.tax ?? null,
-      currency_code: data.currency_code?.trim() || null,
-      status: data.status,
-      notes: data.notes?.trim() || null,
-      po_id: data.po_id ?? null,
+      patch: {
+        invoice_number: data.invoice_number.trim(),
+        issue_date: data.issue_date?.trim() || null,
+        due_date: data.due_date?.trim() || null,
+        amount: data.amount ?? null,
+        tax: data.tax ?? null,
+        currency_code: data.currency_code?.trim() || null,
+        status: data.status,
+        notes: data.notes?.trim() || null,
+        po_id: data.po_id ?? null,
+      },
+      file: pendingFile,
     })
   }
 
@@ -2096,6 +2248,11 @@ function EditInvoiceDialog({
             <Label htmlFor="edit-inv-notes">Notes</Label>
             <Input id="edit-inv-notes" {...form.register('notes')} className="mt-1" />
           </div>
+          <VendorFinanceDocumentField
+            existingDocument={existingDocuments[0] ?? null}
+            pendingFile={pendingFile}
+            onPendingFileChange={setPendingFile}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -2124,9 +2281,13 @@ function CreatePODialog({
   onOpenChange: (open: boolean) => void
   productionId: string
   vendorId: string
-  onSubmit: (data: Parameters<typeof createVendorPurchaseOrder>[0]) => void
+  onSubmit: (payload: {
+    data: Parameters<typeof createVendorPurchaseOrder>[0]
+    file?: VendorFinanceFileInput | null
+  }) => void
   isLoading: boolean
 }) {
+  const [pendingFile, setPendingFile] = useState<VendorFinanceFileInput | null>(null)
   const form = useForm<POFormValues>({
     resolver: zodResolver(poFormSchema) as Resolver<POFormValues>,
     defaultValues: {
@@ -2152,21 +2313,25 @@ function CreatePODialog({
         approval: false,
         notes: '',
       })
+      setPendingFile(null)
     }
   }, [open, form])
 
   const handleSubmit = (data: POFormValues) => {
     onSubmit({
-      production_id: productionId,
-      vendor_id: vendorId,
-      po_number: data.po_number.trim(),
-      description: data.description?.trim() || null,
-      issue_date: data.issue_date?.trim() || null,
-      due_date: data.due_date?.trim() || null,
-      amount: data.amount ?? null,
-      status: data.status,
-      approval: data.approval ? 1 : 0,
-      notes: data.notes?.trim() || null,
+      data: {
+        production_id: productionId,
+        vendor_id: vendorId,
+        po_number: data.po_number.trim(),
+        description: data.description?.trim() || null,
+        issue_date: data.issue_date?.trim() || null,
+        due_date: data.due_date?.trim() || null,
+        amount: data.amount ?? null,
+        status: data.status,
+        approval: data.approval ? 1 : 0,
+        notes: data.notes?.trim() || null,
+      },
+      file: pendingFile,
     })
   }
 
@@ -2243,6 +2408,10 @@ function CreatePODialog({
             <Label htmlFor="po-notes">Notes</Label>
             <Input id="po-notes" {...form.register('notes')} className="mt-1" placeholder="Optional" />
           </div>
+          <VendorFinanceDocumentField
+            pendingFile={pendingFile}
+            onPendingFileChange={setPendingFile}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -2267,9 +2436,18 @@ function EditPODialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   po: VendorPurchaseOrder
-  onSubmit: (patch: Parameters<typeof updateVendorPurchaseOrder>[1]) => void
+  onSubmit: (payload: {
+    patch: Parameters<typeof updateVendorPurchaseOrder>[1]
+    file?: VendorFinanceFileInput | null
+  }) => void
   isLoading: boolean
 }) {
+  const [pendingFile, setPendingFile] = useState<VendorFinanceFileInput | null>(null)
+  const { data: existingDocuments = [] } = useQuery({
+    queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, po.id),
+    queryFn: () => listDocumentsByEntity(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, po.id),
+    enabled: open,
+  })
   const form = useForm<POFormValues>({
     resolver: zodResolver(poFormSchema) as Resolver<POFormValues>,
     defaultValues: {
@@ -2295,19 +2473,23 @@ function EditPODialog({
         approval: po.approval === 1,
         notes: po.notes ?? '',
       })
+      setPendingFile(null)
     }
   }, [open, po, form])
 
   const handleSubmit = (data: POFormValues) => {
     onSubmit({
-      po_number: data.po_number.trim(),
-      description: data.description?.trim() || null,
-      issue_date: data.issue_date?.trim() || null,
-      due_date: data.due_date?.trim() || null,
-      amount: data.amount ?? null,
-      status: data.status,
-      approval: data.approval ? 1 : 0,
-      notes: data.notes?.trim() || null,
+      patch: {
+        po_number: data.po_number.trim(),
+        description: data.description?.trim() || null,
+        issue_date: data.issue_date?.trim() || null,
+        due_date: data.due_date?.trim() || null,
+        amount: data.amount ?? null,
+        status: data.status,
+        approval: data.approval ? 1 : 0,
+        notes: data.notes?.trim() || null,
+      },
+      file: pendingFile,
     })
   }
 
@@ -2383,6 +2565,11 @@ function EditPODialog({
             <Label htmlFor="edit-po-notes">Notes</Label>
             <Input id="edit-po-notes" {...form.register('notes')} className="mt-1" />
           </div>
+          <VendorFinanceDocumentField
+            existingDocument={existingDocuments[0] ?? null}
+            pendingFile={pendingFile}
+            onPendingFileChange={setPendingFile}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel

@@ -1,4 +1,4 @@
-import { useMemo, useImperativeHandle } from 'react'
+import { useMemo, useImperativeHandle, useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Input } from '@/components/ui/input'
@@ -27,6 +27,7 @@ export function RentalTransactionEditor({
   context,
   hideFooter,
   editorRef,
+  onVendorIdChange,
 }: TypedExpenseEditProps<RentalDetails>) {
   const productionId = context.productionId
   const format = context.format
@@ -73,6 +74,11 @@ export function RentalTransactionEditor({
   useImperativeHandle(editorRef, () => ({
     submit: () => form.handleSubmit((data) => onSave(data))(),
   }), [form, onSave])
+
+  const watchedVendorId = form.watch('vendor_id')
+  useEffect(() => {
+    onVendorIdChange?.(watchedVendorId?.trim() ? watchedVendorId.trim() : null)
+  }, [watchedVendorId, onVendorIdChange])
 
   const watchAll = form.watch()
   const computedDays = computeRentalDays(watchAll.rental_start_date ?? null, watchAll.rental_end_date ?? null)

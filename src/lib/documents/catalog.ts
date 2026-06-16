@@ -38,6 +38,8 @@ export const DOCUMENT_ENTITY_TYPES = {
   manualUploadMusic: 'manual_upload_music',
   manualUploadFinance: 'manual_upload_finance',
   manualUploadProductionLists: 'manual_upload_production_lists',
+  vendorInvoice: 'vendor_invoice',
+  vendorPurchaseOrder: 'vendor_purchase_order',
 } as const
 
 export type DocumentEntityType =
@@ -144,6 +146,8 @@ export const DOCUMENT_CATEGORIES: DocumentCategoryConfig[] = [
       DOCUMENT_ENTITY_TYPES.budgetCsv,
       DOCUMENT_ENTITY_TYPES.costReportPdf,
       DOCUMENT_ENTITY_TYPES.manualUploadFinance,
+      DOCUMENT_ENTITY_TYPES.vendorInvoice,
+      DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder,
     ],
   },
   {
@@ -204,6 +208,8 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   [DOCUMENT_ENTITY_TYPES.manualUploadMusic]: 'Uploaded file',
   [DOCUMENT_ENTITY_TYPES.manualUploadFinance]: 'Uploaded file',
   [DOCUMENT_ENTITY_TYPES.manualUploadProductionLists]: 'Uploaded file',
+  [DOCUMENT_ENTITY_TYPES.vendorInvoice]: 'Vendor invoice',
+  [DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder]: 'Vendor purchase order',
 }
 
 export function getDocumentTypeLabel(entityType: string | null): string {

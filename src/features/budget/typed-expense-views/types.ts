@@ -43,4 +43,6 @@ export type TypedExpenseEditProps<T = unknown> = {
   hideFooter?: boolean
   /** When set, parent can call submit() to trigger form submit (e.g. from shared footer). */
   editorRef?: RefObject<LogSpendEditorHandle | null>
+  /** Log Spend: notify parent when vendor selection changes. */
+  onVendorIdChange?: (vendorId: string | null) => void
 }

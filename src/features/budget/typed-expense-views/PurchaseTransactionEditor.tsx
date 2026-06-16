@@ -1,4 +1,4 @@
-import { useMemo, useImperativeHandle } from 'react'
+import { useMemo, useImperativeHandle, useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -48,6 +48,7 @@ export function PurchaseTransactionEditor({
   context,
   hideFooter,
   editorRef,
+  onVendorIdChange,
 }: TypedExpenseEditProps<PurchaseDetails>) {
   const productionId = context.productionId
   const locations = context.locations ?? []
@@ -102,6 +103,11 @@ export function PurchaseTransactionEditor({
   useImperativeHandle(editorRef, () => ({
     submit: () => form.handleSubmit((data) => onSave(toPurchaseDetails(data)))(),
   }), [form, onSave])
+
+  const watchedVendorId = form.watch('vendor_id')
+  useEffect(() => {
+    onVendorIdChange?.(watchedVendorId?.trim() ? watchedVendorId.trim() : null)
+  }, [watchedVendorId, onVendorIdChange])
 
   const isService = !!form.watch('is_service_purchase')
 
