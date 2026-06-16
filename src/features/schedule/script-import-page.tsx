@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
@@ -70,14 +70,22 @@ const schema = z.object({
   rawText: z.string().optional(),
 })
 
+function locationGroupsFingerprint(groups: ReturnType<typeof analyzeImportLocations>): string {
+  return groups
+    .map((g) => `${g.canonicalKey}:${[...g.rawVariants].sort().join('|')}:${g.sceneIds.join(',')}`)
+    .join(';')
+}
+
 function ImportLocationSummary({
   drafts,
   productionId,
   onMergeGroup,
+  reviewRevision,
 }: {
   drafts: ImportSceneDraft[]
   productionId: string
   onMergeGroup: (sceneIds: string[], canonicalName: string) => void
+  reviewRevision: number
 }) {
   const { data: existingLocations = [] } = useQuery({
     queryKey: ['locations', productionId],
@@ -91,6 +99,10 @@ function ImportLocationSummary({
   )
 
   const [mergeNames, setMergeNames] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    setMergeNames({})
+  }, [reviewRevision, locationGroupsFingerprint(locationGroups)])
 
   if (locationGroups.length === 0) return null
 
@@ -178,6 +190,7 @@ export function ScriptImportPage() {
   const [importDrafts, setImportDrafts] = useState<ImportSceneDraft[] | null>(null)
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
   const [spellingBannerDismissed, setSpellingBannerDismissed] = useState(false)
+  const [locationReviewRevision, setLocationReviewRevision] = useState(0)
   const [uploadedDoc, setUploadedDoc] = useState<{ name: string; id: string } | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
@@ -381,16 +394,26 @@ export function ScriptImportPage() {
     }
   }
 
+  const recomputeLocationReview = (drafts: ImportSceneDraft[]) => {
+    const groups = analyzeImportLocations(drafts, existingLocations)
+    if (hasLocationSpellingVariants(groups)) {
+      setSpellingBannerDismissed(false)
+    }
+    setLocationReviewRevision((r) => r + 1)
+  }
+
   const handleSaveDraft = (updated: ImportSceneDraft) => {
-    setImportDrafts((prev) =>
-      prev ? prev.map((draft) => (draft.id === updated.id ? updated : draft)) : prev
-    )
+    if (!importDrafts) return
+    const next = importDrafts.map((draft) => (draft.id === updated.id ? updated : draft))
+    setImportDrafts(next)
+    recomputeLocationReview(next)
   }
 
   const handleMergeLocationGroup = (sceneIds: string[], canonicalName: string) => {
-    setImportDrafts((prev) =>
-      prev ? applyLocationMergeToDrafts(prev, sceneIds, canonicalName) : prev
-    )
+    if (!importDrafts) return
+    const next = applyLocationMergeToDrafts(importDrafts, sceneIds, canonicalName)
+    setImportDrafts(next)
+    recomputeLocationReview(next)
   }
 
   if (!currentProductionId) {
@@ -545,6 +568,7 @@ export function ScriptImportPage() {
                 drafts={importDrafts}
                 productionId={currentProductionId}
                 onMergeGroup={handleMergeLocationGroup}
+                reviewRevision={locationReviewRevision}
               />
 
               {isEpisodic && (

@@ -90,6 +90,56 @@ describe('ScriptImportPage', () => {
     cleanup()
   })
 
+  it('shows merge UI after an edit introduces duplicate location spellings', async () => {
+    const user = userEvent.setup()
+    parserRepo.parse.mockResolvedValue([
+      {
+        scene_number: '1',
+        title: 'KITCHEN - DAY',
+        location: 'KITCHEN',
+        int_ext: 'INT',
+        day_night: 'DAY',
+      },
+      {
+        scene_number: '2',
+        title: 'KITCHEN - NIGHT',
+        location: 'KITCHEN',
+        int_ext: 'INT',
+        day_night: 'NIGHT',
+      },
+    ] satisfies ParsedScene[])
+
+    render(wrap(<ScriptImportPage />))
+
+    await user.type(screen.getByRole('textbox'), 'INT. KITCHEN - DAY\n\nAction.')
+    await user.click(screen.getByRole('button', { name: /parse scenes/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/found 2 scene\(s\)/i)).toBeTruthy()
+    })
+
+    expect(
+      screen.queryByText(/these spellings will map to one location on import/i)
+    ).toBeNull()
+
+    const sceneRow = screen.getByRole('button', { name: /1.*kitchen.*day/i })
+    await user.click(sceneRow)
+
+    const dialog = await screen.findByRole('dialog')
+    const locationInput = within(dialog).getByLabelText(/^location$/i)
+    await user.clear(locationInput)
+    await user.type(locationInput, 'Kitchen')
+    await user.click(within(dialog).getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/these spellings will map to one location on import/i)
+      ).toBeTruthy()
+    })
+    expect(screen.getByRole('button', { name: /merge 2 scenes/i })).toBeTruthy()
+    expect(screen.getByText(/some locations have multiple spellings/i)).toBeTruthy()
+  })
+
   it('shows parsed scenes and updates location summary after editing a scene', async () => {
     const user = userEvent.setup()
     render(wrap(<ScriptImportPage />))
