@@ -11,9 +11,11 @@ function account(id: string, code: string, sort_order = 0): BudgetAccount {
     parent_account_id: null,
     sort_order,
     is_postable: true,
+    color_hex: null,
     archived_at: null,
     created_at: '',
     updated_at: '',
+    deleted_at: null,
   }
 }
 
@@ -28,7 +30,7 @@ function item(id: string, account_id: string | null, description: string): Budge
     estimated_cost: 100,
     actual_cost: 0,
     vendor: null,
-    status: null,
+    status: '',
     line_item_type: null,
     created_at: '',
     updated_at: '',

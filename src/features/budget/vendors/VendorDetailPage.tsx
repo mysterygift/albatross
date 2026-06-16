@@ -398,7 +398,7 @@ export function VendorDetailPage() {
             (r) => r.invoice
           )
         : createInvoiceWithReminderTask(data, vendor?.company_name ?? 'Vendor'),
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: invoiceListKey })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })

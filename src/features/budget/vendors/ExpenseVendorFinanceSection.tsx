@@ -40,7 +40,6 @@ import {
   linkExistingExpenseToPurchaseOrder,
   type ExpenseVendorFinanceDraft,
 } from '@/lib/db/vendorFinanceDocumentService'
-import { pickFileBytes } from '@/lib/documents/pickAndPersistProductionDocument'
 import type { VendorInvoice, VendorPurchaseOrder } from '@/lib/db/types'
 import { VendorFinanceDocumentField } from '@/features/budget/vendors/VendorFinanceDocumentField'
 
@@ -277,26 +276,6 @@ export function ExpenseVendorFinanceSection({
           ? draft.uploadInvoice ?? { invoice_number: '' }
           : null,
     })
-  }
-
-  const handleUploadPick = async () => {
-    const picked = await pickFileBytes([
-      { name: 'Documents', extensions: ['pdf', 'png', 'jpg', 'jpeg'] },
-    ])
-    if (!picked) return
-    if (mode === 'create') {
-      setDraft({
-        ...draft,
-        uploadInvoice: {
-          ...(draft.uploadInvoice ?? { invoice_number: uploadInvoiceNumber }),
-          fileName: picked.fileName,
-          bytes: picked.bytes,
-          mimeType: picked.mimeType,
-        },
-      })
-    } else {
-      setUploadFile(picked)
-    }
   }
 
   if (mode === 'create') {

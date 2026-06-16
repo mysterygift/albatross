@@ -44,6 +44,7 @@ import {
   listTaxCreditSchemes,
   listAllocationsByProduction,
 } from '@/lib/db/repositories/taxCredits'
+import { listVatReclaimRates } from '@/lib/db/repositories/vatReclaim'
 import {
   countUntypedBudgetClassifications,
   migrateUntypedToAllow,
@@ -1028,7 +1029,7 @@ export function BudgetPage() {
         queryClient.invalidateQueries({ queryKey: ['floats', currentProductionId, stableRevisionId] })
         queryClient.invalidateQueries({ queryKey: ['floats-by-budget-item'] })
         queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', currentProductionId, stableRevisionId] })
-        queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, stableRevisionId) })
+        queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, stableRevisionId ?? undefined) })
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense'] })
       }
     },
