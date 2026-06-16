@@ -11,13 +11,12 @@
  * New exports are always inserted as new rows, so previous exports are preserved (the document
  * workflow has no version-replacement path).
  */
-import { BaseDirectory, mkdir, remove, writeFile } from '@tauri-apps/plugin-fs'
-
 import { buildSidesPdfData, generateSidesPdf } from '@/lib/pdf/sides'
 import { sanitizeForFilename } from '@/lib/files/sanitizeForFilename'
+import { persistProductionDocument } from '@/lib/documents/persistDocument'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
 
-import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from './client'
-import { buildCreateDocumentStatements, getDocumentById } from './repositories/document'
+import { now, uuid } from './client'
 import { getProductionById } from './repositories/production'
 import { listScriptVersionsByProduction } from './repositories/scriptVersions'
 import {
@@ -36,9 +35,6 @@ import type {
   SidesValidationCode,
 } from './sidesBuilderService'
 import type { Document, ShootDaySidesExport } from './types'
-
-const ATTACHMENTS_DIR = 'attachments'
-const SIDES_ENTITY_TYPE = 'sides_export'
 
 /** Structured `metadata_json` payload stored on a sides export row. */
 export type SidesExportMetadata = {
@@ -114,22 +110,13 @@ export async function exportShootDaySides(
   })
   const bytes = new Uint8Array(await generateSidesPdf(pdfData))
 
-  // 2. Write the PDF into app-managed storage (per-production subdirectory, document-id prefixed).
   const documentId = uuid()
   const exportId = uuid()
   const ts = now()
   const unitToken = sanitizeForFilename(source.unitName ?? source.unitId ?? 'main')
   const dateToken = source.shootDate ? sanitizeForFilename(source.shootDate) : 'undated'
   const fileName = `sides-${dateToken}-${unitToken}.pdf`
-  const relativePath = `${ATTACHMENTS_DIR}/${productionId}/${documentId}-${fileName}`
 
-  await mkdir(`${ATTACHMENTS_DIR}/${productionId}`, {
-    baseDir: BaseDirectory.AppData,
-    recursive: true,
-  })
-  await writeFile(relativePath, bytes, { baseDir: BaseDirectory.AppData })
-
-  // 3. Record the document + export atomically; remove the file if the DB write fails.
   const existingCount = (await listSidesExportsByShootDay(shootDayId)).length
   const exportLabel = `Sides v${existingCount + 1}${source.shootDate ? ` — ${source.shootDate}` : ''}`
 
@@ -144,42 +131,26 @@ export async function exportShootDaySides(
     scriptVersionIds: source.scriptVersionIds,
   }
 
-  try {
-    await runInSerializedTransaction(async () => {
-      const db = await getDb()
-      await executeBatch(db, [
-        { sql: 'BEGIN', bindValues: [] },
-        ...buildCreateDocumentStatements(documentId, ts, {
-          production_id: productionId,
-          entity_type: SIDES_ENTITY_TYPE,
-          entity_id: shootDayId,
-          file_name: fileName,
-          file_path: relativePath,
-          mime_type: 'application/pdf',
-        }),
-        ...buildCreateSidesExportStatements(exportId, ts, {
-          production_id: productionId,
-          shoot_day_id: shootDayId,
-          unit_id: source.unitId,
-          document_id: documentId,
-          script_version_id:
-            source.scriptVersionIds.length === 1 ? source.scriptVersionIds[0]! : null,
-          export_label: exportLabel,
-          metadata_json: JSON.stringify(metadata),
-        }),
-        { sql: 'COMMIT', bindValues: [] },
-      ])
-    })
-  } catch (error) {
-    try {
-      await remove(relativePath, { baseDir: BaseDirectory.AppData })
-    } catch {
-      // Best-effort cleanup; surface the original DB error.
-    }
-    throw error
-  }
+  const { document } = await persistProductionDocument({
+    productionId,
+    fileName,
+    bytes,
+    mimeType: 'application/pdf',
+    entityType: DOCUMENT_ENTITY_TYPES.sidesExport,
+    entityId: shootDayId,
+    documentId,
+    extraStatements: buildCreateSidesExportStatements(exportId, ts, {
+      production_id: productionId,
+      shoot_day_id: shootDayId,
+      unit_id: source.unitId,
+      document_id: documentId,
+      script_version_id:
+        source.scriptVersionIds.length === 1 ? source.scriptVersionIds[0]! : null,
+      export_label: exportLabel,
+      metadata_json: JSON.stringify(metadata),
+    }),
+  })
 
-  const document = (await getDocumentById(documentId))!
   const exportRecord = (await getSidesExportById(exportId))!
   return { document, exportRecord }
 }

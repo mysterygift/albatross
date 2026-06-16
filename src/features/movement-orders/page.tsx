@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
@@ -31,7 +31,12 @@ import { getMovementOrderLocationContacts } from '@/lib/movement-orders/location
 import { buildMovementOrderLegSkeleton } from '@/lib/movement-orders/movementLegs'
 import { enrichMovementLegsWithRouteData } from '@/lib/movement-orders/enrichMovementLegsWithRouteData'
 import { generateMovementOrderPDF } from '@/lib/pdf/movementOrder'
-import { exportPersonalizedDocuments } from '@/lib/documents/exportPersonalizedDocuments'
+import {
+  persistPersonalizedDocuments,
+  personIdFromRecipient,
+} from '@/lib/documents/persistPersonalizedDocuments'
+import { persistProductionDocument, documentsQueryKey } from '@/lib/documents/persistDocument'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
 import { openInSystem, saveFileWithDialog } from '@/lib/files'
 import { sanitizeForFilename } from '@/lib/files/sanitizeForFilename'
 import {
@@ -65,6 +70,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 export function MovementOrdersPage() {
   const { currentProductionId } = useCurrentProduction()
+  const queryClient = useQueryClient()
   const { progress, updateProgress } = useFirstLaunchTutorial()
   const [shootDayId, setShootDayId] = useState<string | null>(null)
   const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
@@ -348,26 +354,42 @@ export function MovementOrdersPage() {
       const bytes = new Uint8Array(pdfBytes)
       if (!options.save) return { bytes, didCancel: false }
 
+      if (!currentProductionId || !shootDayId) {
+        throw new Error('Missing production or shoot day.')
+      }
+
       const fileName = getMovementOrderPdfFileName(
         options.data.shootDate,
         options.data.unitName
       )
+      await persistProductionDocument({
+        productionId: currentProductionId,
+        fileName,
+        bytes,
+        mimeType: 'application/pdf',
+        entityType: DOCUMENT_ENTITY_TYPES.movementOrder,
+        entityId: shootDayId,
+      })
+
       const savedPath = await saveFileWithDialog(
         {
           defaultPath: fileName,
           filters: [{ name: 'PDF', extensions: ['pdf'] }],
-          title: 'Save movement order',
+          title: 'Export a copy of movement order',
         },
         bytes
       )
-      if (!savedPath) return { bytes, didCancel: true }
+      if (!savedPath) return { bytes, didCancel: true, saved: true }
       if (savedPath && options.openAfter) {
         await openInSystem(savedPath)
       }
-      return { bytes, didCancel: false }
+      return { bytes, didCancel: false, saved: true }
     },
     onSuccess: (result) => {
       if (!result?.bytes) return
+      if (result.saved && currentProductionId) {
+        void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+      }
       if (result.didCancel) return
       const blob = new Blob([result.bytes], { type: 'application/pdf' })
       const url = URL.createObjectURL(blob)
@@ -752,16 +774,19 @@ export function MovementOrdersPage() {
             const shootDate = movementOrderDataForView.shootDate
             const unitName = movementOrderDataForView.unitName
 
-            const result = await exportPersonalizedDocuments({
+            const result = await persistPersonalizedDocuments({
+              productionId: currentProductionId!,
+              entityType: DOCUMENT_ENTITY_TYPES.movementOrderPersonalized,
               basePDFBytes: baseBytes,
               recipients: selected,
+              resolveEntityId: personIdFromRecipient,
               buildFileName: (recipient) => {
                 const safeDate = sanitizeForFilename(shootDate)
                 const safeUnit = sanitizeForFilename(unitName || 'unit')
                 const safeName = sanitizeForFilename(recipient.fullName)
                 return `movement-order-${safeDate}-${safeUnit}-${safeName}.pdf`
               },
-              directoryPickerTitle: 'Select directory for personalised movement orders',
+              directoryPickerTitle: 'Select directory for personalised movement order copies',
               onProgress: (current, total) => {
                 setDistributionStatus((prev) => ({
                   ...prev,
@@ -770,12 +795,13 @@ export function MovementOrdersPage() {
               },
             })
 
-            if (result && result.written > 0) {
+            if (result.persisted > 0) {
+              void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
               const pathSuffix = result.directoryPath
-                ? ` Saved to: ${result.directoryPath}`
+                ? ` Copies saved to: ${result.directoryPath}`
                 : ''
               setDistributionExportSuccessMessage(
-                `Generated ${result.written} personalised movement order${result.written === 1 ? '' : 's'}.${pathSuffix}`,
+                `Saved ${result.persisted} personalised movement order${result.persisted === 1 ? '' : 's'} to Documents.${pathSuffix}`,
               )
               setDistributionOpen(false)
               setDistributionStatus({ loading: false, message: null, error: null })

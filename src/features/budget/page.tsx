@@ -102,6 +102,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, SlidersHorizontal, Eye, Receipt } from 'lucide-react'
 import { saveFileWithDialog } from '@/lib/files'
+import { persistProductionDocument, documentsQueryKey } from '@/lib/documents/persistDocument'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
 import { getAccountBandColor } from '@/lib/budget/accountBandColor'
 import type { BudgetItem, BudgetAccount } from '@/lib/db/types'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -1321,11 +1323,24 @@ export function BudgetPage() {
       rows.push(['', 'VAT RECLAIM OUTSTANDING', vatReclaimTotals.totalVatOutstanding, '', ''])
     }
     const csv = rows.map((r) => r.join(',')).join('\n')
+    const fileName = `budget-report-${new Date().toISOString().slice(0, 10)}.csv`
+    if (currentProductionId) {
+      await persistProductionDocument({
+        productionId: currentProductionId,
+        fileName,
+        bytes: csv,
+        mimeType: 'text/csv',
+        entityType: DOCUMENT_ENTITY_TYPES.budgetCsv,
+        entityId: stableRevisionId ?? null,
+        isText: true,
+      })
+      void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+    }
     await saveFileWithDialog(
       {
-        defaultPath: 'budget-report.csv',
+        defaultPath: fileName,
         filters: [{ name: 'CSV', extensions: ['csv'] }],
-        title: 'Save budget report',
+        title: 'Export a copy of budget report',
       },
       csv,
       true
@@ -1345,6 +1360,9 @@ export function BudgetPage() {
     vatTrackingEnabled,
     vatTotals.totalVat,
     vatReclaimTotals,
+    currentProductionId,
+    stableRevisionId,
+    queryClient,
   ])
 
   useEffect(() => {
@@ -1955,6 +1973,13 @@ export function BudgetPage() {
       ) : viewMode === 'cost_report' ? (
         <>
           <CostReportView
+            productionId={currentProductionId ?? ''}
+            revisionId={stableRevisionId ?? null}
+            onDocumentPersisted={() => {
+              if (currentProductionId) {
+                void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+              }
+            }}
             productionName={currentProduction?.name ?? ''}
             openAllowCount={openAllowCountGlobal}
             accountTree={accountTree}
@@ -3017,6 +3042,9 @@ export function triggerCostReportPrint(): void {
 }
 
 function CostReportView({
+  productionId,
+  revisionId,
+  onDocumentPersisted,
   productionName,
   openAllowCount,
   accountTree,
@@ -3047,6 +3075,9 @@ function CostReportView({
   onToggleLeafDetail,
   configureButton,
 }: {
+  productionId: string
+  revisionId: string | null
+  onDocumentPersisted?: () => void
   productionName: string
   openAllowCount: number
   accountTree: AccountTreeNode[]
@@ -3148,20 +3179,33 @@ function CostReportView({
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
       }
       const arraybuffer = await html2pdf().set(opt).from(el).toPdf().output('arraybuffer')
+      const pdfBytes = new Uint8Array(arraybuffer as ArrayBuffer)
+      const fileName = `cost-report-${generatedDate}.pdf`
+      if (productionId) {
+        await persistProductionDocument({
+          productionId,
+          fileName,
+          bytes: pdfBytes,
+          mimeType: 'application/pdf',
+          entityType: DOCUMENT_ENTITY_TYPES.costReportPdf,
+          entityId: revisionId,
+        })
+        onDocumentPersisted?.()
+      }
       await saveFileWithDialog(
         {
-          defaultPath: `cost-report-${generatedDate}.pdf`,
+          defaultPath: fileName,
           filters: [{ name: 'PDF', extensions: ['pdf'] }],
-          title: 'Save Cost Report as PDF',
+          title: 'Export a copy of cost report',
         },
-        new Uint8Array(arraybuffer as ArrayBuffer)
+        pdfBytes
       )
     } finally {
       clearHexStyles(el)
       el.classList.remove('cost-report-exporting-pdf')
       setIsSavingPdf(false)
     }
-  }, [generatedDate])
+  }, [generatedDate, productionId, revisionId, onDocumentPersisted])
 
   return (
     <div ref={reportRef} className="cost-report-print space-y-6">

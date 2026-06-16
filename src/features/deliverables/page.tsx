@@ -62,6 +62,7 @@ import {
 } from '@/components/ui/select'
 import { listDocumentsByEntity, createDocument, deleteDocument } from '@/lib/db/repositories/document'
 import { pickAndSaveAttachment, getFileUrl, openInSystem } from '@/lib/files'
+import { documentsQueryKey } from '@/lib/documents/persistDocument'
 import { Paperclip, Upload, ExternalLink, Trash2, Loader2 } from 'lucide-react'
 
 const EMPTY = '—'
@@ -746,6 +747,7 @@ function DeliverableEditSheet({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents', DELIVERABLE_ENTITY_TYPE, deliverable.id] })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(deliverable.production_id) })
     },
   })
 
@@ -753,6 +755,7 @@ function DeliverableEditSheet({
     mutationFn: (docId: string) => deleteDocument(docId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents', DELIVERABLE_ENTITY_TYPE, deliverable.id] })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(deliverable.production_id) })
     },
   })
 

@@ -4,6 +4,7 @@ import { useCurrentProduction } from '@/features/productions/context'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
 import { SbRemoteNotice } from './sbRemoteNotice'
 import { pickAndSaveAttachment } from '@/lib/files'
+import { documentsQueryKey } from '@/lib/documents/persistDocument'
 import { createDocument } from '@/lib/db/repositories/document'
 import { createScene } from '@/lib/db/repositories/schedule'
 import { generateScriptVersionFromScenes } from '@/lib/db/scriptSectionGenerationService'
@@ -187,6 +188,7 @@ export function ScriptImportPage() {
       mime_type: null,
     })
     setUploadedDoc({ name: result.fileName, id: doc.id })
+    void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
     if (result.fileName.toLowerCase().endsWith('.pdf')) {
       setParseProgress({ page: 0, total: 0 })
       try {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ExternalLink, Loader2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +31,7 @@ import {
   type SidesSelectionState,
 } from '@/lib/db/sidesBuilderService'
 import { exportShootDaySides } from '@/lib/db/sidesExportService'
+import { documentsQueryKey } from '@/lib/documents/persistDocument'
 import { analyzeSidesBuilderCoverage } from '@/lib/db/coverageAnalysisService'
 import { getFileUrl, openInSystem } from '@/lib/files'
 import { CoverageIssuesList, CoverageIssuesSummary } from './coverage-issues-list'
@@ -70,6 +71,7 @@ export function SidesBuilderSheet({
   shootDate?: string | null
   unitName?: string | null
 }) {
+  const queryClient = useQueryClient()
   const [filters, setFilters] = useState<SidesFilters>(defaultSidesFilters)
   // TODO(SB6 persistence): draft selection is local-only this phase. Persist via a typed sides-draft
   // table once SB1 adds one (shoot_day_sides_exports stores completed exports, not in-progress drafts).
@@ -110,7 +112,13 @@ export function SidesBuilderSheet({
       setExportError(e instanceof Error ? e.message : 'Export failed.')
       console.error('Sides export failed', e)
     },
-    onSuccess: () => setExportError(null),
+    onSuccess: (result) => {
+      setExportError(null)
+      const productionId = result.document.production_id
+      if (productionId) {
+        void queryClient.invalidateQueries({ queryKey: documentsQueryKey(productionId) })
+      }
+    },
   })
 
   const openExportedPdf = async (filePath: string) => {

@@ -14,6 +14,9 @@ import { getProductionById } from '@/lib/db/repositories/production'
 import { listEpisodesForProductionManagement } from '@/lib/db/repositories/episodes'
 import { generateCueSheet } from '@/lib/pdf'
 import { saveFileWithDialog } from '@/lib/files'
+import { createCueSheet } from '@/lib/db/repositories/music-clearance'
+import { persistProductionDocument, documentsQueryKey } from '@/lib/documents/persistDocument'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
 import type { MusicTrack } from '@/lib/db/types'
 import {
   Table,
@@ -206,14 +209,28 @@ export function MusicClearancePage() {
       }))
       const pdfBytes = await generateCueSheet(production.name, rows)
       const fileName = `cue-sheet-${new Date().toISOString().slice(0, 10)}.pdf`
+      const bytes = new Uint8Array(pdfBytes)
+      const { documentId } = await persistProductionDocument({
+        productionId: currentProductionId,
+        fileName,
+        bytes,
+        mimeType: 'application/pdf',
+        entityType: DOCUMENT_ENTITY_TYPES.cueSheet,
+      })
+      await createCueSheet(currentProductionId, documentId)
       await saveFileWithDialog(
         {
           defaultPath: fileName,
           filters: [{ name: 'PDF', extensions: ['pdf'] }],
-          title: 'Save cue sheet',
+          title: 'Export a copy of cue sheet',
         },
-        new Uint8Array(pdfBytes)
+        bytes
       )
+    },
+    onSuccess: () => {
+      if (currentProductionId) {
+        void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+      }
     },
   })
 

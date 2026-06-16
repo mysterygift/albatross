@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
@@ -19,6 +19,9 @@ import {
   isUnavailableOnDate,
 } from '@/lib/db/repositories/cast-availability'
 import { generateDoodPdf, type DoodCellStatus } from '@/lib/pdf/dood'
+import { saveFileWithDialog } from '@/lib/files'
+import { persistProductionDocument, documentsQueryKey } from '@/lib/documents/persistDocument'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
 import {
   Table,
   TableBody,
@@ -54,6 +57,7 @@ interface DoodRow {
 export function DayOutOfDaysPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const authSession = useAuthSession()
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [onlyWithClashes, setOnlyWithClashes] = useState(false)
 
@@ -208,6 +212,7 @@ export function DayOutOfDaysPage() {
   }, [matrixRows, search, onlyWithClashes])
 
   const handleExportPdf = async () => {
+    if (!currentProductionId) return
     const productionName = currentProduction?.name ?? 'Production'
     const data = {
       productionName,
@@ -223,16 +228,28 @@ export function DayOutOfDaysPage() {
       })),
     }
     const bytes = await generateDoodPdf(data)
-    const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `day-out-of-days-${new Date().toISOString().slice(0, 10)}.pdf`
-    a.click()
-    URL.revokeObjectURL(url)
+    const fileName = `day-out-of-days-${new Date().toISOString().slice(0, 10)}.pdf`
+    const pdfBytes = new Uint8Array(bytes)
+    await persistProductionDocument({
+      productionId: currentProductionId,
+      fileName,
+      bytes: pdfBytes,
+      mimeType: 'application/pdf',
+      entityType: DOCUMENT_ENTITY_TYPES.doodPdf,
+    })
+    void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+    await saveFileWithDialog(
+      {
+        defaultPath: fileName,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        title: 'Export a copy of day out of days PDF',
+      },
+      pdfBytes
+    )
   }
 
-  const handleExportCsv = () => {
+  const handleExportCsv = async () => {
+    if (!currentProductionId) return
     const headers = ['Name', ...dates, 'Start', 'Finish', 'Work Days', 'Hold Days', 'Clash Count']
     const lines = [
       headers.join(','),
@@ -249,13 +266,25 @@ export function DayOutOfDaysPage() {
       ),
     ]
     const csv = lines.join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `day-out-of-days-${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    const fileName = `day-out-of-days-${new Date().toISOString().slice(0, 10)}.csv`
+    await persistProductionDocument({
+      productionId: currentProductionId,
+      fileName,
+      bytes: csv,
+      mimeType: 'text/csv',
+      entityType: DOCUMENT_ENTITY_TYPES.doodCsv,
+      isText: true,
+    })
+    void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+    await saveFileWithDialog(
+      {
+        defaultPath: fileName,
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+        title: 'Export a copy of day out of days CSV',
+      },
+      csv,
+      true
+    )
   }
 
   if (!currentProductionId) {

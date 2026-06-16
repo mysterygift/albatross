@@ -280,12 +280,14 @@ export async function createDocumentForActor(args: {
   fileName: string
   filePath: string
   mimeType?: string | null
+  entityType?: string | null
+  entityId?: string | null
 }) {
   await requireProjectEditAccess(args.db, args.actor, args.productionId)
   return createDocument({
     production_id: args.productionId,
-    entity_type: null,
-    entity_id: null,
+    entity_type: args.entityType ?? null,
+    entity_id: args.entityId ?? null,
     file_name: args.fileName,
     file_path: args.filePath,
     mime_type: args.mimeType ?? null,

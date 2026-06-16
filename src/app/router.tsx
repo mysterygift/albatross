@@ -17,7 +17,7 @@ import { CastManagerPage } from '@/features/people/pages/CastManagerPage'
 import { CrewManagerPage } from '@/features/people/crew-manager/page'
 import { LocationsPage } from '@/features/locations/page'
 import { EquipmentPage } from '@/features/equipment/page'
-import { DocumentsPage } from '@/features/documents/page'
+import { DocumentsPage, DocumentsCategoryPage } from '@/features/documents/page'
 import { CallSheetsPage } from '@/features/call-sheets/page'
 import { MovementOrdersPage } from '@/features/movement-orders/page'
 import { ReadinessPage } from '@/features/readiness/page'
@@ -59,6 +59,7 @@ export const router = createBrowserRouter([
       { path: 'locations', element: <LocationsPage /> },
       { path: 'equipment', element: <EquipmentPage /> },
       { path: 'documents', element: <DocumentsPage /> },
+      { path: 'documents/:category', element: <DocumentsCategoryPage /> },
       { path: 'call-sheets', element: <CallSheetsPage /> },
       { path: 'movement-orders', element: <MovementOrdersPage /> },
       { path: 'readiness', element: <ReadinessPage /> },
