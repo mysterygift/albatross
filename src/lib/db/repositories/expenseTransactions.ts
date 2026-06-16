@@ -33,6 +33,7 @@ function rowToVendor(r: Record<string, unknown>): Vendor {
   return {
     id: r.vendor_row_id as string,
     production_id: r.vendor_production_id as string,
+    is_global: Number(r.vendor_is_global ?? 0) === 1,
     company_name: r.vendor_company_name as string,
     primary_contact_full_name: (r.vendor_primary_contact_full_name as string | null) ?? null,
     primary_contact_email: (r.vendor_primary_contact_email as string | null) ?? null,
@@ -71,6 +72,7 @@ export async function getExpenseWithDetails(expenseId: string): Promise<ExpenseW
       a.name as account_name,
       v.id as vendor_row_id,
       v.production_id as vendor_production_id,
+      v.is_global as vendor_is_global,
       v.company_name as vendor_company_name,
       v.primary_contact_full_name as vendor_primary_contact_full_name,
       v.primary_contact_email as vendor_primary_contact_email,

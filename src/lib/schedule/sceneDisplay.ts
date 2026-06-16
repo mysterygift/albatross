@@ -1,7 +1,15 @@
 import { formatSceneHeading } from '@/lib/script-parser/common'
-import type { Scene } from '@/lib/db/types'
+import type { IntExt } from '@/lib/script-parser/types'
 
-type SceneDisplayFields = Pick<Scene, 'int_ext' | 'day_night' | 'title' | 'description'>
+type SceneScheduleFields = {
+  int_ext?: string | null
+  day_night?: string | null
+  title?: string | null
+}
+
+type SceneDisplayFields = SceneScheduleFields & {
+  description?: string | null
+}
 
 function isUnknownScheduleValue(value: string | null | undefined): boolean {
   if (value == null) return true
@@ -11,7 +19,7 @@ function isUnknownScheduleValue(value: string | null | undefined): boolean {
 
 /** UI label: INT/EXT – location name – DAY/NIGHT (matches shot-list scene picker). */
 export function sceneScheduleLabel(
-  scene: Pick<Scene, 'int_ext' | 'day_night' | 'title'>,
+  scene: SceneScheduleFields,
   locationName: string | null | undefined
 ): string {
   const intExt = !isUnknownScheduleValue(scene.int_ext) ? scene.int_ext : '—'
@@ -46,14 +54,14 @@ export function sceneDisplayLabel(
 
 /** Screenplay slugline for sides/call sheets (e.g. "INT. KITCHEN - DAY"). */
 export function sceneSlugline(
-  scene: Pick<Scene, 'int_ext' | 'day_night' | 'title'>,
+  scene: SceneScheduleFields,
   locationName: string | null | undefined
 ): string | null {
   const loc = locationName?.trim()
   const dayNight = isUnknownScheduleValue(scene.day_night) ? null : scene.day_night?.trim()
   const slugParts = [loc, dayNight].filter(Boolean).join(' - ')
   if (slugParts) {
-    return formatSceneHeading(scene.int_ext, slugParts)
+    return formatSceneHeading(scene.int_ext as IntExt | null | undefined, slugParts)
   }
   const title = scene.title?.trim()
   return title || null

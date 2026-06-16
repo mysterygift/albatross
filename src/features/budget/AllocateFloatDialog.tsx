@@ -128,8 +128,9 @@ export function AllocateFloatDialog({
   }, [open, defaultCurrency])
 
   const { mutate, isPending, isError, error, reset: resetMutation } = useMutation({
-    mutationFn: (values: FormValues) =>
-      createFloat({
+    mutationFn: (values: FormValues) => {
+      if (values.amount == null) throw new Error('Amount is required')
+      return createFloat({
         production_id: productionId,
         revision_id: revisionId,
         budget_item_id: values.budget_item_id,
@@ -138,7 +139,8 @@ export function AllocateFloatDialog({
         currency: values.currency.trim().toUpperCase(),
         issued_date: values.issued_date,
         notes: values.notes?.trim() ? values.notes.trim() : null,
-      }),
+      })
+    },
     onSuccess: (_data, values) => {
       queryClient.invalidateQueries({ queryKey: ['floats', productionId, revisionId] })
       queryClient.invalidateQueries({ queryKey: ['floats-by-budget-item', values.budget_item_id] })

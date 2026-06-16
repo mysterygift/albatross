@@ -71,7 +71,6 @@ import { LineItemMatchStatusBadge } from '@/features/budget/actualisation/LineIt
 import { ExpenseAllocationStatusBadge } from '@/features/budget/actualisation/ExpenseAllocationStatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
 import { parseMoneyInput } from '@/lib/budget/fieldValidation'
 import { Label } from '@/components/ui/label'

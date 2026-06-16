@@ -25,7 +25,7 @@ import {
   updateStoryboardImport,
   updateStoryboardImage,
 } from '@/lib/db/repositories/storyboard'
-import type { Scene, Shot, StoryboardImage } from '@/lib/db/types'
+import type { Shot, StoryboardImage } from '@/lib/db/types'
 import { sceneDisplayLabel } from '@/lib/schedule/sceneDisplay'
 import {
   createStoryboardImageObjectUrl,

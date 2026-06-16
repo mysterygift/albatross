@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { sceneDisplayLabel, sceneScheduleLabel, sceneSlugline } from './sceneDisplay'
-import type { Scene } from '@/lib/db/types'
 
-const baseScene: Pick<Scene, 'int_ext' | 'day_night' | 'title' | 'description'> = {
+const baseScene = {
   int_ext: 'INT',
   day_night: 'DAY',
   title: 'KITCHEN - DAY',

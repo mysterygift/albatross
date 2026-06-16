@@ -1778,7 +1778,7 @@ export function ShotListPage() {
                   INT / EXT<span className="text-destructive">*</span>
                 </Label>
                 <Select
-                  value={newSceneIntExt}
+                  value={newSceneIntExt ?? undefined}
                   onValueChange={(v) => setNewSceneIntExt(v as Scene['int_ext'])}
                 >
                   <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
@@ -1798,7 +1798,7 @@ export function ShotListPage() {
                   Time of day<span className="text-destructive">*</span>
                 </Label>
                 <Select
-                  value={newSceneDayNight}
+                  value={newSceneDayNight ?? undefined}
                   onValueChange={(v) => setNewSceneDayNight(v as Scene['day_night'])}
                 >
                   <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
