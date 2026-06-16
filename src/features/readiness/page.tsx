@@ -599,7 +599,7 @@ export function ReadinessPage() {
                       isParent && depth === 0 && 'bg-muted/10'
                     )}
                   >
-                    <TableCell className="py-2 pl-4 align-top">
+                    <TableCell className="py-2 pl-4 align-middle">
                       <div
                         className="flex items-start gap-2"
                         style={
