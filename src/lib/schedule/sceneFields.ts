@@ -24,3 +24,12 @@ export function normalizeSceneDayNight(value: unknown): Scene['day_night'] {
     ? (trimmed as Scene['day_night'])
     : null
 }
+
+/** Natural sort for screenplay scene numbers (e.g. 2 before 10, 12A before 12B). */
+export function compareSceneNumbers(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true })
+}
+
+export function sortScenesByNumber<T extends { scene_number: string }>(scenes: readonly T[]): T[] {
+  return [...scenes].sort((a, b) => compareSceneNumbers(a.scene_number, b.scene_number))
+}

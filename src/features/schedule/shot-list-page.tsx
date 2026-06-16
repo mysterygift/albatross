@@ -118,6 +118,7 @@ import { invalidateStripboardCaches } from './stripboard-hooks'
 import { nextShotNumberForDuplicate } from '@/lib/schedule/shotNumberDuplicate'
 
 import { sceneScheduleLabel } from '@/lib/schedule/sceneDisplay'
+import { sortScenesByNumber } from '@/lib/schedule/sceneFields'
 import {
   DEFAULT_NEW_SCENE_DAY_NIGHT,
   DEFAULT_NEW_SCENE_INT_EXT,
@@ -427,6 +428,8 @@ export function ShotListPage() {
     },
     enabled: !!currentProductionId,
   })
+
+  const scenesByNumber = useMemo(() => sortScenesByNumber(scenes), [scenes])
 
   const { data: shots = [] } = useQuery({
     queryKey: ['shots', selectedSceneId],
@@ -1360,7 +1363,7 @@ export function ShotListPage() {
               >
                 Select scene…
               </SelectItem>
-              {scenes.map((s) => (
+              {scenesByNumber.map((s) => (
                 <SelectItem
                   key={s.id}
                   value={s.id}

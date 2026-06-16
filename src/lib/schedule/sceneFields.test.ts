@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeSceneDayNight, normalizeSceneIntExt } from './sceneFields'
+import { normalizeSceneDayNight, normalizeSceneIntExt, sortScenesByNumber } from './sceneFields'
 
 describe('normalizeSceneIntExt', () => {
   it('maps UNK and empty to null', () => {
@@ -35,5 +35,17 @@ describe('normalizeSceneDayNight', () => {
 
   it('rejects unknown strings', () => {
     expect(normalizeSceneDayNight('SUNRISE')).toBeNull()
+  })
+})
+
+describe('sortScenesByNumber', () => {
+  it('orders scene numbers naturally', () => {
+    const sorted = sortScenesByNumber([
+      { scene_number: '10', id: 'c' },
+      { scene_number: '2', id: 'a' },
+      { scene_number: '12A', id: 'd' },
+      { scene_number: '12', id: 'b' },
+    ])
+    expect(sorted.map((s) => s.scene_number)).toEqual(['2', '10', '12', '12A'])
   })
 })
