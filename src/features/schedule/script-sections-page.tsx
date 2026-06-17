@@ -506,18 +506,16 @@ export function ScriptSectionsPage() {
     enabled: !!selectedSceneId,
   })
 
-  if (!currentProductionId) {
-    return (
-      <div>
-        <h1 className="text-2xl font-semibold">Schedule — Script sections</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
-    )
-  }
-
   const editingGenerated = dialogMode === 'edit' && editingSection?.is_manual === 0
 
   return (
+    <>
+      {!currentProductionId ? (
+        <div>
+          <h1 className="text-2xl font-semibold">Schedule — Script sections</h1>
+          <p className="text-muted-foreground">Select a production first.</p>
+        </div>
+      ) : (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Schedule — Script sections</h1>
 
@@ -835,6 +833,9 @@ export function ScriptSectionsPage() {
         </Card>
       )}
 
+    </div>
+      )}
+
       <ScriptSectionEditDialog
         open={dialogOpen}
         onOpenChange={(open) => {
@@ -886,7 +887,7 @@ export function ScriptSectionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }
 

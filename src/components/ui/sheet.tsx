@@ -48,12 +48,37 @@ function SheetContent({
   side = "right",
   variant = "default",
   showCloseButton = true,
+  dismissOnOutsideInteraction = false,
+  onInteractOutside,
+  onPointerDownOutside,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
   variant?: "default" | "floating"
   showCloseButton?: boolean
+  /** When false (default), overlay clicks and app-switch outside events do not close the sheet. */
+  dismissOnOutsideInteraction?: boolean
 }) {
+  const handleInteractOutside = React.useCallback(
+    (event: Parameters<NonNullable<typeof onInteractOutside>>[0]) => {
+      if (!dismissOnOutsideInteraction) {
+        event.preventDefault()
+      }
+      onInteractOutside?.(event)
+    },
+    [dismissOnOutsideInteraction, onInteractOutside]
+  )
+
+  const handlePointerDownOutside = React.useCallback(
+    (event: Parameters<NonNullable<typeof onPointerDownOutside>>[0]) => {
+      if (!dismissOnOutsideInteraction) {
+        event.preventDefault()
+      }
+      onPointerDownOutside?.(event)
+    },
+    [dismissOnOutsideInteraction, onPointerDownOutside]
+  )
+
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -76,6 +101,8 @@ function SheetContent({
             "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t",
           className
         )}
+        onInteractOutside={handleInteractOutside}
+        onPointerDownOutside={handlePointerDownOutside}
         {...props}
       >
         {children}

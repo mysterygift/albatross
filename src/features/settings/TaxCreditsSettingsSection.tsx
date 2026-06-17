@@ -591,9 +591,6 @@ export function TaxCreditsSettingsSection({ productionId }: Props) {
           onEscapeKeyDown={(e) => {
             if (deleteMutation.isPending) e.preventDefault()
           }}
-          onPointerDownOutside={(e) => {
-            if (deleteMutation.isPending) e.preventDefault()
-          }}
         >
           <DialogHeader>
             <DialogTitle>Delete tax credit scheme?</DialogTitle>

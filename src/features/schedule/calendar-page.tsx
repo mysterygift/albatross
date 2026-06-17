@@ -1605,16 +1605,14 @@ export function ScheduleCalendarPage() {
     }
   }, [drawerOpen, selectedEvent])
 
-  if (!currentProductionId) {
-    return (
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">Schedule — Calendar</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
-    )
-  }
-
   return (
+    <>
+      {!currentProductionId ? (
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold">Schedule — Calendar</h1>
+          <p className="text-muted-foreground">Select a production first.</p>
+        </div>
+      ) : (
     <div className="space-y-4 relative">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold">Schedule — Calendar</h1>
@@ -1712,46 +1710,6 @@ export function ScheduleCalendarPage() {
         </div>
       )}
 
-      <Dialog open={!!conflictModal} onOpenChange={(open) => !open && setConflictModal(null)}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>That date already has a shoot day.</DialogTitle>
-            <DialogDescription>
-              Swap the two days so each shoot moves to the other&apos;s date?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter showCloseButton={false} className="flex-col gap-2 sm:flex-row">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                if (!conflictModal) return
-                ;(authSession.authSupported && authSession.currentUser
-                  ? getDb().then((db) =>
-                      swapShootDaysForActor({
-                        db,
-                        actor: authSession.currentUser!,
-                        sourceShootDayId: conflictModal.sourceShootDayId,
-                        targetShootDayId: conflictModal.existingShootDayId,
-                      })
-                    )
-                  : swapShootDays(conflictModal.sourceShootDayId, conflictModal.existingShootDayId))
-                  .then(() => {
-                    invalidateScheduleQueries()
-                    setConflictModal(null)
-                  })
-                  .catch(() => setToast('Swap failed.'))
-              }}
-            >
-              Swap
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => setConflictModal(null)}>
-              Cancel
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <DaySummaryDrawer
         event={selectedEvent}
         open={drawerOpen}
@@ -1821,5 +1779,48 @@ export function ScheduleCalendarPage() {
         }}
       />
     </div>
+      )}
+
+      <Dialog open={!!conflictModal} onOpenChange={(open) => !open && setConflictModal(null)}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>That date already has a shoot day.</DialogTitle>
+            <DialogDescription>
+              Swap the two days so each shoot moves to the other&apos;s date?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter showCloseButton={false} className="flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!conflictModal) return
+                ;(authSession.authSupported && authSession.currentUser
+                  ? getDb().then((db) =>
+                      swapShootDaysForActor({
+                        db,
+                        actor: authSession.currentUser!,
+                        sourceShootDayId: conflictModal.sourceShootDayId,
+                        targetShootDayId: conflictModal.existingShootDayId,
+                      })
+                    )
+                  : swapShootDays(conflictModal.sourceShootDayId, conflictModal.existingShootDayId))
+                  .then(() => {
+                    invalidateScheduleQueries()
+                    setConflictModal(null)
+                  })
+                  .catch(() => setToast('Swap failed.'))
+              }}
+            >
+              Swap
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setConflictModal(null)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+    </>
   )
 }

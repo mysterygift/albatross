@@ -416,16 +416,14 @@ export function ScriptImportPage() {
     recomputeLocationReview(next)
   }
 
-  if (!currentProductionId) {
-    return (
-      <div>
-        <h1 className="text-2xl font-semibold">Schedule — Script import</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
-    )
-  }
-
   return (
+    <>
+      {!currentProductionId ? (
+        <div>
+          <h1 className="text-2xl font-semibold">Schedule — Script import</h1>
+          <p className="text-muted-foreground">Select a production first.</p>
+        </div>
+      ) : (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Schedule — Script import</h1>
       <p className="text-muted-foreground">
@@ -651,6 +649,9 @@ export function ScriptImportPage() {
         </CardContent>
       </Card>
 
+    </div>
+      )}
+
       <ScriptImportSceneEditorDialog
         draft={editingDraft}
         open={editingDraftId != null}
@@ -660,6 +661,6 @@ export function ScriptImportPage() {
         existingLocations={existingLocations}
         onSave={handleSaveDraft}
       />
-    </div>
+    </>
   )
 }

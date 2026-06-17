@@ -1322,18 +1322,16 @@ export function ShotListPage() {
     setSaveError(null)
   }
 
-  if (!currentProductionId) {
-    return (
-      <div>
-        <h1 className="text-2xl font-semibold">Schedule — Shot lists</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Schedule — Shot lists</h1>
+    <>
+      {!currentProductionId ? (
+        <div>
+          <h1 className="text-2xl font-semibold">Schedule — Shot lists</h1>
+          <p className="text-muted-foreground">Select a production first.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <h1 className="text-2xl font-semibold">Schedule — Shot lists</h1>
 
       <div className="grid gap-4 md:grid-cols-3">
         <div>
@@ -1597,6 +1595,9 @@ export function ShotListPage() {
             </Table>
           </div>
         </>
+      )}
+
+        </div>
       )}
 
       <Dialog open={resetCastDialogOpen} onOpenChange={handleResetCastDialogOpenChange}>
@@ -2377,7 +2378,7 @@ export function ShotListPage() {
           replaceShotSectionsMutation.mutate({ shotId: manageSectionsShotId, sectionIds })
         }}
       />
-    </div>
+    </>
   )
 }
 

@@ -571,25 +571,19 @@ export function StoryboardPage() {
     },
   })
 
-  if (!currentProductionId) {
-    return (
-      <div>
-        <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
-    )
-  }
-
-  if (scenesQuery.isError || shotsQuery.isError || imagesQuery.isError) {
-    return (
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>
-        <p className="text-destructive">Could not load storyboard data.</p>
-      </div>
-    )
-  }
-
   return (
+    <>
+      {!currentProductionId ? (
+        <div>
+          <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>
+          <p className="text-muted-foreground">Select a production first.</p>
+        </div>
+      ) : scenesQuery.isError || shotsQuery.isError || imagesQuery.isError ? (
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>
+          <p className="text-destructive">Could not load storyboard data.</p>
+        </div>
+      ) : (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>
       <div className="grid gap-3 md:grid-cols-[minmax(0,320px)_minmax(0,260px)_auto] md:items-end">
@@ -947,6 +941,9 @@ export function StoryboardPage() {
           )
         })
       )}
+    </div>
+      )}
+
       <Dialog open={excludeSelectionOpen} onOpenChange={setExcludeSelectionOpen}>
         <DialogContent className="max-w-5xl">
           <DialogTitle>Exclude non-shot images</DialogTitle>
@@ -1170,7 +1167,7 @@ export function StoryboardPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }
 

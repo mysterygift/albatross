@@ -818,16 +818,14 @@ export function StripboardPage() {
 
   const getUnitName = (unitId: string) => units.find((u) => u.id === unitId)?.name ?? unitId
 
-  if (!currentProductionId) {
-    return (
-      <div>
-        <h1 className="text-2xl font-semibold">Schedule — Stripboard</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
-    )
-  }
-
   return (
+    <>
+      {!currentProductionId ? (
+        <div>
+          <h1 className="text-2xl font-semibold">Schedule — Stripboard</h1>
+          <p className="text-muted-foreground">Select a production first.</p>
+        </div>
+      ) : (
     <div className="flex h-full flex-col gap-4">
       {unscheduleToast && (
         <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">
@@ -921,6 +919,200 @@ export function StripboardPage() {
           />
         </div>
       </div>
+
+      <SmartSchedulingInsightsPanel
+        strips={strips}
+        shots={shots}
+        scenes={scenes}
+        shootDays={shootDays}
+        locations={locations}
+        castPersonIdsByShotId={castPersonIdsByShotId}
+        isLoading={isInsightsDataLoading}
+      />
+
+      {isEpisodicProduction && visibleShootDays.length === 0 && shootDays.length > 0 && (
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-2 text-sm text-muted-foreground shrink-0">
+          No shoot days match this bloc filter. Choose &quot;All blocs&quot; to see every day.
+        </div>
+      )}
+
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <div className="flex flex-1 gap-4 min-h-0 overflow-hidden">
+          <UnscheduledShotsPanel
+            droppableId="unscheduled-panel"
+            unscheduledShots={unscheduled.unscheduledShots}
+            locations={locations}
+            shootDays={visibleShootDays}
+            dayUnits={dayUnits}
+            search={search}
+            onSearchChange={setSearch}
+            locationId={locationId}
+            onLocationChange={setLocationId}
+            selectedShotIds={selectedShotIds}
+            onToggleShot={(id: string) =>
+              setSelectedShotIds((prev) => {
+                const next = new Set(prev)
+                if (next.has(id)) next.delete(id)
+                else next.add(id)
+                return next
+              })
+            }
+            onSelectAll={() =>
+              setSelectedShotIds(new Set(unscheduled.unscheduledShots.map((x) => x.shot.id)))
+            }
+            onDeselectAll={() => setSelectedShotIds(new Set())}
+            onAssignToDay={handleAssignToDay}
+            onAddSingle={handleAddSingle}
+            getUnitName={getUnitName}
+            isAssigning={unscheduled.bulkAssignMutation.isPending}
+          />
+
+          {/* Scroll area: day columns + Boneyard column fixed at far right (you can chuck strips here whenever you want). */}
+          <div className="relative flex-1 min-w-0">
+            <div
+              ref={columnsScrollRef}
+              onScroll={updateColumnsLeftFeather}
+              className="h-full overflow-auto"
+            >
+              <div className="flex gap-4 pb-4 min-h-full">
+              {visibleShootDays.map((day) => {
+                const dayUnitsList = dayUnitsByDayId.get(day.id) ?? []
+                const stripsByUnit = dayUnitsList.map((shootDayUnit) => ({
+                  shootDayUnit,
+                  strips: (stripsByDayUnit.get(`${day.id}:${shootDayUnit.id}`) ?? []).sort(
+                    (a, b) => a.sort_index - b.sort_index
+                  ),
+                }))
+                return (
+                  <div
+                    key={day.id}
+                    ref={day.id === newlyCreatedShootDayId ? newDayColumnRef : undefined}
+                    className="shrink-0"
+                  >
+                    <StripboardDayColumn
+                      day={day}
+                      units={units}
+                      dayUnits={dayUnitsList}
+                      stripsByUnit={stripsByUnit}
+                      scenes={scenes}
+                      shots={shots}
+                      onDeleteShootDay={(d) => {
+                        setDeleteShootDayTarget({
+                          id: d.id,
+                          shoot_date: d.shoot_date,
+                          day_number: d.day_number,
+                        })
+                        setDeleteShootDayError(null)
+                        setDeleteShootDayDialogOpen(true)
+                      }}
+                      onRemoveSecondUnit={({ shootDay, shootDayUnit, unit }) => {
+                        setRemoveSecondUnitTarget({
+                          shootDayUnitId: shootDayUnit.id,
+                          shootDate: shootDay.shoot_date,
+                          dayNumber: shootDay.day_number,
+                          unitName: unit.name,
+                        })
+                        setRemoveSecondUnitError(null)
+                        setRemoveSecondUnitDialogOpen(true)
+                      }}
+                      estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
+                      onUpdateStripEstimatedMinutes={(stripId, minutes) =>
+                        updateEstimatedMutation.mutate({ stripId, minutes })
+                      }
+                      onUpdateCallWrapTime={(stripId, time) =>
+                        updateCallWrapTimeMutation.mutate({ stripId, time })
+                      }
+                      onUpdateMoveStrip={(stripId, data) =>
+                        updateStripMutation.mutate({ stripId, data })
+                      }
+                      locations={locations}
+                      columnId={columnId}
+                      isLocked={false}
+                      pageEighthsTarget={PAGE_EIGHTHS_TARGET}
+                      onSendToBoneyard={(strip) => {
+                        moveToBoneyardMutation.mutate(strip.id)
+                        setBoneyardToast(true)
+                      }}
+                      onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
+                      onToggleLock={(shootDayUnitId, isLocked) =>
+                        setLockedMutation.mutate({ shootDayUnitId, isLocked })
+                      }
+                      columnFilters={columnFilters}
+                      onColumnFilterChange={(colId, key, value) =>
+                        setColumnFilters((prev) => ({
+                          ...prev,
+                          [colId]: { ...(prev[colId] ?? { int: false, ext: false, day: false, night: false }), [key]: value },
+                        }))
+                      }
+                      isEpisodic={isEpisodicProduction}
+                      shootingBlocLabel={
+                        isEpisodicProduction
+                          ? shootingBlocLabelFromAssociation(day.shooting_bloc_id, blocById)
+                          : undefined
+                      }
+                      episodeById={isEpisodicProduction ? episodeById : undefined}
+                    />
+                  </div>
+                )
+              })}
+              {shootDays.length === 0 && (
+                <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground text-sm shrink-0">
+                  No shoot days. Add shoot days from the Schedule calendar or settings.
+                </div>
+              )}
+              <BoneyardPanel
+                droppableId="boneyard-panel"
+                strips={boneyard.boneyardStrips}
+                scenes={scenes}
+                shots={shots}
+                estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
+                onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
+                isEpisodic={isEpisodicProduction}
+                episodeById={isEpisodicProduction ? episodeById : undefined}
+              />
+              </div>
+            </div>
+            <div
+              aria-hidden
+              className={`pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-linear-to-r from-background to-transparent transition-opacity duration-200 ${
+                showColumnsLeftFeather ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
+          </div>
+        </div>
+
+        <DragOverlay>
+          {activeData?.type === 'strip' && (
+            <div className="rounded-md border-2 border-primary bg-card px-4 py-3 shadow-lg min-w-[200px]">
+              <StripItem
+                strip={activeData.strip}
+                scenes={scenes}
+                shots={shots}
+                locations={locations}
+                estimatedMinutesDefault={
+                  activeData.strip.strip_type === 'SHOT' && activeData.strip.shot_id
+                    ? estimatedShootMinutesByShotId.get(activeData.strip.shot_id) ?? 0
+                    : undefined
+                }
+                isOverlay
+                disabled
+                isEpisodic={isEpisodicProduction}
+                episodeById={isEpisodicProduction ? episodeById : undefined}
+              />
+            </div>
+          )}
+          {activeData?.type === 'unscheduled-shot' && (
+            <div className="rounded-md border-2 border-primary bg-card px-4 py-3 shadow-lg">
+              <span className="font-medium">Scene {activeData.item.scene.scene_number} / Shot {activeData.item.shot.shot_number}</span>
+              <span className="text-muted-foreground text-sm ml-2">
+                {activeData.item.shot.shot_description ?? activeData.item.shot.subject ?? '(No shot description)'}
+              </span>
+            </div>
+          )}
+        </DragOverlay>
+      </DndContext>
+    </div>
+      )}
 
       <Dialog
         open={newDayOpen}
@@ -1219,197 +1411,6 @@ export function StripboardPage() {
         </DialogContent>
       </Dialog>
 
-      <SmartSchedulingInsightsPanel
-        strips={strips}
-        shots={shots}
-        scenes={scenes}
-        shootDays={shootDays}
-        locations={locations}
-        castPersonIdsByShotId={castPersonIdsByShotId}
-        isLoading={isInsightsDataLoading}
-      />
-
-      {isEpisodicProduction && visibleShootDays.length === 0 && shootDays.length > 0 && (
-        <div className="rounded-lg border border-border bg-muted/30 px-4 py-2 text-sm text-muted-foreground shrink-0">
-          No shoot days match this bloc filter. Choose &quot;All blocs&quot; to see every day.
-        </div>
-      )}
-
-      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex flex-1 gap-4 min-h-0 overflow-hidden">
-          <UnscheduledShotsPanel
-            droppableId="unscheduled-panel"
-            unscheduledShots={unscheduled.unscheduledShots}
-            locations={locations}
-            shootDays={visibleShootDays}
-            dayUnits={dayUnits}
-            search={search}
-            onSearchChange={setSearch}
-            locationId={locationId}
-            onLocationChange={setLocationId}
-            selectedShotIds={selectedShotIds}
-            onToggleShot={(id: string) =>
-              setSelectedShotIds((prev) => {
-                const next = new Set(prev)
-                if (next.has(id)) next.delete(id)
-                else next.add(id)
-                return next
-              })
-            }
-            onSelectAll={() =>
-              setSelectedShotIds(new Set(unscheduled.unscheduledShots.map((x) => x.shot.id)))
-            }
-            onDeselectAll={() => setSelectedShotIds(new Set())}
-            onAssignToDay={handleAssignToDay}
-            onAddSingle={handleAddSingle}
-            getUnitName={getUnitName}
-            isAssigning={unscheduled.bulkAssignMutation.isPending}
-          />
-
-          {/* Scroll area: day columns + Boneyard column fixed at far right (you can chuck strips here whenever you want). */}
-          <div className="relative flex-1 min-w-0">
-            <div
-              ref={columnsScrollRef}
-              onScroll={updateColumnsLeftFeather}
-              className="h-full overflow-auto"
-            >
-              <div className="flex gap-4 pb-4 min-h-full">
-              {visibleShootDays.map((day) => {
-                const dayUnitsList = dayUnitsByDayId.get(day.id) ?? []
-                const stripsByUnit = dayUnitsList.map((shootDayUnit) => ({
-                  shootDayUnit,
-                  strips: (stripsByDayUnit.get(`${day.id}:${shootDayUnit.id}`) ?? []).sort(
-                    (a, b) => a.sort_index - b.sort_index
-                  ),
-                }))
-                return (
-                  <div
-                    key={day.id}
-                    ref={day.id === newlyCreatedShootDayId ? newDayColumnRef : undefined}
-                    className="shrink-0"
-                  >
-                    <StripboardDayColumn
-                      day={day}
-                      units={units}
-                      dayUnits={dayUnitsList}
-                      stripsByUnit={stripsByUnit}
-                      scenes={scenes}
-                      shots={shots}
-                      onDeleteShootDay={(d) => {
-                        setDeleteShootDayTarget({
-                          id: d.id,
-                          shoot_date: d.shoot_date,
-                          day_number: d.day_number,
-                        })
-                        setDeleteShootDayError(null)
-                        setDeleteShootDayDialogOpen(true)
-                      }}
-                      onRemoveSecondUnit={({ shootDay, shootDayUnit, unit }) => {
-                        setRemoveSecondUnitTarget({
-                          shootDayUnitId: shootDayUnit.id,
-                          shootDate: shootDay.shoot_date,
-                          dayNumber: shootDay.day_number,
-                          unitName: unit.name,
-                        })
-                        setRemoveSecondUnitError(null)
-                        setRemoveSecondUnitDialogOpen(true)
-                      }}
-                      estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
-                      onUpdateStripEstimatedMinutes={(stripId, minutes) =>
-                        updateEstimatedMutation.mutate({ stripId, minutes })
-                      }
-                      onUpdateCallWrapTime={(stripId, time) =>
-                        updateCallWrapTimeMutation.mutate({ stripId, time })
-                      }
-                      onUpdateMoveStrip={(stripId, data) =>
-                        updateStripMutation.mutate({ stripId, data })
-                      }
-                      locations={locations}
-                      columnId={columnId}
-                      isLocked={false}
-                      pageEighthsTarget={PAGE_EIGHTHS_TARGET}
-                      onSendToBoneyard={(strip) => {
-                        moveToBoneyardMutation.mutate(strip.id)
-                        setBoneyardToast(true)
-                      }}
-                      onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
-                      onToggleLock={(shootDayUnitId, isLocked) =>
-                        setLockedMutation.mutate({ shootDayUnitId, isLocked })
-                      }
-                      columnFilters={columnFilters}
-                      onColumnFilterChange={(colId, key, value) =>
-                        setColumnFilters((prev) => ({
-                          ...prev,
-                          [colId]: { ...(prev[colId] ?? { int: false, ext: false, day: false, night: false }), [key]: value },
-                        }))
-                      }
-                      isEpisodic={isEpisodicProduction}
-                      shootingBlocLabel={
-                        isEpisodicProduction
-                          ? shootingBlocLabelFromAssociation(day.shooting_bloc_id, blocById)
-                          : undefined
-                      }
-                      episodeById={isEpisodicProduction ? episodeById : undefined}
-                    />
-                  </div>
-                )
-              })}
-              {shootDays.length === 0 && (
-                <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground text-sm shrink-0">
-                  No shoot days. Add shoot days from the Schedule calendar or settings.
-                </div>
-              )}
-              <BoneyardPanel
-                droppableId="boneyard-panel"
-                strips={boneyard.boneyardStrips}
-                scenes={scenes}
-                shots={shots}
-                estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
-                onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
-                isEpisodic={isEpisodicProduction}
-                episodeById={isEpisodicProduction ? episodeById : undefined}
-              />
-              </div>
-            </div>
-            <div
-              aria-hidden
-              className={`pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-linear-to-r from-background to-transparent transition-opacity duration-200 ${
-                showColumnsLeftFeather ? 'opacity-100' : 'opacity-0'
-              }`}
-            />
-          </div>
-        </div>
-
-        <DragOverlay>
-          {activeData?.type === 'strip' && (
-            <div className="rounded-md border-2 border-primary bg-card px-4 py-3 shadow-lg min-w-[200px]">
-              <StripItem
-                strip={activeData.strip}
-                scenes={scenes}
-                shots={shots}
-                locations={locations}
-                estimatedMinutesDefault={
-                  activeData.strip.strip_type === 'SHOT' && activeData.strip.shot_id
-                    ? estimatedShootMinutesByShotId.get(activeData.strip.shot_id) ?? 0
-                    : undefined
-                }
-                isOverlay
-                disabled
-                isEpisodic={isEpisodicProduction}
-                episodeById={isEpisodicProduction ? episodeById : undefined}
-              />
-            </div>
-          )}
-          {activeData?.type === 'unscheduled-shot' && (
-            <div className="rounded-md border-2 border-primary bg-card px-4 py-3 shadow-lg">
-              <span className="font-medium">Scene {activeData.item.scene.scene_number} / Shot {activeData.item.shot.shot_number}</span>
-              <span className="text-muted-foreground text-sm ml-2">
-                {activeData.item.shot.shot_description ?? activeData.item.shot.subject ?? '(No shot description)'}
-              </span>
-            </div>
-          )}
-        </DragOverlay>
-      </DndContext>
-    </div>
+    </>
   )
 }
