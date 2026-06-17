@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -23,6 +23,33 @@ import { createTypedExpense } from '@/lib/db/repositories/createTypedExpense'
 import type { ExpenseTransactionType } from '@/lib/db/types'
 import type { BudgetAccount } from '@/lib/db/types'
 import type { ExpenseViewContext, FormatAmount, LogSpendEditorHandle } from '@/features/budget/typed-expense-views/types'
+import { ExpenseTaxFields, type ExpenseTaxCreditDraft, type ExpenseVatReclaimDraft } from '@/features/budget/ExpenseTaxFields'
+import { computeDraftExpenseAmount } from '@/lib/budget/computeDraftExpenseAmount'
+import { getProductionBudgetFeatures } from '@/lib/db/repositories/taxCredits'
+import { listVatReclaimRates, validateExpenseVatReclaim } from '@/lib/db/repositories/vatReclaim'
+import { buildVatReclaimRateMap, computeExpenseVatReclaim } from '@/lib/budget/vatReclaim'
+import {
+  ExpenseVendorFinanceSection,
+  emptyExpenseVendorFinanceDraft,
+} from '@/features/budget/vendors/ExpenseVendorFinanceSection'
+import { getVendorById } from '@/lib/db/repositories/vendors'
+import {
+  linkExpenseVendorFinance,
+  type ExpenseVendorFinanceDraft,
+  isExpenseVendorFinanceDraftEmpty,
+} from '@/lib/db/vendorFinanceDocumentService'
+import { vendorInvoicesQueryKey } from '@/lib/db/repositories/vendorInvoices'
+import { vendorPurchaseOrdersQueryKey } from '@/lib/db/repositories/vendorPurchaseOrders'
+import {
+  vendorInvoiceLinksByExpenseQueryKey,
+  vendorPurchaseOrderLinksByExpenseQueryKey,
+} from '@/lib/db/repositories/vendorFinanceLinks'
+
+const emptyVatReclaim = (): ExpenseVatReclaimDraft => ({
+  vat_reclaimed_amount: null,
+  vat_reclaim_date: null,
+  vat_reclaim_reference: null,
+})
 
 const TRANSACTION_TYPE_ORDER: ExpenseTransactionType[] = [
   'labour',
@@ -39,6 +66,12 @@ const TRANSACTION_TYPE_HELPER: Record<ExpenseTransactionType, string> = {
   allow: 'Use for provisional allocations where final cost is not yet known.',
   deposit: 'Use for refundable or non-refundable deposits.',
 }
+
+const VENDOR_FINANCE_TRANSACTION_TYPES: ExpenseTransactionType[] = [
+  'purchase',
+  'rental',
+  'deposit',
+]
 
 export type LogSpendPanelProps = {
   open: boolean
@@ -73,21 +106,100 @@ export function LogSpendPanel({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [formKey, setFormKey] = useState(0)
   const saveAndAddAnotherRef = useRef(false)
+  const [taxCreditAllocations, setTaxCreditAllocations] = useState<ExpenseTaxCreditDraft[]>([])
+  const [vatRatePercent, setVatRatePercent] = useState<number | null>(null)
+  const [vatReclaim, setVatReclaim] = useState<ExpenseVatReclaimDraft>(emptyVatReclaim)
+  const [vendorFinanceDraft, setVendorFinanceDraft] = useState<ExpenseVendorFinanceDraft>(
+    emptyExpenseVendorFinanceDraft()
+  )
+  const [logSpendVendorId, setLogSpendVendorId] = useState<string | null>(null)
 
   const editorRef = useRef<LogSpendEditorHandle>(null)
   const queryClient = useQueryClient()
 
+  const { data: budgetFeatures } = useQuery({
+    queryKey: ['production-budget-features', productionId],
+    queryFn: () => getProductionBudgetFeatures(productionId),
+  })
+
+  const { data: reclaimRates = [] } = useQuery({
+    queryKey: ['vat-reclaim-rates', productionId],
+    queryFn: () => listVatReclaimRates(productionId),
+    enabled: budgetFeatures?.vat_tracking_enabled === true,
+  })
+
+  const { data: logSpendVendor } = useQuery({
+    queryKey: ['vendor', logSpendVendorId],
+    queryFn: () => getVendorById(logSpendVendorId!),
+    enabled: Boolean(logSpendVendorId),
+  })
+
+  useEffect(() => {
+    if (budgetFeatures?.vat_tracking_enabled && budgetFeatures.default_vat_rate_percent != null) {
+      setVatRatePercent(budgetFeatures.default_vat_rate_percent)
+    }
+  }, [budgetFeatures?.vat_tracking_enabled, budgetFeatures?.default_vat_rate_percent, open])
+
+  useEffect(() => {
+    if (selectedAccountId != null && selectedTransactionType == null) {
+      setSelectedTransactionType('allow')
+    }
+  }, [selectedAccountId, selectedTransactionType])
+
   const createMutation = useMutation({
-    mutationFn: createTypedExpense,
+    mutationFn: async (variables: {
+      productionId: string
+      accountId: string
+      transactionType: ExpenseTransactionType
+      draft: unknown
+      date?: string
+      vatRatePercent?: number | null
+      taxCreditAllocations?: Array<{ tax_credit_scheme_id: string; qualifying_amount: number }>
+      vatReclaim?: Parameters<typeof createTypedExpense>[0]['vatReclaim']
+      vendorFinanceDraft: ExpenseVendorFinanceDraft
+      vendorCompanyName: string
+    }) => {
+      const expense = await createTypedExpense(variables)
+      if (
+        !isExpenseVendorFinanceDraftEmpty(variables.vendorFinanceDraft) &&
+        expense.vendor_id
+      ) {
+        await linkExpenseVendorFinance({
+          expenseId: expense.id,
+          productionId: variables.productionId,
+          vendorId: expense.vendor_id,
+          vendorCompanyName: variables.vendorCompanyName,
+          productionCurrency,
+          draft: variables.vendorFinanceDraft,
+        })
+      }
+      return expense
+    },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['expenses', variables.productionId] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', variables.productionId, revisionId] })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(variables.productionId, revisionId) })
       queryClient.invalidateQueries({ queryKey: ['expense-with-details', data.id] })
+      queryClient.invalidateQueries({ queryKey: ['expense-tax-allocations-production', variables.productionId] })
+      if (data.vendor_id) {
+        queryClient.invalidateQueries({
+          queryKey: vendorInvoicesQueryKey(variables.productionId, data.vendor_id),
+        })
+        queryClient.invalidateQueries({
+          queryKey: vendorPurchaseOrdersQueryKey(variables.productionId, data.vendor_id),
+        })
+        queryClient.invalidateQueries({
+          queryKey: vendorInvoiceLinksByExpenseQueryKey(data.id),
+        })
+        queryClient.invalidateQueries({
+          queryKey: vendorPurchaseOrderLinksByExpenseQueryKey(data.id),
+        })
+      }
       if (variables.transactionType === 'allow') {
         queryClient.invalidateQueries({ queryKey: ['allow-expense-details', variables.productionId] })
       }
       setSaveError(null)
+      setVendorFinanceDraft(emptyExpenseVendorFinanceDraft())
       if (saveAndAddAnotherRef.current) {
         setDraftByType((prev) => {
           const next = { ...prev }
@@ -116,6 +228,12 @@ export function LogSpendPanel({
       setSelectedTransactionType(null)
       setPendingTypeSwitch(null)
       setDraftByType({})
+      setPendingTypeSwitch(null)
+      setTaxCreditAllocations([])
+      setVatRatePercent(null)
+      setVatReclaim(emptyVatReclaim())
+      setVendorFinanceDraft(emptyExpenseVendorFinanceDraft())
+      setLogSpendVendorId(null)
       setSaveError(null)
     }
     onOpenChange(next)
@@ -194,11 +312,15 @@ export function LogSpendPanel({
       setPendingTypeSwitch({ nextType })
       return
     }
+    setLogSpendVendorId(null)
+    setVendorFinanceDraft(emptyExpenseVendorFinanceDraft())
     setSelectedTransactionType(nextType)
   }
 
   const confirmTypeSwitch = () => {
     if (pendingTypeSwitch == null) return
+    setLogSpendVendorId(null)
+    setVendorFinanceDraft(emptyExpenseVendorFinanceDraft())
     setSelectedTransactionType(pendingTypeSwitch.nextType)
     setPendingTypeSwitch(null)
   }
@@ -206,6 +328,42 @@ export function LogSpendPanel({
   const handleEditorSave = (details: unknown) => {
     if (!selectedTransactionType || !selectedAccountId) return
     setSaveError(null)
+    const amount = computeDraftExpenseAmount(selectedTransactionType, details)
+    const vatOn = budgetFeatures?.vat_tracking_enabled === true
+    if (vatOn && amount != null && vatReclaim.vat_reclaimed_amount != null) {
+      try {
+        const breakdown = computeExpenseVatReclaim(
+          {
+            id: 'draft',
+            amount,
+            vat_rate_percent: vatRatePercent,
+            transaction_type: selectedTransactionType,
+            vat_reclaimed_amount: vatReclaim.vat_reclaimed_amount,
+          },
+          buildVatReclaimRateMap(reclaimRates)
+        )
+        validateExpenseVatReclaim(breakdown.vatReclaimable, vatReclaim)
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Invalid VAT reclaim')
+        return
+      }
+    }
+    if (!isExpenseVendorFinanceDraftEmpty(vendorFinanceDraft)) {
+      if (
+        vendorFinanceDraft.invoiceMode === 'upload' &&
+        !vendorFinanceDraft.uploadInvoice?.invoice_number?.trim()
+      ) {
+        setSaveError('Invoice number is required when uploading a new invoice')
+        return
+      }
+      if (
+        vendorFinanceDraft.invoiceMode === 'existing' &&
+        !vendorFinanceDraft.existingInvoiceId
+      ) {
+        setSaveError('Select an existing invoice or choose a different invoice option')
+        return
+      }
+    }
     setDraftByType((prev) => ({ ...prev, [selectedTransactionType]: details }))
     createMutation.mutate({
       productionId,
@@ -213,8 +371,22 @@ export function LogSpendPanel({
       transactionType: selectedTransactionType,
       draft: details,
       date: new Date().toISOString().slice(0, 10),
+      vatRatePercent: vatOn ? vatRatePercent : null,
+      taxCreditAllocations: budgetFeatures?.tax_credits_enabled ? taxCreditAllocations : [],
+      vatReclaim: vatOn ? vatReclaim : undefined,
+      vendorFinanceDraft,
+      vendorCompanyName: logSpendVendor?.company_name ?? 'Vendor',
     })
   }
+
+  const currentDraft =
+    selectedTransactionType && draftByType[selectedTransactionType] != null
+      ? draftByType[selectedTransactionType]
+      : null
+  const previewAmount =
+    selectedTransactionType && currentDraft != null
+      ? computeDraftExpenseAmount(selectedTransactionType, currentDraft)
+      : null
 
   const detailsJsonForType =
     selectedTransactionType && draftByType[selectedTransactionType] != null
@@ -225,6 +397,12 @@ export function LogSpendPanel({
     pendingTypeSwitch?.nextType != null
       ? typedExpenseRegistry[pendingTypeSwitch.nextType].label
       : null
+
+  const showVendorFinanceSection = Boolean(
+    logSpendVendorId &&
+      selectedTransactionType &&
+      VENDOR_FINANCE_TRANSACTION_TYPES.includes(selectedTransactionType)
+  )
 
   return (
     <>
@@ -321,10 +499,42 @@ export function LogSpendPanel({
                       context={viewContext}
                       hideFooter
                       editorRef={editorRef}
+                      onVendorIdChange={setLogSpendVendorId}
                     />
                   </div>
                 ) : null}
               </div>
+
+              {showVendorFinanceSection && logSpendVendorId && (
+                <div className="mt-4">
+                  <ExpenseVendorFinanceSection
+                    productionId={productionId}
+                    vendorId={logSpendVendorId}
+                    vendorCompanyName={logSpendVendor?.company_name ?? 'Vendor'}
+                    productionCurrency={productionCurrency}
+                    mode="create"
+                    format={format}
+                    draft={vendorFinanceDraft}
+                    onDraftChange={setVendorFinanceDraft}
+                  />
+                </div>
+              )}
+
+              {(budgetFeatures?.tax_credits_enabled || budgetFeatures?.vat_tracking_enabled) && (
+                <div className="mt-4">
+                  <ExpenseTaxFields
+                    productionId={productionId}
+                    expenseAmount={previewAmount}
+                    transactionType={selectedTransactionType}
+                    value={taxCreditAllocations}
+                    onChange={setTaxCreditAllocations}
+                    vatRatePercent={vatRatePercent}
+                    onVatRateChange={setVatRatePercent}
+                    vatReclaim={vatReclaim}
+                    onVatReclaimChange={setVatReclaim}
+                  />
+                </div>
+              )}
             </section>
 
             {saveError && (

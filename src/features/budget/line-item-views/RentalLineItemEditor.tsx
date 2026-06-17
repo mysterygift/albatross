@@ -3,6 +3,13 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Input } from '@/components/ui/input'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { PositiveIntegerInput } from '@/components/budget/PositiveIntegerInput'
+import {
+  nullablePositiveIntegerSchema,
+  nullablePositiveMoneySchema,
+} from '@/lib/budget/fieldValidation'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -25,10 +32,10 @@ const isoDate = z
 const rentalLineItemEditSchema = z.object({
   rental_description: z.string().nullable().optional(),
   rental_rate_type: z.enum(RENTAL_LINE_ITEM_RATE_TYPES).nullable().optional(),
-  rental_rate_amount: z.number().finite().nonnegative().nullable().optional(),
+  rental_rate_amount: nullablePositiveMoneySchema(),
   rental_start_date: isoDate,
   rental_end_date: isoDate,
-  rental_period_override_days: z.number().finite().nonnegative().nullable().optional(),
+  rental_period_override_days: nullablePositiveIntegerSchema(),
   equipment_description: z.string().nullable().optional(),
   vendor_id: z.string().nullable().optional(),
   primary_contact_override: z.string().nullable().optional(),
@@ -152,23 +159,22 @@ export const RentalLineItemEditor = forwardRef<
             />
           </div>
           <div>
-            <Label>Rate amount</Label>
-            <Controller
-              name="rental_rate_amount"
-              control={form.control}
-              render={({ field }) => (
-                <Input
-                  type="number"
-                  step={0.01}
-                  min={0}
-                  value={field.value ?? ''}
-                  onChange={(e) =>
-                    field.onChange(e.target.value === '' ? null : Number(e.target.value))
-                  }
-                  className="mt-1.5 bg-background"
-                />
-              )}
-            />
+            <ValidatedField label="Rate amount" htmlFor="line-rental-rate">
+              <Controller
+                name="rental_rate_amount"
+                control={form.control}
+                render={({ field }) => (
+                  <MoneyAmountInput
+                    id="line-rental-rate"
+                    mode="positive"
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                    className="mt-1.5 bg-background"
+                  />
+                )}
+              />
+            </ValidatedField>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -203,25 +209,21 @@ export const RentalLineItemEditor = forwardRef<
             />
           </div>
         </div>
-        <div>
-          <Label>Override days (optional)</Label>
+        <ValidatedField label="Override days (optional)" htmlFor="line-rental-override-days">
           <Controller
             name="rental_period_override_days"
             control={form.control}
             render={({ field }) => (
-              <Input
-                type="number"
-                step={1}
-                min={0}
-                value={field.value ?? ''}
-                onChange={(e) =>
-                  field.onChange(e.target.value === '' ? null : Number(e.target.value))
-                }
+              <PositiveIntegerInput
+                id="line-rental-override-days"
+                value={field.value}
+                onValueChange={field.onChange}
+                onBlur={field.onBlur}
                 className="mt-1.5 bg-background"
               />
             )}
           />
-        </div>
+        </ValidatedField>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>Computed days: {computedDays ?? '—'}</span>
           <span>Effective days: {effectiveDays ?? '—'}</span>

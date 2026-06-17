@@ -43,11 +43,11 @@ This document is both a **user guide** (how to use Vendor Management) and a **de
 
 | Feature | Description |
 |---------|-------------|
-| **Vendors** | Create, edit, and archive vendors. Fields: company name (required), primary contact name, primary contact email. |
-| **Vendor invoices** | Add, edit, and archive invoices per vendor. Invoice number, issue/due dates, amount, tax, currency, status (draft → received → approved → paid / overdue). Optional link to a purchase order. |
-| **Vendor purchase orders** | Add, edit, and archive POs per vendor. PO number, description, issue/due dates, amount, status (draft → issued → approved → closed / cancelled), approval flag. |
+| **Vendors** | Create, edit, and archive vendors. Fields: company name (required), primary contact name, primary contact email. **Share across all projects** promotes a vendor to global scope (globe badge); invoices and POs stay per-project. |
+| **Vendor invoices** | Add, edit, and archive invoices per vendor. Invoice number, issue/due dates, amount, tax, currency, status (draft → received → approved → paid / overdue). Optional link to a purchase order. Optional file attachment (PDF or image). |
+| **Vendor purchase orders** | Add, edit, and archive POs per vendor. PO number, description, issue/due dates, amount, status (draft → issued → approved → closed / cancelled), approval flag. Optional file attachment. |
 | **Invoice reminder tasks** | Invoices with a due date get a single linked task in the Tasks system (e.g. "Pay invoice INV-2041 — Arri Rental"). Marking the invoice as paid completes the task; archiving the invoice soft-deletes the task. There is no separate reminder engine. |
-| **Expense linking** | From the vendor detail page, link expenses to an invoice and/or to a PO. One invoice or PO can have many linked expenses. Unlink when needed. |
+| **Expense linking** | From the vendor detail page, link expenses to an invoice and/or to a PO. When logging spend (Purchase, Rental, Deposit), optionally match one invoice and/or one PO in the same save. From an expense detail sheet, retroactively link or upload an invoice and link a PO — even after the expense is matched to a budget line item. One invoice or PO can have many linked expenses. Unlink when needed. |
 | **Vendor spend and activity** | Per-vendor total spend (from expenses), a recent activity feed (expenses, invoices, POs), and on the detail page allocation/reconciliation status for linked expenses. |
 | **Dashboard** | "Vendor finance" summary cards (overdue invoices, due soon, open POs, POs awaiting approval). **Risk Watch** shows vendor-finance alerts: overdue/due-soon invoices, POs awaiting approval, large unpaid invoices, vendors with unmatched spend, vendors with no recent activity, open PO exposure. Clicks navigate to vendor detail or the vendors list. |
 
@@ -60,21 +60,49 @@ This document is both a **user guide** (how to use Vendor Management) and a **de
 3. Enter company name (required), optional primary contact and email.
 4. Click **Create**. You are taken to that vendor’s detail page.
 
+**Sharing a vendor across projects**
+
+1. Open the vendor’s detail page in the project where it was created.
+2. Click **Share across all projects** and confirm.
+3. The vendor appears in every project’s vendor list and pickers (globe badge). Company name and contact details are shared; invoices, POs, and spend stay in each project separately.
+
+**Removing a vendor**
+
+1. Open the vendor’s detail page.
+2. Click **Remove**.
+3. For **shared vendors** (globe badge), choose **This project only** or **All projects**, then click **Confirm** in the second dialog.
+   - **This project only** — On the project where the vendor was created, this makes it local again (other projects lose access). On any other project, this hides the vendor in that project only.
+   - **All projects** — Removes the vendor from every project’s active lists. Linked spend history is preserved.
+4. For project-only vendors, confirm removal in one dialog.
+
 **Managing invoices**
 
 1. Open a vendor’s detail page.
 2. In the **Invoices** section, click **Add invoice**.
-3. Enter invoice number, optional issue/due dates, amount, tax, currency, status, and optional link to a PO.
+3. Enter invoice number, optional issue/due dates, amount, tax, currency, status, optional link to a PO, and optionally **upload a file** (PDF or image).
 4. If you set a **due date**, a reminder task is created in Tasks. Marking the invoice as **paid** completes that task.
-5. Edit or archive invoices from the same section.
+5. Edit or archive invoices from the same section. Use the paperclip on a row to open an attached file.
 
 **Managing purchase orders**
 
 1. On the vendor detail page, open the **Purchase orders** section.
-2. Click **Add PO** and enter PO number, description, dates, amount, status, and approval.
+2. Click **Add PO** and enter PO number, description, dates, amount, status, approval, and optionally **upload a file**.
 3. Edit or archive POs as needed.
 
-**Linking spend**
+**Logging spend with invoice / PO matching**
+
+1. From **Budget**, click **Log Spend** and choose a Purchase, Rental, or Deposit transaction.
+2. Select a **vendor** in the transaction form.
+3. Optionally choose a **purchase order** and/or **invoice** (select an existing one or upload a new invoice with optional file). All steps are optional — cross-check amounts yourself; the app does not validate invoice totals against expense amounts.
+4. Save. New uploaded invoices appear in the vendor’s **Invoices** section.
+
+**Retroactive invoice / PO linking**
+
+1. Open an expense from the Budget tab (expense detail sheet).
+2. When the expense has a vendor, use the **Vendor finance** section to link an existing invoice or PO, or upload a new invoice.
+3. This works independently of **Match Spend** / budget line-item reconciliation.
+
+**Linking spend (vendor detail)**
 
 1. On the vendor detail page, open an invoice or a PO.
 2. Use **Link expense** to attach one or more expenses (logged spend) to that invoice or PO.
@@ -126,7 +154,7 @@ Open the **Dashboard**. The Vendor finance cards show counts (overdue, due soon,
 
 **Repositories**
 
-- [src/lib/db/repositories/vendors.ts](src/lib/db/repositories/vendors.ts) — list, get, getVendorById (including archived), create, update, soft-delete.
+- [src/lib/db/repositories/vendors.ts](src/lib/db/repositories/vendors.ts) — list, get, getVendorById (including archived), create, update, soft-delete, promoteVendorToGlobal, demoteVendorToLocal, excludeVendorFromProduction, removeVendorFromProject.
 - [src/lib/db/repositories/vendorInvoices.ts](src/lib/db/repositories/vendorInvoices.ts) — CRUD, list by production or by vendor.
 - [src/lib/db/repositories/vendorPurchaseOrders.ts](src/lib/db/repositories/vendorPurchaseOrders.ts) — CRUD, list by production or by vendor.
 - [src/lib/db/repositories/vendorFinanceLinks.ts](src/lib/db/repositories/vendorFinanceLinks.ts) — invoice↔expense and PO↔expense link tables (list, create, delete; no outbox).
@@ -135,6 +163,7 @@ Open the **Dashboard**. The Vendor finance cards show counts (overdue, due soon,
 **Orchestration**
 
 - [src/lib/db/vendorInvoiceReminderService.ts](src/lib/db/vendorInvoiceReminderService.ts) — `createInvoiceWithReminderTask`, `updateInvoiceWithReminderTask`, `archiveInvoiceWithReminderTask`. Keeps invoice and linked task in sync in one transaction (create/complete/reopen/soft-delete task).
+- [src/lib/db/vendorFinanceDocumentService.ts](src/lib/db/vendorFinanceDocumentService.ts) — `createVendorInvoiceWithDocument`, `createVendorPurchaseOrderWithDocument`, `attachDocumentToVendorInvoice`, `attachDocumentToVendorPurchaseOrder`, `linkExpenseVendorFinance`. Attachments use the `documents` table with `entity_type` `vendor_invoice` or `vendor_purchase_order`.
 
 **Dashboard / Risk Watch**
 
@@ -143,8 +172,9 @@ Open the **Dashboard**. The Vendor finance cards show counts (overdue, due soon,
 
 **UI**
 
-- [src/features/budget/vendors/VendorsIndexPage.tsx](src/features/budget/vendors/VendorsIndexPage.tsx) — Vendor list, search, preview, New vendor dialog.
-- [src/features/budget/vendors/VendorDetailPage.tsx](src/features/budget/vendors/VendorDetailPage.tsx) — Vendor edit/archive, invoices, POs, expense linking, recent activity, spend/reconciliation.
+- [src/features/budget/vendors/VendorsIndexPage.tsx](src/features/budget/vendors/VendorsIndexPage.tsx) — Vendor list, search, preview, New vendor.
+- [src/features/budget/vendors/VendorDetailPage.tsx](src/features/budget/vendors/VendorDetailPage.tsx) — Vendor edit/archive, share across projects, invoices, POs, expense linking, recent activity, spend/reconciliation.
+- [src/features/budget/vendors/GlobalVendorBadge.tsx](src/features/budget/vendors/GlobalVendorBadge.tsx) — Globe icon for global vendors.
 - [src/components/vendors/VendorPicker.tsx](src/components/vendors/VendorPicker.tsx) — Vendor dropdown (used in Budget Log Spend and typed expense editors).
 - [src/features/budget/vendors/InvoiceStatusBadge.tsx](src/features/budget/vendors/InvoiceStatusBadge.tsx), [PurchaseOrderStatusBadge.tsx](src/features/budget/vendors/PurchaseOrderStatusBadge.tsx) — Status badges for invoice and PO tables.
 
@@ -152,7 +182,7 @@ Open the **Dashboard**. The Vendor finance cards show counts (overdue, due soon,
 
 | Entity | Key fields |
 |--------|------------|
-| **Vendor** | `id`, `production_id`, `company_name`, `primary_contact_full_name`, `primary_contact_email`, soft-delete. |
+| **Vendor** | `id`, `production_id` (origin project), `is_global`, `company_name`, `primary_contact_full_name`, `primary_contact_email`, soft-delete. When `is_global` is true, identity is listed in every production; finance rows remain production-scoped. |
 | **VendorInvoice** | `vendor_id`, `po_id` (optional), `invoice_number`, `issue_date`, `due_date`, `amount`, `tax`, `currency_code`, `status` (draft/received/approved/paid/overdue), soft-delete. |
 | **VendorPurchaseOrder** | `vendor_id`, `po_number`, `description`, `issue_date`, `due_date`, `amount`, `status`, `approval`, soft-delete. |
 | **Link tables** | Invoice↔expense and PO↔expense: many-to-one (many expenses per invoice/PO). No outbox. |
@@ -171,13 +201,18 @@ Open the **Dashboard**. The Vendor finance cards show counts (overdue, due soon,
 
 **Query invalidation**
 
-- When invoices, POs, expense links, or vendor data change, invalidate `dashboardVendorFinanceQueryKey(productionId)` and `riskWatchQueryKey(productionId)` in addition to the relevant vendor/invoice/PO list keys. Risk Watch must also be invalidated when **reconciliation** (budget-item–expense links) or **expenses** change (e.g. from the actualisation page or Log Spend), not only when invoices/POs change. See VendorDetailPage, budget page, LogSpendPanel, and actualisation page for examples.
+- When invoices, POs, expense links, or vendor data change, invalidate `dashboardVendorFinanceQueryKey(productionId)` and `riskWatchQueryKey(productionId)` in addition to the relevant vendor/invoice/PO list keys. When a **global** vendor is edited, archived, or promoted, invalidate `['vendors']` (all productions). Risk Watch must also be invalidated when **reconciliation** (budget-item–expense links) or **expenses** change (e.g. from the actualisation page or Log Spend), not only when invoices/POs change. See VendorDetailPage, budget page, LogSpendPanel, and actualisation page for examples.
+
+**APF export**
+
+- [`resolveVendorsForExport`](src/lib/importExport/resolveVendorsForExport.ts) exports production-owned vendors plus **portable copies** of global vendors referenced in that production (expenses, invoices, POs, equipment). Copies use the exported `production_id` and `is_global = 0` so `.apf` packages are self-contained on import.
 
 ### 9. Query keys and invalidation
 
 | Key | Usage |
 |-----|--------|
-| `['vendors', productionId]` | Vendor list for the production. |
+| `['vendors', productionId]` | Vendor list for the production (includes global vendors). |
+| `['vendors']` | Invalidate all production vendor lists (e.g. after promoting or editing a global vendor). |
 | `vendorInvoicesQueryKey` / list keys | Invoice lists (by production or vendor). |
 | `vendorPurchaseOrdersQueryKey` / list keys | PO lists (by production or vendor). |
 | `vendorInvoiceExpenseLinksQueryKey(invoiceId)` | Links for one invoice. |
@@ -235,8 +270,13 @@ The Dashboard links "Vendor finance" and Risk Watch items to `/budget/vendors` o
 | `0037_vendor_invoices_po_id.sql` | Invoice optional link to PO. |
 | `0038_vendor_invoice_expenses.sql` | Invoice–expense link table. |
 | `0039_vendor_purchase_order_expenses.sql` | PO–expense link table. |
+| `0081_vendors_is_global.sql` (SQLite) / `0015_vendors_is_global.sql` (Postgres) | `vendors.is_global` for cross-project vendor identity. |
 
 ### 13. Gaps and future work
+
+- **Demote global vendor:** Use **Remove → This project only** on the origin project (`demoteVendorToLocal`).
+- **Hide global vendor from one project:** Use **Remove → This project only** on a non-origin project (`vendor_production_exclusions`).
+- **Create as global:** New vendors are project-scoped until promoted from the detail page.
 
 - **Risk Watch drilldown:** Alerts link to vendor detail only; there is no invoice-level or PO-level drilldown from Risk Watch.
 - **PO reminder tasks:** Only invoices get reminder tasks; POs do not create tasks.

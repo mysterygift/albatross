@@ -55,6 +55,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import {
@@ -70,7 +71,8 @@ import { LineItemMatchStatusBadge } from '@/features/budget/actualisation/LineIt
 import { ExpenseAllocationStatusBadge } from '@/features/budget/actualisation/ExpenseAllocationStatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { parseMoneyInput } from '@/lib/budget/fieldValidation'
 import { Label } from '@/components/ui/label'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Receipt, AlertTriangle } from 'lucide-react'
@@ -85,7 +87,6 @@ const TYPE_FILTER_OPTIONS: { value: ClassificationFilter; label: string }[] = [
   { value: 'rental', label: 'Rental' },
   { value: 'allow', label: 'Allow' },
   { value: 'deposit', label: 'Deposit' },
-  { value: 'untyped', label: 'Untyped' },
 ]
 
 const LINE_ITEM_STATUS_FILTER_OPTIONS: { value: 'all' | BudgetItemReconciliationStatus; label: string }[] = [
@@ -185,7 +186,8 @@ export function ActualisationPage() {
 
   const { data: linksForSelectedItem = [] } = useQuery({
     queryKey: ['budget-item-expense-links-for-item', selectedLineItemId, revisionId],
-    queryFn: () => listBudgetItemExpenseLinksForBudgetItem(selectedLineItemId!, revisionId),
+    queryFn: () =>
+      listBudgetItemExpenseLinksForBudgetItem(selectedLineItemId!, currentProductionId!, revisionId),
     enabled: !!selectedLineItemId,
   })
   const { data: linksForSelectedExpense = [] } = useQuery({
@@ -514,43 +516,58 @@ export function ActualisationPage() {
         </p>
       )}
 
-      <div className="flex flex-wrap gap-4 items-center">
-        <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as ClassificationFilter)}>
-          <SelectTrigger className="w-[140px]">Type</SelectTrigger>
-          <SelectContent>
-            {TYPE_FILTER_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={lineItemStatusFilter}
-          onValueChange={(v) => setLineItemStatusFilter(v as 'all' | BudgetItemReconciliationStatus)}
-        >
-          <SelectTrigger className="w-[180px]">Line item status</SelectTrigger>
-          <SelectContent>
-            {LINE_ITEM_STATUS_FILTER_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={expenseStatusFilter}
-          onValueChange={(v) => setExpenseStatusFilter(v as 'all' | ExpenseReconciliationStatus)}
-        >
-          <SelectTrigger className="w-[180px]">Expense status</SelectTrigger>
-          <SelectContent>
-            {EXPENSE_STATUS_FILTER_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-wrap gap-4 items-end">
+        <div>
+          <Label className="text-xs text-muted-foreground">Type</Label>
+          <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as ClassificationFilter)}>
+            <SelectTrigger className="mt-1 w-[140px]" aria-label="Filter by type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TYPE_FILTER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">Line status</Label>
+          <Select
+            value={lineItemStatusFilter}
+            onValueChange={(v) => setLineItemStatusFilter(v as 'all' | BudgetItemReconciliationStatus)}
+          >
+            <SelectTrigger className="mt-1 w-[180px]" aria-label="Filter by line item status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LINE_ITEM_STATUS_FILTER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">Expense status</Label>
+          <Select
+            value={expenseStatusFilter}
+            onValueChange={(v) => setExpenseStatusFilter(v as 'all' | ExpenseReconciliationStatus)}
+          >
+            <SelectTrigger className="mt-1 w-[180px]" aria-label="Filter by expense status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {EXPENSE_STATUS_FILTER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters}>
             Clear filters
@@ -751,6 +768,7 @@ export function ActualisationPage() {
       )}
 
       <Dialog open={matchSpendModalOpen} onOpenChange={setMatchSpendModalOpen}>
+        {matchSpendModalOpen ? (
         <DialogContent
           className="max-w-2xl max-h-[85vh] flex flex-col gap-0"
           aria-labelledby="match-spend-dialog-title"
@@ -910,18 +928,18 @@ export function ActualisationPage() {
                                   <Label htmlFor={`allocate-${item.id}`} className="text-muted-foreground shrink-0 w-24">
                                     Allocate:
                                   </Label>
-                                  <Input
+                                  <MoneyAmountInput
                                     id={`allocate-${item.id}`}
-                                    type="number"
-                                    min={0}
-                                    step={0.01}
+                                    mode="positive"
                                     placeholder="0.00"
-                                    value={amountStr}
-                                    onChange={(e) => {
-                                      const v = e.target.value
-                                      setAllocationAmounts((prev) => ({ ...prev, [item.id]: v }))
-                                    }}
                                     className="w-32 tabular-nums"
+                                    value={parseMoneyInput(amountStr)}
+                                    onValueChange={(v) => {
+                                      setAllocationAmounts((prev) => ({
+                                        ...prev,
+                                        [item.id]: v == null ? '' : String(v),
+                                      }))
+                                    }}
                                   />
                                 </div>
                               )}
@@ -1075,14 +1093,14 @@ export function ActualisationPage() {
                                     <Label htmlFor={`edit-link-${link.id}`} className="text-muted-foreground shrink-0">
                                       Matched amount:
                                     </Label>
-                                    <Input
+                                    <MoneyAmountInput
                                       id={`edit-link-${link.id}`}
-                                      type="number"
-                                      min={0}
-                                      step={0.01}
-                                      value={editAmountStr}
-                                      onChange={(e) => setEditingLinkAmount(e.target.value)}
+                                      mode="positive"
                                       className="w-32 tabular-nums"
+                                      value={parseMoneyInput(editAmountStr)}
+                                      onValueChange={(v) =>
+                                        setEditingLinkAmount(v == null ? '' : String(v))
+                                      }
                                     />
                                     {remainingIfEdited !== null && (
                                       <span className="text-muted-foreground text-xs">
@@ -1206,6 +1224,7 @@ export function ActualisationPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
+        ) : null}
       </Dialog>
     </div>
   )

@@ -13,9 +13,10 @@ import { ApfImportConflictError } from '@/lib/importExport/errors'
 import { exportProductionAsApf } from '@/lib/importExport/exportProduction'
 import { loadApfV1ProductionTables } from '@/lib/importExport/exportLoadProductionData'
 import { importProductionFromApf } from '@/lib/importExport/importProduction'
+import { buildApfZipBytes } from '@/lib/importExport/buildApfArchive'
 import { parseApfArchiveBytes } from '@/lib/importExport/readApfArchive'
 import { resetApfImportPragmaCache } from '@/lib/importExport/planImportStatements'
-import { buildValidApfZipBytes, emptyApfTables, minimalProductionRow } from '@/test/apf/fixtures'
+import { buildFixtureDataAndManifest, buildValidApfZipBytes, emptyApfTables, minimalProductionRow } from '@/test/apf/fixtures'
 import { apfNodeFsTestContext } from '@/test/apf/apfNodeFsTestContext'
 import { applyAlbatrossMigrationsSqlJs } from '@/test/apf/applyMigrationsSqlJs'
 import { sqlJsApfE2eContext } from '@/test/apf/sqlJsApfE2eContext'
@@ -159,6 +160,90 @@ describe('apf E2E (sql.js + real FS)', () => {
     )
   }
 
+  const REV_ID = 'ffffffff-e2e1-4e21-8f01-a1e2e2e2e201'
+  const BUDGET_ITEM_ID = '99999999-e2e1-4e21-8f01-a1e2e2e2e201'
+
+  it('exports and imports budget revision scoped rows without FK errors', async () => {
+    clearUserData()
+    const adapter = sqlJsApfE2eContext.adapter!
+    await adapter.execute(
+      `INSERT INTO productions (id, name, notes, created_at, updated_at, deleted_at, slug, currency_code, archived_at, wrapped_at, created_from_template)
+       VALUES ($1, $2, NULL, $3, $4, NULL, $5, 'GBP', NULL, NULL, NULL)`,
+      [PROD_ID, 'Budget Revision E2E', TS, TS, 'budget-rev-e2e']
+    )
+    await adapter.execute(
+      `INSERT INTO budget_revisions (id, production_id, name, created_from_revision_id, is_live, approval, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, 'Current budget', NULL, 1, 'unapproved', $3, $3, NULL)`,
+      [REV_ID, PROD_ID, TS]
+    )
+    await adapter.execute(
+      `INSERT INTO budget_items (id, production_id, budget_revision_id, description, estimated_cost, actual_cost, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, $3, 'Line', 100, 0, $4, $4, NULL)`,
+      [BUDGET_ITEM_ID, PROD_ID, REV_ID, TS]
+    )
+
+    await exportProductionAsApf(PROD_ID, apfPath)
+    const exportedBytes = new Uint8Array(await readFile(apfPath))
+    const parsedExport = parseApfArchiveBytes(exportedBytes)
+    expect(parsedExport.normalized.data.tables.budget_revisions).toHaveLength(1)
+    expect(parsedExport.normalized.data.formatVersion).toBe(4)
+
+    clearUserData()
+    const imp = await importProductionFromApf(apfPath)
+    expect(imp.ok).toBe(true)
+    if (!imp.ok) throw imp.error
+
+    const revRows = await adapter.select<Record<string, unknown>[]>(
+      `SELECT id FROM budget_revisions WHERE production_id = $1`,
+      [PROD_ID]
+    )
+    expect(revRows).toHaveLength(1)
+    expect(String(revRows[0]!.id)).toBe(REV_ID)
+  })
+
+  it('imports legacy v3 scenes.heading via file migration into title', async () => {
+    clearUserData()
+    const adapter = sqlJsApfE2eContext.adapter!
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow({ id: PROD_ID, slug: 'legacy-v3-scene', name: 'Legacy v3 Scene' })]
+    tables.scenes = [
+      {
+        id: E2E_SCENE_ID,
+        production_id: PROD_ID,
+        scene_number: '5',
+        heading: 'INT. WAREHOUSE - NIGHT',
+        title: null,
+        description: null,
+        int_ext: 'INT',
+        day_night: 'NIGHT',
+        page_eighths: null,
+        location_id: null,
+        duration_minutes: null,
+        episode_id: null,
+        created_at: TS,
+        updated_at: TS,
+        deleted_at: null,
+      },
+    ]
+    const { manifest, dataFile } = buildFixtureDataAndManifest({ tables })
+    const legacyManifest = { ...manifest, formatVersion: 3 as const }
+    const legacyData = JSON.parse(JSON.stringify(dataFile)) as typeof dataFile
+    legacyData.formatVersion = 3
+    const legacyApfPath = join(workDir, 'legacy-v3-scene.apf')
+    await writeFile(legacyApfPath, buildApfZipBytes(legacyManifest, legacyData, []))
+
+    const imp = await importProductionFromApf(legacyApfPath)
+    expect(imp.ok).toBe(true)
+    if (!imp.ok) throw imp.error
+
+    const rows = await adapter.select<Array<{ title: string | null }>>(
+      `SELECT title FROM scenes WHERE id = $1`,
+      [E2E_SCENE_ID]
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.title).toBe('INT. WAREHOUSE - NIGHT')
+  })
+
   it('exports then imports into a wiped DB with restored document bytes and stable UUIDs', async () => {
     await seedRoundTripFixture()
 
@@ -227,8 +312,8 @@ describe('apf E2E (sql.js + real FS)', () => {
       [E2E_BLOC_ID, PROD_ID, TS]
     )
     await adapter.execute(
-      `INSERT INTO scenes (id, production_id, scene_number, heading, description, title, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at, deleted_at)
-       VALUES ($1, $2, '1', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, $3, $4, $4, NULL)`,
+      `INSERT INTO scenes (id, production_id, scene_number, description, title, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, '1', NULL, NULL, NULL, NULL, NULL, NULL, NULL, $3, $4, $4, NULL)`,
       [E2E_SCENE_ID, PROD_ID, EP_E2E_ARCH, TS]
     )
     await adapter.execute(

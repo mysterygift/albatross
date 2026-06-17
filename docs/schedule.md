@@ -75,6 +75,9 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 - **Episodic:** Day column headers may show the **shooting bloc** for that shoot day; shot/scene strips may show an **episode** badge. Use the **bloc filter** to hide columns outside the selected block (or show only days “outside blocs”).
 - **Layout:** Left panel (Unscheduled Shots), center (day/unit columns), right (Boneyard).
 - **New shoot day:** Header action "New shoot day" opens a lightweight dialog to enter a shoot date. Creates an empty shoot day for the current production with Main Unit by default (no Second Unit, no strips). After creation the stripboard refreshes, the new day scrolls into view, and a brief "Shoot day created." message is shown.
+- **Add Second Unit:** Header action "Add Second Unit" (to the left of "New shoot day") opens a dialog to select one or more shoot days that do not yet have Second Unit. Creates the production-level "Second Unit" if needed (or reuses an existing unit whose name contains "second" or "2nd"), links it to the selected days, and seeds default CALL + WRAP strips on those columns. New shoot days still default to Main Unit only until Second Unit is added explicitly. The button is disabled when every shoot day already has Second Unit.
+- **Remove Second Unit:** Each Second Unit column header has a trash control to remove Second Unit from that shoot day only. Scheduled shots on that column move to Unscheduled; Main Unit is unchanged. Main Unit cannot be removed.
+- **Unit column order:** On each shoot day, Main Unit always displays above Second Unit.
 - **Unscheduled Shots:** Shots not yet on the stripboard. Search, filter by location, multi-select, "Assign to Day" (shoot day + unit). Can drag shots onto a column or **onto a specific strip**; the new shot strip is inserted **above or below** that strip depending on where you release (not only at the bottom of the column).
 - **Day columns:** One column per (shoot_day, shoot_day_unit). Strips show scene/shot info, estimated minutes. Drag strips between columns to move or reorder **up and down** within a column; drop target resolution uses the hovered strip and release position (before/after). Lock toggle per unit.
 - **Strip types:** SHOT (from Shot List), SCENE (legacy), MOVE, CALL, LUNCH, WRAP, NOTE. "Add strip" popover for non-SHOT types. **MOVE** strips can optionally set **origin** and **destination** locations (from the production Locations list); these waypoints feed the ordered location stack used by Movement Orders and the calendar day summary travel segments.
@@ -96,9 +99,10 @@ This document has two parts: a **user guide** (how to use the Schedule area and 
 ### 6. Script Import
 
 - **Paste text:** Paste script content; click Parse to extract scenes.
-- **Upload file:** .txt supported; PDF stores file but parsing not implemented.
-- **Parsed scenes:** Preview before creating. Create scenes adds them to the production.
+- **Upload file:** `.txt` and text-layer `.pdf` supported; creates schedule scenes and generates script versions/sections locally.
+- **Parsed scenes:** Preview before creating. Create scenes adds them to the production and runs SB2 section generation.
 - **Parser:** Extracts scene number, heading, int/ext, day/night from standard script format.
+- **Script sections & sides:** See [script-sections-and-sides.md](script-sections-and-sides.md) for the full import → sections → shots → sides data flow.
 
 ### 7. Fundamental workflow
 

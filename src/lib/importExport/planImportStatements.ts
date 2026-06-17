@@ -93,12 +93,48 @@ function sortBudgetAccountsByParent(rows: ApfTableRow[]): ApfTableRow[] {
   return out
 }
 
+function sortBudgetRevisionsByParent(rows: ApfTableRow[]): ApfTableRow[] {
+  type Row = ApfTableRow & { id?: unknown; created_from_revision_id?: unknown }
+  const list = rows as Row[]
+  const ids = new Set(list.map((r) => String(r.id)))
+  const out: Row[] = []
+  const seen = new Set<string>()
+  while (out.length < list.length) {
+    let added = false
+    for (const r of list) {
+      const id = String(r.id)
+      if (seen.has(id)) continue
+      const parent = r.created_from_revision_id != null ? String(r.created_from_revision_id) : null
+      const parentOk = parent == null || !ids.has(parent) || seen.has(parent)
+      if (parentOk) {
+        out.push(r)
+        seen.add(id)
+        added = true
+      }
+    }
+    if (!added) {
+      for (const r of list) {
+        const id = String(r.id)
+        if (!seen.has(id)) {
+          out.push({ ...r, created_from_revision_id: null })
+          seen.add(id)
+        }
+      }
+      break
+    }
+  }
+  return out
+}
+
 function orderRowsForTable(table: ApfV1TableKey, rows: ApfTableRow[]): ApfTableRow[] {
   if (table === 'production_tasks') {
     return sortRowsByParentTaskId(rows)
   }
   if (table === 'budget_accounts') {
     return sortBudgetAccountsByParent(rows)
+  }
+  if (table === 'budget_revisions') {
+    return sortBudgetRevisionsByParent(rows)
   }
   return rows
 }

@@ -44,16 +44,27 @@ export async function listBudgetItemExpenseLinksByProduction(
   return rows.map(rowToLink)
 }
 
-/** Returns all non-deleted links for that line item. */
+/** Returns all non-deleted links for that line item (revision resolved for production). */
 export async function listBudgetItemExpenseLinksForBudgetItem(
   budgetItemId: string,
+  productionId: string,
   revisionId?: string | null
 ): Promise<BudgetItemExpenseLink[]> {
   const db = await getDb()
-  const revisionClause = revisionId ? ' AND budget_revision_id = $2' : ''
+  if (revisionId == null) {
+    const rows = await db.select<Record<string, unknown>[]>(
+      `SELECT * FROM ${TABLE} WHERE budget_item_id = $1 AND production_id = $2 AND deleted_at IS NULL ORDER BY created_at`,
+      [budgetItemId, productionId]
+    )
+    return rows.map(rowToLink)
+  }
+  const budgetRevisionId = await resolveBudgetRevisionId({ productionId, revisionId })
   const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT * FROM ${TABLE} WHERE budget_item_id = $1${revisionClause} AND deleted_at IS NULL ORDER BY created_at`,
-    revisionId ? [budgetItemId, revisionId] : [budgetItemId]
+    `SELECT * FROM ${TABLE}
+     WHERE budget_item_id = $1 AND production_id = $2 AND deleted_at IS NULL
+       AND (budget_revision_id = $3 OR budget_revision_id IS NULL)
+     ORDER BY created_at`,
+    [budgetItemId, productionId, budgetRevisionId]
   )
   return rows.map(rowToLink)
 }

@@ -86,6 +86,8 @@ import { cn } from '@/lib/utils'
 import { formatEquipmentLabel, formatEquipmentCategoryLabel } from '@/features/equipment/formatEquipmentLabel'
 import { generateEquipmentListPdf } from '@/lib/pdf/equipmentListPdf'
 import { saveFileWithDialog } from '@/lib/files'
+import { persistProductionDocument, documentsQueryKey } from '@/lib/documents/persistDocument'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
 import {
   exportEquipmentListToCsv,
   parseEquipmentListCsv,
@@ -1398,14 +1400,26 @@ function EquipmentListDetail({
         shootDayLabel,
       })
       const fileName = `equipment-checklist-${list.name.replace(/[^a-zA-Z0-9-_]/g, '-').slice(0, 40)}-${new Date().toISOString().slice(0, 10)}.pdf`
+      const bytes = new Uint8Array(pdfBytes)
+      await persistProductionDocument({
+        productionId,
+        fileName,
+        bytes,
+        mimeType: 'application/pdf',
+        entityType: DOCUMENT_ENTITY_TYPES.equipmentChecklistPdf,
+        entityId: list.id,
+      })
       await saveFileWithDialog(
         {
           defaultPath: fileName,
           filters: [{ name: 'PDF', extensions: ['pdf'] }],
-          title: 'Save equipment checklist PDF',
+          title: 'Export a copy of equipment checklist PDF',
         },
-        new Uint8Array(pdfBytes)
+        bytes
       )
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: documentsQueryKey(productionId) })
     },
   })
 
@@ -1415,15 +1429,27 @@ function EquipmentListDetail({
       const equipmentById = new Map(equipment.map((e) => [e.id, e]))
       const csv = exportEquipmentListToCsv(items, equipmentById)
       const fileName = `equipment-list-${list.name.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase().slice(0, 40)}-${new Date().toISOString().slice(0, 10)}.csv`
+      await persistProductionDocument({
+        productionId,
+        fileName,
+        bytes: csv,
+        mimeType: 'text/csv',
+        entityType: DOCUMENT_ENTITY_TYPES.equipmentListCsv,
+        entityId: list.id,
+        isText: true,
+      })
       await saveFileWithDialog(
         {
           defaultPath: fileName,
           filters: [{ name: 'CSV', extensions: ['csv'] }],
-          title: 'Save equipment list CSV',
+          title: 'Export a copy of equipment list CSV',
         },
         csv,
         true
       )
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: documentsQueryKey(productionId) })
     },
   })
 

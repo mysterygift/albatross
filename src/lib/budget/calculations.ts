@@ -18,6 +18,45 @@ function codeAsNumber(code: string): number {
   return Number.isNaN(n) ? 0 : n
 }
 
+/** Order accounts by numeric code, then sort_order, then code string (matches chart display). */
+export function compareBudgetAccountsByCode(a: BudgetAccount, b: BudgetAccount): number {
+  return (
+    codeAsNumber(a.code) - codeAsNumber(b.code) ||
+    a.sort_order - b.sort_order ||
+    a.code.localeCompare(b.code)
+  )
+}
+
+function compareCodeStrings(a: string, b: string): number {
+  return codeAsNumber(a) - codeAsNumber(b) || a.localeCompare(b)
+}
+
+/** Sort line items for CSV export: account code order, then description within account. */
+export function sortBudgetItemsForExport(
+  items: BudgetItem[],
+  accounts: BudgetAccount[],
+  categories: Array<{ id: string; code: string }>
+): BudgetItem[] {
+  const accountById = new Map(accounts.map((a) => [a.id, a]))
+  const categoryById = new Map(categories.map((c) => [c.id, c]))
+  return [...items].sort((a, b) => {
+    const accA = a.account_id ? accountById.get(a.account_id) : null
+    const accB = b.account_id ? accountById.get(b.account_id) : null
+    if (accA && accB) {
+      const byAccount = compareBudgetAccountsByCode(accA, accB)
+      if (byAccount !== 0) return byAccount
+    } else if (accA && !accB) return -1
+    else if (!accA && accB) return 1
+    else {
+      const catA = a.category_id ? categoryById.get(a.category_id) : null
+      const catB = b.category_id ? categoryById.get(b.category_id) : null
+      const byCategory = compareCodeStrings(catA?.code ?? '', catB?.code ?? '')
+      if (byCategory !== 0) return byCategory
+    }
+    return a.description.localeCompare(b.description)
+  })
+}
+
 /**
  * Build account tree from flat list. Roots have parent_account_id === null.
  * Siblings ordered by numeric code ascending, then sort_order, then code string for stability.
@@ -30,12 +69,7 @@ export function buildAccountTree(accounts: BudgetAccount[]): AccountTreeNode[] {
     byParent.get(key)!.push(a)
   }
   for (const arr of byParent.values()) {
-    arr.sort(
-      (a, b) =>
-        codeAsNumber(a.code) - codeAsNumber(b.code) ||
-        a.sort_order - b.sort_order ||
-        a.code.localeCompare(b.code)
-    )
+    arr.sort(compareBudgetAccountsByCode)
   }
   function node(parentKey: string | null): AccountTreeNode[] {
     const list = byParent.get(parentKey) ?? []

@@ -1,6 +1,7 @@
 import type { Person, StripboardStrip } from '@/lib/db/types'
 import type { CallSheetStrip } from '@/lib/pdf/callSheet'
 import { resolveSceneIdForStrip } from '@/lib/schedule/episodicScheduleDisplay'
+import { sceneSlugline } from '@/lib/schedule/sceneDisplay'
 
 /** INT/EXT + D/N in a compact call-sheet cell (no fabricated values). */
 export function formatScheduleDnColumn(
@@ -137,7 +138,6 @@ export function stripboardStripSuggestsIfTimePermits(strip: StripboardStripLike)
 type SceneLike = {
   id: string
   scene_number: string
-  heading: string | null
   title: string | null
   description: string | null
   int_ext: string | null
@@ -150,7 +150,6 @@ type ShotLike = {
   id: string
   scene_id: string
   shot_number: string
-  description: string | null
   shot_description: string | null
   notes: string | null
 }
@@ -233,15 +232,14 @@ export function buildCallSheetStripFromStripboard(
 
   const castCompact = compactCastForScheduleRow(castIds, castPeople)
 
-  const shotDescription =
-    shot?.shot_description?.trim() || shot?.description?.trim() || null
+  const shotDescription = shot?.shot_description?.trim() || null
 
   const noteParts =
     st === 'SHOT'
       ? [strip.description, shot?.notes].filter(
           (x): x is string => typeof x === 'string' && x.trim().length > 0,
         )
-      : [strip.description, shot?.notes, shot?.shot_description, shot?.description].filter(
+      : [strip.description, shot?.notes, shot?.shot_description].filter(
           (x): x is string => typeof x === 'string' && x.trim().length > 0,
         )
   const rowNotes = noteParts.length ? noteParts.join(' · ').slice(0, 200) : null
@@ -249,7 +247,7 @@ export function buildCallSheetStripFromStripboard(
   return {
     strip_type: st === 'SHOT' ? 'SHOT' : 'SCENE',
     scene_number: scene.scene_number,
-    scene_heading: scene.heading,
+    scene_heading: scene ? sceneSlugline(scene, locationName) : null,
     scene_title: scene.title,
     scene_description: scene.description,
     int_ext: scene.int_ext,

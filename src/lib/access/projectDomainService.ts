@@ -3,6 +3,7 @@ import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
 import { requireProjectEditAccess, requireProjectViewAccess } from '@/lib/access/projectAccessService'
 import {
   createShootDayWithDefaultMainUnit,
+  addSecondUnitToShootDays,
   createScene,
   createShot,
   deleteShot,
@@ -72,7 +73,7 @@ import {
   listShootDayUnitsByShootDay,
   setShootDayUnitLocked,
 } from '@/lib/db/repositories/shoot-day-units'
-import { ensureMainUnit, listUnitsByProduction } from '@/lib/db/repositories/units'
+import { ensureMainUnit, ensureSecondUnit, listUnitsByProduction } from '@/lib/db/repositories/units'
 import {
   createCrewAvailability,
   deleteCrewAvailability,
@@ -87,6 +88,7 @@ import {
   createStrip,
   deleteShootDayAndDiscardStrips,
   deleteStrip,
+  removeSecondUnitFromShootDay,
   getScheduledSceneIdsByShootDay,
   listBoneyardStrips,
   listStripsByProduction,
@@ -280,12 +282,14 @@ export async function createDocumentForActor(args: {
   fileName: string
   filePath: string
   mimeType?: string | null
+  entityType?: string | null
+  entityId?: string | null
 }) {
   await requireProjectEditAccess(args.db, args.actor, args.productionId)
   return createDocument({
     production_id: args.productionId,
-    entity_type: null,
-    entity_id: null,
+    entity_type: args.entityType ?? null,
+    entity_id: args.entityId ?? null,
     file_name: args.fileName,
     file_path: args.filePath,
     mime_type: args.mimeType ?? null,
@@ -954,6 +958,16 @@ export async function deleteShootDayAndDiscardStripsForActor(args: {
   return deleteShootDayAndDiscardStrips(args.shootDayId)
 }
 
+export async function removeSecondUnitFromShootDayForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  shootDayUnitId: string
+}) {
+  const productionId = await resolveProductionIdForShootDayUnit(args.db, args.shootDayUnitId)
+  await requireProjectEditAccess(args.db, args.actor, productionId)
+  return removeSecondUnitFromShootDay(args.shootDayUnitId)
+}
+
 export async function ensureMainUnitForActor(args: {
   db: DatabaseAdapter
   actor: AuthenticatedUser
@@ -961,6 +975,28 @@ export async function ensureMainUnitForActor(args: {
 }) {
   await requireProjectEditAccess(args.db, args.actor, args.productionId)
   return ensureMainUnit(args.productionId)
+}
+
+export async function ensureSecondUnitForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+}) {
+  await requireProjectEditAccess(args.db, args.actor, args.productionId)
+  return ensureSecondUnit(args.productionId)
+}
+
+export async function addSecondUnitToShootDaysForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  productionId: string
+  shootDayIds: string[]
+}) {
+  await requireProjectEditAccess(args.db, args.actor, args.productionId)
+  return addSecondUnitToShootDays({
+    productionId: args.productionId,
+    shootDayIds: args.shootDayIds,
+  })
 }
 
 export async function getOrCreateShootDayUnitForActor(args: {

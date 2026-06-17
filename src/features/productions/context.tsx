@@ -60,7 +60,7 @@ export function ProductionProvider({ children }: { children: ReactNode }) {
 
   // If current production was archived (or deleted), it won't be in the active list; clear selection to avoid stale state.
   useEffect(() => {
-    if (currentProductionId && productions.length >= 0 && !productions.some((p) => p.id === currentProductionId)) {
+    if (currentProductionId && productions.length > 0 && !productions.some((p) => p.id === currentProductionId)) {
       queueMicrotask(() => setCurrentProductionId(null))
     }
   }, [currentProductionId, productions, setCurrentProductionId])

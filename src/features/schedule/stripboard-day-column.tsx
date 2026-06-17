@@ -12,6 +12,7 @@ import type { ShootDayUnit } from '@/lib/db/types'
 import type { StripboardStrip } from '@/lib/db/types'
 import type { Scene, Shot, Episode, Location } from '@/lib/db/types'
 import type { UpdateStripData } from '@/lib/db/repositories/stripboard-strips'
+import { unitNameToKey } from '@/lib/schedule/unitKey'
 
 export type ColumnFilter = { int: boolean; ext: boolean; day: boolean; night: boolean }
 
@@ -39,6 +40,7 @@ export function StripboardDayColumn({
   shootingBlocLabel,
   episodeById,
   onDeleteShootDay,
+  onRemoveSecondUnit,
 }: {
   day: ShootDay
   units: Unit[]
@@ -66,6 +68,11 @@ export function StripboardDayColumn({
   shootingBlocLabel?: string
   episodeById?: Map<string, Episode>
   onDeleteShootDay?: (day: ShootDay) => void
+  onRemoveSecondUnit?: (args: {
+    shootDay: ShootDay
+    shootDayUnit: ShootDayUnit
+    unit: Unit
+  }) => void
 }) {
   const allStripsOnDay = stripsByUnit.flatMap(({ strips }) => strips)
   const scheduledCallCountOnDay = allStripsOnDay.filter((s) => s.strip_type === 'CALL').length
@@ -139,6 +146,11 @@ export function StripboardDayColumn({
             onColumnFilterChange={onColumnFilterChange ? (key, value) => onColumnFilterChange(columnId(day.id, shootDayUnit.id), key, value) : undefined}
             isEpisodic={isEpisodic}
             episodeById={episodeById}
+            onRemoveSecondUnit={
+              onRemoveSecondUnit && unitNameToKey(unit.name) === 'second'
+                ? () => onRemoveSecondUnit({ shootDay: day, shootDayUnit, unit })
+                : undefined
+            }
           />
           )
         })}
@@ -175,6 +187,7 @@ function UnitColumn({
   onColumnFilterChange,
   isEpisodic,
   episodeById,
+  onRemoveSecondUnit,
 }: {
   day?: ShootDay
   shootDayUnit: ShootDayUnit
@@ -199,6 +212,7 @@ function UnitColumn({
   onColumnFilterChange?: (key: keyof ColumnFilter, value: boolean) => void
   isEpisodic?: boolean
   episodeById?: Map<string, Episode>
+  onRemoveSecondUnit?: () => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: colId })
 
@@ -273,17 +287,38 @@ function UnitColumn({
             {unit.name}
             {isLocked && <Lock className="size-3.5 text-muted-foreground" />}
           </span>
-          {onToggleLock && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0"
-              onClick={() => onToggleLock(shootDayUnit.id, !isLocked)}
-              title={isLocked ? 'Unlock' : 'Lock'}
-            >
-              {isLocked ? <Unlock className="size-3.5" /> : <Lock className="size-3.5" />}
-            </Button>
-          )}
+          <div className="flex items-center gap-0.5 shrink-0">
+            {onRemoveSecondUnit && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      aria-label="Remove Second Unit from this day"
+                      onClick={onRemoveSecondUnit}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Remove Second Unit from this day</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {onToggleLock && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={() => onToggleLock(shootDayUnit.id, !isLocked)}
+                title={isLocked ? 'Unlock' : 'Lock'}
+              >
+                {isLocked ? <Unlock className="size-3.5" /> : <Lock className="size-3.5" />}
+              </Button>
+            )}
+          </div>
           <div className="flex gap-1 flex-wrap justify-end">
             <Badge variant="outline" className="text-[10px]">{shotStrips.length} shots</Badge>
             <Badge variant="outline" className="text-[10px]">{totalEighths}/8 pgs</Badge>

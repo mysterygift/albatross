@@ -12,7 +12,6 @@ import {
   listExpensesByProduction,
   createBudgetItem,
   deleteExpense,
-  updateExpense,
   updateExpenseAccount,
   backfillAccountIdsFromLegacyCategories,
 } from '@/lib/db/repositories/budget'
@@ -41,6 +40,16 @@ import {
   type ContingencyRuleWithScopes,
 } from '@/lib/db/repositories/budgetDerived'
 import {
+  getProductionBudgetFeatures,
+  listTaxCreditSchemes,
+  listAllocationsByProduction,
+} from '@/lib/db/repositories/taxCredits'
+import { listVatReclaimRates } from '@/lib/db/repositories/vatReclaim'
+import {
+  countUntypedBudgetClassifications,
+  migrateUntypedToAllow,
+} from '@/lib/db/migrations/migrateUntypedToAllow'
+import {
   buildAccountTree,
   computeAccountTotals,
   uncodedSpendTotal,
@@ -49,8 +58,13 @@ import {
   computeFringeTotals,
   computeContingencyTotals,
   getDescendantLeafIds,
+  sortBudgetItemsForExport,
   type AccountTreeNode,
 } from '@/lib/budget/calculations'
+import { computeTaxCreditTotals, computeVatTotals, type TaxCreditTotalsResult } from '@/lib/budget/taxCredits'
+import { computeVatReclaimTotals, type VatReclaimTotalsResult } from '@/lib/budget/vatReclaim'
+import { TaxCreditSummaryBlock } from '@/features/budget/TaxCreditSummaryBlock'
+import { VatReclaimSummaryBlock } from '@/features/budget/VatReclaimSummaryBlock'
 import {
   listCostReportGroupsWithAccountIds,
   type CostReportGroupWithAccountIds,
@@ -74,6 +88,10 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { PercentageInput } from '@/components/budget/PercentageInput'
+import { hasMaxTwoDecimalPlaces, NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -89,6 +107,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, SlidersHorizontal, Eye, Receipt } from 'lucide-react'
 import { saveFileWithDialog } from '@/lib/files'
+import { persistProductionDocument, documentsQueryKey } from '@/lib/documents/persistDocument'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
 import { getAccountBandColor } from '@/lib/budget/accountBandColor'
 import type { BudgetItem, BudgetAccount } from '@/lib/db/types'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -103,6 +123,8 @@ import { ExpenseDetailPanel } from '@/features/budget/ExpenseDetailPanel'
 import { LineItemDetailPanel } from '@/features/budget/LineItemDetailPanel'
 import { FloatsTab } from '@/features/budget/FloatsTab'
 import { LogSpendPanel } from '@/features/budget/LogSpendPanel'
+import { DeleteLineItemDialog } from '@/features/budget/DeleteLineItemDialog'
+import { deleteBudgetLineItemWithRelinks } from '@/lib/db/repositories/budgetLineItemDeletion'
 import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
 import { getBudgetItemWithDetails } from '@/lib/db/repositories/budgetItemDetails'
 import { getLineItemTypeConfig } from '@/lib/budget/line-items/registry'
@@ -187,20 +209,36 @@ function initialBudgetViewModeFromLocation(): BudgetViewMode {
 const itemSchema = z.object({
   account_id: z.string().min(1, 'Select an account'),
   description: z.string().min(1),
-  estimated_cost: z.coerce.number().min(0),
-  actual_cost: z.coerce.number().min(0),
+  estimated_cost: z
+    .number()
+    .finite(NON_NEGATIVE_MONEY_MESSAGE)
+    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
+    .refine(hasMaxTwoDecimalPlaces, { message: 'Estimated cost must have at most 2 decimal places' }),
+  actual_cost: z
+    .number()
+    .finite(NON_NEGATIVE_MONEY_MESSAGE)
+    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
+    .refine(hasMaxTwoDecimalPlaces, { message: 'Actual cost must have at most 2 decimal places' }),
   vendor: z.string().optional(),
 })
 
 const inlineItemSchema = z.object({
   description: z.string().min(1),
-  estimated_cost: z.coerce.number().min(0),
+  estimated_cost: z
+    .number()
+    .finite(NON_NEGATIVE_MONEY_MESSAGE)
+    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
+    .refine(hasMaxTwoDecimalPlaces, { message: 'Estimated cost must have at most 2 decimal places' }),
 })
 
 /** Rate as percentage 0–100; stored as decimal 0–1 in DB. */
 const derivedRuleSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  ratePercent: z.coerce.number().min(0.01, 'Rate must be greater than 0').max(100, 'Rate must be at most 100%'),
+  ratePercent: z
+    .number()
+    .finite('Rate must be a number')
+    .min(0.01, 'Rate must be greater than 0')
+    .max(100, 'Rate must be at most 100%'),
   scope_account_ids: z.array(z.string()).min(1, 'Select at least one account'),
 })
 
@@ -231,6 +269,7 @@ export function BudgetPage() {
   const [examinedExpenseId, setExaminedExpenseId] = useState<string | null>(null)
   const [examinedAccountId, setExaminedAccountId] = useState<string | null>(null)
   const [examinedLineItemId, setExaminedLineItemId] = useState<string | null>(null)
+  const [lineItemToDelete, setLineItemToDelete] = useState<BudgetItem | null>(null)
   const [examineAccountFilter, setExamineAccountFilter] = useState<ClassificationFilter>('all')
   const [viewMode, setViewMode] = useState<BudgetViewMode>(initialBudgetViewModeFromLocation)
   const [costReportExpandedLeafId, setCostReportExpandedLeafId] = useState<string | null>(null)
@@ -245,6 +284,8 @@ export function BudgetPage() {
   const [createRevisionSourceError, setCreateRevisionSourceError] = useState<string | null>(null)
   const [createRevisionSubmitError, setCreateRevisionSubmitError] = useState<string | null>(null)
   const [liveConfirmOpen, setLiveConfirmOpen] = useState(false)
+  const [untypedMigrationOpen, setUntypedMigrationOpen] = useState(false)
+  const [untypedMigrationDismissed, setUntypedMigrationDismissed] = useState(false)
   const [pendingLiveRevisionId, setPendingLiveRevisionId] = useState<string | null>(null)
   const [liveToggleError, setLiveToggleError] = useState<string | null>(null)
   const [manageRevisionsOpen, setManageRevisionsOpen] = useState(false)
@@ -615,6 +656,10 @@ export function BudgetPage() {
   }, [currentProduction?.currency_code, ensureRate])
 
   useEffect(() => {
+    setUntypedMigrationDismissed(false)
+  }, [currentProductionId])
+
+  useEffect(() => {
     if (!currentProductionId || backfillRanForProduction.current.has(currentProductionId)) return
     backfillRanForProduction.current.add(currentProductionId)
     backfillAccountIdsFromLegacyCategories(currentProductionId).then(() => {
@@ -624,6 +669,46 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['risk-watch', currentProductionId] })
     })
   }, [currentProductionId, queryClient])
+
+  const { data: untypedClassificationCounts } = useQuery({
+    queryKey: ['untyped-budget-classifications', currentProductionId],
+    queryFn: () => countUntypedBudgetClassifications(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
+  useEffect(() => {
+    if (viewMode !== 'budget') return
+    if (!untypedClassificationCounts || untypedMigrationDismissed) return
+    const total =
+      untypedClassificationCounts.untypedExpenses + untypedClassificationCounts.untypedLineItems
+    if (total > 0) {
+      setUntypedMigrationOpen(true)
+    }
+  }, [viewMode, untypedClassificationCounts, untypedMigrationDismissed])
+
+  useEffect(() => {
+    if (viewMode !== 'budget' && untypedMigrationOpen) {
+      setUntypedMigrationOpen(false)
+    }
+  }, [viewMode, untypedMigrationOpen])
+
+  const migrateUntypedMutation = useMutation({
+    mutationFn: () => migrateUntypedToAllow(currentProductionId!),
+    onSuccess: async () => {
+      if (!currentProductionId) return
+      setUntypedMigrationOpen(false)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['untyped-budget-classifications', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['allow-expense-details', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['risk-watch', currentProductionId] }),
+        queryClient.invalidateQueries({ queryKey: ['expense-with-details'] }),
+        queryClient.invalidateQueries({ queryKey: ['budget-item-with-details'] }),
+      ])
+    },
+  })
 
   const { data: categories = [] } = useQuery({
     queryKey: ['budget-categories', currentProductionId],
@@ -819,6 +904,30 @@ export function BudgetPage() {
     enabled: revisionScopedQueriesReady,
   })
 
+  const { data: budgetFeatures } = useQuery({
+    queryKey: ['production-budget-features', currentProductionId],
+    queryFn: () => getProductionBudgetFeatures(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: taxCreditSchemes = [] } = useQuery({
+    queryKey: ['tax-credit-schemes', currentProductionId],
+    queryFn: () => listTaxCreditSchemes(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: taxCreditAllocations = [] } = useQuery({
+    queryKey: ['expense-tax-allocations-production', currentProductionId],
+    queryFn: () => listAllocationsByProduction(currentProductionId ?? ''),
+    enabled: !!currentProductionId,
+  })
+
+  const { data: vatReclaimRates = [] } = useQuery({
+    queryKey: ['vat-reclaim-rates', currentProductionId],
+    queryFn: () => listVatReclaimRates(currentProductionId ?? ''),
+    enabled: !!currentProductionId && budgetFeatures?.vat_tracking_enabled === true,
+  })
+
   const createItemMutation = useMutation({
     mutationFn: (data: z.infer<typeof itemSchema>) =>
       createBudgetItem({
@@ -892,26 +1001,12 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, revisionId] })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
       queryClient.invalidateQueries({ queryKey: ['locations', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['expense-tax-allocations-production', currentProductionId] })
+      if (examinedExpenseId) {
+        queryClient.invalidateQueries({ queryKey: ['expense-tax-allocations', examinedExpenseId] })
+      }
     }
   }, [examinedExpenseId, currentProductionId, queryClient, revisionId])
-
-  const handleUpdateExpenseRequest = useCallback(
-    async (data: {
-      expenseId: string
-      amount: number
-      date: string
-      vendor: string | null
-      notes: string | null
-    }) => {
-      await updateExpense(data.expenseId, {
-        amount: data.amount,
-        date: data.date,
-        vendor: data.vendor,
-        notes: data.notes,
-      })
-    },
-    []
-  )
 
   const deleteExpenseMutation = useMutation({
     mutationFn: (expenseId: string) => deleteExpense(expenseId),
@@ -924,6 +1019,38 @@ export function BudgetPage() {
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense', expenseId, revisionId] })
         queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item'] })
         queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
+      }
+    },
+  })
+
+  const deleteLineItemMutation = useMutation({
+    mutationFn: (args: {
+      budgetItemId: string
+      expenseRelinks: { linkId: string; targetBudgetItemId: string }[]
+      expenseAccountRelinks: { expenseId: string; targetBudgetItemId: string }[]
+      floatRelinks: { floatId: string; targetBudgetItemId: string }[]
+    }) =>
+      deleteBudgetLineItemWithRelinks({
+        productionId: currentProductionId!,
+        revisionId: stableRevisionId,
+        ...args,
+      }),
+    onSuccess: (_, variables) => {
+      setLineItemToDelete(null)
+      if (examinedLineItemId === variables.budgetItemId) {
+        setExaminedLineItemId(null)
+      }
+      if (currentProductionId) {
+        queryClient.invalidateQueries({ queryKey: ['budget-items', currentProductionId, stableRevisionId] })
+        queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId, stableRevisionId] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-item'] })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-with-details', variables.budgetItemId] })
+        queryClient.invalidateQueries({ queryKey: ['floats', currentProductionId, stableRevisionId] })
+        queryClient.invalidateQueries({ queryKey: ['floats-by-budget-item'] })
+        queryClient.invalidateQueries({ queryKey: ['float-expense-links-by-production', currentProductionId, stableRevisionId] })
+        queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, stableRevisionId ?? undefined) })
+        queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links-for-expense'] })
       }
     },
   })
@@ -979,6 +1106,30 @@ export function BudgetPage() {
   const totalEstimated = items.reduce((s, i) => s + i.estimated_cost, 0)
   const totalActual = expenses.reduce((s, e) => s + e.amount, 0)
   const variance = totalEstimated - totalActual
+  const totalDerived =
+    fringeTotals.totalFringesAmount + contingencyTotals.totalContingencyAmount
+
+  const taxCreditsEnabled = budgetFeatures?.tax_credits_enabled === true
+  const vatTrackingEnabled = budgetFeatures?.vat_tracking_enabled === true
+
+  const taxCreditTotals = useMemo(
+    () =>
+      computeTaxCreditTotals({
+        schemes: taxCreditSchemes,
+        allocations: taxCreditAllocations,
+        expenses,
+        totalActual,
+        totalDerived,
+      }),
+    [taxCreditSchemes, taxCreditAllocations, expenses, totalActual, totalDerived]
+  )
+
+  const vatTotals = useMemo(() => computeVatTotals(expenses), [expenses])
+
+  const vatReclaimTotals = useMemo(
+    () => computeVatReclaimTotals(expenses, vatReclaimRates),
+    [expenses, vatReclaimRates]
+  )
 
   // Production totals: rollups from accountTotals only (reporting); only header accounts.
   const productionTotalAmounts = useMemo(() => {
@@ -1086,6 +1237,8 @@ export function BudgetPage() {
         floats: baseCompareFloats,
         floatExpenseLinks: baseCompareFloatLinks,
         people,
+        taxCreditSchemes,
+        taxCreditAllocations,
       }),
     [
       accounts,
@@ -1096,6 +1249,8 @@ export function BudgetPage() {
       baseCompareItems,
       expenses,
       people,
+      taxCreditSchemes,
+      taxCreditAllocations,
     ]
   )
 
@@ -1110,6 +1265,8 @@ export function BudgetPage() {
         floats: targetCompareFloats,
         floatExpenseLinks: targetCompareFloatLinks,
         people,
+        taxCreditSchemes,
+        taxCreditAllocations,
       }),
     [
       accounts,
@@ -1120,6 +1277,8 @@ export function BudgetPage() {
       targetCompareFloats,
       targetCompareFringeRules,
       targetCompareItems,
+      taxCreditSchemes,
+      taxCreditAllocations,
     ]
   )
 
@@ -1137,9 +1296,10 @@ export function BudgetPage() {
   // Total actual = sum(expenses.amount) only; do not use budget_items.actual_cost.
   // Derived totals (fringes, contingency) are budget-side overlays and are not included in Total actual.
   const exportCsv = useCallback(async () => {
+    const sortedItems = sortBudgetItemsForExport(items, accounts, categories)
     const rows: (string | number)[][] = [
       ['Account / Category', 'Description', 'Estimated', 'Actual', 'Variance'],
-      ...items.map((i) => {
+      ...sortedItems.map((i) => {
         const account = i.account_id ? accounts.find((a) => a.id === i.account_id) : null
         const cat = !account && i.category_id ? categories.find((c) => c.id === i.category_id) : null
         const label = account ? `${account.code} — ${account.name}` : (cat?.code ?? '—')
@@ -1165,12 +1325,43 @@ export function BudgetPage() {
           totalActual,
       ])
     }
+    if (taxCreditsEnabled && taxCreditTotals.totalTaxCredits > 0) {
+      for (const s of taxCreditTotals.perScheme) {
+        if (s.qualifyingSpend > 0 || s.creditAmount > 0) {
+          rows.push(['', `${s.schemeName} qualifying`, s.qualifyingSpend, '', ''])
+          rows.push(['', `${s.schemeName} credit`, s.creditAmount, '', ''])
+        }
+      }
+      rows.push(['', 'TOTAL TAX CREDITS', taxCreditTotals.totalTaxCredits, '', ''])
+      rows.push(['', 'NET COST AFTER CREDITS', '', taxCreditTotals.netCostAfterCredits, ''])
+    }
+    if (vatTrackingEnabled && vatTotals.totalVat > 0) {
+      rows.push(['', 'TOTAL VAT PAID (informational)', vatTotals.totalVat, '', ''])
+    }
+    if (vatTrackingEnabled && vatReclaimTotals.totalVatReclaimable > 0) {
+      rows.push(['', 'TOTAL VAT RECLAIMABLE', vatReclaimTotals.totalVatReclaimable, '', ''])
+      rows.push(['', 'TOTAL VAT RECLAIMED', vatReclaimTotals.totalVatReclaimed, '', ''])
+      rows.push(['', 'VAT RECLAIM OUTSTANDING', vatReclaimTotals.totalVatOutstanding, '', ''])
+    }
     const csv = rows.map((r) => r.join(',')).join('\n')
+    const fileName = `budget-report-${new Date().toISOString().slice(0, 10)}.csv`
+    if (currentProductionId) {
+      await persistProductionDocument({
+        productionId: currentProductionId,
+        fileName,
+        bytes: csv,
+        mimeType: 'text/csv',
+        entityType: DOCUMENT_ENTITY_TYPES.budgetCsv,
+        entityId: stableRevisionId ?? null,
+        isText: true,
+      })
+      void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+    }
     await saveFileWithDialog(
       {
-        defaultPath: 'budget-report.csv',
+        defaultPath: fileName,
         filters: [{ name: 'CSV', extensions: ['csv'] }],
-        title: 'Save budget report',
+        title: 'Export a copy of budget report',
       },
       csv,
       true
@@ -1185,6 +1376,14 @@ export function BudgetPage() {
     variance,
     fringeTotals.totalFringesAmount,
     contingencyTotals.totalContingencyAmount,
+    taxCreditsEnabled,
+    taxCreditTotals,
+    vatTrackingEnabled,
+    vatTotals.totalVat,
+    vatReclaimTotals,
+    currentProductionId,
+    stableRevisionId,
+    queryClient,
   ])
 
   useEffect(() => {
@@ -1330,8 +1529,25 @@ export function BudgetPage() {
             <Download className="mr-2 size-4" />
             Export CSV
           </Button>
+          <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="no-print">
+                <Plus className="mr-2 size-4" />
+                Add line item
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              {addItemOpen && (
+              <BudgetItemForm
+                accounts={postableAccounts}
+                onSubmit={createItemMutation.mutate}
+                onCancel={() => setAddItemOpen(false)}
+                isLoading={createItemMutation.isPending}
+              />
+              )}
+            </DialogContent>
+          </Dialog>
           <Button
-            variant="outline"
             className="no-print"
             onClick={() => setLogSpendOpen(true)}
           >
@@ -1349,24 +1565,6 @@ export function BudgetPage() {
             people={people}
             locations={locations}
           />
-          <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
-            <DialogTrigger asChild>
-              <Button className="no-print">
-                <Plus className="mr-2 size-4" />
-                Add line item
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              {addItemOpen && (
-              <BudgetItemForm
-                accounts={postableAccounts}
-                onSubmit={createItemMutation.mutate}
-                onCancel={() => setAddItemOpen(false)}
-                isLoading={createItemMutation.isPending}
-              />
-              )}
-            </DialogContent>
-          </Dialog>
           </div>
         </div>
       </div>
@@ -1489,6 +1687,71 @@ export function BudgetPage() {
             </Button>
           </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={untypedMigrationOpen}
+        onOpenChange={(open) => {
+          setUntypedMigrationOpen(open)
+          if (!open && !migrateUntypedMutation.isPending) {
+            setUntypedMigrationDismissed(true)
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Update budget classifications</DialogTitle>
+            <DialogDescription>
+              This project has spend and line items using a legacy untyped classification. Albatross now
+              uses <span className="font-medium">Allow</span> as the default type for general budget entries.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            {untypedClassificationCounts && (
+              <p>
+                Found{' '}
+                <span className="font-medium">{untypedClassificationCounts.untypedExpenses}</span>{' '}
+                expense{untypedClassificationCounts.untypedExpenses === 1 ? '' : 's'} and{' '}
+                <span className="font-medium">{untypedClassificationCounts.untypedLineItems}</span>{' '}
+                line item{untypedClassificationCounts.untypedLineItems === 1 ? '' : 's'} to convert.
+              </p>
+            )}
+            {budgetFeatures?.vat_tracking_enabled && (
+              <p className="text-muted-foreground">
+                Migrated expenses will use the <span className="font-medium">Allow</span> VAT reclaim rate
+                (typically 0%) instead of the previous untyped rate (typically 100%). You can adjust the
+                Allow reclaim rate in Settings before or after converting.
+              </p>
+            )}
+            {migrateUntypedMutation.isError && (
+              <p className="text-destructive">
+                {migrateUntypedMutation.error instanceof Error
+                  ? migrateUntypedMutation.error.message
+                  : 'Migration failed'}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setUntypedMigrationOpen(false)
+                setUntypedMigrationDismissed(true)
+              }}
+              disabled={migrateUntypedMutation.isPending}
+            >
+              Not now
+            </Button>
+            <Button
+              type="button"
+              onClick={() => migrateUntypedMutation.mutate()}
+              disabled={migrateUntypedMutation.isPending}
+            >
+              {migrateUntypedMutation.isPending ? 'Converting…' : 'Convert to Allow'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1731,6 +1994,13 @@ export function BudgetPage() {
       ) : viewMode === 'cost_report' ? (
         <>
           <CostReportView
+            productionId={currentProductionId ?? ''}
+            revisionId={stableRevisionId ?? null}
+            onDocumentPersisted={() => {
+              if (currentProductionId) {
+                void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+              }
+            }}
             productionName={currentProduction?.name ?? ''}
             openAllowCount={openAllowCountGlobal}
             accountTree={accountTree}
@@ -1744,6 +2014,12 @@ export function BudgetPage() {
             uncodedTotal={uncodedTotal}
             fringeTotals={fringeTotals}
             contingencyTotals={contingencyTotals}
+            taxCreditsEnabled={taxCreditsEnabled}
+            taxCreditTotals={taxCreditTotals}
+            vatTrackingEnabled={vatTrackingEnabled}
+            totalVat={vatTotals.totalVat}
+            vatReclaimTotals={vatReclaimTotals}
+            totalDerived={totalDerived}
             productionTotalAmounts={productionTotalAmounts}
             productionSubtotalBeforeDerived={productionSubtotalBeforeDerived}
             layoutMode={costReportLayoutMode}
@@ -1826,6 +2102,26 @@ export function BudgetPage() {
             </div>
           )}
 
+          {taxCreditsEnabled && (
+            <TaxCreditSummaryBlock
+              taxCreditTotals={taxCreditTotals}
+              totalDerived={totalDerived}
+              totalActual={totalActual}
+              format={format}
+              productionCurrency={productionCurrency}
+              showVat={vatTrackingEnabled}
+              totalVat={vatTotals.totalVat}
+            />
+          )}
+
+          {vatTrackingEnabled && (
+            <VatReclaimSummaryBlock
+              vatReclaimTotals={vatReclaimTotals}
+              format={format}
+              productionCurrency={productionCurrency}
+            />
+          )}
+
           {recodeToast && (
             <p className="text-muted-foreground rounded-md border border-border bg-muted/50 px-3 py-2 text-sm">
               {recodeToast}
@@ -1842,7 +2138,7 @@ export function BudgetPage() {
                   <TableHead className="text-right">Actual</TableHead>
                   <TableHead className="text-right">Variance</TableHead>
                   <TableHead className="text-right w-[70px]">% Spent</TableHead>
-                  <TableHead className="w-[120px]">Actions</TableHead>
+                  <TableHead className="w-[160px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1866,6 +2162,10 @@ export function BudgetPage() {
                       setExaminedExpenseId(null)
                       setExaminedAccountId(null)
                       setExaminedLineItemId(lineItemId)
+                    },
+                    onDeleteLineItem: (lineItemId) => {
+                      const item = items.find((i) => i.id === lineItemId) ?? null
+                      setLineItemToDelete(item)
                     },
                   })
                 )}
@@ -2022,7 +2322,7 @@ export function BudgetPage() {
           }
         }}
       >
-        <SheetContent side="right" className="w-[520px] sm:max-w-[520px]">
+        <SheetContent side="right" variant="floating" className="w-[520px] sm:max-w-[520px] flex flex-col">
           {examinedExpenseId != null ? (
             (() => {
               const expense = examinedExpenseWithDetails?.expense
@@ -2036,7 +2336,7 @@ export function BudgetPage() {
                   ? {
                       count: relatedLineItems.length,
                       totalEstimated: sumEstimatedForLineItems(relatedLineItems),
-                      typeLabel: getLineItemTypeConfig(expense.transaction_type)?.label ?? 'Untyped',
+                      typeLabel: getLineItemTypeConfig(expense.transaction_type)?.label ?? 'Allow',
                     }
                   : undefined
               return (
@@ -2051,7 +2351,6 @@ export function BudgetPage() {
                   locations={locations}
                   onSaved={handleExpenseSaved}
                   onSaveRequest={handleExpenseSaveRequest}
-                  onUpdateExpenseRequest={handleUpdateExpenseRequest}
                   relatedLineItemsInAccount={relatedLineItemsInAccount}
                   onDeleteRequest={async (expenseId) => {
                     await deleteExpenseMutation.mutateAsync(expenseId)
@@ -2077,7 +2376,7 @@ export function BudgetPage() {
                   ? {
                       count: relatedExpenses.length,
                       totalActual: sumActualForExpenses(relatedExpenses),
-                      typeLabel: getLineItemTypeConfig(lineItem.line_item_type)?.label ?? 'Untyped',
+                      typeLabel: getLineItemTypeConfig(lineItem.line_item_type)?.label ?? 'Allow',
                     }
                   : undefined
               return (
@@ -2160,14 +2459,13 @@ export function BudgetPage() {
                 { value: 'rental', label: 'Rental' },
                 { value: 'allow', label: 'Allow' },
                 { value: 'deposit', label: 'Deposit' },
-                { value: 'untyped', label: 'Untyped' },
               ]
               return (
                 <>
                   <SheetHeader className="border-b border-border">
                     <SheetTitle>Examine account</SheetTitle>
                   </SheetHeader>
-                  <div className="p-4 space-y-4 overflow-auto">
+                  <div className="flex-1 overflow-y-auto space-y-4 px-7 py-4">
                     <div className="space-y-1">
                       <p className="text-sm font-medium">{account ? `${account.code} — ${account.name}` : 'Account'}</p>
                       {totals && (
@@ -2301,6 +2599,27 @@ export function BudgetPage() {
           ) : null}
         </SheetContent>
       </Sheet>
+
+      <DeleteLineItemDialog
+        open={lineItemToDelete != null}
+        onOpenChange={(open) => {
+          if (!open && !deleteLineItemMutation.isPending) setLineItemToDelete(null)
+        }}
+        lineItem={lineItemToDelete}
+        items={items}
+        accounts={accounts}
+        expenses={expenses}
+        people={people}
+        productionId={currentProductionId ?? ''}
+        revisionId={stableRevisionId}
+        productionCurrency={productionCurrency}
+        format={format}
+        onConfirm={async (args) => {
+          await deleteLineItemMutation.mutateAsync(args)
+        }}
+        isPending={deleteLineItemMutation.isPending}
+        error={deleteLineItemMutation.error instanceof Error ? deleteLineItemMutation.error.message : null}
+      />
 
       <SectionTutorialPanel
         open={tutorialOpen}
@@ -2744,6 +3063,9 @@ export function triggerCostReportPrint(): void {
 }
 
 function CostReportView({
+  productionId,
+  revisionId,
+  onDocumentPersisted,
   productionName,
   openAllowCount,
   accountTree,
@@ -2757,6 +3079,12 @@ function CostReportView({
   uncodedTotal,
   fringeTotals,
   contingencyTotals,
+  taxCreditsEnabled = false,
+  taxCreditTotals,
+  vatTrackingEnabled = false,
+  totalVat = 0,
+  vatReclaimTotals,
+  totalDerived: totalDerivedProp,
   productionTotalAmounts,
   productionSubtotalBeforeDerived,
   layoutMode,
@@ -2768,6 +3096,9 @@ function CostReportView({
   onToggleLeafDetail,
   configureButton,
 }: {
+  productionId: string
+  revisionId: string | null
+  onDocumentPersisted?: () => void
   productionName: string
   openAllowCount: number
   accountTree: AccountTreeNode[]
@@ -2781,6 +3112,12 @@ function CostReportView({
   uncodedTotal: number
   fringeTotals: { totalFringesAmount: number }
   contingencyTotals: { totalContingencyAmount: number }
+  taxCreditsEnabled?: boolean
+  taxCreditTotals?: TaxCreditTotalsResult
+  vatTrackingEnabled?: boolean
+  totalVat?: number
+  vatReclaimTotals?: VatReclaimTotalsResult
+  totalDerived?: number
   productionTotalAmounts: ProductionTotalAmount[]
   productionSubtotalBeforeDerived: { budget: number; actual: number; variance: number }
   layoutMode: CostReportLayoutMode
@@ -2792,7 +3129,9 @@ function CostReportView({
   onToggleLeafDetail: (id: string | null) => void
   configureButton?: ReactNode
 }) {
-  const totalDerived = fringeTotals.totalFringesAmount + contingencyTotals.totalContingencyAmount
+  const totalDerived =
+    totalDerivedProp ??
+    fringeTotals.totalFringesAmount + contingencyTotals.totalContingencyAmount
   const estimatedPlusDerived = totalEstimated + totalDerived
   const hasDerived = totalDerived > 0
 
@@ -2861,20 +3200,33 @@ function CostReportView({
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
       }
       const arraybuffer = await html2pdf().set(opt).from(el).toPdf().output('arraybuffer')
+      const pdfBytes = new Uint8Array(arraybuffer as ArrayBuffer)
+      const fileName = `cost-report-${generatedDate}.pdf`
+      if (productionId) {
+        await persistProductionDocument({
+          productionId,
+          fileName,
+          bytes: pdfBytes,
+          mimeType: 'application/pdf',
+          entityType: DOCUMENT_ENTITY_TYPES.costReportPdf,
+          entityId: revisionId,
+        })
+        onDocumentPersisted?.()
+      }
       await saveFileWithDialog(
         {
-          defaultPath: `cost-report-${generatedDate}.pdf`,
+          defaultPath: fileName,
           filters: [{ name: 'PDF', extensions: ['pdf'] }],
-          title: 'Save Cost Report as PDF',
+          title: 'Export a copy of cost report',
         },
-        new Uint8Array(arraybuffer as ArrayBuffer)
+        pdfBytes
       )
     } finally {
       clearHexStyles(el)
       el.classList.remove('cost-report-exporting-pdf')
       setIsSavingPdf(false)
     }
-  }, [generatedDate])
+  }, [generatedDate, productionId, revisionId, onDocumentPersisted])
 
   return (
     <div ref={reportRef} className="cost-report-print space-y-6">
@@ -3099,11 +3451,46 @@ function CostReportView({
           </div>
         )}
 
+        {taxCreditsEnabled && taxCreditTotals && (
+          <div className="report-section">
+            <TaxCreditSummaryBlock
+              taxCreditTotals={taxCreditTotals}
+              totalDerived={totalDerived}
+              totalActual={totalActual}
+              format={format}
+              productionCurrency={productionCurrency}
+              showVat={vatTrackingEnabled}
+              totalVat={totalVat}
+              variant="detailed"
+            />
+          </div>
+        )}
+
+        {vatTrackingEnabled && vatReclaimTotals && (
+          <div className="report-section">
+            <VatReclaimSummaryBlock
+              vatReclaimTotals={vatReclaimTotals}
+              format={format}
+              productionCurrency={productionCurrency}
+            />
+          </div>
+        )}
+
         {/* Final: Total budget incl. derived, Total actual (expenses-only), Variance */}
         <div className="report-section final-totals rounded-lg border border-border p-4 space-y-1">
           <p className="report-section-header text-xs font-medium uppercase tracking-wider text-muted-foreground">Total budget incl. derived</p>
           <p className="text-xl font-semibold">{format(estimatedPlusDerived, productionCurrency).formatted}</p>
           <p className="text-muted-foreground text-sm">Total actual (expenses only): {format(totalActual, productionCurrency).formatted}</p>
+          {taxCreditsEnabled && taxCreditTotals && taxCreditTotals.totalTaxCredits > 0 && (
+            <p className="text-muted-foreground text-sm">
+              Net cost after tax credits: {format(taxCreditTotals.netCostAfterCredits, productionCurrency).formatted}
+            </p>
+          )}
+          {vatTrackingEnabled && totalVat > 0 && (
+            <p className="text-muted-foreground text-sm">
+              Total VAT (informational): {format(totalVat, productionCurrency).formatted}
+            </p>
+          )}
           <p className={`text-sm font-medium ${variance < 0 ? 'text-destructive' : ''}`}>
             Variance vs estimated: {format(variance, productionCurrency).formatted}
           </p>
@@ -3441,6 +3828,7 @@ function renderAccountRow(
     postableAccounts: BudgetAccount[]
     onExamineAccount: (accountId: string) => void
     onExamineLineItem: (lineItemId: string) => void
+    onDeleteLineItem: (lineItemId: string) => void
   }
 ): ReactNode {
   const { account } = node
@@ -3531,7 +3919,7 @@ function renderAccountRow(
             </TableCell>
             <TableCell className="text-right">{ctx.format(item.estimated_cost, ctx.productionCurrency).formatted}</TableCell>
             <TableCell colSpan={3} />
-            <TableCell className="w-[120px]">
+            <TableCell className="w-[160px]">
               <div className="flex items-center gap-0.5">
                 <Button
                   type="button"
@@ -3542,6 +3930,19 @@ function renderAccountRow(
                   aria-label="Examine line item"
                 >
                   <Eye className="size-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    ctx.onDeleteLineItem(item.id)
+                  }}
+                  aria-label="Delete line item"
+                >
+                  <Trash2 className="size-4" />
                 </Button>
               </div>
             </TableCell>
@@ -3596,13 +3997,25 @@ function InlineAddItemForm({
             <p className="text-destructive text-sm">{form.formState.errors.description.message}</p>
           )}
         </div>
-        <div>
-          <Label>Estimated cost</Label>
-          <Input type="number" step={0.01} {...form.register('estimated_cost')} />
-          {form.formState.errors.estimated_cost && (
-            <p className="text-destructive text-sm">{form.formState.errors.estimated_cost.message}</p>
-          )}
-        </div>
+        <ValidatedField
+          label="Estimated cost"
+          error={form.formState.errors.estimated_cost?.message}
+          htmlFor="inline-estimated-cost"
+        >
+          <Controller
+            name="estimated_cost"
+            control={form.control}
+            render={({ field }) => (
+              <MoneyAmountInput
+                id="inline-estimated-cost"
+                mode="nonNegative"
+                value={field.value}
+                onValueChange={(v) => field.onChange(v ?? 0)}
+                onBlur={field.onBlur}
+              />
+            )}
+          />
+        </ValidatedField>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
@@ -3682,14 +4095,44 @@ function BudgetItemForm({
           )}
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label>Estimated cost</Label>
-            <Input type="number" step={0.01} {...form.register('estimated_cost')} />
-          </div>
-          <div>
-            <Label>Actual cost</Label>
-            <Input type="number" step={0.01} {...form.register('actual_cost')} />
-          </div>
+          <ValidatedField
+            label="Estimated cost"
+            error={form.formState.errors.estimated_cost?.message}
+            htmlFor="item-estimated-cost"
+          >
+            <Controller
+              name="estimated_cost"
+              control={form.control}
+              render={({ field }) => (
+                <MoneyAmountInput
+                  id="item-estimated-cost"
+                  mode="nonNegative"
+                  value={field.value}
+                  onValueChange={(v) => field.onChange(v ?? 0)}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
+          </ValidatedField>
+          <ValidatedField
+            label="Actual cost"
+            error={form.formState.errors.actual_cost?.message}
+            htmlFor="item-actual-cost"
+          >
+            <Controller
+              name="actual_cost"
+              control={form.control}
+              render={({ field }) => (
+                <MoneyAmountInput
+                  id="item-actual-cost"
+                  mode="nonNegative"
+                  value={field.value}
+                  onValueChange={(v) => field.onChange(v ?? 0)}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
+          </ValidatedField>
         </div>
         <div>
           <Label>Vendor</Label>
@@ -4048,21 +4491,26 @@ function DerivedRuleForm({
           <p className="text-destructive text-sm">{form.formState.errors.name.message}</p>
         )}
       </div>
-      <div>
-        <Label>Rate (%)</Label>
-        <Input
-          type="number"
-          step={0.01}
-          min={0}
-          max={1000}
-          {...form.register('ratePercent')}
-          placeholder="18"
+      <ValidatedField
+        label="Rate (%)"
+        error={form.formState.errors.ratePercent?.message}
+        description="Enter percentage (e.g. 18 for 18%)."
+        htmlFor="derived-rate-percent"
+      >
+        <Controller
+          name="ratePercent"
+          control={form.control}
+          render={({ field }) => (
+            <PercentageInput
+              id="derived-rate-percent"
+              placeholder="18"
+              value={field.value}
+              onValueChange={(v) => field.onChange(v ?? 0)}
+              onBlur={field.onBlur}
+            />
+          )}
         />
-        {form.formState.errors.ratePercent && (
-          <p className="text-destructive text-sm">{form.formState.errors.ratePercent.message}</p>
-        )}
-        <p className="text-muted-foreground text-xs mt-1">Enter percentage (e.g. 18 for 18%).</p>
-      </div>
+      </ValidatedField>
       <div>
         <Label>Scope accounts</Label>
         <p className="text-muted-foreground text-xs mb-2">Selecting a header account includes all child accounts.</p>

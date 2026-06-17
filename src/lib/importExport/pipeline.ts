@@ -6,6 +6,7 @@ import { migrateApfToCurrentVersion } from '@/lib/importExport/migrate'
 import {
   assertApfManifestDataFormatVersionAligned,
   coerceLegacyApfDataRawForV2TableKeys,
+  injectMissingApfTableKeys,
   parseApfV1DataFileJson,
   type ApfV1DataFile,
 } from '@/lib/importExport/payload'
@@ -27,7 +28,9 @@ export function normalizeApfManifestAndData(
   const manifest = parseApfManifestJson(manifestRaw)
   assertApfImportableFormatVersion(manifest.formatVersion)
 
-  const data = parseApfV1DataFileJson(coerceLegacyApfDataRawForV2TableKeys(dataRaw))
+  const data = parseApfV1DataFileJson(
+    injectMissingApfTableKeys(coerceLegacyApfDataRawForV2TableKeys(dataRaw))
+  )
   assertApfManifestDataFormatVersionAligned(manifest.formatVersion, data.formatVersion)
 
   const migrated = migrateApfToCurrentVersion({ manifest, data })

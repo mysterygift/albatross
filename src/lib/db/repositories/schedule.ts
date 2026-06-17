@@ -13,6 +13,7 @@ import { serverRuntimeMutate } from '@/lib/server/serverClient'
 import { ServerRequestError } from '@/lib/server/serverErrors'
 import { enqueueServerOutbox } from '@/lib/server/serverOutboxRepository'
 import { updateLinkedProjectState } from '@/lib/server/linkedProjectRepository'
+import { normalizeSceneDayNight, normalizeSceneIntExt } from '@/lib/schedule/sceneFields'
 import { OptimisticConcurrencyConflictError } from '../concurrency'
 import {
   outboxPush,
@@ -27,8 +28,8 @@ import {
 } from './episodes'
 import { getProductionById } from './production'
 import { getPersonById } from './person'
-import { getShootDayUnitById, listShootDayUnitsByShootDay } from './shoot-day-units'
-import { ensureMainUnit } from './units'
+import { getShootDayUnitById, getOrCreateShootDayUnit, listShootDayUnitsByShootDay } from './shoot-day-units'
+import { ensureMainUnit, ensureSecondUnit } from './units'
 import {
   cleanupStoryboardImagesForDeletedScene,
   cleanupStoryboardImagesForDeletedShot,
@@ -152,11 +153,10 @@ function rowToScene(r: Record<string, unknown>): Scene {
     production_id: r.production_id as string,
     episode_id: (r.episode_id as string | null) ?? null,
     scene_number: r.scene_number as string,
-    heading: r.heading as string | null,
     title: (r.title as string | null) ?? null,
     description: r.description as string | null,
-    int_ext: (r.int_ext as Scene['int_ext']) ?? null,
-    day_night: (r.day_night as Scene['day_night']) ?? null,
+    int_ext: normalizeSceneIntExt(r.int_ext),
+    day_night: normalizeSceneDayNight(r.day_night),
     page_eighths: (r.page_eighths as number | null) ?? null,
     location_id: (r.location_id as string | null) ?? null,
     duration_minutes: (r.duration_minutes as number | null) ?? null,
@@ -171,10 +171,8 @@ function rowToShot(r: Record<string, unknown>): Shot {
     id: r.id as string,
     scene_id: r.scene_id as string,
     shot_number: r.shot_number as string,
-    description: r.description as string | null,
     shot_description: (r.shot_description as string | null) ?? null,
     subject: (r.subject as string | null) ?? null,
-    action_description: (r.action_description as string | null) ?? null,
     shot_size: (r.shot_size as Shot['shot_size']) ?? null,
     support: (r.support as string | null) ?? null,
     lens: (r.lens as string | null) ?? null,
@@ -611,6 +609,46 @@ export async function createShootDayWithDefaultMainUnit(args: CreateShootDayWith
   if (!shootDay) throw new Error('Shoot day not found after create')
 
   return { shootDay, mainUnitId: mainUnit.id, shootDayUnitId }
+}
+
+type AddSecondUnitToShootDaysArgs = {
+  productionId: string
+  shootDayIds: string[]
+}
+
+/**
+ * Ensure the production has a Second Unit and link it to the given shoot days.
+ * Idempotent per day; seeds CALL + WRAP strips for newly linked unit columns.
+ */
+export async function addSecondUnitToShootDays(
+  args: AddSecondUnitToShootDaysArgs
+): Promise<{ secondUnitId: string; linkedShootDayUnitIds: string[] }> {
+  const { productionId, shootDayIds } = args
+  if (!productionId) throw new Error('productionId is required')
+  if (shootDayIds.length === 0) throw new Error('shootDayIds is required')
+
+  const uniqueShootDayIds = [...new Set(shootDayIds)]
+  for (const shootDayId of uniqueShootDayIds) {
+    const shootDay = await getShootDayById(shootDayId)
+    if (!shootDay || shootDay.production_id !== productionId) {
+      throw new Error('INVALID_SHOOT_DAY')
+    }
+  }
+
+  const secondUnit = await ensureSecondUnit(productionId)
+  const linkedShootDayUnitIds: string[] = []
+
+  for (const shootDayId of uniqueShootDayIds) {
+    const existingDayUnits = await listShootDayUnitsByShootDay(shootDayId)
+    const alreadyLinked = existingDayUnits.some((du) => du.unit_id === secondUnit.id)
+    if (alreadyLinked) continue
+    const shootDayUnit = await getOrCreateShootDayUnit(shootDayId, secondUnit.id)
+    linkedShootDayUnitIds.push(shootDayUnit.id)
+  }
+
+  await ensureCallWrapStripsForProduction(productionId)
+
+  return { secondUnitId: secondUnit.id, linkedShootDayUnitIds }
 }
 
 /**
@@ -1064,7 +1102,6 @@ export async function getSceneById(id: string, opts?: { productionId?: string })
 export async function createScene(data: {
   production_id: string
   scene_number: string
-  heading?: string | null
   title?: string | null
   description?: string | null
   int_ext?: Scene['int_ext']
@@ -1088,6 +1125,9 @@ export async function createScene(data: {
     throw new Error('Episode cannot be set for non-episodic productions.')
   }
 
+  const intExt = normalizeSceneIntExt(data.int_ext ?? null)
+  const dayNight = normalizeSceneDayNight(data.day_night ?? null)
+
   const rctx = await resolveServerPublishContext(data.production_id)
   if (rctx && (await getEffectiveDataSourceForProduction(data.production_id)) === 'remote_server') {
     const remoteId = uuid()
@@ -1096,11 +1136,10 @@ export async function createScene(data: {
       id: remoteId,
       production_id: data.production_id,
       scene_number: data.scene_number,
-      heading: data.heading ?? null,
       description: data.description ?? null,
       title: data.title ?? null,
-      int_ext: data.int_ext ?? null,
-      day_night: data.day_night ?? null,
+      int_ext: intExt,
+      day_night: dayNight,
       page_eighths: data.page_eighths ?? null,
       location_id: data.location_id ?? null,
       duration_minutes: data.duration_minutes ?? null,
@@ -1145,17 +1184,16 @@ export async function createScene(data: {
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${SCENE_TABLE} (id, production_id, scene_number, heading, description, title, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    `INSERT INTO ${SCENE_TABLE} (id, production_id, scene_number, description, title, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       id,
       data.production_id,
       data.scene_number,
-      data.heading ?? null,
       data.description ?? null,
       data.title ?? null,
-      data.int_ext ?? null,
-      data.day_night ?? null,
+      intExt,
+      dayNight,
       data.page_eighths ?? null,
       data.location_id ?? null,
       data.duration_minutes ?? null,
@@ -1170,7 +1208,6 @@ export async function createScene(data: {
 
 const SCENE_UPDATE_KEYS = [
   'scene_number',
-  'heading',
   'title',
   'description',
   'int_ext',
@@ -1208,7 +1245,16 @@ export async function updateScene(
   if (rctx && (await getEffectiveDataSourceForProduction(existing.production_id)) === 'remote_server') {
     const keys = SCENE_UPDATE_KEYS.filter((k) => data[k] !== undefined)
     if (keys.length === 0) return existing
-    const patch = Object.fromEntries(keys.map((k) => [k, data[k]]))
+    const patch = Object.fromEntries(
+      keys.map((k) => [
+        k,
+        k === 'day_night'
+          ? normalizeSceneDayNight(data[k])
+          : k === 'int_ext'
+            ? normalizeSceneIntExt(data[k])
+            : data[k],
+      ])
+    )
     try {
       const row = await serverRuntimeMutate(
         rctx.baseUrl,
@@ -1250,7 +1296,13 @@ export async function updateScene(
   for (const k of SCENE_UPDATE_KEYS) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(data[k])
+      vals.push(
+        k === 'day_night'
+          ? normalizeSceneDayNight(data[k])
+          : k === 'int_ext'
+            ? normalizeSceneIntExt(data[k])
+            : data[k]
+      )
     }
   }
   if (cols.length === 0) return existing
@@ -1471,10 +1523,8 @@ function rowToShotCast(r: Record<string, unknown>): ShotCast {
 export type CreateShotInput = {
   scene_id: string
   shot_number: string
-  description?: string | null
   shot_description?: string | null
   subject?: string | null
-  action_description?: string | null
   shot_size?: Shot['shot_size']
   support?: string | null
   lens?: string | null
@@ -1569,10 +1619,8 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
     id,
     sceneId,
     shotNumber,
-    data.description ?? null,
     data.shot_description ?? null,
     data.subject ?? null,
-    data.action_description ?? null,
     data.shot_size ?? null,
     data.support ?? null,
     data.lens ?? null,
@@ -1588,10 +1636,8 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
     id,
     scene_id: sceneId,
     shot_number: shotNumber,
-    description: data.description ?? null,
     shot_description: data.shot_description ?? null,
     subject: data.subject ?? null,
-    action_description: data.action_description ?? null,
     shot_size: data.shot_size ?? null,
     support: data.support ?? null,
     lens: data.lens ?? null,
@@ -1601,8 +1647,8 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
     notes: data.notes ?? null,
   }
 
-  const insertSql = `INSERT INTO ${SHOT_TABLE} (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
+  const insertSql = `INSERT INTO ${SHOT_TABLE} (id, scene_id, shot_number, shot_description, subject, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 
   if (personIds.length === 0) {
     await db.execute(insertSql, insertBinds)
@@ -1692,7 +1738,7 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
 }
 
 const SHOT_UPDATE_KEYS = [
-  'shot_number', 'description', 'shot_description', 'subject', 'action_description', 'shot_size',
+  'shot_number', 'shot_description', 'subject', 'shot_size',
   'support', 'lens', 'duration_seconds', 'estimated_shoot_minutes', 'camera_movement', 'notes',
 ] as const
 

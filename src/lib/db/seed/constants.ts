@@ -54,6 +54,11 @@ const demoEntityIds = (P: string) =>
     equipmentList: (n: number) => `${P}${String(8500 + n).padStart(4, '0')}`,
     equipmentListItem: (n: number) => `${P}${String(8750 + n).padStart(4, '0')}`,
     equipmentReminderTask: (n: number) => `${P}${String(8220 + n).padStart(4, '0')}`,
+    scriptVersion: `${P}8801`,
+    scriptPage: (n: number) => `${P}${String(8810 + n).padStart(4, '0')}`,
+    scriptSection: (n: number) => `${P}${String(8820 + n).padStart(4, '0')}`,
+    sidesExport: `${P}8890`,
+    sidesDocument: `${P}8891`,
   }) as const
 
 const P_MINT = 'a1000000-0000-4000-8000-00000000'

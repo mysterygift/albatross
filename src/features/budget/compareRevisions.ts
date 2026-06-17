@@ -4,6 +4,7 @@ import {
   computeContingencyTotals,
   computeFringeTotals,
 } from '@/lib/budget/calculations'
+import { computeTaxCreditTotals } from '@/lib/budget/taxCredits'
 import { getFloatSummaryForProduction } from '@/lib/budget/floatSummary'
 import type { BudgetRevision } from '@/lib/db/repositories/budgetRevisions'
 import type { ContingencyRuleWithScopes, FringeRuleWithScopes } from '@/lib/db/repositories/budgetDerived'
@@ -11,9 +12,11 @@ import type {
   BudgetAccount,
   BudgetItem,
   Expense,
+  ExpenseTaxCreditAllocation,
   FloatExpenseLink,
   Person,
   PettyCashFloat,
+  TaxCreditScheme,
 } from '@/lib/db/types'
 
 export type RevisionSummaryMetrics = {
@@ -21,6 +24,7 @@ export type RevisionSummaryMetrics = {
   actuals: number
   variance: number
   derivedCosts: number
+  taxCredits: number
   floatExposure: number
 }
 
@@ -59,6 +63,8 @@ export function computeRevisionSummaryMetrics(params: {
   floats: PettyCashFloat[]
   floatExpenseLinks: FloatExpenseLink[]
   people: Person[]
+  taxCreditSchemes?: TaxCreditScheme[]
+  taxCreditAllocations?: ExpenseTaxCreditAllocation[]
 }): RevisionSummaryMetrics {
   const estimate = params.items.reduce((sum, item) => sum + item.estimated_cost, 0)
   const actuals = params.expenses.reduce((sum, expense) => sum + expense.amount, 0)
@@ -69,6 +75,17 @@ export function computeRevisionSummaryMetrics(params: {
   const fringe = computeFringeTotals(params.fringeRules, accountTotals, accountTree)
   const contingency = computeContingencyTotals(params.contingencyRules, accountTotals, accountTree)
   const derivedCosts = fringe.totalFringesAmount + contingency.totalContingencyAmount
+
+  const taxCreditTotals =
+    params.taxCreditSchemes && params.taxCreditAllocations
+      ? computeTaxCreditTotals({
+          schemes: params.taxCreditSchemes,
+          allocations: params.taxCreditAllocations,
+          expenses: params.expenses,
+          totalActual: actuals,
+          totalDerived: derivedCosts,
+        })
+      : null
 
   const floatSummary = getFloatSummaryForProduction({
     floats: params.floats,
@@ -81,6 +98,7 @@ export function computeRevisionSummaryMetrics(params: {
     actuals,
     variance,
     derivedCosts,
+    taxCredits: taxCreditTotals?.totalTaxCredits ?? 0,
     floatExposure: floatSummary.totalRemaining,
   }
 }
@@ -99,6 +117,13 @@ export function buildComparisonRows(
       base: base.derivedCosts,
       compare: compare.derivedCosts,
       delta: compare.derivedCosts - base.derivedCosts,
+    },
+    {
+      key: 'taxCredits',
+      label: 'Tax credits',
+      base: base.taxCredits,
+      compare: compare.taxCredits,
+      delta: compare.taxCredits - base.taxCredits,
     },
     {
       key: 'floatExposure',

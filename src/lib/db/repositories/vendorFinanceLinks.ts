@@ -44,6 +44,16 @@ export function vendorPurchaseOrderExpenseLinksQueryKey(poId: string): readonly 
   return ['vendor-po-expense-links', poId]
 }
 
+/** Query key for invoice links by expense: ['vendor-invoice-links-by-expense', expenseId] */
+export function vendorInvoiceLinksByExpenseQueryKey(expenseId: string): readonly [string, string] {
+  return ['vendor-invoice-links-by-expense', expenseId]
+}
+
+/** Query key for PO links by expense: ['vendor-po-links-by-expense', expenseId] */
+export function vendorPurchaseOrderLinksByExpenseQueryKey(expenseId: string): readonly [string, string] {
+  return ['vendor-po-links-by-expense', expenseId]
+}
+
 // ─── Invoice ↔ Expense ─────────────────────────────────────────────────────
 
 /** List all expense links for an invoice. */
@@ -214,6 +224,30 @@ export async function deleteVendorPurchaseOrderExpenseLink(
     `DELETE FROM ${PO_EXPENSE_TABLE} WHERE vendor_purchase_order_id = $1 AND expense_id = $2`,
     [poId, expenseId]
   )
+}
+
+/** List invoice expense links for a given expense. */
+export async function listInvoiceLinksByExpenseId(
+  expenseId: string
+): Promise<VendorInvoiceExpenseLink[]> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${INVOICE_EXPENSE_TABLE} WHERE expense_id = $1 ORDER BY created_at`,
+    [expenseId]
+  )
+  return rows.map(rowToInvoiceExpenseLink)
+}
+
+/** List PO expense links for a given expense. */
+export async function listPurchaseOrderLinksByExpenseId(
+  expenseId: string
+): Promise<VendorPurchaseOrderExpenseLink[]> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT * FROM ${PO_EXPENSE_TABLE} WHERE expense_id = $1 ORDER BY created_at`,
+    [expenseId]
+  )
+  return rows.map(rowToPOExpenseLink)
 }
 
 /**

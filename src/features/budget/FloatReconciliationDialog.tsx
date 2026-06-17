@@ -10,8 +10,9 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { parseMoneyInput } from '@/lib/budget/fieldValidation'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
 import { FloatReconciliationStatusBadge } from '@/features/budget/FloatReconciliationStatusBadge'
@@ -332,19 +333,22 @@ export function FloatReconciliationDialog({
                         </div>
                       </div>
                       {isSelected && (
-                        <div className="flex items-center gap-2 mt-2 pl-7">
-                          <Label htmlFor={`famt-${expense.id}`} className="text-muted-foreground shrink-0 w-24">
+                        <div className="flex flex-col gap-1 mt-2 pl-7">
+                          <Label htmlFor={`famt-${expense.id}`} className="text-muted-foreground shrink-0">
                             Match:
                           </Label>
-                          <Input
+                          <MoneyAmountInput
                             id={`famt-${expense.id}`}
-                            type="number"
-                            min={0}
-                            step={0.01}
+                            mode="positive"
                             placeholder="0.00"
-                            value={amountStr}
-                            onChange={(e) => setAmounts((prev) => ({ ...prev, [expense.id]: e.target.value }))}
                             className="w-32 tabular-nums"
+                            value={parseMoneyInput(amountStr)}
+                            onValueChange={(v) =>
+                              setAmounts((prev) => ({
+                                ...prev,
+                                [expense.id]: v == null ? '' : String(v),
+                              }))
+                            }
                           />
                         </div>
                       )}

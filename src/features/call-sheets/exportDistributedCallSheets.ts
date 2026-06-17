@@ -1,11 +1,16 @@
 import type { CallSheetData } from '@/lib/pdf/callSheet'
 import { generateCallSheetPdf } from '@/lib/pdf/callSheet'
 import type { CallSheetRecipient } from '@/features/call-sheets/CallSheetDistributionDialog'
-import { pickExportDirectory } from '@/lib/files/directories'
 import { sanitizeForFilename } from '@/lib/files/sanitizeForFilename'
-import { exportPersonalizedDocuments } from '@/lib/documents/exportPersonalizedDocuments'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
+import {
+  persistPersonalizedDocuments,
+  personIdFromRecipient,
+} from '@/lib/documents/persistPersonalizedDocuments'
 
 export interface ExportDistributedCallSheetsOptions {
+  productionId: string
+  shootDayId: string
   baseData: CallSheetData
   recipients: CallSheetRecipient[]
   /** Called as each file is about to be written (1-based index, total count). */
@@ -13,24 +18,14 @@ export interface ExportDistributedCallSheetsOptions {
 }
 
 /**
- * Generate a base call sheet PDF once, then create a personalised,
- * name-watermarked copy for each selected recipient. Uses unique filenames
- * (numeric suffix) when a file already exists or when multiple recipients
- * sanitize to the same name.
- *
- * Returns null if the user cancels directory selection; otherwise
- * { written, directoryPath }. Throws on PDF generation, watermarking, or write failure.
+ * Generate a base call sheet PDF once, persist personalised copies to Documents,
+ * then optionally export copies to a user-selected directory.
  */
 export async function exportDistributedCallSheets(
-  options: ExportDistributedCallSheetsOptions,
-): Promise<{ written: number; directoryPath: string } | null> {
-  const { baseData, recipients, onProgress } = options
+  options: ExportDistributedCallSheetsOptions
+): Promise<{ persisted: number; exported: number; directoryPath: string | null } | null> {
+  const { productionId, baseData, recipients, onProgress } = options
   if (!recipients.length) return null
-
-  const directory = await pickExportDirectory('Select directory for personalised call sheets')
-  if (!directory) {
-    return null
-  }
 
   let baseBytes: Uint8Array
   try {
@@ -39,19 +34,22 @@ export async function exportDistributedCallSheets(
     throw new Error('Failed to generate call sheet PDF. Please try again.')
   }
 
-  if (!baseBytes || baseBytes.length === 0) {
+  if (!baseBytes?.length) {
     throw new Error('Failed to generate base PDF.')
   }
 
-  return exportPersonalizedDocuments({
+  return persistPersonalizedDocuments({
+    productionId,
+    entityType: DOCUMENT_ENTITY_TYPES.callSheetPersonalized,
     basePDFBytes: baseBytes,
     recipients,
-    directory,
+    resolveEntityId: personIdFromRecipient,
     buildFileName: (recipient) => {
       const safeName = sanitizeForFilename(recipient.fullName)
       const safeUnit = sanitizeForFilename(baseData.unitName || 'unit')
       return `call-sheet-${baseData.shootDate}-${safeUnit}-${safeName}.pdf`
     },
+    directoryPickerTitle: 'Select directory for personalised call sheet copies',
     onProgress,
   })
 }

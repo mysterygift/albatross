@@ -6,6 +6,7 @@ import { getDb } from '@/lib/db/client'
 import type { ApfTableRow, ApfV1Tables } from '@/lib/importExport/payload'
 import type { ApfV1TableKey } from '@/lib/importExport/tableKeys'
 import { APF_V1_TABLE_KEYS } from '@/lib/importExport/tableKeys'
+import { resolveVendorsForExport } from '@/lib/importExport/resolveVendorsForExport'
 
 function asRows(r: Record<string, unknown>[]): ApfTableRow[] {
   return r as ApfTableRow[]
@@ -28,7 +29,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     shootDays,
     budgetCategories,
     budgetAccounts,
-    vendors,
+    budgetRevisions,
     keyContacts,
     checklistItems,
     equipmentTerms,
@@ -37,6 +38,9 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     deliverables,
     fringeRules,
     contingencyRules,
+    productionBudgetFeatures,
+    taxCreditSchemes,
+    vatReclaimRates,
     costReportGroups,
     productionTotals,
     productionCrewHierarchyConfigs,
@@ -55,11 +59,14 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     budgetItems,
     vendorInvoices,
     expenses,
+    floats,
     technicalSpecs,
     clearances,
     budgetItemDetails,
     expenseTransactionDetails,
+    expenseTaxCreditAllocations,
     budgetItemExpenseLinks,
+    floatExpenseLinks,
     vendorInvoiceExpenses,
     vendorPurchaseOrderExpenses,
     equipment,
@@ -112,7 +119,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
-      `SELECT * FROM vendors WHERE production_id = $1 AND deleted_at IS NULL`,
+      `SELECT * FROM budget_revisions WHERE production_id = $1 AND deleted_at IS NULL`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -144,6 +151,18 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     ),
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM contingency_rules WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM production_budget_features WHERE production_id = $1`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM tax_credit_schemes WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM vat_reclaim_rates WHERE production_id = $1`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -229,6 +248,10 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
+      `SELECT * FROM floats WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
       `SELECT ts.* FROM technical_specs ts
        INNER JOIN deliverables d ON d.id = ts.deliverable_id AND d.production_id = $1 AND d.deleted_at IS NULL
        WHERE ts.deleted_at IS NULL`,
@@ -249,10 +272,23 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
+      `SELECT a.* FROM expense_tax_credit_allocations a
+       INNER JOIN expenses e ON e.id = a.expense_id AND e.production_id = $1 AND e.deleted_at IS NULL
+       WHERE a.deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
       `SELECT l.* FROM budget_item_expense_links l
        INNER JOIN budget_items bi ON bi.id = l.budget_item_id AND bi.production_id = $1 AND bi.deleted_at IS NULL
        INNER JOIN expenses e ON e.id = l.expense_id AND e.production_id = $1 AND e.deleted_at IS NULL
        WHERE l.deleted_at IS NULL AND l.production_id = $1`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT l.* FROM float_expense_links l
+       INNER JOIN floats f ON f.id = l.float_id AND f.production_id = $1 AND f.deleted_at IS NULL
+       INNER JOIN expenses e ON e.id = l.expense_id AND e.production_id = $1 AND e.deleted_at IS NULL
+       WHERE l.deleted_at IS NULL`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -336,6 +372,8 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     ),
   ])
 
+  const vendors = await resolveVendorsForExport(productionId)
+
   const raw: Record<ApfV1TableKey, ApfTableRow[]> = {
     productions: asRows(productions),
     episodes: asRows(episodeRows),
@@ -346,7 +384,8 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     shoot_days: asRows(shootDays),
     budget_categories: asRows(budgetCategories),
     budget_accounts: asRows(budgetAccounts),
-    vendors: asRows(vendors),
+    budget_revisions: asRows(budgetRevisions),
+    vendors,
     key_contacts: asRows(keyContacts),
     checklist_items: asRows(checklistItems),
     equipment_terms: asRows(equipmentTerms),
@@ -355,6 +394,9 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     deliverables: asRows(deliverables),
     fringe_rules: asRows(fringeRules),
     contingency_rules: asRows(contingencyRules),
+    production_budget_features: asRows(productionBudgetFeatures),
+    tax_credit_schemes: asRows(taxCreditSchemes),
+    vat_reclaim_rates: asRows(vatReclaimRates),
     cost_report_groups: asRows(costReportGroups),
     production_totals: asRows(productionTotals),
     production_crew_hierarchy_configs: asRows(productionCrewHierarchyConfigs),
@@ -373,11 +415,14 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     budget_items: asRows(budgetItems),
     vendor_invoices: asRows(vendorInvoices),
     expenses: asRows(expenses),
+    floats: asRows(floats),
     technical_specs: asRows(technicalSpecs),
     clearances: asRows(clearances),
     budget_item_details: asRows(budgetItemDetails),
     expense_transaction_details: asRows(expenseTransactionDetails),
+    expense_tax_credit_allocations: asRows(expenseTaxCreditAllocations),
     budget_item_expense_links: asRows(budgetItemExpenseLinks),
+    float_expense_links: asRows(floatExpenseLinks),
     vendor_invoice_expenses: asRows(vendorInvoiceExpenses),
     vendor_purchase_order_expenses: asRows(vendorPurchaseOrderExpenses),
     equipment: asRows(equipment),

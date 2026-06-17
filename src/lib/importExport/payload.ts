@@ -45,6 +45,21 @@ export function coerceLegacyApfDataRawForV2TableKeys(dataRaw: unknown): unknown 
 }
 
 /**
+ * Older `.apf` payloads may omit tables added after their formatVersion was written.
+ * Inject empty arrays so validation matches the current key set before migration.
+ */
+export function injectMissingApfTableKeys(dataRaw: unknown): unknown {
+  if (!isPlainObject(dataRaw)) return dataRaw
+  const tablesRaw = dataRaw.tables
+  if (!isPlainObject(tablesRaw)) return dataRaw
+  const tables = { ...tablesRaw } as Record<string, unknown>
+  for (const key of APF_V1_TABLE_KEYS) {
+    if (!(key in tables)) tables[key] = []
+  }
+  return { ...dataRaw, tables }
+}
+
+/**
  * Validates envelope + `tables` contains exactly the v1 key set, each an array.
  * Does not validate per-table columns (DB import phase will use repositories / SQL).
  */

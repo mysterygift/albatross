@@ -8,6 +8,7 @@ import type { Scene } from '@/lib/db/types'
 import type { Location } from '@/lib/db/types'
 import type { Person } from '@/lib/db/types'
 import type { Booking } from '@/lib/db/types'
+import { sceneSlugline } from '@/lib/schedule/sceneDisplay'
 export interface LocationReleaseCoverData {
   productionName: string
   locationName: string
@@ -161,8 +162,12 @@ export async function generateCallSheet(data: CallSheetData): Promise<Uint8Array
   y -= 18
 
   for (const scene of data.scenes) {
+    const locName = scene.location_id
+      ? data.locations.find((l) => l.id === scene.location_id)?.name ?? null
+      : null
+    const slug = sceneSlugline(scene, locName)
     page.drawText(
-      `Scene ${scene.scene_number}${scene.heading ? ` — ${scene.heading}` : ''}`,
+      `Scene ${scene.scene_number}${slug ? ` — ${slug}` : ''}`,
       { x: margin, y, size: 10, font }
     )
     y -= 14

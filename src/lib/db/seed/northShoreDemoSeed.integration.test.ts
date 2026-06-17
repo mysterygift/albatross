@@ -163,12 +163,12 @@ describe('North Shore episodic demo seed', () => {
     expect(shootingBlocRangesOverlap(r0[0]!, r0[1]!, r1[0]!, r1[1]!)).toBe(false)
     expect(r0[1]! < r1[0]!).toBe(true)
 
-    for (const row of NORTH_SHORE_SCENES) {
-      const h = row.heading.replace(/'/g, "''")
+    for (const [idx, row] of NORTH_SHORE_SCENES.entries()) {
+      const title = row.title.replace(/'/g, "''")
       expect(
         scalar(
           db,
-          `SELECT COUNT(*) FROM scenes WHERE production_id = '${pid}' AND heading = '${h}' AND deleted_at IS NULL`
+          `SELECT COUNT(*) FROM scenes WHERE production_id = '${pid}' AND scene_number = '${idx + 1}' AND title = '${title}' AND deleted_at IS NULL`
         )
       ).toBeGreaterThanOrEqual(1)
     }
@@ -197,7 +197,7 @@ describe('North Shore episodic demo seed', () => {
       /\b(slow push|dolly\b|handheld follow|whip pan|establish geography|over-shoulder proofing|lock wide for reset|insert on hands|profile cu)\b/i
     const shotCopy = sqlJsQueryExec(
       db,
-      `SELECT sh.description, sh.shot_description FROM shots sh
+      `SELECT sh.shot_description FROM shots sh
        JOIN scenes sc ON sc.id = sh.scene_id
        WHERE sc.production_id = '${pid}' AND sc.deleted_at IS NULL AND sh.deleted_at IS NULL`
     )[0]

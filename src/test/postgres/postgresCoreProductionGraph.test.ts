@@ -287,7 +287,9 @@ describe('postgres core production graph validation', () => {
       const scene = await createScene({
         production_id: production.id,
         scene_number: '12',
-        heading: 'INT. CAFE - DAY',
+        title: 'INT. CAFE - DAY',
+        int_ext: 'INT',
+        day_night: 'DAY',
         episode_id: episode.id,
       })
       const shot = await createShot({

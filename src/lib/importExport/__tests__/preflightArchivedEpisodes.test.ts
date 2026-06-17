@@ -69,7 +69,6 @@ describe('preflightApfImportDb archived episode assignment', () => {
         production_id: TEST_PRODUCTION_ID,
         episode_id: EP_ARCH,
         scene_number: '1',
-        heading: null,
         title: null,
         description: null,
         int_ext: null,

@@ -13,10 +13,10 @@ import {
   isApfFormatVersionTooOld,
 } from '@/lib/importExport/compatibility'
 import { ApfInvalidDataError, ApfUnknownFormatVersionError, ApfUnsupportedFormatVersionError } from '@/lib/importExport/errors'
-import { migrateApfToCurrentVersion } from '@/lib/importExport/migrate'
+import { migrateApfToCurrentVersion, migrateScenesDropHeading } from '@/lib/importExport/migrate'
 import { normalizeApfManifestAndData } from '@/lib/importExport/pipeline'
 import { parseApfV1DataFileJson } from '@/lib/importExport/payload'
-import { buildFixtureDataAndManifest, emptyApfTables, minimalProductionRow } from '@/test/apf/fixtures'
+import { buildFixtureDataAndManifest, emptyApfTables, minimalProductionRow, TEST_PRODUCTION_ID } from '@/test/apf/fixtures'
 
 describe('getApfFormatCompatibility', () => {
   it('classifies current version as supported_current', () => {
@@ -122,9 +122,143 @@ describe('migrateApfToCurrentVersion', () => {
     const data = JSON.parse(JSON.stringify(d2)) as (typeof d2 & { formatVersion: number })
     data.formatVersion = 1
     const out = migrateApfToCurrentVersion({ manifest, data })
-    expect(out.manifest.formatVersion).toBe(2)
-    expect(out.data.formatVersion).toBe(2)
+    expect(out.manifest.formatVersion).toBe(4)
+    expect(out.data.formatVersion).toBe(4)
     expect(Array.isArray(out.data.tables.episodes)).toBe(true)
+  })
+
+  it('v2→v3 synthesizes budget_revisions referenced by budget rows', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    const revId = 'rev-import-1'
+    tables.fringe_rules = [
+      {
+        id: 'fr-1',
+        production_id: TEST_PRODUCTION_ID,
+        budget_revision_id: revId,
+        name: 'Fringe',
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+        deleted_at: null,
+      },
+    ]
+    const { manifest: m3, dataFile: d3 } = buildFixtureDataAndManifest({ tables })
+    const manifest = { ...m3, formatVersion: 2 as const }
+    const data = JSON.parse(JSON.stringify(d3)) as (typeof d3 & { formatVersion: number })
+    data.formatVersion = 2
+    delete (data.tables as Record<string, unknown>).budget_revisions
+    delete (data.tables as Record<string, unknown>).floats
+    delete (data.tables as Record<string, unknown>).float_expense_links
+
+    const out = migrateApfToCurrentVersion({ manifest, data })
+    expect(out.data.formatVersion).toBe(4)
+    expect(out.data.tables.budget_revisions).toHaveLength(1)
+    expect(out.data.tables.budget_revisions[0]!.id).toBe(revId)
+  })
+
+  it('v3→v4 backfills scenes.title from heading and removes heading', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    tables.scenes = [
+      {
+        id: 'scene-1',
+        production_id: TEST_PRODUCTION_ID,
+        scene_number: '1',
+        heading: 'INT. KITCHEN - DAY',
+        title: null,
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+        deleted_at: null,
+      },
+      {
+        id: 'scene-2',
+        production_id: TEST_PRODUCTION_ID,
+        scene_number: '2',
+        heading: 'EXT. PARK - DAY',
+        title: 'Park beat',
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+        deleted_at: null,
+      },
+    ]
+    const { manifest: m4, dataFile: d4 } = buildFixtureDataAndManifest({ tables })
+    const manifest = { ...m4, formatVersion: 3 as const }
+    const data = JSON.parse(JSON.stringify(d4)) as (typeof d4 & { formatVersion: number })
+    data.formatVersion = 3
+
+    const out = migrateApfToCurrentVersion({ manifest, data })
+    expect(out.data.formatVersion).toBe(4)
+    const scenes = out.data.tables.scenes as Array<Record<string, unknown>>
+    expect(scenes[0]!.title).toBe('INT. KITCHEN - DAY')
+    expect(scenes[0]).not.toHaveProperty('heading')
+    expect(scenes[1]!.title).toBe('Park beat')
+    expect(scenes[1]).not.toHaveProperty('heading')
+  })
+
+  it('v3→v4 clears legacy UNK day_night on scenes', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    tables.scenes = [
+      {
+        id: 'scene-unk',
+        production_id: TEST_PRODUCTION_ID,
+        scene_number: '1',
+        day_night: 'UNK',
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+        deleted_at: null,
+      },
+    ]
+    const { manifest: m4, dataFile: d4 } = buildFixtureDataAndManifest({ tables })
+    const manifest = { ...m4, formatVersion: 3 as const }
+    const data = JSON.parse(JSON.stringify(d4)) as (typeof d4 & { formatVersion: number })
+    data.formatVersion = 3
+
+    const out = migrateApfToCurrentVersion({ manifest, data })
+    expect(out.data.tables.scenes[0]!.day_night).toBeNull()
+  })
+
+  it('v3→v4 clears legacy UNK int_ext on scenes', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    tables.scenes = [
+      {
+        id: 'scene-unk-ie',
+        production_id: TEST_PRODUCTION_ID,
+        scene_number: '2',
+        int_ext: 'UNK',
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+        deleted_at: null,
+      },
+    ]
+    const { manifest: m4, dataFile: d4 } = buildFixtureDataAndManifest({ tables })
+    const manifest = { ...m4, formatVersion: 3 as const }
+    const data = JSON.parse(JSON.stringify(d4)) as (typeof d4 & { formatVersion: number })
+    data.formatVersion = 3
+
+    const out = migrateApfToCurrentVersion({ manifest, data })
+    expect(out.data.tables.scenes[0]!.int_ext).toBeNull()
+  })
+})
+
+describe('migrateScenesDropHeading', () => {
+  it('is idempotent when heading is already absent', () => {
+    const tables = emptyApfTables()
+    tables.scenes = [
+      {
+        id: 'scene-1',
+        production_id: TEST_PRODUCTION_ID,
+        scene_number: '1',
+        title: 'Existing title',
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+        deleted_at: null,
+      },
+    ]
+    migrateScenesDropHeading(tables)
+    expect(tables.scenes[0]!.title).toBe('Existing title')
+    expect(tables.scenes[0]).not.toHaveProperty('heading')
   })
 })
 

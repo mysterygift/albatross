@@ -2,6 +2,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Button } from '@/components/ui/button'
 import { X } from 'lucide-react'
+import { sceneScheduleLabel } from '@/lib/schedule/sceneDisplay'
 import type { Scene } from '@/lib/db/types'
 
 export function StripboardColumn({
@@ -63,9 +64,7 @@ function SortableStripItem({
         {...listeners}
       >
         <span className="font-medium">Scene {scene.scene_number}</span>
-        {scene.heading && (
-          <span className="text-muted-foreground text-sm">— {scene.heading}</span>
-        )}
+        <span className="text-muted-foreground text-sm">— {sceneScheduleLabel(scene, null)}</span>
       </div>
       <Button variant="ghost" size="icon" onClick={onRemove}>
         <X className="size-4" />

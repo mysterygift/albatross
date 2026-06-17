@@ -5,6 +5,9 @@ import { z } from 'zod'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { hasMaxTwoDecimalPlaces, NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   ALLOW_LINE_ITEM_STATUSES,
@@ -14,12 +17,26 @@ import type { LineItemEditProps, LineItemEditorRef } from './types'
 
 const allowLineItemEditSchema = z.object({
   allow_description: z.string().nullable().optional(),
-  provisional_amount: z.union([z.coerce.number().finite().nonnegative(), z.literal('')]).optional(),
+  provisional_amount: z
+    .union([
+      z.literal(''),
+      z
+        .number()
+        .finite(NON_NEGATIVE_MONEY_MESSAGE)
+        .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
+        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+    ])
+    .optional(),
   status: z.enum(ALLOW_LINE_ITEM_STATUSES).nullable().optional(),
   notes: z.string().nullable().optional(),
 })
 
-type AllowFormValues = z.infer<typeof allowLineItemEditSchema>
+type AllowFormValues = {
+  allow_description?: string | null
+  provisional_amount?: number | ''
+  status?: (typeof ALLOW_LINE_ITEM_STATUSES)[number] | null
+  notes?: string | null
+}
 
 function toDetails(values: AllowFormValues): AllowLineItemDetails {
   return {
@@ -94,33 +111,39 @@ export const AllowLineItemEditor = forwardRef<
             className="mt-1.5 bg-background"
           />
         </div>
-        <div>
-          <Label>Provisional amount</Label>
-          <Input
-            type="number"
-            step={0.01}
-            min={0}
-            {...form.register('provisional_amount')}
-            placeholder="0.00"
-            className="mt-1.5 bg-background"
+        <ValidatedField label="Provisional amount" htmlFor="line-allow-provisional">
+          <Controller
+            name="provisional_amount"
+            control={form.control}
+            render={({ field }) => (
+              <MoneyAmountInput
+                id="line-allow-provisional"
+                mode="nonNegative"
+                placeholder="0.00"
+                value={field.value === '' || field.value === undefined ? null : field.value}
+                onValueChange={(v) => field.onChange(v ?? '')}
+                onBlur={field.onBlur}
+                className="mt-1.5 bg-background"
+              />
+            )}
           />
-          {amountNum != null && amountNum >= 0 && onEstimatedCostSuggest && (
-            <div className="flex items-center gap-2 mt-1.5">
-              <span className="text-xs text-muted-foreground">
-                {format(amountNum, productionCurrency).formatted}
-              </span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => onEstimatedCostSuggest(amountNum)}
-              >
-                Use provisional as estimate
-              </Button>
-            </div>
-          )}
-        </div>
+        </ValidatedField>
+        {amountNum != null && amountNum >= 0 && onEstimatedCostSuggest && (
+          <div className="flex items-center gap-2 mt-1.5">
+            <span className="text-xs text-muted-foreground">
+              {format(amountNum, productionCurrency).formatted}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => onEstimatedCostSuggest(amountNum)}
+            >
+              Use provisional as estimate
+            </Button>
+          </div>
+        )}
         <div>
           <Label>Status</Label>
           <Controller

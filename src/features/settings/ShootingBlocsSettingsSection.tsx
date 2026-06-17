@@ -553,9 +553,6 @@ export function ShootingBlocsSettingsSection({ productionId }: Props) {
         <DialogContent
           className="sm:max-w-md"
           showCloseButton={!deleteMutation.isPending}
-          onPointerDownOutside={(e) => {
-            if (deleteMutation.isPending) e.preventDefault()
-          }}
           onEscapeKeyDown={(e) => {
             if (deleteMutation.isPending) e.preventDefault()
           }}

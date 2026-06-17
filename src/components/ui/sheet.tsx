@@ -34,7 +34,7 @@ function SheetOverlay({
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:pointer-events-none fixed inset-0 z-50 bg-black/50",
         className
       )}
       {...props}
@@ -46,21 +46,53 @@ function SheetContent({
   className,
   children,
   side = "right",
+  variant = "default",
   showCloseButton = true,
+  dismissOnOutsideInteraction = false,
+  onInteractOutside,
+  onPointerDownOutside,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
+  variant?: "default" | "floating"
   showCloseButton?: boolean
+  /** When false (default), overlay clicks and app-switch outside events do not close the sheet. */
+  dismissOnOutsideInteraction?: boolean
 }) {
+  const handleInteractOutside = React.useCallback(
+    (event: Parameters<NonNullable<typeof onInteractOutside>>[0]) => {
+      if (!dismissOnOutsideInteraction) {
+        event.preventDefault()
+      }
+      onInteractOutside?.(event)
+    },
+    [dismissOnOutsideInteraction, onInteractOutside]
+  )
+
+  const handlePointerDownOutside = React.useCallback(
+    (event: Parameters<NonNullable<typeof onPointerDownOutside>>[0]) => {
+      if (!dismissOnOutsideInteraction) {
+        event.preventDefault()
+      }
+      onPointerDownOutside?.(event)
+    },
+    [dismissOnOutsideInteraction, onPointerDownOutside]
+  )
+
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
+          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
+          variant === "default" && "gap-4",
           side === "right" &&
+            variant === "default" &&
             "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm",
+          side === "right" &&
+            variant === "floating" &&
+            "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right top-4 right-4 bottom-4 left-[auto] h-[calc(100vh-2rem)] max-w-[90vw] gap-0 rounded-2xl border border-border shadow-xl overflow-hidden transition-[transform] data-[state=open]:duration-300 data-[state=closed]:duration-300",
           side === "left" &&
             "data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm",
           side === "top" &&
@@ -69,6 +101,8 @@ function SheetContent({
             "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t",
           className
         )}
+        onInteractOutside={handleInteractOutside}
+        onPointerDownOutside={handlePointerDownOutside}
         {...props}
       >
         {children}

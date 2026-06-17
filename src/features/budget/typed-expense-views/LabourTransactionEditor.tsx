@@ -2,46 +2,21 @@ import { useMemo, useEffect, useImperativeHandle } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { PositiveIntegerInput } from '@/components/budget/PositiveIntegerInput'
+import { labourDetailsSchema } from '@/lib/budget/transactions/labour'
 import { parseLabourDetails } from '@/lib/budget/transactions/labour'
 import { getPersonBookingsSummary } from '@/lib/people/bookingsSummary'
 import { ExpenseEditorFooter } from '../expense-shared'
 import type { TypedExpenseEditProps } from './types'
+import type { z } from 'zod'
 
-const labourEditSchema = z.object({
-  person_id: z.string().optional(),
-  labour_role_label: z.string().min(1, 'Labour role is required'),
-  labour_rate_type: z.enum(['prep_day', 'shoot_day', 'overtime']),
-  booked_days_count: z.union([z.coerce.number().nonnegative(), z.literal('')]).optional(),
-  rate_per_day: z.union([z.coerce.number().nonnegative(), z.literal('')]).optional(),
-  currency_code: z.string().optional(),
-  start_date: z.string().optional(),
-  end_date: z.string().optional(),
-  unit: z.string().optional(),
-  notes: z.string().optional(),
-})
-
-type LabourFormValues = z.infer<typeof labourEditSchema>
-
-function toLabourDetails(data: LabourFormValues) {
-  return {
-    person_id: data.person_id?.trim() ? data.person_id.trim() : null,
-    labour_role_label: data.labour_role_label,
-    labour_rate_type: data.labour_rate_type,
-    booked_days_count:
-      data.booked_days_count === '' || data.booked_days_count === undefined ? null : Number(data.booked_days_count),
-    rate_per_day: data.rate_per_day === '' || data.rate_per_day === undefined ? null : Number(data.rate_per_day),
-    currency_code: data.currency_code?.trim() ? data.currency_code.trim() : null,
-    start_date: data.start_date?.trim() ? data.start_date.trim() : null,
-    end_date: data.end_date?.trim() ? data.end_date.trim() : null,
-    unit: data.unit?.trim() ? data.unit.trim() : null,
-    notes: data.notes?.trim() ? data.notes.trim() : null,
-  }
-}
+type LabourFormValues = z.infer<typeof labourDetailsSchema>
 
 export function LabourTransactionEditor({
   expenseId,
@@ -52,7 +27,7 @@ export function LabourTransactionEditor({
   context,
   hideFooter,
   editorRef,
-}: TypedExpenseEditProps<ReturnType<typeof toLabourDetails>>) {
+}: TypedExpenseEditProps<LabourFormValues>) {
   const defaultCurrencyCode = context.defaultCurrencyCode ?? null
   const people = context.people ?? []
   const personById = context.personById ?? new Map()
@@ -61,55 +36,43 @@ export function LabourTransactionEditor({
   const initial: LabourFormValues = useMemo(() => {
     if (!detailsJson) {
       return {
-        person_id: '',
+        person_id: null,
         labour_role_label: '',
         labour_rate_type: 'shoot_day',
-        booked_days_count: '',
-        rate_per_day: '',
-        currency_code: defaultCurrencyCode ?? '',
-        start_date: '',
-        end_date: '',
-        unit: '',
-        notes: '',
+        booked_days_count: null,
+        rate_per_day: null,
+        currency_code: defaultCurrencyCode,
+        start_date: null,
+        end_date: null,
+        unit: null,
+        notes: null,
       }
     }
     const parsed = parseLabourDetails(detailsJson)
     if (!parsed.ok) {
       return {
-        person_id: '',
+        person_id: null,
         labour_role_label: '',
         labour_rate_type: 'shoot_day',
-        booked_days_count: '',
-        rate_per_day: '',
-        currency_code: defaultCurrencyCode ?? '',
-        start_date: '',
-        end_date: '',
-        unit: '',
-        notes: '',
+        booked_days_count: null,
+        rate_per_day: null,
+        currency_code: defaultCurrencyCode,
+        start_date: null,
+        end_date: null,
+        unit: null,
+        notes: null,
       }
     }
-    const d = parsed.value
-    return {
-      person_id: d.person_id ?? '',
-      labour_role_label: d.labour_role_label ?? '',
-      labour_rate_type: d.labour_rate_type,
-      booked_days_count: d.booked_days_count ?? '',
-      rate_per_day: d.rate_per_day ?? '',
-      currency_code: d.currency_code ?? defaultCurrencyCode ?? '',
-      start_date: d.start_date ?? '',
-      end_date: d.end_date ?? '',
-      unit: d.unit ?? '',
-      notes: d.notes ?? '',
-    }
+    return parsed.value
   }, [detailsJson, defaultCurrencyCode])
 
   const form = useForm<LabourFormValues>({
-    resolver: zodResolver(labourEditSchema) as never,
+    resolver: zodResolver(labourDetailsSchema) as never,
     defaultValues: initial,
   })
 
   useImperativeHandle(editorRef, () => ({
-    submit: () => form.handleSubmit((data) => onSave(toLabourDetails(data)))(),
+    submit: () => form.handleSubmit((data) => onSave(data))(),
   }), [form, onSave])
 
   const selectedPersonId = form.watch('person_id') ?? ''
@@ -129,8 +92,10 @@ export function LabourTransactionEditor({
     }
   }, [selectedPerson, form])
 
+  const errors = form.formState.errors
+
   return (
-    <form onSubmit={form.handleSubmit((data) => onSave(toLabourDetails(data)))} className="mt-2 space-y-4">
+    <form onSubmit={form.handleSubmit((data) => onSave(data))} className="mt-2 space-y-4">
       <div>
         <Label>Person</Label>
         <Controller
@@ -139,7 +104,7 @@ export function LabourTransactionEditor({
           render={({ field }) => (
             <Select
               value={field.value && field.value.trim() !== '' ? field.value : '__none__'}
-              onValueChange={(v) => field.onChange(v === '__none__' ? '' : v)}
+              onValueChange={(v) => field.onChange(v === '__none__' ? null : v)}
             >
               <SelectTrigger className="h-9">
                 <SelectValue placeholder="Select person" />
@@ -183,8 +148,8 @@ export function LabourTransactionEditor({
       <div>
         <Label>Labour role</Label>
         <Input {...form.register('labour_role_label')} />
-        {form.formState.errors.labour_role_label && (
-          <p className="text-destructive text-sm">{form.formState.errors.labour_role_label.message}</p>
+        {errors.labour_role_label && (
+          <p className="text-destructive text-sm">{errors.labour_role_label.message}</p>
         )}
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -207,16 +172,46 @@ export function LabourTransactionEditor({
             )}
           />
         </div>
-        <div>
-          <Label>Booked days</Label>
-          <Input type="number" step={0.5} {...form.register('booked_days_count')} />
-        </div>
+        <ValidatedField
+          label="Booked days"
+          error={errors.booked_days_count?.message}
+          htmlFor="labour-booked-days"
+        >
+          <Controller
+            name="booked_days_count"
+            control={form.control}
+            render={({ field }) => (
+              <PositiveIntegerInput
+                id="labour-booked-days"
+                value={field.value}
+                onValueChange={field.onChange}
+                onBlur={field.onBlur}
+              />
+            )}
+          />
+        </ValidatedField>
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label>Rate per day</Label>
-          <Input type="number" step={0.01} {...form.register('rate_per_day')} />
-        </div>
+        <ValidatedField
+          label="Rate per day"
+          error={errors.rate_per_day?.message}
+          htmlFor="labour-rate-per-day"
+        >
+          <Controller
+            name="rate_per_day"
+            control={form.control}
+            render={({ field }) => (
+              <MoneyAmountInput
+                id="labour-rate-per-day"
+                mode="positive"
+                placeholder="0.00"
+                value={field.value}
+                onValueChange={field.onChange}
+                onBlur={field.onBlur}
+              />
+            )}
+          />
+        </ValidatedField>
         <div>
           <Label>Currency</Label>
           <Input placeholder="e.g. GBP" {...form.register('currency_code')} />
@@ -225,11 +220,31 @@ export function LabourTransactionEditor({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label>Start date</Label>
-          <Input type="date" {...form.register('start_date')} />
+          <Controller
+            name="start_date"
+            control={form.control}
+            render={({ field }) => (
+              <Input
+                type="date"
+                value={field.value ?? ''}
+                onChange={(e) => field.onChange(e.target.value || null)}
+              />
+            )}
+          />
         </div>
         <div>
           <Label>End date</Label>
-          <Input type="date" {...form.register('end_date')} />
+          <Controller
+            name="end_date"
+            control={form.control}
+            render={({ field }) => (
+              <Input
+                type="date"
+                value={field.value ?? ''}
+                onChange={(e) => field.onChange(e.target.value || null)}
+              />
+            )}
+          />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4">

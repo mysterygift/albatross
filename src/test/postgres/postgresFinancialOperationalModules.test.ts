@@ -19,6 +19,14 @@ import { listEquipmentTermsByProductionAndType, upsertEquipmentTerm } from '@/li
 import { createVendor, listVendors } from '@/lib/db/repositories/vendors'
 import { createVendorInvoice } from '@/lib/db/repositories/vendorInvoices'
 import { createVendorPurchaseOrder } from '@/lib/db/repositories/vendorPurchaseOrders'
+import {
+  getProductionBudgetFeatures,
+  listTaxCreditSchemes,
+  setTaxCreditsEnabled,
+  setVatTrackingEnabledWithSeed,
+} from '@/lib/db/repositories/taxCredits'
+import { listVatReclaimRates } from '@/lib/db/repositories/vatReclaim'
+import { seedAvecTaxCreditSchemes } from '@/lib/db/taxCreditSeedService'
 import { createVendorInvoiceExpenseLink, listExpenseLinksByInvoice } from '@/lib/db/repositories/vendorFinanceLinks'
 import { createTask, getTaskByVendorInvoiceId, updateTask } from '@/lib/db/repositories/tasks'
 import { createTaskTemplate, createTaskTemplateItem, applyTaskTemplateToProduction, getTaskTemplateWithItems } from '@/lib/db/repositories/taskTemplates'
@@ -554,6 +562,53 @@ describe('postgres financial/operational/asset-heavy module validation', () => {
         [imgA.id, shot.shot.id]
       )
       expect(importedRows[0]!.source_import_id).toBe(importRow.id)
+    } finally {
+      await harness.close()
+    }
+  })
+
+  it('persists tax credit schemes and feature toggles per production', async () => {
+    if (connectionError) {
+      console.warn(`Skipping PostgreSQL tax credit assertions: ${connectionError}`)
+      return
+    }
+    const harness = await createPostgresRepoHarness('pg_tax_credits')
+    setDbAdapterForTests(harness.adapter)
+    try {
+      const production = await createProduction({ name: 'Tax Credits PG', notes: null }, { skipBudgetSeed: true })
+      await seedAvecTaxCreditSchemes(production.id)
+      const schemes = await listTaxCreditSchemes(production.id)
+      expect(schemes.length).toBe(4)
+
+      await setTaxCreditsEnabled(production.id, true)
+      let features = await getProductionBudgetFeatures(production.id)
+      expect(features.tax_credits_enabled).toBe(true)
+
+      await setTaxCreditsEnabled(production.id, false)
+      features = await getProductionBudgetFeatures(production.id)
+      expect(features.tax_credits_enabled).toBe(false)
+      expect((await listTaxCreditSchemes(production.id)).length).toBe(4)
+    } finally {
+      await harness.close()
+    }
+  })
+
+  it('seeds VAT reclaim rates when VAT tracking is enabled', async () => {
+    if (connectionError) {
+      console.warn(`Skipping PostgreSQL VAT reclaim seed assertions: ${connectionError}`)
+      return
+    }
+    const harness = await createPostgresRepoHarness('pg_vat_reclaim_seed')
+    setDbAdapterForTests(harness.adapter)
+    try {
+      const production = await createProduction({ name: 'VAT Reclaim PG', notes: null }, { skipBudgetSeed: true })
+      await setVatTrackingEnabledWithSeed(production.id, true)
+      const rates = await listVatReclaimRates(production.id)
+      expect(rates.length).toBe(6)
+      const labour = rates.find((r) => r.transaction_type === 'labour')
+      expect(labour?.reclaim_percent).toBe(0)
+      const purchase = rates.find((r) => r.transaction_type === 'purchase')
+      expect(purchase?.reclaim_percent).toBe(100)
     } finally {
       await harness.close()
     }

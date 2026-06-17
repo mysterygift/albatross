@@ -128,7 +128,6 @@ describe('ShotListPage episode continuity', () => {
       production_id: 'prod-1',
       episode_id: 'e-a',
       scene_number: '1',
-      heading: null,
       title: null,
       description: null,
       int_ext: 'INT',

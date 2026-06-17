@@ -5,6 +5,13 @@ import { z } from 'zod'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { PositiveIntegerInput } from '@/components/budget/PositiveIntegerInput'
+import {
+  nullablePositiveIntegerSchema,
+  nullablePositiveMoneySchema,
+} from '@/lib/budget/fieldValidation'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { LABOUR_LINE_ITEM_RATE_TYPES, type LabourLineItemDetails } from '@/lib/budget/line-items/labour'
 import type { LineItemEditProps, LineItemEditorRef } from './types'
@@ -13,8 +20,8 @@ const labourLineItemEditSchema = z.object({
   person_id: z.string().nullable().optional(),
   labour_role_label: z.string().nullable().optional(),
   labour_rate_type: z.enum(LABOUR_LINE_ITEM_RATE_TYPES).nullable().optional(),
-  planned_days_count: z.union([z.coerce.number().finite().nonnegative(), z.literal('')]).optional(),
-  rate_per_day: z.union([z.coerce.number().finite().nonnegative(), z.literal('')]).optional(),
+  planned_days_count: nullablePositiveIntegerSchema(),
+  rate_per_day: nullablePositiveMoneySchema(),
   currency_code: z.string().nullable().optional(),
   start_date: z.string().nullable().optional(),
   end_date: z.string().nullable().optional(),
@@ -29,12 +36,8 @@ function toDetails(values: LabourFormValues): LabourLineItemDetails {
     person_id: values.person_id?.trim() ? values.person_id.trim() : null,
     labour_role_label: values.labour_role_label?.trim() ? values.labour_role_label.trim() : null,
     labour_rate_type: values.labour_rate_type ?? null,
-    planned_days_count:
-      values.planned_days_count === '' || values.planned_days_count === undefined
-        ? null
-        : Number(values.planned_days_count),
-    rate_per_day:
-      values.rate_per_day === '' || values.rate_per_day === undefined ? null : Number(values.rate_per_day),
+    planned_days_count: values.planned_days_count ?? null,
+    rate_per_day: values.rate_per_day ?? null,
     currency_code: values.currency_code?.trim() ? values.currency_code.trim() : null,
     start_date: values.start_date?.trim() ? values.start_date.trim() : null,
     end_date: values.end_date?.trim() ? values.end_date.trim() : null,
@@ -49,8 +52,8 @@ function fromDetails(d: LabourLineItemDetails | null): LabourFormValues {
       person_id: null,
       labour_role_label: null,
       labour_rate_type: null,
-      planned_days_count: '',
-      rate_per_day: '',
+      planned_days_count: null,
+      rate_per_day: null,
       currency_code: null,
       start_date: null,
       end_date: null,
@@ -61,8 +64,8 @@ function fromDetails(d: LabourLineItemDetails | null): LabourFormValues {
     person_id: d.person_id ?? null,
     labour_role_label: d.labour_role_label ?? null,
     labour_rate_type: d.labour_rate_type ?? null,
-    planned_days_count: d.planned_days_count ?? '',
-    rate_per_day: d.rate_per_day ?? '',
+    planned_days_count: d.planned_days_count ?? null,
+    rate_per_day: d.rate_per_day ?? null,
     currency_code: d.currency_code ?? null,
     start_date: d.start_date ?? null,
     end_date: d.end_date ?? null,
@@ -97,12 +100,8 @@ export const LabourLineItemEditor = forwardRef<
   }), [form])
 
   const watch = form.watch()
-  const plannedDays =
-    watch.planned_days_count === '' || watch.planned_days_count === undefined
-      ? null
-      : Number(watch.planned_days_count)
-  const ratePerDay =
-    watch.rate_per_day === '' || watch.rate_per_day === undefined ? null : Number(watch.rate_per_day)
+  const plannedDays = watch.planned_days_count ?? null
+  const ratePerDay = watch.rate_per_day ?? null
   const suggested =
     plannedDays != null && ratePerDay != null && plannedDays >= 0 && ratePerDay >= 0
       ? plannedDays * ratePerDay
@@ -171,28 +170,39 @@ export const LabourLineItemEditor = forwardRef<
               )}
             />
           </div>
-          <div>
-            <Label>Planned days</Label>
-            <Input
-              type="number"
-              step={0.5}
-              min={0}
-              {...form.register('planned_days_count')}
-              className="mt-1.5 bg-background"
+          <ValidatedField label="Planned days" htmlFor="line-labour-planned-days">
+            <Controller
+              name="planned_days_count"
+              control={form.control}
+              render={({ field }) => (
+                <PositiveIntegerInput
+                  id="line-labour-planned-days"
+                  value={field.value}
+                  onValueChange={field.onChange}
+                  onBlur={field.onBlur}
+                  className="mt-1.5 bg-background"
+                />
+              )}
             />
-          </div>
+          </ValidatedField>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>Rate per day</Label>
-            <Input
-              type="number"
-              step={0.01}
-              min={0}
-              {...form.register('rate_per_day')}
-              className="mt-1.5 bg-background"
+          <ValidatedField label="Rate per day" htmlFor="line-labour-rate">
+            <Controller
+              name="rate_per_day"
+              control={form.control}
+              render={({ field }) => (
+                <MoneyAmountInput
+                  id="line-labour-rate"
+                  mode="positive"
+                  value={field.value}
+                  onValueChange={field.onChange}
+                  onBlur={field.onBlur}
+                  className="mt-1.5 bg-background"
+                />
+              )}
             />
-          </div>
+          </ValidatedField>
           <div>
             <Label>Currency</Label>
             <Input

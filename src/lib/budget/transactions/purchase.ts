@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { hasMaxTwoDecimalPlaces } from '@/lib/budget/fieldValidation'
 
 const intBool = z
   .union([z.boolean(), z.number().int()])
@@ -16,7 +17,13 @@ export const purchaseDetailsSchema = z.object({
   vendor_id: z.string().min(1).nullable().optional().default(null),
   notes: z.string().nullable().optional().default(null),
   /** Spend amount; required for creation. expenses.amount is source of truth for actuals. */
-  amount: z.number().finite().nonnegative().optional().default(0),
+  amount: z
+    .number()
+    .finite()
+    .positive('Purchase amount must be greater than 0')
+    .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' })
+    .optional()
+    .default(0),
 })
 
 export type PurchaseDetails = z.infer<typeof purchaseDetailsSchema>

@@ -87,12 +87,12 @@ describe('episodicScheduleDisplay', () => {
       },
     ]
     const shotById = new Map<string, Shot>([
-      ['sh1', { id: 'sh1', scene_id: 'c1', shot_number: '1', description: null, shot_description: null, subject: null, action_description: null, shot_size: null, support: null, lens: null, duration_seconds: null, estimated_shoot_minutes: null, camera_movement: null, notes: null, created_at: 't', updated_at: 't', deleted_at: null }],
-      ['sh2', { id: 'sh2', scene_id: 'c2', shot_number: '2', description: null, shot_description: null, subject: null, action_description: null, shot_size: null, support: null, lens: null, duration_seconds: null, estimated_shoot_minutes: null, camera_movement: null, notes: null, created_at: 't', updated_at: 't', deleted_at: null }],
+      ['sh1', { id: 'sh1', scene_id: 'c1', shot_number: '1', shot_description: null, subject: null, shot_size: null, support: null, lens: null, duration_seconds: null, estimated_shoot_minutes: null, camera_movement: null, notes: null, created_at: 't', updated_at: 't', deleted_at: null }],
+      ['sh2', { id: 'sh2', scene_id: 'c2', shot_number: '2', shot_description: null, subject: null, shot_size: null, support: null, lens: null, duration_seconds: null, estimated_shoot_minutes: null, camera_movement: null, notes: null, created_at: 't', updated_at: 't', deleted_at: null }],
     ])
     const sceneById = new Map<string, Scene>([
-      ['c1', { id: 'c1', production_id: 'p', episode_id: 'e2', scene_number: '1', heading: null, title: null, description: null, int_ext: null, day_night: null, page_eighths: null, location_id: null, duration_minutes: null, created_at: 't', updated_at: 't', deleted_at: null }],
-      ['c2', { id: 'c2', production_id: 'p', episode_id: 'e1', scene_number: '2', heading: null, title: null, description: null, int_ext: null, day_night: null, page_eighths: null, location_id: null, duration_minutes: null, created_at: 't', updated_at: 't', deleted_at: null }],
+      ['c1', { id: 'c1', production_id: 'p', episode_id: 'e2', scene_number: '1', title: null, description: null, int_ext: null, day_night: null, page_eighths: null, location_id: null, duration_minutes: null, created_at: 't', updated_at: 't', deleted_at: null }],
+      ['c2', { id: 'c2', production_id: 'p', episode_id: 'e1', scene_number: '2', title: null, description: null, int_ext: null, day_night: null, page_eighths: null, location_id: null, duration_minutes: null, created_at: 't', updated_at: 't', deleted_at: null }],
     ])
     const episodeById = new Map<string, Episode>([
       ['e1', { id: 'e1', production_id: 'p', name: 'Alpha', sort_order: 0, created_at: 't', updated_at: 't', deleted_at: null }],

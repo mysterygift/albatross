@@ -856,6 +856,84 @@ pub fn run() {
             sql: include_str!("../migrations/0072_equipment_list_item_quantity.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 73,
+            description: "user_instance_key_wrapper",
+            sql: include_str!("../migrations/0073_user_instance_key_wrapper.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 74,
+            description: "crew_availability",
+            sql: include_str!("../migrations/0074_crew_availability.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 75,
+            description: "script_sections_and_sides",
+            sql: include_str!("../migrations/0075_script_sections_and_sides.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 76,
+            description: "script_version_previous_revision",
+            sql: include_str!("../migrations/0076_script_version_previous_revision.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 77,
+            description: "script_section_ranges_user_edited",
+            sql: include_str!("../migrations/0077_script_section_ranges_user_edited.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 78,
+            description: "tax_credits",
+            sql: include_str!("../migrations/0078_tax_credits.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 79,
+            description: "vat_reclaim",
+            sql: include_str!("../migrations/0079_vat_reclaim.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 80,
+            description: "shots_consolidate_shot_description",
+            sql: include_str!("../migrations/0080_shots_consolidate_shot_description.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 81,
+            description: "vendors_is_global",
+            sql: include_str!("../migrations/0081_vendors_is_global.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 82,
+            description: "vendor_production_exclusions",
+            sql: include_str!("../migrations/0082_vendor_production_exclusions.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 83,
+            description: "scenes_drop_heading",
+            sql: include_str!("../migrations/0083_scenes_drop_heading.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 84,
+            description: "scenes_day_night_expand",
+            sql: include_str!("../migrations/0084_scenes_day_night_expand.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 85,
+            description: "scenes_int_ext_clear_unk",
+            sql: include_str!("../migrations/0085_scenes_int_ext_clear_unk.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

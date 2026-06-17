@@ -418,3 +418,16 @@
     content: "Page " counter(page);
   }
 }
+
+@keyframes task-strike-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.animate-task-strike-draw {
+  animation: task-strike-draw 0.4s ease-out forwards;
+}

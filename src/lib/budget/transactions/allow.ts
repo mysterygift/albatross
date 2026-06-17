@@ -1,17 +1,12 @@
 import { z } from 'zod'
+import { nullableNonNegativeMoneySchema } from '@/lib/budget/fieldValidation'
 
 export const ALLOW_STATUSES = ['open', 'resolved'] as const
 export type AllowStatus = (typeof ALLOW_STATUSES)[number]
 
 export const allowDetailsSchema = z.object({
   allow_description: z.string().min(1, 'Allow description is required'),
-  provisional_amount: z
-    .number()
-    .finite()
-    .nonnegative()
-    .nullable()
-    .optional()
-    .default(null),
+  provisional_amount: nullableNonNegativeMoneySchema(),
   status: z
     .enum(ALLOW_STATUSES, { message: 'Select a status' })
     .default('open'),

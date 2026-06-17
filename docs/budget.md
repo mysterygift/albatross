@@ -22,6 +22,7 @@ This document is both a **user guide** (how to use the Budget feature) and a **d
 - [7. Data model](#7-data-model)
 - [8. Repositories and persistence](#8-repositories-and-persistence)
 - [9. Typed expenses (registry and UI)](#9-typed-expenses-registry-and-ui)
+- [9.1 Field validation](#91-field-validation)
 - [10. Calculations](#10-calculations)
 - [11. Query keys and invalidation](#11-query-keys-and-invalidation)
 - [12. Currency and display](#12-currency-and-display)
@@ -64,7 +65,7 @@ Currency comes from the production’s `currency_code`; display conversion is co
 ### 2. Budget tab
 
 - **Conversion banner** (optional) — Shown when currency conversion is disabled or in fallback.
-- **Header actions:** Manage derived costs, Export CSV, **Log Spend**, Add line item.
+- **Header actions:** Manage derived costs, Export CSV, **Log Spend** (primary), Add line item.
 - **Summary cards:** Total estimated, Total actual (expenses only), Variance. When uncoded spend > 0, “Uncoded spend: £X” under Total actual.
 - **Derived section** (when fringes or contingency total > 0) — Fringes (derived), Contingency (derived), Estimated + derived. Derived amounts are not included in Total actual.
 - **Hierarchical table** — Columns: Code, Account / Description, Budget, Actual, Variance, % Spent, Actions. Account rows expand/collapse; leaf rows show “Add line item.” Expanding a leaf shows its line items. Header rows show rollup totals.
@@ -73,7 +74,10 @@ Currency comes from the production’s `currency_code`; display conversion is co
 - **Empty state** — “No accounts yet. Add a line item or log spend to get started.” when the tree is empty and there is no uncoded/legacy data.
 
 **Add line item (dialog and inline)**  
-Form: Account (required; postable only), Description (required), Estimated cost, Actual cost, Vendor (optional). Inline form uses the current leaf account. Submit creates the line item and closes the dialog or clears the inline target. There is no edit/delete for line items on the Budget page.
+Form: Account (required; postable only), Description (required), Estimated cost, Actual cost, Vendor (optional). New line items default to the **Allow** classification with a matching details row. Inline form uses the current leaf account. Submit creates the line item and closes the dialog or clears the inline target. **Delete** — Each expanded line-item row has a trash icon next to Examine. If the line item has no matched expenses or petty-cash floats, a confirmation dialog deletes it. If it has associations, the dialog lists each matched expense and float with a dropdown to choose another line item (same account first, otherwise any other line item in the production); on confirm, matches and floats are relocated, matched expenses are recoded to the target line item&apos;s account, then the line item is soft-deleted. **Edit** — Use Examine line item → Edit in the detail sheet (`LineItemDetailPanel`).
+
+**Legacy classification migration**  
+Projects created before Allow became the default may still have untyped expenses (`transaction_type IS NULL`) or line items (`line_item_type IS NULL`). When you open the Budget page, a modal offers to convert these to **Allow** in one step. You can defer with **Not now**; the prompt reappears on your next Budget visit until migration completes. If VAT tracking is enabled, the modal warns that migrated expenses will use the Allow VAT reclaim rate instead of the former untyped rate.
 
 **Recode uncoded spend**  
 Expenses with no account appear in the Uncoded spend section. Use the Recode dropdown to assign a postable account; the expense then contributes to that account’s actuals.
@@ -86,7 +90,7 @@ Expenses with no account appear in the Uncoded spend section. Use the Recode dro
 
 1. Click **Log Spend** in the Budget tab header.
 2. **Account** — Select a postable account (the budget line you are logging spend against). The selected account is shown in a summary card below the dropdown.
-3. **Transaction type** — Choose Labour, Purchase, Rental, Allow, or Deposit. Short helper text explains each type. Changing type after you have an editable form for the current type opens a confirmation dialog; the type only changes if you choose **Continue** (otherwise the form and type stay as they were).
+3. **Transaction type** — Choose Labour, Purchase, Rental, Allow, or Deposit. **Allow** is selected by default when you pick an account. Short helper text explains each type. Changing type after you have an editable form for the current type opens a confirmation dialog; the type only changes if you choose **Continue** (otherwise the form and type stay as they were).
 4. **Details** — A type-specific form appears (e.g. Labour: person, role, rate type, days, rate per day, dates; Purchase: description, purchase type (Service / Physical goods), amount, category, vendor, location, notes; Rental: description, rate type, rate, dates, equipment, vendor; Allow: description, provisional amount, status, notes; Deposit: description, deposit amount, refundable or non-refundable status, vendor, location, notes).
 5. **Save** — Persists the expense and typed details, closes the dialog, and refreshes the Budget page so the new spend appears. **Save & Add Another** — Saves, keeps the dialog open, keeps the same account and type, and clears the form so you can enter another transaction (useful for logging several items to the same account).
 6. **Cancel** — Closes the dialog without saving.
@@ -118,6 +122,8 @@ On the **Budget** route, **Cost Report** is one of four main tabs (with Budget, 
 ### 6. Settings
 
 - **Cost report groups** — Card “Cost report groups”: create and edit groups (name, optional code, list of accounts). Groups are for presentation and reporting only (e.g. “By groups” layout on the Cost Report tab). They do not affect posting or totals.
+- **Tax credits** — Enable per production; seed AVEC default schemes on first enable. Configure net rate, caps, and thresholds. Tag qualifying spend on expenses when logging spend. Summaries appear on Budget and Cost Report when enabled (data preserved when disabled).
+- **VAT** — Optional per-expense VAT rate when tracking is enabled; shown separately from account actuals. Configure reclaim % by transaction type; track VAT paid (computed), reclaimable (computed), reclaimed amount, reclaim date, and reference per expense.
 - **Legacy categories** — Read-only panel for budget categories (ATL, BTL, POST, OTHER). New items and expenses use the chart of accounts; categories are only for legacy item display and backfill.
 
 ---
@@ -134,7 +140,7 @@ The Budget page has four tabs: **Budget**, **Cost Report**, **Match Expenses**, 
 
 **Filters**
 
-- **Type** — All, Labour, Purchase, Rental, Allow, Deposit, Untyped.
+- **Type** — All, Labour, Purchase, Rental, Allow, Deposit.
 - **Line item status** — All, Unmatched, Partially matched, Matched, Overspent.
 - **Expense status** — All, Unallocated, Partially allocated, Allocated.
 - **Clear filters** appears when any filter is active. If both columns are empty with filters active, the page shows: “No line items or expenses match the current filters.”
@@ -235,7 +241,8 @@ Types: `src/lib/db/types.ts`. Repositories: `budget.ts`, `budgetAccounts.ts`, `b
 
 #### 7.2 Typed expenses: transaction_type and details
 
-- **Discriminator:** `expenses.transaction_type` — `ExpenseTransactionType = 'labour' | 'purchase' | 'rental' | 'allow' | 'deposit'` or null (legacy/untyped).
+- **Discriminator:** `expenses.transaction_type` — `ExpenseTransactionType = 'labour' | 'purchase' | 'rental' | 'allow' | 'deposit'`. **Allow** is the default for new line items and Log Spend. `null` is legacy-only; use `migrateUntypedToAllow` (`src/lib/db/migrations/migrateUntypedToAllow.ts`) after user confirmation on the Budget page.
+- **Line items:** `budget_items.line_item_type` mirrors the same five types. New items are created as `allow` with a row in `budget_item_details`.
 - **Payload:** `expense_transaction_details` — `expense_id` (unique), `transaction_type`, `details_json` (type-specific JSON). Fetched with the expense via `getExpenseWithDetails` in `expenseTransactions.ts`. Parsed by type in `src/lib/budget/transactions/*.ts` (e.g. `parseLabourDetails`, `parsePurchaseDetails`).
 
 **Per-type schemas (Zod, in `src/lib/budget/transactions`):**
@@ -304,11 +311,33 @@ Rules have name, rate (decimal 0–1), base_kind (budget | actual), scope_mode, 
 ### 9. Typed expenses (registry and UI)
 
 - **Registry** — `src/lib/budget/transactions/registry.ts`: `getTypedExpenseConfig(type)`, `typedExpenseRegistry`. Each type has: type, label, parse(detailsJson), ReadComponent, EditComponent (optional), save({ expenseId, details, ctx }), editable, derivesAmount (optional). See **docs/typed-expense-registry-and-editor.md** for full registry structure.
-- **ExpenseDetailPanel** — `src/features/budget/ExpenseDetailPanel.tsx`. Shared shell: header (amount, date, account, transaction type, vendor, notes), mode read | edit, Edit/View toggle. Resolves config from registry; read path: parse details_json, render ReadComponent or ExpenseParseErrorCard; edit path: render EditComponent with shared ExpenseEditorFooter. For untyped expenses, renders UntypedExpenseEditor when onUpdateExpenseRequest is provided. Save calls config.save (or onUpdateExpenseRequest for untyped); parent invalidates queries and calls onSaved().
-- **Type-specific views** — `src/features/budget/typed-expense-views/`: LabourTransactionRead, LabourTransactionEditor; PurchaseTransactionRead, PurchaseTransactionEditor; RentalTransactionRead, RentalTransactionEditor; AllowTransactionRead, AllowTransactionEditor; DepositTransactionRead, DepositTransactionEditor. Shared: `expense-shared/` (ExpenseDetailHeader, ExpenseEditorFooter, UntypedExpenseEditor, etc.).
+- **ExpenseDetailPanel** — `src/features/budget/ExpenseDetailPanel.tsx`. Shared shell: header (amount, date, account, transaction type, vendor, notes), mode read | edit, Edit/View toggle. Resolves config from registry; read path: parse details_json, render ReadComponent or ExpenseParseErrorCard; edit path: render EditComponent with shared ExpenseEditorFooter. Legacy untyped expenses (`transaction_type IS NULL`) show a prompt to run the Budget-page migration before typed editing. Save calls config.save; parent invalidates queries and calls onSaved().
+- **Type-specific views** — `src/features/budget/typed-expense-views/`: LabourTransactionRead, LabourTransactionEditor; PurchaseTransactionRead, PurchaseTransactionEditor; RentalTransactionRead, RentalTransactionEditor; AllowTransactionRead, AllowTransactionEditor; DepositTransactionRead, DepositTransactionEditor. Shared: `expense-shared/` (ExpenseDetailHeader, ExpenseEditorFooter, etc.).
 - **Creation flow** — LogSpendPanel opens from “Log Spend” button as a centered Dialog. User selects account (postable) and transaction type. Dialog renders config.EditComponent (when type has one) with expenseId="create", detailsJson from draft, hideFooter, editorRef. On Save click, dialog calls editorRef.current.submit(); editor validates and calls onSave(details). handleEditorSave calls createMutation.mutate({ productionId, accountId, transactionType, draft: details, date: today }). createTypedExpense runs; on success invalidates ['expenses', productionId], ['expense-with-details', data.id], and for allow ['allow-expense-details', productionId]. Save & Add Another: same mutation, onSuccess keeps dialog open, clears draft for that type, increments formKey to remount editor. Type-switch: if current type has a form, a nested confirmation Dialog asks to discard form values; type changes only on **Continue**.
 
 **Amount behaviour:** Labour: amount = rate_per_day × booked_days_count (or 0). Purchase: amount required > 0 from draft. Rental: amount = calculateRentalExpenseAmount(details). Allow: amount = provisional_amount ?? 0. Deposit: amount required > 0 from draft (held deposit value).
+
+#### 9.1 Field validation
+
+Budget numeric fields use shared utilities and UI components so input is constrained at keystroke and errors are shown inline (red text above the field, red input border via `aria-invalid`).
+
+| Field kind | Rules when entered | Empty allowed? | Examples |
+|------------|-------------------|----------------|----------|
+| Actual spend money | Strictly positive, max 2 decimal places | No when required | Purchase amount, deposit amount, rental rate, labour rate/day, float allocate amount |
+| Planning / optional money | Non-negative, max 2 dp | Yes | Line item estimated cost, allow provisional amount, tax qualifying amounts |
+| Count / days | Strictly positive integer | Yes when optional | Rental override days, labour booked days |
+| Percentage | 0–100, max 1 decimal place | Yes | VAT rate, derived cost rule rate |
+
+**Utilities** — `src/lib/budget/fieldValidation.ts`: `filterMoneyInput`, `filterPositiveIntegerInput`, parse helpers, Zod field builders (`requiredPositiveMoneyField`, `optionalNonNegativeMoneyField`, etc.).
+
+**UI components** — `src/components/budget/`:
+
+- `ValidatedField` — label, error above input, optional description below
+- `MoneyAmountInput` — `mode: 'positive' | 'nonNegative'`, blocks invalid characters while typing
+- `PositiveIntegerInput` — digits only, positive integers when set
+- `PercentageInput` — 0–100 with one decimal place
+
+Domain schemas in `src/lib/budget/transactions/` and `src/lib/budget/line-items/` align with these rules; form editors use the same components so Log Spend, Expense Detail edit, line items, floats, vendors, and Match Spend share behaviour.
 
 ---
 
@@ -395,10 +424,9 @@ When adding or changing budget-related features:
 
 ### 15. Gaps and future work
 
-- **No edit/delete for budget line items** — updateBudgetItem/deleteBudgetItem exist but the page has no edit/delete UI for line items.
 - **No full expense list** — No table of all expenses with filters (type, date); expenses are created via Log Spend and recoded from uncoded section; editing is via Examine Spend.
 - **Line items in Examine Account** — Line items are view-only in the sheet; editing is from the Budget table or Add line item.
-- **Set/change transaction type on existing expense** — No UI to convert an untyped expense to typed (e.g. “Make this a Labour expense”) or to create expense_transaction_details for it.
+- **Set/change transaction type on existing expense** — No UI to convert between typed classifications (e.g. Labour → Purchase) on an existing expense; legacy untyped rows are migrated to Allow via the Budget-page modal.
 - **Other** — No phase filtering; no column sorting in account table; export is CSV only; BudgetItem.status not shown/editable; duplicate production behaviour for derived rules may need to be defined.
 - **Match Spend** — No audit tables for link changes; no project-completion safeguards; no automatic or fuzzy matching yet.
 - **Floats** — No UI to edit float amount/notes or soft-delete a float after allocation (`updateFloat` / `softDeleteFloat` exist in `floats.ts` only). No automatic suggestion of expenses for a float.
@@ -408,9 +436,9 @@ When adding or changing budget-related features:
 ### 16. History / changes
 
 - **Quick-add removed; Log Spend only** — The old “Quick-add spend” dialog (`QuickExpenseForm`) created plain expenses (no `transaction_type` or `expense_transaction_details`). It has been removed from the codebase. **Log Spend** is the header entry for new spend: typed creation via `createTypedExpense` (expense row + details row + outbox in one transaction).
+- **Allow as default classification** — New line items and Log Spend default to **Allow**. Legacy `null` classifications are migrated per production via `migrateUntypedToAllow` after user confirmation on the Budget page. Demo seeds insert Allow types with details rows.
 - **Typed creation** — createTypedExpense supports labour, purchase, rental, allow, deposit. Purchase and deposit require amount > 0; rental amount is derived; labour amount = rate×days; allow uses provisional_amount.
-- **Untyped expense editing** — updateExpense(expenseId, { amount, date, vendor, notes }) and UntypedExpenseEditor allow editing amount, date, vendor, notes for expenses with no transaction_type. onUpdateExpenseRequest is passed from Budget page to ExpenseDetailPanel.
-- **Examine Account** — Sheet shows both line items (view-only) and expenses (with Examine spend). Expense Detail Panel uses registry + typed-expense-views (LabourTransactionEditor, etc.) for read/edit; untyped has limited edit.
+- **Examine Account** — Sheet shows both line items (view-only) and expenses (with Examine spend). Expense Detail Panel uses registry + typed-expense-views (LabourTransactionEditor, etc.) for read/edit.
 - **Registry** — Single source of truth per type (label, parse, ReadComponent, EditComponent, save, editable). See typed-expense-registry-and-editor.md.
 - **Actualisation and Match Spend** — The **Match Expenses** tab and Match Spend modal were added to support reconciling expenses to line items via `budget_item_expense_links`. Users can create, edit, and remove links with matched amounts. Derived statuses (unmatched, partial, matched, overspent for line items; unallocated, partial, allocated for expenses) are computed in `src/lib/budget/reconciliation.ts` and not stored.
 - **Floats tab** — **Floats** tab, `floats` and `float_expense_links` tables, **Allocate float**, and **Reconcile float** (`FloatReconciliationDialog`) track petty cash per line item and crew member and match expenses to floats separately from Match Spend. Overview summaries and status badges use `getFloatSummaryForProduction` / `getPettyCashFloatDerived`; expense eligibility uses `getExpenseUnallocatedForFloatMatching`. Does not affect Total actual or `computeAccountTotals`.

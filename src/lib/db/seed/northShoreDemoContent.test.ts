@@ -58,15 +58,14 @@ describe('North Shore demo content quality', () => {
     }
   })
 
-  it('buildNorthShoreShotRows maps beats into description, shot_description, and subject', () => {
+  it('buildNorthShoreShotRows maps beats into shot_description and subject', () => {
     const rows = buildNorthShoreShotRows({ idSource: makeDemoSeedIdSourceFromEpisodicIDS(), ts: 't' })
     expect(rows).toHaveLength(NORTH_SHORE_SCENE_COUNT * NORTH_SHORE_SHOTS_PER_SCENE)
     const byScene = new Map<string, Set<string>>()
     for (const row of rows) {
-      expect(row.description).toBe(row.shot_description)
-      expect(row.description).toBe(row.action_description)
+      expect(row.shot_description?.trim()).toBeTruthy()
       expect(row.subject?.trim()).toBeTruthy()
-      expect(row.description ?? '').not.toMatch(CAMERA_OR_TEMPLATE_JUNK)
+      expect(row.shot_description ?? '').not.toMatch(CAMERA_OR_TEMPLATE_JUNK)
       const sid = row.scene_id
       if (!byScene.has(sid)) byScene.set(sid, new Set())
       byScene.get(sid)!.add(row.subject!.trim().toLowerCase())

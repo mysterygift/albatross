@@ -68,6 +68,25 @@ export function getDescendantTaskIds(taskId: string, tasks: ProductionTask[]): s
 }
 
 /**
+ * Resolve which section a task belongs to for display grouping.
+ * Subtasks without a section inherit their parent's section.
+ */
+export function resolveTaskSectionId(
+  task: ProductionTask,
+  tasksById: Map<string, ProductionTask>
+): string | null {
+  const visited = new Set<string>()
+  let current: ProductionTask | undefined = task
+  while (current) {
+    if (current.section_id) return current.section_id
+    if (!current.parent_task_id || visited.has(current.id)) return null
+    visited.add(current.id)
+    current = tasksById.get(current.parent_task_id)
+  }
+  return null
+}
+
+/**
  * Get subtask progress for a parent task: { complete, total }.
  */
 export function getSubtaskProgress(taskId: string, tasks: ProductionTask[]): { complete: number; total: number } {

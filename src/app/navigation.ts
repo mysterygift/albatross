@@ -51,6 +51,7 @@ export const navItems: NavItem[] = [
       { to: '/schedule/shots', label: 'Shot Lists' },
       { to: '/schedule/storyboard', label: 'Storyboard' },
       { to: '/schedule/script-import', label: 'Script Import' },
+      { to: '/schedule/script-sections', label: 'Script Sections' },
     ],
   },
   {

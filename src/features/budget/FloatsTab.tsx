@@ -65,8 +65,7 @@ export function FloatsTab({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-muted-foreground text-sm max-w-xl">
-          Allocate petty cash floats to budget lines and match expenses here. Line items in the Budget tab stay focused on
-          planning.
+          Allocate petty cash floats to budget lines and match expenses here.
         </p>
         <Button type="button" onClick={() => setAllocateOpen(true)}>
           Allocate float

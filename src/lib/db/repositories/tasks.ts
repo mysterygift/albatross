@@ -177,6 +177,16 @@ export async function createTask(data: CreateTaskData): Promise<ProductionTask> 
   const id = uuid()
   const ts = now()
   const isComplete = coerceBoolean(data.is_complete, false)
+  let sectionId = data.section_id ?? null
+  if (data.parent_task_id && data.section_id === undefined) {
+    const parentRows = await db.select<Record<string, unknown>[]>(
+      `SELECT section_id FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL`,
+      [data.parent_task_id]
+    )
+    if (parentRows.length > 0) {
+      sectionId = (parentRows[0]!.section_id as string | null) ?? null
+    }
+  }
   await db.execute(
     `INSERT INTO ${TABLE} (id, production_id, description, is_complete, notes, due_date, assigned_department, priority, parent_task_id, section_id, vendor_invoice_id, equipment_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
@@ -190,7 +200,7 @@ export async function createTask(data: CreateTaskData): Promise<ProductionTask> 
       data.assigned_department ?? null,
       data.priority ?? null,
       data.parent_task_id ?? null,
-      data.section_id ?? null,
+      sectionId,
       data.vendor_invoice_id ?? null,
       data.equipment_id ?? null,
       ts,

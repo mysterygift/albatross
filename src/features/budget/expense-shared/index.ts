@@ -8,4 +8,3 @@ export {
 export { ExpenseTypedSection } from './ExpenseTypedSection'
 export { ExpenseParseErrorCard } from './ExpenseParseErrorCard'
 export { ExpenseEditorFooter } from './ExpenseEditorFooter'
-export { UntypedExpenseEditor } from './UntypedExpenseEditor'

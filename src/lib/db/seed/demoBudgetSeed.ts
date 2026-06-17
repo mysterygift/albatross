@@ -10,6 +10,12 @@
  */
 
 import { EPISODIC_DEMO_IDS } from './constants'
+import {
+  buildDefaultAllowLineItemDetails,
+  buildMigratedAllowExpenseDetails,
+} from '@/lib/budget/migrations/untypedToAllow'
+import { allowDetailsToJson } from '@/lib/budget/transactions/allow'
+import { allowLineItemDetailsToJson } from '@/lib/budget/line-items/allow'
 
 const MINT_BUDGET_NUMERIC_BASE = 'a1000000-0000-4000-8000-0000' as const
 const EPISODIC_BUDGET_NUMERIC_BASE = 'a2000000-0000-4000-8000-0000' as const
@@ -325,6 +331,14 @@ export const DEMO_EXPENSES: {
   { account_code: '3009', amount: 1200, date_offset: 6, vendor: null, notes: 'Props purchase – hero safe', expense_type: 'other' },
 ]
 
+function demoBudgetItemDetailsId(itemId: string): string {
+  return `${itemId}-details`
+}
+
+function demoExpenseDetailsId(expenseId: string): string {
+  return `${expenseId}-details`
+}
+
 /** Deterministic id for demo production total (Above the Line / Below the Line). */
 function demoProductionTotalId(index: number, idBase: string): string {
   return `${idBase}pt${String(index).padStart(2, '0')}00000000`
@@ -435,7 +449,9 @@ export async function seedDemoBudget(
   const { getDb, executeBatch, runInSerializedTransaction } = await import('../client')
   const TABLE_ACCOUNTS = 'budget_accounts'
   const TABLE_ITEMS = 'budget_items'
+  const TABLE_ITEM_DETAILS = 'budget_item_details'
   const TABLE_EXPENSES = 'expenses'
+  const TABLE_EXPENSE_DETAILS = 'expense_transaction_details'
   const TABLE_TOTALS = 'production_totals'
   const TABLE_TOTAL_ACCOUNTS = 'production_total_accounts'
 
@@ -470,8 +486,14 @@ export async function seedDemoBudget(
       const accountId = byCode.get(row.account_code)
       if (!accountId) return
       const id = budgetItemId(idx + 1)
+      const detailsJson = allowLineItemDetailsToJson(
+        buildDefaultAllowLineItemDetails({
+          description: row.description,
+          estimated_cost: row.estimated_cost,
+        })
+      )
       statements.push({
-        sql: `INSERT INTO ${TABLE_ITEMS} (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at) VALUES ($1, $2, NULL, $3, $4, $5, 0, $6, 'draft', NULL, $7, $8)`,
+        sql: `INSERT INTO ${TABLE_ITEMS} (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at) VALUES ($1, $2, NULL, $3, $4, $5, 0, $6, 'draft', 'allow', $7, $8)`,
         bindValues: [
           id,
           pid,
@@ -483,6 +505,10 @@ export async function seedDemoBudget(
           ts,
         ],
       })
+      statements.push({
+        sql: `INSERT INTO ${TABLE_ITEM_DETAILS} (id, budget_item_id, line_item_type, details_json, created_at, updated_at) VALUES ($1, $2, 'allow', $3, $4, $5)`,
+        bindValues: [demoBudgetItemDetailsId(id), id, detailsJson, ts, ts],
+      })
     })
 
     // 3) Insert expenses: account_id set, category_id null; date = startDate + date_offset.
@@ -493,8 +519,15 @@ export async function seedDemoBudget(
       const id = expenseId(idx + 1)
       const date = addDaysLocal(startDate, row.date_offset)
       const vendorId = vendorIdByCompanyName && row.vendor ? vendorIdByCompanyName[row.vendor] ?? null : null
+      const detailsJson = allowDetailsToJson(
+        buildMigratedAllowExpenseDetails({
+          notes: row.notes ?? null,
+          vendor: row.vendor ?? null,
+          amount: row.amount,
+        })
+      )
       statements.push({
-        sql: `INSERT INTO ${TABLE_EXPENSES} (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, created_at, updated_at) VALUES ($1, $2, NULL, $3, NULL, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        sql: `INSERT INTO ${TABLE_EXPENSES} (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, created_at, updated_at) VALUES ($1, $2, NULL, $3, 'allow', $4, $5, $6, $7, $8, $9, $10, $11)`,
         bindValues: [
           id,
           pid,
@@ -508,6 +541,10 @@ export async function seedDemoBudget(
           ts,
           ts,
         ],
+      })
+      statements.push({
+        sql: `INSERT INTO ${TABLE_EXPENSE_DETAILS} (id, expense_id, transaction_type, details_json, created_at, updated_at) VALUES ($1, $2, 'allow', $3, $4, $5)`,
+        bindValues: [demoExpenseDetailsId(id), id, detailsJson, ts, ts],
       })
     })
 

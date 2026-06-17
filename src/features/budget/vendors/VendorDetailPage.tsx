@@ -1,13 +1,13 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { useForm, type Resolver } from 'react-hook-form'
+import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import { useCurrency } from '@/hooks/useCurrency'
-import { getVendorById, updateVendor, softDeleteVendor } from '@/lib/db/repositories/vendors'
+import { getVendorById, updateVendor, softDeleteVendor, promoteVendorToGlobal, removeVendorFromProject } from '@/lib/db/repositories/vendors'
 import {
   listVendorInvoicesByVendorId,
   vendorInvoicesQueryKey,
@@ -53,6 +53,7 @@ import {
   sumAllocatedAmountForExpense,
 } from '@/lib/budget/reconciliation'
 import { getLineItemTypeConfig } from '@/lib/budget/line-items/registry'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -60,6 +61,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -85,9 +87,26 @@ import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
 import { InvoiceStatusBadge } from '@/features/budget/vendors/InvoiceStatusBadge'
 import { IngestEquipmentFromInvoiceModal } from '@/features/budget/vendors/IngestEquipmentFromInvoiceModal'
 import { PurchaseOrderStatusBadge } from '@/features/budget/vendors/PurchaseOrderStatusBadge'
+import { VendorFinanceDocumentField } from '@/features/budget/vendors/VendorFinanceDocumentField'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
+import { entityDocumentsQueryKey } from '@/lib/documents/pickAndPersistProductionDocument'
+import { documentsQueryKey } from '@/lib/documents/persistDocument'
+import { listDocumentsByEntity } from '@/lib/db/repositories/document'
+import {
+  attachDocumentToVendorInvoice,
+  attachDocumentToVendorPurchaseOrder,
+  createVendorInvoiceWithDocument,
+  createVendorPurchaseOrderWithDocument,
+  type VendorFinanceFileInput,
+} from '@/lib/db/vendorFinanceDocumentService'
 import type { BudgetItemExpenseLink, Expense, ExpenseReconciliationStatus, VendorInvoice, VendorPurchaseOrder } from '@/lib/db/types'
-import { ArrowLeft, Pencil, Eye, Archive, FilePlus, ArchiveIcon, FileText, Link2, X, Receipt, Package } from 'lucide-react'
+import { ArrowLeft, Pencil, Eye, FilePlus, ArchiveIcon, FileText, Link2, X, Receipt, Package, Paperclip, Globe, Trash2, Building2 } from 'lucide-react'
+import { GlobalVendorBadge } from '@/features/budget/vendors/GlobalVendorBadge'
+import { getFileUrl, openInSystem } from '@/lib/files'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { hasMaxTwoDecimalPlaces, POSITIVE_MONEY_MESSAGE, NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
 
 const editVendorSchema = z.object({
   company_name: z.string().min(1, 'Company name is required'),
@@ -100,21 +119,25 @@ const invoiceFormSchema = z.object({
   issue_date: z.string().optional(),
   due_date: z.string().optional(),
   amount: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v): number | null => {
-      if (v === '' || v === undefined) return null
-      const n = typeof v === 'string' ? Number(v) : v
-      return typeof n === 'number' && Number.isNaN(n) ? null : n
-    }),
+    .union([
+      z.null(),
+      z
+        .number()
+        .finite(POSITIVE_MONEY_MESSAGE)
+        .positive(POSITIVE_MONEY_MESSAGE)
+        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+    ])
+    .optional(),
   tax: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v): number | null => {
-      if (v === '' || v === undefined) return null
-      const n = typeof v === 'string' ? Number(v) : v
-      return typeof n === 'number' && Number.isNaN(n) ? null : n
-    }),
+    .union([
+      z.null(),
+      z
+        .number()
+        .finite(NON_NEGATIVE_MONEY_MESSAGE)
+        .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
+        .refine(hasMaxTwoDecimalPlaces, { message: 'Tax must have at most 2 decimal places' }),
+    ])
+    .optional(),
   currency_code: z.string().optional(),
   status: z.enum(['draft', 'received', 'approved', 'paid', 'overdue']),
   notes: z.string().optional(),
@@ -143,13 +166,15 @@ const poFormSchema = z.object({
   issue_date: z.string().optional(),
   due_date: z.string().optional(),
   amount: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v): number | null => {
-      if (v === '' || v === undefined) return null
-      const n = typeof v === 'string' ? Number(v) : v
-      return typeof n === 'number' && Number.isNaN(n) ? null : n
-    }),
+    .union([
+      z.null(),
+      z
+        .number()
+        .finite(POSITIVE_MONEY_MESSAGE)
+        .positive(POSITIVE_MONEY_MESSAGE)
+        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+    ])
+    .optional(),
   status: z.enum(['draft', 'issued', 'approved', 'closed', 'cancelled']),
   approval: z.boolean(),
   notes: z.string().optional(),
@@ -162,7 +187,6 @@ const EXPENSE_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'rental', label: 'Rental' },
   { value: 'allow', label: 'Allow' },
   { value: 'deposit', label: 'Deposit' },
-  { value: 'untyped', label: 'Untyped' },
 ]
 
 export function VendorDetailPage() {
@@ -179,7 +203,10 @@ export function VendorDetailPage() {
   const [accountFilter, setAccountFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [editOpen, setEditOpen] = useState(false)
-  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
+  const [removeScopeOpen, setRemoveScopeOpen] = useState(false)
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false)
+  const [pendingRemoveScope, setPendingRemoveScope] = useState<'local' | 'all' | null>(null)
+  const [promoteConfirmOpen, setPromoteConfirmOpen] = useState(false)
   const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false)
   const [editInvoice, setEditInvoice] = useState<VendorInvoice | null>(null)
   const [archiveInvoiceId, setArchiveInvoiceId] = useState<string | null>(null)
@@ -295,7 +322,7 @@ export function VendorDetailPage() {
     const avg = count > 0 ? totalSpend / count : 0
     const byType: Record<string, number> = {}
     for (const e of expenses) {
-      const t = e.transaction_type ?? 'untyped'
+      const t = e.transaction_type ?? 'allow'
       byType[t] = (byType[t] ?? 0) + e.amount
     }
     const byAccount: Record<string, number> = {}
@@ -332,11 +359,11 @@ export function VendorDetailPage() {
   const filteredExpenses = useMemo(() => {
     let list = expenses
     if (typeFilter !== 'all') {
-      if (typeFilter === 'untyped') {
-        list = list.filter((e) => e.transaction_type == null)
-      } else {
-        list = list.filter((e) => e.transaction_type === typeFilter)
-      }
+      list = list.filter(
+        (e) =>
+          e.transaction_type === typeFilter ||
+          (typeFilter === 'allow' && e.transaction_type == null)
+      )
     }
     if (accountFilter !== 'all') {
       list = list.filter((e) => e.account_id === accountFilter)
@@ -356,51 +383,129 @@ export function VendorDetailPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vendor', vendorId] })
-      queryClient.invalidateQueries({ queryKey: ['vendors', currentProductionId] })
+      if (vendor?.is_global) {
+        queryClient.invalidateQueries({ queryKey: ['vendors'] })
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['vendors', currentProductionId] })
+      }
       setEditOpen(false)
     },
   })
 
-  const archiveMutation = useMutation({
-    mutationFn: () => softDeleteVendor(vendorId!),
+  const promoteMutation = useMutation({
+    mutationFn: () => promoteVendorToGlobal(vendorId!, currentProductionId!),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['vendors', currentProductionId] })
+      queryClient.invalidateQueries({ queryKey: ['vendors'] })
       queryClient.invalidateQueries({ queryKey: ['vendor', vendorId] })
-      queryClient.invalidateQueries({ queryKey: ['expenses-by-vendor', currentProductionId, vendorId] })
-      setArchiveConfirmOpen(false)
-      navigate('/budget/vendors')
+      setPromoteConfirmOpen(false)
     },
   })
 
+  const removeMutation = useMutation({
+    mutationFn: async (scope: 'local' | 'all') => {
+      if (scope === 'all') {
+        await softDeleteVendor(vendorId!)
+        return
+      }
+      await removeVendorFromProject(vendorId!, currentProductionId!)
+    },
+    onSuccess: (_data, scope) => {
+      if (vendor?.is_global || scope === 'all') {
+        queryClient.invalidateQueries({ queryKey: ['vendors'] })
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['vendors', currentProductionId] })
+      }
+      queryClient.invalidateQueries({ queryKey: ['vendor', vendorId] })
+      queryClient.invalidateQueries({ queryKey: ['expenses-by-vendor', currentProductionId, vendorId] })
+      setRemoveScopeOpen(false)
+      setRemoveConfirmOpen(false)
+      setPendingRemoveScope(null)
+      const stayedAfterDemote =
+        scope === 'local' && vendor?.is_global && vendor.production_id === currentProductionId
+      if (!stayedAfterDemote) {
+        navigate('/budget/vendors')
+      }
+    },
+  })
+
+  const openRemoveFlow = () => {
+    if (vendor?.is_global) {
+      setPendingRemoveScope(null)
+      setRemoveScopeOpen(true)
+      return
+    }
+    setPendingRemoveScope('local')
+    setRemoveConfirmOpen(true)
+  }
+
+  const chooseRemoveScope = (scope: 'local' | 'all') => {
+    setPendingRemoveScope(scope)
+    setRemoveScopeOpen(false)
+    setRemoveConfirmOpen(true)
+  }
+
+  const closeRemoveConfirm = () => {
+    setRemoveConfirmOpen(false)
+    setPendingRemoveScope(null)
+  }
+
   const invoiceListKey = vendorId && currentProductionId ? vendorInvoicesQueryKey(currentProductionId, vendorId) : []
   const createInvoiceMutation = useMutation({
-    mutationFn: (data: Parameters<typeof createInvoiceWithReminderTask>[0]) =>
-      createInvoiceWithReminderTask(data, vendor?.company_name ?? 'Vendor'),
+    mutationFn: ({
+      data,
+      file,
+    }: {
+      data: Parameters<typeof createInvoiceWithReminderTask>[0]
+      file?: VendorFinanceFileInput | null
+    }) =>
+      file
+        ? createVendorInvoiceWithDocument(data, vendor?.company_name ?? 'Vendor', file).then(
+            (r) => r.invoice
+          )
+        : createInvoiceWithReminderTask(data, vendor?.company_name ?? 'Vendor'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: invoiceListKey })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
       setCreateInvoiceOpen(false)
     },
   })
   const updateInvoiceMutation = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       id,
       patch,
       invoice,
+      file,
     }: {
       id: string
       patch: Parameters<typeof updateInvoiceWithReminderTask>[1]
       invoice: VendorInvoice
-    }) => updateInvoiceWithReminderTask(id, patch, invoice, vendor?.company_name ?? 'Vendor'),
-    onSuccess: () => {
+      file?: VendorFinanceFileInput | null
+    }) => {
+      const updated = await updateInvoiceWithReminderTask(
+        id,
+        patch,
+        invoice,
+        vendor?.company_name ?? 'Vendor'
+      )
+      if (file) {
+        await attachDocumentToVendorInvoice(id, file)
+      }
+      return updated
+    },
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: invoiceListKey })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
+      queryClient.invalidateQueries({
+        queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorInvoice, variables.id),
+      })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
       setEditInvoice(null)
     },
   })
@@ -418,23 +523,50 @@ export function VendorDetailPage() {
 
   const poListKey = vendorId && currentProductionId ? vendorPurchaseOrdersQueryKey(currentProductionId, vendorId) : []
   const createPOMutation = useMutation({
-    mutationFn: (data: Parameters<typeof createVendorPurchaseOrder>[0]) => createVendorPurchaseOrder(data),
+    mutationFn: ({
+      data,
+      file,
+    }: {
+      data: Parameters<typeof createVendorPurchaseOrder>[0]
+      file?: VendorFinanceFileInput | null
+    }) =>
+      file
+        ? createVendorPurchaseOrderWithDocument(data, file).then((r) => r.purchaseOrder)
+        : createVendorPurchaseOrder(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: poListKey })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
       setCreatePOOpen(false)
     },
   })
   const updatePOMutation = useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: Parameters<typeof updateVendorPurchaseOrder>[1] }) =>
-      updateVendorPurchaseOrder(id, patch),
-    onSuccess: () => {
+    mutationFn: async ({
+      id,
+      patch,
+      file,
+    }: {
+      id: string
+      patch: Parameters<typeof updateVendorPurchaseOrder>[1]
+      file?: VendorFinanceFileInput | null
+    }) => {
+      const updated = await updateVendorPurchaseOrder(id, patch)
+      if (file) {
+        await attachDocumentToVendorPurchaseOrder(id, file)
+      }
+      return updated
+    },
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: poListKey })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
       queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
+      queryClient.invalidateQueries({
+        queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, variables.id),
+      })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
       setEditPO(null)
     },
   })
@@ -512,7 +644,7 @@ export function VendorDetailPage() {
     )
   }
 
-  if (vendor.production_id !== currentProductionId) {
+  if (!vendor.is_global && vendor.production_id !== currentProductionId) {
     return (
       <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
         Vendor not found for this production.
@@ -520,11 +652,31 @@ export function VendorDetailPage() {
     )
   }
 
+  const canPromoteToGlobal =
+    !vendor.is_global && !isArchived && vendor.production_id === currentProductionId
+
+  const isOriginProject = vendor.production_id === currentProductionId
+
+  const localRemoveScopeHint = vendor.is_global
+    ? isOriginProject
+      ? 'Vendor stays in this project only; other projects lose access.'
+      : 'Vendor hidden in this project; other projects keep access.'
+    : 'Vendor removed from this project’s active lists.'
+
+  const localRemoveDescription = vendor.is_global
+    ? isOriginProject
+      ? 'This vendor will only appear in this project. Other projects will no longer see it in their vendor lists.'
+      : 'This vendor will no longer appear in this project. Other projects keep access to it.'
+    : 'This vendor will be removed from this project’s active vendor lists. Linked spend history is preserved.'
+
+  const allProjectsRemoveDescription =
+    'This vendor will be removed from every project’s active vendor lists. Linked spend history is preserved on existing expenses, invoices, and purchase orders.'
+
   return (
     <div className="flex flex-col gap-6">
       {isArchived && (
         <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          This vendor has been archived. Spend history is preserved; the vendor no longer appears in active lists.
+          This vendor has been removed. Spend history is preserved; the vendor no longer appears in active lists.
         </div>
       )}
 
@@ -536,21 +688,31 @@ export function VendorDetailPage() {
           </Link>
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold text-foreground truncate">{vendor.company_name}</h1>
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-xl font-semibold text-foreground truncate">{vendor.company_name}</h1>
+            {vendor.is_global && <GlobalVendorBadge className="size-4" />}
+          </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            {vendor.is_global && <span>Shared across all projects</span>}
             {vendor.primary_contact_full_name && <span>{vendor.primary_contact_full_name}</span>}
             {vendor.primary_contact_email && <span>{vendor.primary_contact_email}</span>}
           </div>
         </div>
         {!isArchived && (
           <>
+            {canPromoteToGlobal && (
+              <Button variant="outline" size="sm" onClick={() => setPromoteConfirmOpen(true)}>
+                <Globe className="mr-2 size-4" />
+                Share across all projects
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
               <Pencil className="mr-2 size-4" />
               Edit
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setArchiveConfirmOpen(true)} className="text-muted-foreground">
-              <Archive className="mr-2 size-4" />
-              Archive
+            <Button variant="outline" size="sm" onClick={openRemoveFlow} className="text-muted-foreground">
+              <Trash2 className="mr-2 size-4" />
+              Remove
             </Button>
           </>
         )}
@@ -667,10 +829,10 @@ export function VendorDetailPage() {
           <div>
             <h3 className="text-sm font-medium text-foreground mb-2">Spend by type</h3>
             <ul className="text-sm text-muted-foreground space-y-1">
-              {(['labour', 'purchase', 'rental', 'allow', 'deposit', 'untyped'] as const).map((t) => {
+              {(['labour', 'purchase', 'rental', 'allow', 'deposit'] as const).map((t) => {
                 const amt = overview.byType[t] ?? 0
-                if (amt === 0 && t !== 'untyped') return null
-                const label = t === 'untyped' ? 'Untyped' : (getLineItemTypeConfig(t)?.label ?? t)
+                if (amt === 0) return null
+                const label = getLineItemTypeConfig(t)?.label ?? t
                 return (
                   <li key={t} className="flex justify-between gap-4">
                     <span>{label}</span>
@@ -996,26 +1158,121 @@ export function VendorDetailPage() {
         isLoading={updateMutation.isPending}
       />
 
-      <Dialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
-        <DialogContent>
+      <Dialog
+        open={removeScopeOpen}
+        onOpenChange={(open) => {
+          setRemoveScopeOpen(open)
+          if (!open) setPendingRemoveScope(null)
+        }}
+      >
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Archive vendor?</DialogTitle>
-            <p className="text-sm text-muted-foreground">
-              This will remove the vendor from active lists. Linked expense history is preserved and will still show this vendor on existing expenses. You can still open this page from a direct link to view history.
-            </p>
+            <DialogTitle>Remove shared vendor</DialogTitle>
+            <DialogDescription>
+              Choose whether to remove this vendor from this project only, or from all projects.
+            </DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setArchiveConfirmOpen(false)}>
+          <ul className="space-y-2">
+            <li>
+              <button
+                type="button"
+                onClick={() => chooseRemoveScope('local')}
+                className={cn(
+                  'flex w-full items-start gap-3 rounded-lg border px-3 py-3 text-left transition-colors',
+                  'border-border hover:border-muted-foreground/30 hover:bg-muted/30',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2'
+                )}
+              >
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted/30">
+                  <Building2 className="size-4 text-muted-foreground" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium text-foreground">This project only</span>
+                  <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                    {localRemoveScopeHint}
+                  </span>
+                </span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                onClick={() => chooseRemoveScope('all')}
+                className={cn(
+                  'flex w-full items-start gap-3 rounded-lg border px-3 py-3 text-left transition-colors',
+                  'border-border hover:border-muted-foreground/30 hover:bg-muted/30',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2'
+                )}
+              >
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted/30">
+                  <Globe className="size-4 text-muted-foreground" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium text-foreground">All projects</span>
+                  <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                    Removed from every project’s active vendor lists.
+                  </span>
+                </span>
+              </button>
+            </li>
+          </ul>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveScopeOpen(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={removeConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) closeRemoveConfirm()
+          else setRemoveConfirmOpen(true)
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Confirm removal</DialogTitle>
+            <DialogDescription>
+              {pendingRemoveScope === 'all'
+                ? allProjectsRemoveDescription
+                : localRemoveDescription}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeRemoveConfirm}>
               Cancel
             </Button>
             <Button
               variant="destructive"
-              onClick={() => archiveMutation.mutate()}
-              disabled={archiveMutation.isPending}
+              onClick={() => pendingRemoveScope && removeMutation.mutate(pendingRemoveScope)}
+              disabled={removeMutation.isPending || pendingRemoveScope == null}
             >
-              {archiveMutation.isPending ? 'Archiving…' : 'Archive'}
+              {removeMutation.isPending ? 'Removing…' : 'Confirm'}
             </Button>
-          </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={promoteConfirmOpen} onOpenChange={setPromoteConfirmOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Share vendor across all projects?</DialogTitle>
+            <DialogDescription>
+              This vendor’s company name and contact details will be available in every project.
+              Invoices, purchase orders, and spend logged in this project stay here. Edits to this
+              vendor apply everywhere. Removing from all projects takes it out of every project.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPromoteConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => promoteMutation.mutate()} disabled={promoteMutation.isPending}>
+              {promoteMutation.isPending ? 'Sharing…' : 'Share across all projects'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1026,7 +1283,7 @@ export function VendorDetailPage() {
         vendorId={vendorId!}
         currency={currency}
         activePurchaseOrders={activePurchaseOrders}
-        onSubmit={(data) => createInvoiceMutation.mutate(data)}
+        onSubmit={(payload) => createInvoiceMutation.mutate(payload)}
         isLoading={createInvoiceMutation.isPending}
       />
 
@@ -1037,7 +1294,14 @@ export function VendorDetailPage() {
           invoice={editInvoice}
           currency={currency}
           activePurchaseOrders={activePurchaseOrders}
-          onSubmit={(patch) => updateInvoiceMutation.mutate({ id: editInvoice.id, patch, invoice: editInvoice })}
+          onSubmit={(payload) =>
+            updateInvoiceMutation.mutate({
+              id: editInvoice.id,
+              patch: payload.patch,
+              invoice: editInvoice,
+              file: payload.file,
+            })
+          }
           isLoading={updateInvoiceMutation.isPending}
         />
       )}
@@ -1080,7 +1344,7 @@ export function VendorDetailPage() {
         onOpenChange={setCreatePOOpen}
         productionId={currentProductionId!}
         vendorId={vendorId!}
-        onSubmit={(data) => createPOMutation.mutate(data)}
+        onSubmit={(payload) => createPOMutation.mutate(payload)}
         isLoading={createPOMutation.isPending}
       />
 
@@ -1089,7 +1353,9 @@ export function VendorDetailPage() {
           open={!!editPO}
           onOpenChange={(open) => !open && setEditPO(null)}
           po={editPO}
-          onSubmit={(patch) => updatePOMutation.mutate({ id: editPO.id, patch })}
+          onSubmit={(payload) =>
+            updatePOMutation.mutate({ id: editPO.id, patch: payload.patch, file: payload.file })
+          }
           isLoading={updatePOMutation.isPending}
         />
       )}
@@ -1149,6 +1415,36 @@ export function VendorDetailPage() {
         />
       )}
     </div>
+  )
+}
+
+function VendorFinanceAttachmentButton({
+  filePath,
+  label,
+}: {
+  filePath: string
+  label: string
+}) {
+  const handleOpen = async () => {
+    const url = await getFileUrl(filePath)
+    await openInSystem(url)
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 text-muted-foreground"
+          onClick={handleOpen}
+          aria-label={`Open attachment ${label}`}
+        >
+          <Paperclip className="size-3" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -1238,10 +1534,20 @@ function VendorInvoiceRow({
     invoice.status !== 'paid'
   const dateFmt = (d: string | null) =>
     d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
+  const { data: invoiceDocuments = [] } = useQuery({
+    queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorInvoice, invoice.id),
+    queryFn: () => listDocumentsByEntity(DOCUMENT_ENTITY_TYPES.vendorInvoice, invoice.id),
+  })
+  const invoiceDoc = invoiceDocuments[0]
   return (
     <TableRow className="border-border">
       <TableCell className="text-sm py-2 w-[100px] font-medium text-foreground">
-        {invoice.invoice_number}
+        <span className="inline-flex items-center gap-1">
+          {invoice.invoice_number}
+          {invoiceDoc && (
+            <VendorFinanceAttachmentButton filePath={invoiceDoc.file_path} label={invoiceDoc.file_name} />
+          )}
+        </span>
       </TableCell>
       <TableCell className="text-muted-foreground text-sm py-2 w-[88px]">{dateFmt(invoice.issue_date)}</TableCell>
       <TableCell className="text-muted-foreground text-sm py-2 w-[88px]">{dateFmt(invoice.due_date)}</TableCell>
@@ -1317,10 +1623,20 @@ function VendorPORow({
 }) {
   const dateFmt = (d: string | null) =>
     d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
+  const { data: poDocuments = [] } = useQuery({
+    queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, po.id),
+    queryFn: () => listDocumentsByEntity(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, po.id),
+  })
+  const poDoc = poDocuments[0]
   return (
     <TableRow className="border-border">
       <TableCell className="text-sm py-2 w-[90px] font-medium text-foreground">
-        {po.po_number}
+        <span className="inline-flex items-center gap-1">
+          {po.po_number}
+          {poDoc && (
+            <VendorFinanceAttachmentButton filePath={poDoc.file_path} label={poDoc.file_name} />
+          )}
+        </span>
       </TableCell>
       <TableCell className="text-sm py-2 min-w-[100px] text-muted-foreground truncate max-w-[180px]" title={po.description ?? ''}>
         {po.description ?? '—'}
@@ -1771,21 +2087,25 @@ function CreateInvoiceDialog({
   vendorId: string
   currency: string
   activePurchaseOrders: VendorPurchaseOrder[]
-  onSubmit: (data: {
-    production_id: string
-    vendor_id: string
-    invoice_number: string
-    issue_date?: string | null
-    due_date?: string | null
-    amount?: number | null
-    tax?: number | null
-    currency_code?: string | null
-    status?: InvoiceFormValues['status']
-    notes?: string | null
-    po_id?: string | null
+  onSubmit: (payload: {
+    data: {
+      production_id: string
+      vendor_id: string
+      invoice_number: string
+      issue_date?: string | null
+      due_date?: string | null
+      amount?: number | null
+      tax?: number | null
+      currency_code?: string | null
+      status?: InvoiceFormValues['status']
+      notes?: string | null
+      po_id?: string | null
+    }
+    file?: VendorFinanceFileInput | null
   }) => void
   isLoading: boolean
 }) {
+  const [pendingFile, setPendingFile] = useState<VendorFinanceFileInput | null>(null)
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema) as Resolver<InvoiceFormValues>,
     defaultValues: {
@@ -1813,22 +2133,26 @@ function CreateInvoiceDialog({
         notes: '',
         po_id: null,
       })
+      setPendingFile(null)
     }
   }, [open, currency, form])
 
   const handleSubmit = (data: InvoiceFormValues) => {
     onSubmit({
-      production_id: productionId,
-      vendor_id: vendorId,
-      invoice_number: data.invoice_number.trim(),
-      issue_date: data.issue_date?.trim() || null,
-      due_date: data.due_date?.trim() || null,
-      amount: data.amount ?? null,
-      tax: data.tax ?? null,
-      currency_code: data.currency_code?.trim() || null,
-      status: data.status,
-      notes: data.notes?.trim() || null,
-      po_id: data.po_id ?? null,
+      data: {
+        production_id: productionId,
+        vendor_id: vendorId,
+        invoice_number: data.invoice_number.trim(),
+        issue_date: data.issue_date?.trim() || null,
+        due_date: data.due_date?.trim() || null,
+        amount: data.amount ?? null,
+        tax: data.tax ?? null,
+        currency_code: data.currency_code?.trim() || null,
+        status: data.status,
+        notes: data.notes?.trim() || null,
+        po_id: data.po_id ?? null,
+      },
+      file: pendingFile,
     })
   }
 
@@ -1857,28 +2181,40 @@ function CreateInvoiceDialog({
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="inv-amount">Amount</Label>
-              <Input
-                id="inv-amount"
-                type="number"
-                step="any"
-                placeholder="0"
-                {...form.register('amount', { valueAsNumber: true })}
-                className="mt-1"
+            <ValidatedField label="Amount" error={form.formState.errors.amount?.message} htmlFor="inv-amount">
+              <Controller
+                name="amount"
+                control={form.control}
+                render={({ field }) => (
+                  <MoneyAmountInput
+                    id="inv-amount"
+                    mode="positive"
+                    placeholder="0"
+                    className="mt-1"
+                    value={field.value ?? null}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
-            </div>
-            <div>
-              <Label htmlFor="inv-tax">Tax (manual)</Label>
-              <Input
-                id="inv-tax"
-                type="number"
-                step="any"
-                placeholder="0"
-                {...form.register('tax', { valueAsNumber: true })}
-                className="mt-1"
+            </ValidatedField>
+            <ValidatedField label="Tax (manual)" error={form.formState.errors.tax?.message} htmlFor="inv-tax">
+              <Controller
+                name="tax"
+                control={form.control}
+                render={({ field }) => (
+                  <MoneyAmountInput
+                    id="inv-tax"
+                    mode="nonNegative"
+                    placeholder="0"
+                    className="mt-1"
+                    value={field.value ?? null}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
-            </div>
+            </ValidatedField>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1928,6 +2264,10 @@ function CreateInvoiceDialog({
             <Label htmlFor="inv-notes">Notes</Label>
             <Input id="inv-notes" {...form.register('notes')} className="mt-1" placeholder="Optional" />
           </div>
+          <VendorFinanceDocumentField
+            pendingFile={pendingFile}
+            onPendingFileChange={setPendingFile}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -1956,9 +2296,18 @@ function EditInvoiceDialog({
   invoice: VendorInvoice
   currency: string
   activePurchaseOrders: VendorPurchaseOrder[]
-  onSubmit: (patch: Partial<Pick<VendorInvoice, 'invoice_number' | 'issue_date' | 'due_date' | 'amount' | 'tax' | 'currency_code' | 'status' | 'notes' | 'po_id'>>) => void
+  onSubmit: (payload: {
+    patch: Partial<Pick<VendorInvoice, 'invoice_number' | 'issue_date' | 'due_date' | 'amount' | 'tax' | 'currency_code' | 'status' | 'notes' | 'po_id'>>
+    file?: VendorFinanceFileInput | null
+  }) => void
   isLoading: boolean
 }) {
+  const [pendingFile, setPendingFile] = useState<VendorFinanceFileInput | null>(null)
+  const { data: existingDocuments = [] } = useQuery({
+    queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorInvoice, invoice.id),
+    queryFn: () => listDocumentsByEntity(DOCUMENT_ENTITY_TYPES.vendorInvoice, invoice.id),
+    enabled: open,
+  })
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema) as Resolver<InvoiceFormValues>,
     defaultValues: {
@@ -1986,20 +2335,24 @@ function EditInvoiceDialog({
         notes: invoice.notes ?? '',
         po_id: invoice.po_id ?? null,
       })
+      setPendingFile(null)
     }
   }, [open, invoice, currency, form])
 
   const handleSubmit = (data: InvoiceFormValues) => {
     onSubmit({
-      invoice_number: data.invoice_number.trim(),
-      issue_date: data.issue_date?.trim() || null,
-      due_date: data.due_date?.trim() || null,
-      amount: data.amount ?? null,
-      tax: data.tax ?? null,
-      currency_code: data.currency_code?.trim() || null,
-      status: data.status,
-      notes: data.notes?.trim() || null,
-      po_id: data.po_id ?? null,
+      patch: {
+        invoice_number: data.invoice_number.trim(),
+        issue_date: data.issue_date?.trim() || null,
+        due_date: data.due_date?.trim() || null,
+        amount: data.amount ?? null,
+        tax: data.tax ?? null,
+        currency_code: data.currency_code?.trim() || null,
+        status: data.status,
+        notes: data.notes?.trim() || null,
+        po_id: data.po_id ?? null,
+      },
+      file: pendingFile,
     })
   }
 
@@ -2028,26 +2381,38 @@ function EditInvoiceDialog({
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="edit-inv-amount">Amount</Label>
-              <Input
-                id="edit-inv-amount"
-                type="number"
-                step="any"
-                {...form.register('amount', { valueAsNumber: true })}
-                className="mt-1"
+            <ValidatedField label="Amount" error={form.formState.errors.amount?.message} htmlFor="edit-inv-amount">
+              <Controller
+                name="amount"
+                control={form.control}
+                render={({ field }) => (
+                  <MoneyAmountInput
+                    id="edit-inv-amount"
+                    mode="positive"
+                    className="mt-1"
+                    value={field.value ?? null}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
-            </div>
-            <div>
-              <Label htmlFor="edit-inv-tax">Tax (manual)</Label>
-              <Input
-                id="edit-inv-tax"
-                type="number"
-                step="any"
-                {...form.register('tax', { valueAsNumber: true })}
-                className="mt-1"
+            </ValidatedField>
+            <ValidatedField label="Tax (manual)" error={form.formState.errors.tax?.message} htmlFor="edit-inv-tax">
+              <Controller
+                name="tax"
+                control={form.control}
+                render={({ field }) => (
+                  <MoneyAmountInput
+                    id="edit-inv-tax"
+                    mode="nonNegative"
+                    className="mt-1"
+                    value={field.value ?? null}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
-            </div>
+            </ValidatedField>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -2097,6 +2462,11 @@ function EditInvoiceDialog({
             <Label htmlFor="edit-inv-notes">Notes</Label>
             <Input id="edit-inv-notes" {...form.register('notes')} className="mt-1" />
           </div>
+          <VendorFinanceDocumentField
+            existingDocument={existingDocuments[0] ?? null}
+            pendingFile={pendingFile}
+            onPendingFileChange={setPendingFile}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -2125,9 +2495,13 @@ function CreatePODialog({
   onOpenChange: (open: boolean) => void
   productionId: string
   vendorId: string
-  onSubmit: (data: Parameters<typeof createVendorPurchaseOrder>[0]) => void
+  onSubmit: (payload: {
+    data: Parameters<typeof createVendorPurchaseOrder>[0]
+    file?: VendorFinanceFileInput | null
+  }) => void
   isLoading: boolean
 }) {
+  const [pendingFile, setPendingFile] = useState<VendorFinanceFileInput | null>(null)
   const form = useForm<POFormValues>({
     resolver: zodResolver(poFormSchema) as Resolver<POFormValues>,
     defaultValues: {
@@ -2153,21 +2527,25 @@ function CreatePODialog({
         approval: false,
         notes: '',
       })
+      setPendingFile(null)
     }
   }, [open, form])
 
   const handleSubmit = (data: POFormValues) => {
     onSubmit({
-      production_id: productionId,
-      vendor_id: vendorId,
-      po_number: data.po_number.trim(),
-      description: data.description?.trim() || null,
-      issue_date: data.issue_date?.trim() || null,
-      due_date: data.due_date?.trim() || null,
-      amount: data.amount ?? null,
-      status: data.status,
-      approval: data.approval ? 1 : 0,
-      notes: data.notes?.trim() || null,
+      data: {
+        production_id: productionId,
+        vendor_id: vendorId,
+        po_number: data.po_number.trim(),
+        description: data.description?.trim() || null,
+        issue_date: data.issue_date?.trim() || null,
+        due_date: data.due_date?.trim() || null,
+        amount: data.amount ?? null,
+        status: data.status,
+        approval: data.approval ? 1 : 0,
+        notes: data.notes?.trim() || null,
+      },
+      file: pendingFile,
     })
   }
 
@@ -2199,17 +2577,23 @@ function CreatePODialog({
               <Input id="po-due" type="date" {...form.register('due_date')} className="mt-1" />
             </div>
           </div>
-          <div>
-            <Label htmlFor="po-amount">Amount</Label>
-            <Input
-              id="po-amount"
-              type="number"
-              step="any"
-              placeholder="0"
-              {...form.register('amount', { valueAsNumber: true })}
-              className="mt-1"
+          <ValidatedField label="Amount" error={form.formState.errors.amount?.message} htmlFor="po-amount">
+            <Controller
+              name="amount"
+              control={form.control}
+              render={({ field }) => (
+                <MoneyAmountInput
+                  id="po-amount"
+                  mode="positive"
+                  placeholder="0"
+                  className="mt-1"
+                  value={field.value ?? null}
+                  onValueChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
             />
-          </div>
+          </ValidatedField>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="po-status">Status</Label>
@@ -2244,6 +2628,10 @@ function CreatePODialog({
             <Label htmlFor="po-notes">Notes</Label>
             <Input id="po-notes" {...form.register('notes')} className="mt-1" placeholder="Optional" />
           </div>
+          <VendorFinanceDocumentField
+            pendingFile={pendingFile}
+            onPendingFileChange={setPendingFile}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -2268,9 +2656,18 @@ function EditPODialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   po: VendorPurchaseOrder
-  onSubmit: (patch: Parameters<typeof updateVendorPurchaseOrder>[1]) => void
+  onSubmit: (payload: {
+    patch: Parameters<typeof updateVendorPurchaseOrder>[1]
+    file?: VendorFinanceFileInput | null
+  }) => void
   isLoading: boolean
 }) {
+  const [pendingFile, setPendingFile] = useState<VendorFinanceFileInput | null>(null)
+  const { data: existingDocuments = [] } = useQuery({
+    queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, po.id),
+    queryFn: () => listDocumentsByEntity(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, po.id),
+    enabled: open,
+  })
   const form = useForm<POFormValues>({
     resolver: zodResolver(poFormSchema) as Resolver<POFormValues>,
     defaultValues: {
@@ -2296,19 +2693,23 @@ function EditPODialog({
         approval: po.approval === 1,
         notes: po.notes ?? '',
       })
+      setPendingFile(null)
     }
   }, [open, po, form])
 
   const handleSubmit = (data: POFormValues) => {
     onSubmit({
-      po_number: data.po_number.trim(),
-      description: data.description?.trim() || null,
-      issue_date: data.issue_date?.trim() || null,
-      due_date: data.due_date?.trim() || null,
-      amount: data.amount ?? null,
-      status: data.status,
-      approval: data.approval ? 1 : 0,
-      notes: data.notes?.trim() || null,
+      patch: {
+        po_number: data.po_number.trim(),
+        description: data.description?.trim() || null,
+        issue_date: data.issue_date?.trim() || null,
+        due_date: data.due_date?.trim() || null,
+        amount: data.amount ?? null,
+        status: data.status,
+        approval: data.approval ? 1 : 0,
+        notes: data.notes?.trim() || null,
+      },
+      file: pendingFile,
     })
   }
 
@@ -2340,16 +2741,22 @@ function EditPODialog({
               <Input id="edit-po-due" type="date" {...form.register('due_date')} className="mt-1" />
             </div>
           </div>
-          <div>
-            <Label htmlFor="edit-po-amount">Amount</Label>
-            <Input
-              id="edit-po-amount"
-              type="number"
-              step="any"
-              {...form.register('amount', { valueAsNumber: true })}
-              className="mt-1"
+          <ValidatedField label="Amount" error={form.formState.errors.amount?.message} htmlFor="edit-po-amount">
+            <Controller
+              name="amount"
+              control={form.control}
+              render={({ field }) => (
+                <MoneyAmountInput
+                  id="edit-po-amount"
+                  mode="positive"
+                  className="mt-1"
+                  value={field.value ?? null}
+                  onValueChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
             />
-          </div>
+          </ValidatedField>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="edit-po-status">Status</Label>
@@ -2384,6 +2791,11 @@ function EditPODialog({
             <Label htmlFor="edit-po-notes">Notes</Label>
             <Input id="edit-po-notes" {...form.register('notes')} className="mt-1" />
           </div>
+          <VendorFinanceDocumentField
+            existingDocument={existingDocuments[0] ?? null}
+            pendingFile={pendingFile}
+            onPendingFileChange={setPendingFile}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel

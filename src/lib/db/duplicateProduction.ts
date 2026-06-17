@@ -65,7 +65,7 @@ export async function duplicateProduction(
   const deliveryDate = (prodRows[0]!.delivery_date as string | null) ?? null
 
   // Load all source data first (reads only).
-  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, crewAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs, episodes, shootingBlocs] = await Promise.all([
+  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, crewAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs, episodes, shootingBlocs, scriptVersions, scriptPages, scriptSections, scriptSectionRanges, scriptSectionCharacters, shotScriptSections, shootDaySidesExports] = await Promise.all([
     db.select<Record<string, unknown>[]>(`SELECT * FROM units WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM people WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM locations WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -81,7 +81,7 @@ export async function duplicateProduction(
     db.select<Record<string, unknown>[]>(`SELECT * FROM crew_availability WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM budget_categories WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM budget_items WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
-    db.select<Record<string, unknown>[]>(`SELECT * FROM vendors WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM vendors WHERE production_id = $1 AND deleted_at IS NULL AND is_global = 0`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM expenses WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(
       `SELECT d.* FROM expense_transaction_details d INNER JOIN expenses e ON e.id = d.expense_id WHERE e.production_id = $1 AND e.deleted_at IS NULL`,
@@ -102,6 +102,28 @@ export async function duplicateProduction(
       `SELECT * FROM shooting_blocs WHERE production_id = $1 AND deleted_at IS NULL`,
       [sourceProductionId]
     ),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM script_versions WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(
+      `SELECT sp.* FROM script_pages sp INNER JOIN script_versions sv ON sv.id = sp.script_version_id AND sv.production_id = $1 AND sv.deleted_at IS NULL WHERE sp.deleted_at IS NULL`,
+      [sourceProductionId]
+    ),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM script_sections WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(
+      `SELECT r.* FROM script_section_ranges r INNER JOIN script_sections ss ON ss.id = r.section_id AND ss.production_id = $1 AND ss.deleted_at IS NULL WHERE r.deleted_at IS NULL`,
+      [sourceProductionId]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT c.* FROM script_section_characters c INNER JOIN script_sections ss ON ss.id = c.section_id AND ss.production_id = $1 AND ss.deleted_at IS NULL WHERE c.deleted_at IS NULL`,
+      [sourceProductionId]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT l.* FROM shot_script_sections l
+       INNER JOIN shots sh ON sh.id = l.shot_id AND sh.deleted_at IS NULL
+       INNER JOIN scenes sc ON sc.id = sh.scene_id AND sc.production_id = $1 AND sc.deleted_at IS NULL
+       WHERE l.deleted_at IS NULL`,
+      [sourceProductionId]
+    ),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM shoot_day_sides_exports WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
   ])
 
   const taskIdMap: IdMap = new Map()
@@ -120,6 +142,13 @@ export async function duplicateProduction(
   const musicTrackIdMap: IdMap = new Map()
   const documentIdMap: IdMap = new Map()
   const shootingBlocIdMap: IdMap = new Map()
+  const scriptVersionIdMap: IdMap = new Map()
+  const scriptPageIdMap: IdMap = new Map()
+  const scriptSectionIdMap: IdMap = new Map()
+  const scriptSectionRangeIdMap: IdMap = new Map()
+  const scriptSectionCharacterIdMap: IdMap = new Map()
+  const shotScriptSectionIdMap: IdMap = new Map()
+  const sidesExportIdMap: IdMap = new Map()
   const docNewPaths: { oldPath: string; newPath: string; docId: string }[] = []
 
   const slug = await withSlugLock(() => ensureUniqueSlug(slugify(newName)))
@@ -128,7 +157,7 @@ export async function duplicateProduction(
     { sql: 'BEGIN TRANSACTION', bindValues: [] },
     {
       sql: `INSERT INTO ${TABLE_PRODUCTIONS} (id, name, slug, currency_code, notes, client_id, delivery_date, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      bindValues: [newProdId, newName, slug, currencyCode, notes, clientId, deliveryDate, isEpisodic, ts, ts],
+      bindValues: [newProdId, newName, slug, currencyCode, notes, clientId, deliveryDate, isEpisodic ? 1 : 0, ts, ts],
     },
   ]
 
@@ -193,12 +222,11 @@ export async function duplicateProduction(
     const locId = mapId(locationIdMap, r.location_id as string | null)
     const episodeId = mapId(episodeIdMap, (r.episode_id as string | null) ?? null)
     statements.push({
-      sql: `INSERT INTO scenes (id, production_id, scene_number, heading, title, description, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      sql: `INSERT INTO scenes (id, production_id, scene_number, title, description, int_ext, day_night, page_eighths, location_id, duration_minutes, episode_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       bindValues: [
         id,
         newProdId,
         r.scene_number,
-        r.heading,
         r.title,
         r.description,
         r.int_ext,
@@ -262,8 +290,8 @@ export async function duplicateProduction(
       const id = newId()
       shotIdMap.set(r.id as string, id)
       statements.push({
-        sql: `INSERT INTO shots (id, scene_id, shot_number, description, shot_description, subject, action_description, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-        bindValues: [id, sceneId, r.shot_number, r.description, r.shot_description ?? null, r.subject, r.action_description, r.shot_size, r.support, r.lens, r.duration_seconds, r.estimated_shoot_minutes, r.camera_movement, r.notes, ts, ts],
+        sql: `INSERT INTO shots (id, scene_id, shot_number, shot_description, subject, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        bindValues: [id, sceneId, r.shot_number, r.shot_description ?? null, r.subject, r.shot_size, r.support, r.lens, r.duration_seconds, r.estimated_shoot_minutes, r.camera_movement, r.notes, ts, ts],
       })
     }
   }
@@ -329,8 +357,8 @@ export async function duplicateProduction(
     const id = newId()
     vendorIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO vendors (id, production_id, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      bindValues: [id, newProdId, r.company_name, r.primary_contact_full_name ?? null, r.primary_contact_email ?? null, ts, ts],
+      sql: `INSERT INTO vendors (id, production_id, is_global, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      bindValues: [id, newProdId, r.is_global ?? 0, r.company_name, r.primary_contact_full_name ?? null, r.primary_contact_email ?? null, ts, ts],
     })
   }
   for (const r of budgetItems) {
@@ -477,6 +505,143 @@ export async function duplicateProduction(
       bindValues: [newId(), newProdId, r.type, r.value, ts, ts],
     })
   }
+
+  // Script versions (SB1): first pass inserts with previous_script_version_id null; lineage updated after map is complete.
+  const scriptVersionLineage: Array<{ newId: string; previousOldId: string | null }> = []
+  for (const r of scriptVersions) {
+    const id = newId()
+    scriptVersionIdMap.set(r.id as string, id)
+    const episodeId = mapEpisodeIdForDuplicate(episodeIdMap, (r.episode_id as string | null) ?? null)
+    scriptVersionLineage.push({
+      newId: id,
+      previousOldId: (r.previous_script_version_id as string | null) ?? null,
+    })
+    statements.push({
+      sql: `INSERT INTO script_versions (id, production_id, episode_id, title, version_label, revision_colour, is_locked, locked_pages_json, previous_script_version_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      bindValues: [
+        id,
+        newProdId,
+        episodeId,
+        r.title ?? null,
+        r.version_label ?? null,
+        r.revision_colour ?? null,
+        coerceBoolean(r.is_locked, false) ? 1 : 0,
+        r.locked_pages_json ?? null,
+        null,
+        ts,
+        ts,
+      ],
+    })
+  }
+  for (const { newId: versionId, previousOldId } of scriptVersionLineage) {
+    if (previousOldId) {
+      const mappedPrev = scriptVersionIdMap.get(previousOldId)
+      if (mappedPrev) {
+        statements.push({
+          sql: `UPDATE script_versions SET previous_script_version_id = $1, updated_at = $2 WHERE id = $3`,
+          bindValues: [mappedPrev, ts, versionId],
+        })
+      }
+    }
+  }
+  for (const r of scriptPages) {
+    const versionId = scriptVersionIdMap.get(r.script_version_id as string)
+    if (!versionId) continue
+    const id = newId()
+    scriptPageIdMap.set(r.id as string, id)
+    const sceneId = mapId(sceneIdMap, (r.scene_id as string | null) ?? null)
+    statements.push({
+      sql: `INSERT INTO script_pages (id, script_version_id, scene_id, page_number, page_index, content, eighths, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      bindValues: [
+        id,
+        versionId,
+        sceneId,
+        r.page_number ?? null,
+        r.page_index ?? 0,
+        r.content ?? null,
+        r.eighths ?? null,
+        ts,
+        ts,
+      ],
+    })
+  }
+  for (const r of scriptSections) {
+    const versionId = scriptVersionIdMap.get(r.script_version_id as string)
+    const sceneId = sceneIdMap.get(r.scene_id as string)
+    if (!versionId || !sceneId) continue
+    const id = newId()
+    scriptSectionIdMap.set(r.id as string, id)
+    const episodeId = mapEpisodeIdForDuplicate(episodeIdMap, (r.episode_id as string | null) ?? null)
+    statements.push({
+      sql: `INSERT INTO script_sections (id, production_id, script_version_id, scene_id, episode_id, label, section_type, status, notes, is_manual, ranges_user_edited, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      bindValues: [
+        id,
+        newProdId,
+        versionId,
+        sceneId,
+        episodeId,
+        r.label ?? null,
+        r.section_type,
+        r.status ?? 'unplanned',
+        r.notes ?? null,
+        coerceBoolean(r.is_manual, false) ? 1 : 0,
+        coerceBoolean(r.ranges_user_edited, false) ? 1 : 0,
+        ts,
+        ts,
+      ],
+    })
+  }
+  for (const r of scriptSectionRanges) {
+    const sectionId = scriptSectionIdMap.get(r.section_id as string)
+    if (!sectionId) continue
+    const id = newId()
+    scriptSectionRangeIdMap.set(r.id as string, id)
+    statements.push({
+      sql: `INSERT INTO script_section_ranges (id, section_id, start_page, start_eighth, end_page, end_eighth, start_offset, end_offset, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      bindValues: [
+        id,
+        sectionId,
+        r.start_page ?? null,
+        r.start_eighth ?? null,
+        r.end_page ?? null,
+        r.end_eighth ?? null,
+        r.start_offset ?? null,
+        r.end_offset ?? null,
+        ts,
+        ts,
+      ],
+    })
+  }
+  for (const r of scriptSectionCharacters) {
+    const sectionId = scriptSectionIdMap.get(r.section_id as string)
+    if (!sectionId) continue
+    const id = newId()
+    scriptSectionCharacterIdMap.set(r.id as string, id)
+    const personId = mapId(personIdMap, (r.person_id as string | null) ?? null)
+    statements.push({
+      sql: `INSERT INTO script_section_characters (id, section_id, person_id, character_name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      bindValues: [id, sectionId, personId, r.character_name ?? null, ts, ts],
+    })
+  }
+  for (const r of shotScriptSections) {
+    const shotId = shotIdMap.get(r.shot_id as string)
+    const sectionId = scriptSectionIdMap.get(r.script_section_id as string)
+    if (!shotId || !sectionId) continue
+    const id = newId()
+    shotScriptSectionIdMap.set(r.id as string, id)
+    statements.push({
+      sql: `INSERT INTO shot_script_sections (id, shot_id, script_section_id, coverage_notes, sort_index, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      bindValues: [
+        id,
+        shotId,
+        sectionId,
+        r.coverage_notes ?? null,
+        r.sort_index ?? 0,
+        ts,
+        ts,
+      ],
+    })
+  }
   for (const r of docs) {
     const id = newId()
     documentIdMap.set(r.id as string, id)
@@ -487,6 +652,30 @@ export async function duplicateProduction(
     statements.push({
       sql: `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       bindValues: [id, newProdId, r.entity_type, entityId, r.file_name, newRelPath, r.mime_type, ts, ts],
+    })
+  }
+  for (const r of shootDaySidesExports) {
+    const shootDayId = shootDayIdMap.get(r.shoot_day_id as string)
+    if (!shootDayId) continue
+    const id = newId()
+    sidesExportIdMap.set(r.id as string, id)
+    const unitId = mapId(unitIdMap, (r.unit_id as string | null) ?? null)
+    const documentId = mapId(documentIdMap, (r.document_id as string | null) ?? null)
+    const scriptVersionId = mapId(scriptVersionIdMap, (r.script_version_id as string | null) ?? null)
+    statements.push({
+      sql: `INSERT INTO shoot_day_sides_exports (id, production_id, shoot_day_id, unit_id, document_id, script_version_id, export_label, metadata_json, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      bindValues: [
+        id,
+        newProdId,
+        shootDayId,
+        unitId,
+        documentId,
+        scriptVersionId,
+        r.export_label ?? null,
+        r.metadata_json ?? null,
+        ts,
+        ts,
+      ],
     })
   }
 
@@ -526,7 +715,7 @@ function mapEntityId(
   if (entityId == null) return null
   if (entityType === 'location_release' || entityType === 'location') return maps.locationIdMap.get(entityId) ?? entityId
   if (entityType === 'contributor_form' || entityType === 'person') return maps.personIdMap.get(entityId) ?? entityId
-  if (entityType === 'call_sheet' || entityType === 'shoot_day') return maps.shootDayIdMap.get(entityId) ?? entityId
+  if (entityType === 'call_sheet' || entityType === 'shoot_day' || entityType === 'sides_export') return maps.shootDayIdMap.get(entityId) ?? entityId
   if (entityType === 'deliverable') return maps.deliverableIdMap.get(entityId) ?? entityId
   return entityId
 }

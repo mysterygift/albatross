@@ -12,6 +12,7 @@ import {
 } from '@/lib/budget/transactions/rental'
 import { allowDetailsSchema, allowDetailsToJson, type AllowDetails } from '@/lib/budget/transactions/allow'
 import { depositDetailsSchema, depositDetailsToJson, type DepositDetails } from '@/lib/budget/transactions/deposit'
+import type { ExpenseVatReclaimInput } from './vatReclaim'
 
 const EXP_TABLE = 'expenses'
 const DETAILS_TABLE = 'expense_transaction_details'
@@ -23,6 +24,9 @@ export type CreateTypedExpenseParams = {
   transactionType: ExpenseTransactionType
   draft: unknown
   date?: string
+  vatRatePercent?: number | null
+  taxCreditAllocations?: Array<{ tax_credit_scheme_id: string; qualifying_amount: number }>
+  vatReclaim?: ExpenseVatReclaimInput
 }
 
 function rowToExpense(r: Record<string, unknown>): Expense {
@@ -38,6 +42,10 @@ function rowToExpense(r: Record<string, unknown>): Expense {
     vendor: (r.vendor as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
     expense_type: (r.expense_type as Expense['expense_type']) ?? 'other',
+    vat_rate_percent: (r.vat_rate_percent as number | null) ?? null,
+    vat_reclaimed_amount: (r.vat_reclaimed_amount as number | null) ?? null,
+    vat_reclaim_date: (r.vat_reclaim_date as string | null) ?? null,
+    vat_reclaim_reference: (r.vat_reclaim_reference as string | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: (r.deleted_at as string | null) ?? null,
@@ -56,6 +64,9 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
     transactionType,
     draft,
     date = new Date().toISOString().slice(0, 10),
+    vatRatePercent,
+    taxCreditAllocations = [],
+    vatReclaim,
   } = params
 
   const account = await getAccountById(accountId)
@@ -172,6 +183,12 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
     vendor: null,
     notes,
     expense_type: 'other' as const,
+    vat_rate_percent: params.vatRatePercent ?? null,
+    vat_reclaimed_amount: vatReclaim?.vat_reclaimed_amount ?? null,
+    vat_reclaim_date: vatReclaim?.vat_reclaim_date ?? null,
+    vat_reclaim_reference: vatReclaim?.vat_reclaim_reference?.trim()
+      ? vatReclaim.vat_reclaim_reference.trim()
+      : null,
     created_at: ts,
     updated_at: ts,
   }
@@ -181,8 +198,8 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
     const statements: Array<{ sql: string; bindValues: unknown[] }> = [
       { sql: 'BEGIN TRANSACTION', bindValues: [] },
       {
-        sql: `INSERT INTO ${EXP_TABLE} (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        sql: `INSERT INTO ${EXP_TABLE} (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, vat_rate_percent, vat_reclaimed_amount, vat_reclaim_date, vat_reclaim_reference, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
         bindValues: [
           id,
           productionId,
@@ -195,6 +212,10 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
           null,
           notes,
           'other',
+          vatRatePercent ?? null,
+          vatReclaim?.vat_reclaimed_amount ?? null,
+          vatReclaim?.vat_reclaim_date ?? null,
+          vatReclaim?.vat_reclaim_reference?.trim() ? vatReclaim.vat_reclaim_reference.trim() : null,
           ts,
           ts,
         ],
@@ -240,6 +261,11 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
     statements.push({ sql: 'COMMIT', bindValues: [] })
 
     await executeBatch(db, statements)
+
+    if (taxCreditAllocations.length > 0) {
+      const { replaceExpenseTaxCreditAllocations } = await import('./taxCredits')
+      await replaceExpenseTaxCreditAllocations(id, amount, taxCreditAllocations)
+    }
   })
 
   return rowToExpense(expensePayload)

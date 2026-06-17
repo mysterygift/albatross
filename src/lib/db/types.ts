@@ -195,6 +195,8 @@ export type PettyCashFloatReconciliationStatus = 'unmatched' | 'partial' | 'matc
 export type Vendor = {
   id: string
   production_id: string
+  /** When true, vendor identity is visible in all productions; finance data stays per-production. */
+  is_global: boolean
   company_name: string
   primary_contact_full_name: string | null
   primary_contact_email: string | null
@@ -261,6 +263,9 @@ export type VendorPurchaseOrder = {
 
 export type ExpenseTransactionType = 'labour' | 'purchase' | 'rental' | 'allow' | 'deposit'
 
+/** Transaction type key for VAT reclaim rate lookup; includes legacy/untyped spend. */
+export type VatReclaimTransactionType = ExpenseTransactionType | 'untyped'
+
 export type Expense = {
   id: string
   production_id: string
@@ -276,6 +281,63 @@ export type Expense = {
   vendor: string | null
   notes: string | null
   expense_type: 'petty_cash' | 'per_diem' | 'other'
+  /** VAT rate as percent (e.g. 20 for 20%); null when unset or VAT tracking disabled. */
+  vat_rate_percent: number | null
+  /** Amount of VAT actually reclaimed from HMRC (or equivalent). */
+  vat_reclaimed_amount: number | null
+  /** Date reclaim was received or submitted (ISO YYYY-MM-DD). */
+  vat_reclaim_date: string | null
+  /** Reference for the reclaim (e.g. HMRC submission ref). */
+  vat_reclaim_reference: string | null
+} & SoftDeletable
+
+/** Per-transaction-type VAT reclaim % for a production (share of VAT paid that is reclaimable). */
+export type VatReclaimRate = {
+  id: string
+  production_id: string
+  transaction_type: VatReclaimTransactionType
+  reclaim_percent: number
+  created_at: string
+  updated_at: string
+}
+
+/** Per-production budget feature toggles (tax credits, VAT). Data preserved when toggles off. */
+export type ProductionBudgetFeatures = {
+  production_id: string
+  tax_credits_enabled: boolean
+  vat_tracking_enabled: boolean
+  /** Default VAT % for new expenses when VAT tracking is enabled. */
+  default_vat_rate_percent: number | null
+  created_at: string
+  updated_at: string
+}
+
+/** Configurable tax credit scheme (e.g. AVEC live action, California Film & TV). */
+export type TaxCreditScheme = {
+  id: string
+  production_id: string
+  name: string
+  /** Net credit rate as decimal (e.g. 0.255 = 25.5%). */
+  net_rate: number
+  /** Max qualifying spend as fraction of total core spend (e.g. 0.80); null = no cap. */
+  cap_percent: number | null
+  /** Minimum qualifying spend as fraction of total core spend (warning threshold). */
+  min_qualifying_percent: number | null
+  /** Absolute cap on qualifying spend for this scheme. */
+  max_qualifying_amount: number | null
+  /** Production ineligible when total core spend exceeds this amount. */
+  max_core_budget: number | null
+  is_vfx: boolean
+  is_enabled: boolean
+  sort_order: number
+} & SoftDeletable
+
+/** Portion of an expense tagged as qualifying for a tax credit scheme. */
+export type ExpenseTaxCreditAllocation = {
+  id: string
+  expense_id: string
+  tax_credit_scheme_id: string
+  qualifying_amount: number
 } & SoftDeletable
 
 export type ExpenseTransactionDetails = {
@@ -441,17 +503,29 @@ export type StripboardStrip = {
   destination_location_id: string | null
 } & SoftDeletable
 
+export const SCENE_INT_EXT_VALUES = ['INT', 'EXT', 'MIXED'] as const
+export type SceneIntExt = (typeof SCENE_INT_EXT_VALUES)[number]
+
+export const SCENE_DAY_NIGHT_VALUES = [
+  'DAY',
+  'NIGHT',
+  'MIXED',
+  'DAWN',
+  'DUSK',
+  'TIMELESS',
+] as const
+export type SceneDayNight = (typeof SCENE_DAY_NIGHT_VALUES)[number]
+
 export type Scene = {
   id: string
   production_id: string
   /** Episodic productions only; scenes reference an episode row (archive = episode soft-delete). */
   episode_id: string | null
   scene_number: string
-  heading: string | null
   title: string | null
   description: string | null
-  int_ext: 'INT' | 'EXT' | 'MIXED' | 'UNK' | null
-  day_night: 'DAY' | 'NIGHT' | 'MIXED' | 'UNK' | null
+  int_ext: SceneIntExt | null
+  day_night: SceneDayNight | null
   page_eighths: number | null
   location_id: string | null
   /** Estimated duration in minutes; NULL = unknown (treated as 0 in runtime sums). */
@@ -537,11 +611,9 @@ export type Shot = {
   id: string
   scene_id: string
   shot_number: string
-  description: string | null
   /** Brief under-title line on stripboard; distinct from subject and notes. */
   shot_description: string | null
   subject: string | null
-  action_description: string | null
   shot_size: ShotSize | null
   support: string | null
   lens: string | null
@@ -847,6 +919,114 @@ export type OutboxRow = {
   payload_json: string | null
   created_at: string
 }
+
+// ─── Script Sections & Sides (SB1) ──────────────────────────────────────────
+
+/** Section classification; mirrors the script_sections.section_type CHECK constraint. */
+export type ScriptSectionType =
+  | 'dialogue'
+  | 'action'
+  | 'stunt'
+  | 'vfx'
+  | 'pickup'
+  | 'insert'
+  | 'custom'
+
+/** Planning lifecycle; mirrors the script_sections.status CHECK constraint. */
+export type ScriptSectionStatus = 'unplanned' | 'planned' | 'scheduled' | 'shot' | 'omitted'
+
+/** A specific version/revision of a script for a production (optionally an episode). */
+export type ScriptVersion = {
+  id: string
+  production_id: string
+  episode_id: string | null
+  title: string | null
+  version_label: string | null
+  /** Industry revision colour (e.g. 'White', 'Blue', 'Pink'); free text. */
+  revision_colour: string | null
+  /** Whether the page set is locked; stored as 0/1. */
+  is_locked: number
+  /** Optional JSON metadata for locked-page tracking. */
+  locked_pages_json: string | null
+  /** Prior script version this revision was imported from, when known. */
+  previous_script_version_id: string | null
+} & SoftDeletable
+
+/** A single page of a script version; may map to a scene where known. */
+export type ScriptPage = {
+  id: string
+  script_version_id: string
+  scene_id: string | null
+  /** Display page number (may be non-numeric, e.g. '12A'). */
+  page_number: string | null
+  /** Zero-based ordering index within the script version. */
+  page_index: number
+  /** Raw or parsed text content for the page. */
+  content: string | null
+  /** Estimated eighths of a page. */
+  eighths: number | null
+} & SoftDeletable
+
+/** A contiguous, schedulable unit of script content within a scene. */
+export type ScriptSection = {
+  id: string
+  production_id: string
+  script_version_id: string
+  scene_id: string
+  episode_id: string | null
+  label: string | null
+  section_type: ScriptSectionType
+  status: ScriptSectionStatus
+  notes: string | null
+  /** Whether the section was created manually rather than parsed; stored as 0/1. */
+  is_manual: number
+  /** Whether the user edited page/eighth ranges on a generated section; stored as 0/1. */
+  ranges_user_edited: number
+} & SoftDeletable
+
+/** Page/eighth (and optional text-offset) extent of a section. */
+export type ScriptSectionRange = {
+  id: string
+  section_id: string
+  start_page: string | null
+  start_eighth: number | null
+  end_page: string | null
+  end_eighth: number | null
+  start_offset: number | null
+  end_offset: number | null
+} & SoftDeletable
+
+/** A character/person appearing in a section. */
+export type ScriptSectionCharacter = {
+  id: string
+  section_id: string
+  /** Link to people(id) where known; null otherwise. */
+  person_id: string | null
+  /** Fallback display name when no person link exists. */
+  character_name: string | null
+} & SoftDeletable
+
+/** Link between a shot and a script section, with optional coverage metadata. */
+export type ShotScriptSection = {
+  id: string
+  shot_id: string
+  script_section_id: string
+  coverage_notes: string | null
+  sort_index: number
+} & SoftDeletable
+
+/** A generated sides export record for a shoot day (document reference only). */
+export type ShootDaySidesExport = {
+  id: string
+  production_id: string
+  shoot_day_id: string
+  unit_id: string | null
+  document_id: string | null
+  script_version_id: string | null
+  export_label: string | null
+  /** JSON metadata: included sections, filters, warnings. */
+  metadata_json: string | null
+} & SoftDeletable
 
 // ─── Calendar (Schedule view) ───────────────────────────────────────────────
 

@@ -10,6 +10,10 @@ import { outboxPush, outboxStatementForRow } from '../outbox'
 import { coerceIsoString, coerceNumber } from '../sqlValueCoercion'
 import type { BudgetCategory, BudgetItem, Expense } from '../types'
 import { ensureLegacyFallbackAccounts, getAccountById } from './budgetAccounts'
+import {
+  budgetItemDetailsUpsertStatement,
+  defaultAllowDetailsJsonForNewItem,
+} from './budgetItemDetails'
 import { resolveBudgetRevisionId } from './budgetRevisions'
 
 const CAT_TABLE = 'budget_categories'
@@ -62,6 +66,11 @@ function rowToExpense(r: Record<string, unknown>): Expense {
     vendor: r.vendor as string | null,
     notes: r.notes as string | null,
     expense_type: (r.expense_type as Expense['expense_type']) ?? 'other',
+    vat_rate_percent: r.vat_rate_percent == null ? null : coerceNumber(r.vat_rate_percent, 0),
+    vat_reclaimed_amount:
+      r.vat_reclaimed_amount == null ? null : coerceNumber(r.vat_reclaimed_amount, 0),
+    vat_reclaim_date: (r.vat_reclaim_date as string | null) ?? null,
+    vat_reclaim_reference: (r.vat_reclaim_reference as string | null) ?? null,
     created_at: coerceIsoString(r.created_at),
     updated_at: coerceIsoString(r.updated_at),
     deleted_at: r.deleted_at == null ? null : coerceIsoString(r.deleted_at),
@@ -204,6 +213,7 @@ export async function createBudgetItem(data: {
   if (rctx && (await getEffectiveDataSourceForProduction(data.production_id)) === 'remote_server') {
     const remoteId = uuid()
     const ts = now()
+    const estimatedCost = data.estimated_cost ?? 0
     const body = {
       id: remoteId,
       production_id: data.production_id,
@@ -211,11 +221,11 @@ export async function createBudgetItem(data: {
       category_id: categoryId,
       account_id: accountId,
       description: data.description,
-      estimated_cost: data.estimated_cost ?? 0,
+      estimated_cost: estimatedCost,
       actual_cost: data.actual_cost ?? 0,
       vendor: data.vendor ?? null,
       status: data.status ?? 'draft',
-      line_item_type: null,
+      line_item_type: 'allow' as const,
       created_at: ts,
       updated_at: ts,
     }
@@ -253,26 +263,66 @@ export async function createBudgetItem(data: {
   const db = await getDb()
   const id = uuid()
   const ts = now()
-  await db.execute(
-    `INSERT INTO ${ITEM_TABLE} (id, production_id, budget_revision_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-    [
-      id,
-      data.production_id,
-      budgetRevisionId,
-      categoryId,
-      accountId,
-      data.description,
-      data.estimated_cost ?? 0,
-      data.actual_cost ?? 0,
-      data.vendor ?? null,
-      data.status ?? 'draft',
-      null,
-      ts,
-      ts,
-    ]
-  )
-  await outboxPush(ITEM_TABLE, id, 'create', JSON.stringify({ ...data, id }))
+  const estimatedCost = data.estimated_cost ?? 0
+  const detailsJson = defaultAllowDetailsJsonForNewItem({
+    description: data.description,
+    estimated_cost: estimatedCost,
+  })
+  const createPayload = {
+    id,
+    production_id: data.production_id,
+    budget_revision_id: budgetRevisionId,
+    category_id: categoryId,
+    account_id: accountId,
+    description: data.description,
+    estimated_cost: estimatedCost,
+    actual_cost: data.actual_cost ?? 0,
+    vendor: data.vendor ?? null,
+    status: data.status ?? 'draft',
+    line_item_type: 'allow' as const,
+    created_at: ts,
+    updated_at: ts,
+  }
+
+  await runInSerializedTransaction(async () => {
+    const batchDb = await getDb()
+    await executeBatch(batchDb, [
+      { sql: 'BEGIN TRANSACTION', bindValues: [] },
+      {
+        sql: `INSERT INTO ${ITEM_TABLE} (id, production_id, budget_revision_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        bindValues: [
+          id,
+          data.production_id,
+          budgetRevisionId,
+          categoryId,
+          accountId,
+          data.description,
+          estimatedCost,
+          data.actual_cost ?? 0,
+          data.vendor ?? null,
+          data.status ?? 'draft',
+          'allow',
+          ts,
+          ts,
+        ],
+      },
+      budgetItemDetailsUpsertStatement({
+        budgetItemId: id,
+        lineItemType: 'allow',
+        detailsJson,
+        ts,
+      }),
+      outboxStatementForRow({
+        entity: ITEM_TABLE,
+        entityId: id,
+        operation: 'create',
+        payloadJson: JSON.stringify(createPayload),
+      }),
+      { sql: 'COMMIT', bindValues: [] },
+    ])
+  })
+
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${ITEM_TABLE} WHERE id = $1`, [id])
   return rowToItem(rows[0]!)
 }

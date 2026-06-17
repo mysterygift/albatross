@@ -1,6 +1,7 @@
 import type { ServerPublishContext } from '@/lib/db/projectDataSource'
 import { serverRuntimeGetOne, serverRuntimeList } from '@/lib/server/serverClient'
 import type { Scene, ShootDay, Shot } from '@/lib/db/types'
+import { normalizeSceneDayNight, normalizeSceneIntExt } from '@/lib/schedule/sceneFields'
 
 function mapShootDay(r: Record<string, unknown>): ShootDay {
   return {
@@ -33,11 +34,10 @@ function mapScene(r: Record<string, unknown>): Scene {
     production_id: r.production_id as string,
     episode_id: (r.episode_id as string | null) ?? null,
     scene_number: r.scene_number as string,
-    heading: r.heading as string | null,
     title: (r.title as string | null) ?? null,
     description: r.description as string | null,
-    int_ext: (r.int_ext as Scene['int_ext']) ?? null,
-    day_night: (r.day_night as Scene['day_night']) ?? null,
+    int_ext: normalizeSceneIntExt(r.int_ext),
+    day_night: normalizeSceneDayNight(r.day_night),
     page_eighths: (r.page_eighths as number | null) ?? null,
     location_id: (r.location_id as string | null) ?? null,
     duration_minutes: (r.duration_minutes as number | null) ?? null,
@@ -52,10 +52,8 @@ function mapShot(r: Record<string, unknown>): Shot {
     id: r.id as string,
     scene_id: r.scene_id as string,
     shot_number: r.shot_number as string,
-    description: r.description as string | null,
     shot_description: (r.shot_description as string | null) ?? null,
     subject: (r.subject as string | null) ?? null,
-    action_description: (r.action_description as string | null) ?? null,
     shot_size: (r.shot_size as Shot['shot_size']) ?? null,
     support: (r.support as string | null) ?? null,
     lens: (r.lens as string | null) ?? null,

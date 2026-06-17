@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, useParams } from 'react-router-dom'
+import { sceneScheduleLabel } from '@/lib/schedule/sceneDisplay'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
@@ -459,9 +460,11 @@ export function CastDetailPage() {
       (s) =>
         (s.scene_number ?? '').toLowerCase().includes(q) ||
         (s.title ?? '').toLowerCase().includes(q) ||
-        (s.heading ?? '').toLowerCase().includes(q)
+        sceneScheduleLabel(s, s.location_id ? locationById.get(s.location_id) ?? null : null)
+          .toLowerCase()
+          .includes(q)
     )
-  }, [scenesAvailableToAdd, sceneSearchFilter])
+  }, [scenesAvailableToAdd, sceneSearchFilter, locationById])
 
   const shotsById = useMemo(() => new Map(allShots.map((s) => [s.id, s])), [allShots])
   const scenesByIdForProduction = useMemo(() => new Map(allScenes.map((s) => [s.id, s])), [allScenes])
@@ -486,7 +489,7 @@ export function CastDetailPage() {
       const scene = scenesByIdForProduction.get(s.scene_id)
       const sceneNum = (scene?.scene_number ?? '').toLowerCase()
       const shotNum = (s.shot_number ?? '').toLowerCase()
-      const desc = (s.description ?? s.shot_description ?? s.subject ?? '').toLowerCase()
+      const desc = (s.shot_description ?? s.subject ?? '').toLowerCase()
       return sceneNum.includes(q) || shotNum.includes(q) || desc.includes(q)
     })
   }, [shotsAvailableToAdd, shotSearchFilter, scenesByIdForProduction])
@@ -886,7 +889,7 @@ export function CastDetailPage() {
                   <TableRow>
                     <TableHead>Scene</TableHead>
                     <TableHead>Title</TableHead>
-                    <TableHead>Heading</TableHead>
+                    <TableHead>Schedule</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Int/Ext</TableHead>
                     <TableHead>Day/Night</TableHead>
@@ -902,7 +905,9 @@ export function CastDetailPage() {
                       <TableRow key={sc.id}>
                         <TableCell>{scene!.scene_number}</TableCell>
                         <TableCell className="max-w-[150px] truncate">{scene!.title ?? '—'}</TableCell>
-                        <TableCell className="max-w-[150px] truncate">{scene!.heading ?? '—'}</TableCell>
+                        <TableCell className="max-w-[150px] truncate">
+                          {sceneScheduleLabel(scene!, scene!.location_id ? locationById.get(scene!.location_id) ?? null : null)}
+                        </TableCell>
                         <TableCell className="max-w-[120px] truncate">{scene!.location_id ? (locationById.get(scene!.location_id) ?? '—') : '—'}</TableCell>
                         <TableCell>{scene!.int_ext ?? '—'}</TableCell>
                         <TableCell>{scene!.day_night ?? '—'}</TableCell>
@@ -978,7 +983,7 @@ export function CastDetailPage() {
                         <TableCell>{shot.shot_number}</TableCell>
                         <TableCell>{scene!.scene_number}</TableCell>
                         <TableCell className="max-w-[200px] truncate">
-                          {shot.description ?? shot.shot_description ?? shot.subject ?? '—'}
+                          {shot.shot_description ?? shot.subject ?? '—'}
                         </TableCell>
                         {person.is_cast && (
                           <TableCell>
@@ -1026,7 +1031,7 @@ export function CastDetailPage() {
                     <TableHead className="w-10"> </TableHead>
                     <TableHead>Scene</TableHead>
                     <TableHead>Title</TableHead>
-                    <TableHead>Heading</TableHead>
+                    <TableHead>Schedule</TableHead>
                     <TableHead>Int/Ext</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1056,7 +1061,9 @@ export function CastDetailPage() {
                       </TableCell>
                       <TableCell>{scene.scene_number}</TableCell>
                       <TableCell className="max-w-[180px] truncate">{scene.title ?? '—'}</TableCell>
-                      <TableCell className="max-w-[150px] truncate">{scene.heading ?? '—'}</TableCell>
+                      <TableCell className="max-w-[150px] truncate">
+                        {sceneScheduleLabel(scene, scene.location_id ? locationById.get(scene.location_id) ?? null : null)}
+                      </TableCell>
                       <TableCell>{scene.int_ext ?? '—'}</TableCell>
                     </TableRow>
                   ))}
@@ -1148,7 +1155,7 @@ export function CastDetailPage() {
                         <TableCell>{shot.shot_number}</TableCell>
                         <TableCell>{scene?.scene_number ?? '—'}</TableCell>
                         <TableCell className="max-w-[180px] truncate">
-                          {shot.description ?? shot.shot_description ?? shot.subject ?? '—'}
+                          {shot.shot_description ?? shot.subject ?? '—'}
                         </TableCell>
                       </TableRow>
                     )

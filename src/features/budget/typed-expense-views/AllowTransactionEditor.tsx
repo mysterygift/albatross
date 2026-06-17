@@ -5,18 +5,35 @@ import { z } from 'zod'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
+import { hasMaxTwoDecimalPlaces, NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import { parseAllowDetails, type AllowDetails } from '@/lib/budget/transactions/allow'
 import { ExpenseEditorFooter } from '../expense-shared'
 import type { TypedExpenseEditProps } from './types'
 
 const allowEditSchema = z.object({
   allow_description: z.string().min(1, 'Allow description is required'),
-  provisional_amount: z.union([z.coerce.number().nonnegative(), z.literal('')]).optional(),
+  provisional_amount: z
+    .union([
+      z.literal(''),
+      z
+        .number()
+        .finite(NON_NEGATIVE_MONEY_MESSAGE)
+        .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
+        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+    ])
+    .optional(),
   status: z.enum(['open', 'resolved']).default('open'),
   notes: z.string().optional(),
 })
 
-type AllowFormValues = z.infer<typeof allowEditSchema>
+type AllowFormValues = {
+  allow_description: string
+  provisional_amount?: number | ''
+  status: 'open' | 'resolved'
+  notes?: string
+}
 
 function toAllowDetails(data: AllowFormValues): AllowDetails {
   return {
@@ -24,7 +41,7 @@ function toAllowDetails(data: AllowFormValues): AllowDetails {
     provisional_amount:
       data.provisional_amount === '' || data.provisional_amount === undefined
         ? null
-        : Number(data.provisional_amount),
+        : data.provisional_amount,
     status: data.status,
     notes: data.notes?.trim() ? data.notes.trim() : null,
   }
@@ -66,6 +83,8 @@ export function AllowTransactionEditor({
     submit: () => form.handleSubmit((data) => onSave(toAllowDetails(data)))(),
   }), [form, onSave])
 
+  const errors = form.formState.errors
+
   return (
     <form
       onSubmit={form.handleSubmit((data) => onSave(toAllowDetails(data)))}
@@ -74,16 +93,32 @@ export function AllowTransactionEditor({
       <div>
         <Label>Allow description</Label>
         <Input {...form.register('allow_description')} />
-        {form.formState.errors.allow_description && (
-          <p className="text-destructive text-sm">{form.formState.errors.allow_description.message}</p>
+        {errors.allow_description && (
+          <p className="text-destructive text-sm">{errors.allow_description.message}</p>
         )}
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label>Provisional amount</Label>
-          <Input {...form.register('provisional_amount')} inputMode="decimal" />
-          <p className="text-muted-foreground text-xs mt-1">Optional rough amount if known.</p>
-        </div>
+        <ValidatedField
+          label="Provisional amount"
+          error={errors.provisional_amount?.message}
+          description="Optional rough amount if known."
+          htmlFor="allow-provisional-amount"
+        >
+          <Controller
+            name="provisional_amount"
+            control={form.control}
+            render={({ field }) => (
+              <MoneyAmountInput
+                id="allow-provisional-amount"
+                mode="nonNegative"
+                placeholder="0.00"
+                value={field.value === '' || field.value === undefined ? null : field.value}
+                onValueChange={(v) => field.onChange(v ?? '')}
+                onBlur={field.onBlur}
+              />
+            )}
+          />
+        </ValidatedField>
         <div>
           <Label>Status</Label>
           <Controller

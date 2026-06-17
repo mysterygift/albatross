@@ -374,9 +374,6 @@ export function EpisodesSettingsSection({ productionId }: Props) {
         <DialogContent
           className="sm:max-w-md"
           showCloseButton={!confirmPending}
-          onPointerDownOutside={(e) => {
-            if (confirmPending) e.preventDefault()
-          }}
           onEscapeKeyDown={(e) => {
             if (confirmPending) e.preventDefault()
           }}

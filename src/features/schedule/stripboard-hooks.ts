@@ -11,6 +11,7 @@ import {
   createShotStripForActor,
   createStripForActor,
   deleteShootDayAndDiscardStripsForActor,
+  removeSecondUnitFromShootDayForActor,
   deleteStripForActor,
   getCastIdsByShotIdsForActor,
   getEstimatedShootMinutesByShotIdsForActor,
@@ -50,6 +51,7 @@ import {
   listBoneyardStrips,
   deleteShootDayAndDiscardStrips,
   deleteStrip,
+  removeSecondUnitFromShootDay,
   reorderStrip,
   updateStripEstimatedMinutes,
   updateCallWrapStripTime,
@@ -61,6 +63,7 @@ import {
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import { listShootDayUnitsByProduction, setShootDayUnitLocked } from '@/lib/db/repositories/shoot-day-units'
 import { ensureMainUnit } from '@/lib/db/repositories/units'
+import { sortShootDayUnitsForDisplay } from '@/lib/schedule/unitKey'
 import { getCastIdsByShotIds } from '@/lib/db/repositories/shot-cast'
 import { getEffectiveDataSourceForProduction, tanstackDataSourceKey } from '@/lib/db/projectDataSource'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
@@ -249,17 +252,18 @@ export function useStripboard(productionId: string | null) {
       : (shotCastIdsQuery.data ?? new Map<string, string[]>())
 
   const dayUnitsByDayId = useMemo(() => {
+    const unitsById = new Map(units.map((u) => [u.id, u]))
     const map = new Map<string, typeof dayUnits>()
     for (const du of dayUnits) {
       const list = map.get(du.shoot_day_id) ?? []
       list.push(du)
       map.set(du.shoot_day_id, list)
     }
-    for (const list of map.values()) {
-      list.sort((a, b) => a.unit_id.localeCompare(b.unit_id))
+    for (const [shootDayId, list] of map.entries()) {
+      map.set(shootDayId, sortShootDayUnitsForDisplay(list, unitsById))
     }
     return map
-  }, [dayUnits])
+  }, [dayUnits, units])
 
   const stripsByDayUnit = useMemo(() => {
     const map = new Map<string, typeof strips>()
@@ -409,6 +413,20 @@ export function useStripboard(productionId: string | null) {
     onSuccess: () => invalidate(),
   })
 
+  const removeSecondUnitMutation = useMutation({
+    mutationFn: (shootDayUnitId: string) =>
+      authSession.authSupported && authSession.currentUser
+        ? getDb().then((db) =>
+            removeSecondUnitFromShootDayForActor({
+              db,
+              actor: authSession.currentUser!,
+              shootDayUnitId,
+            })
+          )
+        : removeSecondUnitFromShootDay(shootDayUnitId),
+    onSuccess: () => invalidate(),
+  })
+
   const createShotStripMutation = useMutation({
     mutationFn: ({
       productionId,
@@ -467,6 +485,7 @@ export function useStripboard(productionId: string | null) {
     moveToBoneyardMutation,
     deleteStripMutation,
     deleteShootDayMutation,
+    removeSecondUnitMutation,
     moveStripMutation,
     reorderStripMutation,
     createStripMutation,

@@ -41,6 +41,7 @@ export function formatMoveStripRouteLabel(
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { StripboardStrip, StripType, Episode } from '@/lib/db/types'
 import type { Scene, Shot } from '@/lib/db/types'
+import { sceneScheduleLabel } from '@/lib/schedule/sceneDisplay'
 import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
 import {
   episodeLabelForSceneRow,
@@ -174,7 +175,7 @@ export function StripItem({
           <>
             <span className="font-medium shrink-0">Scene {scene.scene_number}</span>
             <span className="text-muted-foreground text-sm min-w-0 truncate">
-              {scene.title ?? scene.heading ?? ''}
+              {scene.title ?? sceneScheduleLabel(scene, locationById.get(scene.location_id ?? '') ?? null)}
             </span>
             <div className="flex gap-1 shrink-0 flex-wrap">
               {episodeStripLabel && (

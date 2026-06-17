@@ -72,6 +72,9 @@ import {
 import { bookingStartSortKey, formatBookingTimeWindow } from '@/lib/call-sheets/bookingCallTimes'
 import { buildAdvancedScheduleForCallSheet } from '@/lib/call-sheets/advancedSchedule'
 import { saveFileWithDialog, openInSystem } from '@/lib/files'
+import { upsertCallSheet } from '@/lib/db/repositories/call-sheets'
+import { persistProductionDocument, documentsQueryKey } from '@/lib/documents/persistDocument'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
 import { getWeatherForCallSheet } from '@/lib/weather/openMeteo'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -883,26 +886,43 @@ export function CallSheetsPage() {
       const bytes = new Uint8Array(pdfBytes)
       if (options.save) {
         const fileName = `call-sheet-${shootDay.shoot_date}-${shootDayUnitId ?? 'main'}.pdf`
+        const { documentId } = await persistProductionDocument({
+          productionId: currentProductionId,
+          fileName,
+          bytes,
+          mimeType: 'application/pdf',
+          entityType: DOCUMENT_ENTITY_TYPES.callSheet,
+          entityId: shootDay.id,
+        })
+        await upsertCallSheet({
+          production_id: currentProductionId,
+          shoot_day_id: shootDay.id,
+          shoot_day_unit_id: shootDayUnitId ?? null,
+          generated_document_id: documentId,
+        })
         const savedPath = await saveFileWithDialog(
           {
             defaultPath: fileName,
             filters: [{ name: 'PDF', extensions: ['pdf'] }],
-            title: 'Save call sheet',
+            title: 'Export a copy of call sheet',
           },
           bytes
         )
         if (savedPath && options.openAfter) {
           await openInSystem(savedPath)
         }
-        return { bytes, weatherFallback: usedFallback }
+        return { bytes, weatherFallback: usedFallback, saved: true }
       }
-      return { bytes, weatherFallback: usedFallback }
+      return { bytes, weatherFallback: usedFallback, saved: false }
     },
     onError: (err) => {
       setGenerateError(err instanceof Error ? err.message : String(err))
     },
     onSuccess: (result) => {
       setGenerateError(null)
+      if (result.saved && currentProductionId) {
+        void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+      }
       if (result.bytes) {
         const blob = new Blob([result.bytes], { type: 'application/pdf' })
         const url = URL.createObjectURL(blob)
@@ -1259,6 +1279,8 @@ export function CallSheetsPage() {
           setDistributionStatus({ loading: true, message: null, error: null })
           try {
             const result = await exportDistributedCallSheets({
+              productionId: currentProductionId!,
+              shootDayId: shootDayId!,
               baseData: buildCallSheetData,
               recipients: selected,
               onProgress: (current, total) => {
@@ -1268,12 +1290,13 @@ export function CallSheetsPage() {
                 }))
               },
             })
-            if (result && result.written > 0) {
+            if (result && result.persisted > 0) {
+              void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
               const pathSuffix = result.directoryPath
-                ? ` Saved to: ${result.directoryPath}`
+                ? ` Copies saved to: ${result.directoryPath}`
                 : ''
               setDistributionExportSuccessMessage(
-                `Generated ${result.written} personalised call sheet${result.written === 1 ? '' : 's'}.${pathSuffix}`,
+                `Saved ${result.persisted} personalised call sheet${result.persisted === 1 ? '' : 's'} to Documents.${pathSuffix}`,
               )
               setDistributionOpen(false)
               setDistributionStatus({ loading: false, message: null, error: null })

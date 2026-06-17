@@ -1,4 +1,5 @@
-import { useState, useMemo, type ReactNode } from 'react'
+import { useState, useMemo, useEffect, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -19,8 +20,17 @@ import {
   ExpenseDetailMetaRow,
   ExpenseTypedSection,
   ExpenseParseErrorCard,
-  UntypedExpenseEditor,
 } from '@/features/budget/expense-shared'
+import { ExpenseTaxFields, type ExpenseTaxCreditDraft, type ExpenseVatReclaimDraft } from '@/features/budget/ExpenseTaxFields'
+import { ExpenseTaxReadSection } from '@/features/budget/ExpenseTaxReadSection'
+import {
+  getProductionBudgetFeatures,
+  listAllocationsByExpense,
+  updateExpenseTaxVatAndAllocations,
+} from '@/lib/db/repositories/taxCredits'
+import { listVatReclaimRates } from '@/lib/db/repositories/vatReclaim'
+import { buildVatReclaimRateMap, computeExpenseVatReclaim } from '@/lib/budget/vatReclaim'
+import { ExpenseVendorFinanceSection } from '@/features/budget/vendors/ExpenseVendorFinanceSection'
 
 export type ExpenseDetailPanelProps = {
   expenseWithDetails: ExpenseWithDetails | null | undefined
@@ -33,14 +43,6 @@ export type ExpenseDetailPanelProps = {
   locations: Array<{ id: string; name: string; booked_status?: string }>
   onSaved: () => void
   onSaveRequest: (args: { expenseId: string; details: unknown; type: string }) => Promise<void>
-  /** When set, untyped (legacy) expenses can be edited (amount, date, vendor, notes). */
-  onUpdateExpenseRequest?: (data: {
-    expenseId: string
-    amount: number
-    date: string
-    vendor: string | null
-    notes: string | null
-  }) => Promise<void>
   /** Optional: related line items in same account + same type (informational only). */
   relatedLineItemsInAccount?: { count: number; totalEstimated: number; typeLabel: string }
   /** When set, shows Delete Expense and calls this on confirm. */
@@ -60,7 +62,6 @@ export function ExpenseDetailPanel({
   locations,
   onSaved,
   onSaveRequest,
-  onUpdateExpenseRequest,
   relatedLineItemsInAccount,
   onDeleteRequest,
   hasReconciliationLinks,
@@ -71,14 +72,89 @@ export function ExpenseDetailPanel({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [taxAllocations, setTaxAllocations] = useState<ExpenseTaxCreditDraft[]>([])
+  const [vatRatePercent, setVatRatePercent] = useState<number | null>(null)
+  const [vatReclaim, setVatReclaim] = useState<ExpenseVatReclaimDraft>({
+    vat_reclaimed_amount: null,
+    vat_reclaim_date: null,
+    vat_reclaim_reference: null,
+  })
+
+  const { data: budgetFeatures } = useQuery({
+    queryKey: ['production-budget-features', productionId],
+    queryFn: () => getProductionBudgetFeatures(productionId),
+  })
+
+  const expenseId = expenseWithDetails?.expense.id
+  const { data: expenseAllocations = [] } = useQuery({
+    queryKey: ['expense-tax-allocations', expenseId],
+    queryFn: () => listAllocationsByExpense(expenseId!),
+    enabled: !!expenseId,
+  })
+
+  const { data: reclaimRates = [] } = useQuery({
+    queryKey: ['vat-reclaim-rates', productionId],
+    queryFn: () => listVatReclaimRates(productionId),
+    enabled: budgetFeatures?.vat_tracking_enabled === true,
+  })
+
+  useEffect(() => {
+    if (!expenseWithDetails) return
+    const exp = expenseWithDetails.expense
+    setVatRatePercent(exp.vat_rate_percent)
+    setVatReclaim({
+      vat_reclaimed_amount: exp.vat_reclaimed_amount,
+      vat_reclaim_date: exp.vat_reclaim_date,
+      vat_reclaim_reference: exp.vat_reclaim_reference,
+    })
+    setTaxAllocations(
+      expenseAllocations.map((a) => ({
+        tax_credit_scheme_id: a.tax_credit_scheme_id,
+        qualifying_amount: a.qualifying_amount,
+      }))
+    )
+  }, [
+    expenseWithDetails?.expense.id,
+    expenseWithDetails?.expense.vat_rate_percent,
+    expenseWithDetails?.expense.vat_reclaimed_amount,
+    expenseWithDetails?.expense.vat_reclaim_date,
+    expenseWithDetails?.expense.vat_reclaim_reference,
+    expenseAllocations,
+  ])
+
+  const saveTaxFields = async (expenseAmount: number) => {
+    if (!expenseWithDetails) return
+    const taxOn = budgetFeatures?.tax_credits_enabled === true
+    const vatOn = budgetFeatures?.vat_tracking_enabled === true
+    if (!taxOn && !vatOn) return
+    const breakdown = vatOn
+      ? computeExpenseVatReclaim(
+          {
+            ...expenseWithDetails.expense,
+            amount: expenseAmount,
+            vat_rate_percent: vatOn ? vatRatePercent : null,
+            vat_reclaimed_amount: vatReclaim.vat_reclaimed_amount,
+          },
+          buildVatReclaimRateMap(reclaimRates)
+        )
+      : null
+    await updateExpenseTaxVatAndAllocations(
+      expenseWithDetails.expense.id,
+      expenseAmount,
+      vatOn ? vatRatePercent : null,
+      taxOn ? taxAllocations : [],
+      vatOn ? vatReclaim : undefined,
+      breakdown?.vatReclaimable
+    )
+  }
 
   const config = expenseWithDetails
     ? getTypedExpenseConfig(expenseWithDetails.expense.transaction_type)
     : null
   const typedEditable = config?.editable === true && config?.EditComponent != null
-  const untypedEditable = !config && onUpdateExpenseRequest != null
-  const editable = typedEditable || untypedEditable
-  const transactionTypeLabel = config?.label ?? expenseWithDetails?.expense.transaction_type ?? '—'
+  const editable = typedEditable
+  const transactionTypeLabel =
+    config?.label ?? (expenseWithDetails?.expense.transaction_type == null ? 'Allow (legacy)' : '—')
 
   const viewContext: ExpenseViewContext = useMemo(
     () => ({
@@ -121,29 +197,7 @@ export function ExpenseDetailPanel({
         details,
         type: config.type,
       })
-      onSaved()
-      setMode('read')
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Save failed')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const handleUpdateExpense = async (data: {
-    amount: number
-    date: string
-    vendor: string | null
-    notes: string | null
-  }) => {
-    if (!expenseWithDetails || !onUpdateExpenseRequest) return
-    setSaveError(null)
-    setIsSaving(true)
-    try {
-      await onUpdateExpenseRequest({
-        expenseId: expenseWithDetails.expense.id,
-        ...data,
-      })
+      await saveTaxFields(expenseWithDetails.expense.amount)
       onSaved()
       setMode('read')
     } catch (err) {
@@ -191,16 +245,7 @@ export function ExpenseDetailPanel({
   const { expense, transaction_details } = expenseWithDetails
 
   let typedContent: ReactNode
-  if (mode === 'edit' && untypedEditable) {
-    typedContent = (
-      <UntypedExpenseEditor
-        expense={expense}
-        onSave={handleUpdateExpense}
-        onCancel={() => setMode('read')}
-        isSaving={isSaving}
-      />
-    )
-  } else if (mode === 'edit' && config?.EditComponent && typedEditable) {
+  if (mode === 'edit' && config?.EditComponent && typedEditable) {
     const EditComponent = config.EditComponent
     typedContent = (
       <EditComponent
@@ -231,6 +276,13 @@ export function ExpenseDetailPanel({
         message="Unknown transaction type. Showing raw JSON."
         rawJson={transaction_details.details_json}
       />
+    )
+  } else if (expense.transaction_type == null) {
+    typedContent = (
+      <p className="text-sm text-muted-foreground">
+        This spend uses a legacy untyped classification. Open the Budget page and convert untyped
+        entries to Allow to edit typed details.
+      </p>
     )
   } else {
     typedContent = (
@@ -265,9 +317,9 @@ export function ExpenseDetailPanel({
                 className="h-8"
                 onClick={() => setMode((m) => (m === 'read' ? 'edit' : 'read'))}
                 title={
-                  !typedEditable && !untypedEditable
+                  !typedEditable
                     ? expense.transaction_type == null
-                      ? 'Add a typed transaction in a follow-up prompt'
+                      ? 'Convert legacy spend to Allow on the Budget page before editing typed details'
                       : 'Editing is not yet available for this transaction type.'
                     : undefined
                 }
@@ -321,7 +373,7 @@ export function ExpenseDetailPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <div className="p-4 space-y-4 overflow-auto">
+      <div className="flex-1 overflow-y-auto space-y-4 px-7 py-4">
         <ExpenseDetailHeader
           expense={expense}
           accountLabel={accountLabel}
@@ -358,7 +410,41 @@ export function ExpenseDetailPanel({
             </p>
           </div>
         )}
+        {mode === 'read' && (
+          <ExpenseTaxReadSection
+            productionId={productionId}
+            expense={expense}
+            allocations={expenseAllocations}
+          />
+        )}
+        {mode === 'edit' &&
+          (budgetFeatures?.tax_credits_enabled || budgetFeatures?.vat_tracking_enabled) && (
+            <ExpenseTaxFields
+              productionId={productionId}
+              expenseAmount={expense.amount}
+              transactionType={expense.transaction_type}
+              value={taxAllocations}
+              onChange={setTaxAllocations}
+              vatRatePercent={vatRatePercent}
+              onVatRateChange={setVatRatePercent}
+              vatReclaim={vatReclaim}
+              onVatReclaimChange={setVatReclaim}
+            />
+          )}
         <ExpenseTypedSection>{typedContent}</ExpenseTypedSection>
+        {expense.vendor_id && (
+          <ExpenseVendorFinanceSection
+            productionId={productionId}
+            vendorId={expense.vendor_id}
+            vendorCompanyName={
+              expenseWithDetails.vendor?.company_name ?? expense.vendor ?? 'Vendor'
+            }
+            productionCurrency={productionCurrency}
+            mode="edit"
+            expenseId={expense.id}
+            format={format}
+          />
+        )}
         {saveError && (
           <p className="text-sm text-destructive">{saveError}</p>
         )}

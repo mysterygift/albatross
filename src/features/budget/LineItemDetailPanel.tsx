@@ -2,10 +2,21 @@ import { useState, useRef } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { hasMaxTwoDecimalPlaces } from '@/lib/budget/fieldValidation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ValidatedField } from '@/components/budget/ValidatedField'
+import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
 import { SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Select,
   SelectContent,
@@ -13,7 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { X } from 'lucide-react'
 import { Pencil } from 'lucide-react'
 import type { BudgetItemWithDetails, LineItemType } from '@/lib/db/types'
 import type { Location, Person } from '@/lib/db/types'
@@ -22,12 +32,9 @@ import { getLineItemTypeConfig, lineItemTypeRegistry } from '@/lib/budget/line-i
 import { ExpenseDetailMetaGrid, ExpenseDetailMetaRow, ExpenseEditorFooter } from '@/features/budget/expense-shared'
 import { LineItemParseErrorCard } from '@/features/budget/line-item-views/LineItemParseErrorCard'
 import type { LineItemEditorRef } from '@/features/budget/line-item-views/types'
-const LINE_ITEM_TYPE_SENTINEL_NONE = '__none__'
-
 const LINE_ITEM_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   ...(Object.entries(lineItemTypeRegistry) as [LineItemType, (typeof lineItemTypeRegistry)[LineItemType]][])
     .map(([value, config]) => ({ value, label: config.label })),
-  { value: LINE_ITEM_TYPE_SENTINEL_NONE, label: 'Untyped / None' },
 ]
 
 export type LineItemDetailPanelProps = {
@@ -51,7 +58,8 @@ const lineItemEditSchema = z.object({
   estimated_cost: z.coerce
     .number()
     .finite('Estimated cost must be a number')
-    .nonnegative('Estimated cost must be 0 or more'),
+    .nonnegative('Estimated cost must be 0 or more')
+    .refine(hasMaxTwoDecimalPlaces, { message: 'Estimated cost must have at most 2 decimal places' }),
   vendor: z.string().optional(),
   lineItemType: z.string(),
 })
@@ -59,7 +67,7 @@ const lineItemEditSchema = z.object({
 type LineItemEditFormValues = z.infer<typeof lineItemEditSchema>
 
 function formatLineItemType(type: string | null): string {
-  if (type == null) return 'Untyped line item'
+  if (type == null) return 'Allow'
   return getLineItemTypeConfig(type as LineItemType)?.label ?? type
 }
 
@@ -79,6 +87,9 @@ export function LineItemDetailPanel({
   const [mode, setMode] = useState<'read' | 'edit'>('read')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [pendingTypeSwitch, setPendingTypeSwitch] = useState<{ nextType: LineItemType } | null>(
+    null
+  )
   const typedEditorRef = useRef<LineItemEditorRef | null>(null)
 
   const form = useForm<LineItemEditFormValues>({
@@ -90,10 +101,12 @@ export function LineItemDetailPanel({
             estimated_cost: lineItemWithDetails.budget_item.estimated_cost,
             vendor: lineItemWithDetails.budget_item.vendor ?? '',
             lineItemType:
-              lineItemWithDetails.budget_item.line_item_type ?? LINE_ITEM_TYPE_SENTINEL_NONE,
+              lineItemWithDetails.budget_item.line_item_type ?? 'allow',
           }
         : undefined,
   })
+
+  const currentLineItemType = form.watch('lineItemType') as LineItemType
 
   if (isLoading) {
     return (
@@ -122,15 +135,11 @@ export function LineItemDetailPanel({
     setSaveError(null)
     setIsSaving(true)
     try {
-      const lineItemType: LineItemType | null =
-        data.lineItemType === LINE_ITEM_TYPE_SENTINEL_NONE ? null : (data.lineItemType as LineItemType)
-      let typedDetails: unknown = undefined
-      if (lineItemType != null) {
-        typedDetails = typedEditorRef.current?.getDetails() ?? undefined
-        const config = getLineItemTypeConfig(lineItemType)
-        if (config?.serialize && typedDetails !== undefined) {
-          config.serialize(typedDetails)
-        }
+      const lineItemType = data.lineItemType as LineItemType
+      let typedDetails: unknown = typedEditorRef.current?.getDetails() ?? undefined
+      const config = getLineItemTypeConfig(lineItemType)
+      if (config?.serialize && typedDetails !== undefined) {
+        config.serialize(typedDetails)
       }
       await saveBudgetItemWithDetails({
         budgetItemId: item.id,
@@ -141,6 +150,7 @@ export function LineItemDetailPanel({
         details: typedDetails,
       })
       onSaved()
+      setPendingTypeSwitch(null)
       setMode('read')
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Save failed')
@@ -154,18 +164,32 @@ export function LineItemDetailPanel({
       description: item.description,
       estimated_cost: item.estimated_cost,
       vendor: item.vendor ?? '',
-      lineItemType: item.line_item_type ?? LINE_ITEM_TYPE_SENTINEL_NONE,
+      lineItemType: item.line_item_type ?? 'allow',
     })
     setSaveError(null)
+    setPendingTypeSwitch(null)
     setMode('read')
   }
+
+  const confirmTypeSwitch = () => {
+    if (pendingTypeSwitch == null) return
+    form.setValue('lineItemType', pendingTypeSwitch.nextType, { shouldValidate: true })
+    setPendingTypeSwitch(null)
+  }
+
+  const pendingTypeLabel =
+    pendingTypeSwitch != null
+      ? (getLineItemTypeConfig(pendingTypeSwitch.nextType)?.label ?? pendingTypeSwitch.nextType)
+      : null
+  const currentTypeLabel =
+    getLineItemTypeConfig(currentLineItemType)?.label ?? currentLineItemType
 
   return (
     <>
       <SheetHeader className="border-b border-border">
         <div className="flex items-center justify-between gap-3">
           <SheetTitle>Line item details</SheetTitle>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             {mode === 'read' ? (
               <Button
                 type="button"
@@ -178,23 +202,13 @@ export function LineItemDetailPanel({
                 Edit
               </Button>
             ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
         </div>
         {mode === 'read' && (
           <p className="text-xs font-medium text-muted-foreground mt-1">{typeLabel}</p>
         )}
       </SheetHeader>
-      <div className="p-4 space-y-4 overflow-auto">
+      <div className="flex-1 overflow-y-auto space-y-4 px-7 py-4">
         {mode === 'read' ? (
           <>
             <ExpenseDetailMetaGrid>
@@ -278,22 +292,26 @@ export function LineItemDetailPanel({
                   </p>
                 )}
               </div>
-              <div>
-                <Label htmlFor="line-item-estimated-cost">Estimated cost</Label>
-                <Input
-                  id="line-item-estimated-cost"
-                  type="number"
-                  step="any"
-                  inputMode="decimal"
-                  {...form.register('estimated_cost')}
-                  className="mt-1.5 bg-background"
+              <ValidatedField
+                label="Estimated cost"
+                error={form.formState.errors.estimated_cost?.message}
+                htmlFor="line-item-estimated-cost"
+              >
+                <Controller
+                  name="estimated_cost"
+                  control={form.control}
+                  render={({ field }) => (
+                    <MoneyAmountInput
+                      id="line-item-estimated-cost"
+                      mode="nonNegative"
+                      className="mt-1.5 bg-background"
+                      value={field.value}
+                      onValueChange={(v) => field.onChange(v ?? 0)}
+                      onBlur={field.onBlur}
+                    />
+                  )}
                 />
-                {form.formState.errors.estimated_cost && (
-                  <p className="text-destructive text-sm mt-1">
-                    {form.formState.errors.estimated_cost.message}
-                  </p>
-                )}
-              </div>
+              </ValidatedField>
               <div>
                 <Label htmlFor="line-item-vendor">Vendor (optional)</Label>
                 <Input
@@ -314,17 +332,12 @@ export function LineItemDetailPanel({
                       onValueChange={(newValue) => {
                         if (newValue === field.value) return
                         const currentType = field.value
-                        const hadType = currentType !== LINE_ITEM_TYPE_SENTINEL_NONE
+                        const hadType = Boolean(currentType)
                         const hadDetails = hadType && details != null
                         const typedDirty = hadType && typedEditorRef.current?.isDirty?.()
                         if (hadDetails || typedDirty) {
-                          if (
-                            !window.confirm(
-                              'Changing the line item type will discard incompatible typed details.'
-                            )
-                          ) {
-                            return
-                          }
+                          setPendingTypeSwitch({ nextType: newValue as LineItemType })
+                          return
                         }
                         field.onChange(newValue)
                       }}
@@ -345,13 +358,11 @@ export function LineItemDetailPanel({
               </div>
             </div>
             {(() => {
-              const selectedType = form.watch('lineItemType') as string
-              const lineItemType =
-                selectedType === LINE_ITEM_TYPE_SENTINEL_NONE ? null : (selectedType as LineItemType)
-              const config =
-                lineItemType != null ? getLineItemTypeConfig(lineItemType) : null
+              const selectedType = form.watch('lineItemType') as LineItemType
+              const lineItemType = selectedType
+              const config = getLineItemTypeConfig(lineItemType)
               const showTypedEditor =
-                config?.editable && config?.EditComponent && lineItemType != null
+                config?.editable && config?.EditComponent
               if (!showTypedEditor) return null
               const initialDetails =
                 lineItemType === item.line_item_type && details
@@ -388,6 +399,30 @@ export function LineItemDetailPanel({
           </form>
         )}
       </div>
+
+      <Dialog
+        open={pendingTypeSwitch != null}
+        onOpenChange={(next) => !next && setPendingTypeSwitch(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change line item type?</DialogTitle>
+            <DialogDescription>
+              {pendingTypeLabel != null
+                ? `Switching from ${currentTypeLabel} to ${pendingTypeLabel} will discard incompatible typed details.`
+                : 'Switching type will discard incompatible typed details.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPendingTypeSwitch(null)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={confirmTypeSwitch}>
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog'
 import type { Vendor } from '@/lib/db/types'
 import { Plus, Search, Building2 } from 'lucide-react'
+import { GlobalVendorBadge } from '@/features/budget/vendors/GlobalVendorBadge'
 
 const createVendorSchema = z.object({
   company_name: z.string().min(1, 'Company name is required'),
@@ -162,7 +163,10 @@ export function VendorsIndexPage() {
                       className="w-full text-left rounded-md border border-border bg-card px-3 py-2.5 mx-2 mb-1 transition-colors hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-2 focus:ring-offset-background data-[selected]:border-primary/50 data-[selected]:bg-muted/40"
                       data-selected={selectedId === v.id ? true : undefined}
                     >
-                      <div className="font-medium text-foreground truncate">{v.company_name}</div>
+                      <div className="flex items-center gap-1.5 font-medium text-foreground truncate">
+                        <span className="truncate">{v.company_name}</span>
+                        {v.is_global && <GlobalVendorBadge />}
+                      </div>
                       <div className="mt-0.5 text-xs text-muted-foreground truncate">
                         {v.primary_contact_full_name || v.primary_contact_email || '—'}
                       </div>
@@ -229,7 +233,10 @@ function VendorPreviewCard({
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">{vendor.company_name}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-foreground">{vendor.company_name}</h2>
+          {vendor.is_global && <GlobalVendorBadge className="size-3.5" />}
+        </div>
         {vendor.primary_contact_full_name && (
           <p className="text-sm text-muted-foreground">{vendor.primary_contact_full_name}</p>
         )}

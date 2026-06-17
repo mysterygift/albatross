@@ -7,13 +7,13 @@
 export const APF_FILE_KIND = 'albatross-project-file' as const
 
 /** Interchange schema version (manifest + data file). Bump when on-disk JSON shape changes. */
-export const CURRENT_APF_FORMAT_VERSION = 2
+export const CURRENT_APF_FORMAT_VERSION = 4
 
 /** Lowest formatVersion this app build can import (after file-level migrations). */
 export const APF_MIN_SUPPORTED_FORMAT_VERSION = 1
 
 /** Highest formatVersion this app build can import without code update. Newer files must be rejected. */
-export const APF_MAX_SUPPORTED_FORMAT_VERSION = 2
+export const APF_MAX_SUPPORTED_FORMAT_VERSION = 4
 
 /** Zip entry path for the package manifest (forward slashes). */
 export const APF_MANIFEST_ENTRY_PATH = 'manifest.json'

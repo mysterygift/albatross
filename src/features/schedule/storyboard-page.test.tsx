@@ -61,7 +61,6 @@ function scene(over: Partial<Scene>): Scene {
     production_id: 'prod-1',
     episode_id: null,
     scene_number: '1',
-    heading: 'INT. OFFICE - DAY',
     title: null,
     description: null,
     int_ext: 'INT',
@@ -79,10 +78,8 @@ function shot(over: Partial<Shot>): Shot {
     id: 'shot-1',
     scene_id: 'scene-1',
     shot_number: '1A',
-    description: null,
     shot_description: 'Hero close-up',
     subject: null,
-    action_description: null,
     shot_size: 'CU',
     support: null,
     lens: null,
@@ -232,8 +229,8 @@ describe('StoryboardPage', () => {
 
   it('renders scenes and shots grouped under scenes', async () => {
     scenesData = [
-      scene({ id: 'scene-1', scene_number: '10', heading: 'INT. OFFICE - DAY' }),
-      scene({ id: 'scene-2', scene_number: '11', heading: 'EXT. STREET - NIGHT' }),
+      scene({ id: 'scene-1', scene_number: '10', int_ext: 'INT', day_night: 'DAY' }),
+      scene({ id: 'scene-2', scene_number: '11', int_ext: 'EXT', day_night: 'NIGHT' }),
     ]
     shotsData = [
       shot({ id: 'shot-1', scene_id: 'scene-1', shot_number: '1A' }),
@@ -277,7 +274,7 @@ describe('StoryboardPage', () => {
   it('does not display non-current-production scene/image data', async () => {
     scenesData = [
       scene({ id: 'scene-valid', production_id: 'prod-1', scene_number: '1' }),
-      scene({ id: 'scene-foreign', production_id: 'prod-2', scene_number: '99', heading: 'FOREIGN' }),
+      scene({ id: 'scene-foreign', production_id: 'prod-2', scene_number: '99', title: 'FOREIGN', int_ext: null, day_night: null }),
     ]
     shotsData = [
       shot({ id: 'shot-valid', scene_id: 'scene-valid', shot_number: 'A' }),
@@ -367,8 +364,8 @@ describe('StoryboardPage', () => {
   it('filters by scene and restores all scenes', async () => {
     const user = userEvent.setup()
     scenesData = [
-      scene({ id: 'scene-1', scene_number: '10', heading: 'INT. OFFICE - DAY' }),
-      scene({ id: 'scene-2', scene_number: '11', heading: 'EXT. STREET - NIGHT' }),
+      scene({ id: 'scene-1', scene_number: '10', int_ext: 'INT', day_night: 'DAY' }),
+      scene({ id: 'scene-2', scene_number: '11', int_ext: 'EXT', day_night: 'NIGHT' }),
     ]
     shotsData = [
       shot({ id: 'shot-1', scene_id: 'scene-1', shot_number: '1A' }),
@@ -380,7 +377,7 @@ describe('StoryboardPage', () => {
     expect(await screen.findByText(/Scene 11/)).toBeTruthy()
 
     await user.click(screen.getByRole('combobox'))
-    await user.click(await screen.findByText('Scene 11 - EXT. STREET - NIGHT'))
+    await user.click(await screen.findByText('Scene 11 - EXT – — – NIGHT'))
     expect(screen.queryByText(/Scene 10/)).toBeNull()
     expect(await screen.findByText(/Shot 2B/)).toBeTruthy()
 
@@ -393,8 +390,8 @@ describe('StoryboardPage', () => {
   it('keeps scene and shot ordering stable across view toggles and filtering', async () => {
     const user = userEvent.setup()
     scenesData = [
-      scene({ id: 'scene-a', scene_number: '20', heading: 'FIRST' }),
-      scene({ id: 'scene-b', scene_number: '10', heading: 'SECOND' }),
+      scene({ id: 'scene-a', scene_number: '20', title: 'FIRST', int_ext: null, day_night: null }),
+      scene({ id: 'scene-b', scene_number: '10', title: 'SECOND', int_ext: null, day_night: null }),
     ]
     shotsData = [
       shot({ id: 'shot-a1', scene_id: 'scene-a', shot_number: '3C' }),
@@ -431,8 +428,8 @@ describe('StoryboardPage', () => {
   it('shows empty filtered state when selected scene has no shots', async () => {
     const user = userEvent.setup()
     scenesData = [
-      scene({ id: 'scene-1', scene_number: '10', heading: 'INT. OFFICE - DAY' }),
-      scene({ id: 'scene-2', scene_number: '11', heading: 'EMPTY' }),
+      scene({ id: 'scene-1', scene_number: '10', int_ext: 'INT', day_night: 'DAY' }),
+      scene({ id: 'scene-2', scene_number: '11', title: 'EMPTY', int_ext: null, day_night: null }),
     ]
     shotsData = [shot({ id: 'shot-1', scene_id: 'scene-1', shot_number: '1A' })]
 

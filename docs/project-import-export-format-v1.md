@@ -71,6 +71,16 @@ Optional zip entries: none required. **Extra files** elsewhere in the archive (o
 - Bump **`formatVersion`** when the **JSON contract** changes in a breaking way (manifest shape, payload shape, table key set, bundled path rules).
 - **App semver** may change without bumping `formatVersion` if the on-disk contract is unchanged.
 
+Registered file-level migrators (`src/lib/importExport/migrate.ts`):
+
+| Step | Change |
+|------|--------|
+| v1 → v2 | Episodic tables (`episodes`, `shooting_blocs`); `productions.is_episodic`, `client_id`, `delivery_date`. |
+| v2 → v3 | Budget revision closure (`budget_revisions`, `floats`, `float_expense_links` synthesis). |
+| v3 → v4 | Drop `scenes.heading`; when `title` is empty, copy trimmed `heading` into `title` before removal (matches SQLite migration 0083). |
+
+Exports from current builds write **`formatVersion` 4** and omit `scenes.heading`. Imports of v1–v3 packages run the chain above before INSERT planning.
+
 ### 4.4 Compatibility rules
 
 - If `formatVersion` **>** app’s `APF_MAX_SUPPORTED_FORMAT_VERSION`: **refuse import** with a clear message; **no partial import**.
@@ -400,3 +410,4 @@ Verified behaviours:
 | 2026-03-22 | Phase 7: Vitest suite + fixtures + import/export hardening tests + doc §16. |
 | 2026-03-22 | Phase 7B: sql.js E2E export/import, tombstone loader proof, stronger rollback + missing-bytes policy locked; export fix for removed `checklist_items` table; doc §16 revision. |
 | 2026-03-24 | Episodic export closure (`episodes` / `shooting_blocs`), import preflight for `shooting_bloc_id`, §11.2 / §16.2 notes; audit §2–§4 updates. |
+| 2026-06-16 | **formatVersion 4:** remove redundant `scenes.heading` from interchange rows; v3→v4 migrator backfills empty `title` from `heading`. |
