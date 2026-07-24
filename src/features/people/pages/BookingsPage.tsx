@@ -57,13 +57,23 @@ import {
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
-import { Plus, Trash2, ChevronLeft, ChevronRight, Calendar, List, AlertTriangle, UserMinus, Pencil } from 'lucide-react'
+import { Plus, Trash2, Calendar, List, AlertTriangle, UserMinus, Pencil, Settings } from 'lucide-react'
 import { getBookingCoverageByShootDay } from '@/lib/people/bookingIntelligence'
 import type { Booking } from '@/lib/db/types'
 import type { BookingIntelligenceSummary } from '@/lib/people/bookingIntelligence'
 import type { Person } from '@/lib/db/types'
 import type { ShootDay } from '@/lib/db/types'
 import type { Unit } from '@/lib/db/types'
+import { BookingsCalendarView, type BookingChanges } from '@/features/people/components/bookings/BookingsCalendarView'
+import { BookingColorSettingsDialog } from '@/features/people/components/bookings/BookingColorSettingsDialog'
+import {
+  getDefaultColorConfig,
+  loadColorConfig,
+  mergeConfigWithDefaults,
+  resolvePersonColor,
+  saveColorConfig,
+  type BookingColorConfig,
+} from '@/features/people/lib/bookingCalendarColors'
 
 const PEOPLE_BOOKINGS_VIEW_KEY = 'peopleBookingsView'
 type ViewMode = 'calendar' | 'list'
@@ -110,6 +120,11 @@ export function BookingsPage() {
   const [filterCastCrew, setFilterCastCrew] = useState<string>('all')
   const [sorting, setSorting] = useState<SortingState>([{ id: 'date', desc: false }])
   const [globalFilter, setGlobalFilter] = useState('')
+  const [colorOverride, setColorOverride] = useState<{
+    productionId: string
+    config: BookingColorConfig
+  } | null>(null)
+  const [colorSettingsOpen, setColorSettingsOpen] = useState(false)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -334,6 +349,85 @@ export function BookingsPage() {
     },
   })
 
+  const storedColorConfig = useMemo(
+    () =>
+      currentProductionId
+        ? loadColorConfig(currentProductionId, people)
+        : getDefaultColorConfig(people),
+    [currentProductionId, people]
+  )
+
+  const activeColorConfig = useMemo(() => {
+    if (colorOverride && colorOverride.productionId === currentProductionId) {
+      return mergeConfigWithDefaults(colorOverride.config, people)
+    }
+    return storedColorConfig
+  }, [colorOverride, currentProductionId, people, storedColorConfig])
+
+  const handleSaveColors = (cfg: BookingColorConfig) => {
+    if (currentProductionId) {
+      saveColorConfig(currentProductionId, cfg)
+      setColorOverride({ productionId: currentProductionId, config: cfg })
+    }
+  }
+
+  const applyBookingChanges = async (changes: BookingChanges) => {
+    const useActor = authSession.authSupported && !!authSession.currentUser
+    const db = useActor ? await getDb() : null
+    for (const u of changes.updates ?? []) {
+      if (useActor) {
+        await updateBookingForActor({
+          db: db!,
+          actor: authSession.currentUser!,
+          bookingId: u.bookingId,
+          data: { shoot_day_id: u.shootDayId },
+        })
+      } else {
+        await updateBooking(u.bookingId, { shoot_day_id: u.shootDayId })
+      }
+    }
+    for (const c of changes.creates ?? []) {
+      if (useActor) {
+        await createBookingForActor({
+          db: db!,
+          actor: authSession.currentUser!,
+          productionId: currentProductionId!,
+          personId: c.personId,
+          shootDayId: c.shootDayId,
+          role: c.role,
+          notes: c.notes,
+        })
+      } else {
+        await createBooking({
+          production_id: currentProductionId!,
+          person_id: c.personId,
+          shoot_day_id: c.shootDayId,
+          role: c.role,
+          notes: c.notes,
+        })
+      }
+    }
+    for (const id of changes.deletes ?? []) {
+      if (useActor) {
+        await deleteBookingForActor({ db: db!, actor: authSession.currentUser!, bookingId: id })
+      } else {
+        await deleteBooking(id)
+      }
+    }
+    queryClient.invalidateQueries({ queryKey: ['bookings'] })
+    queryClient.invalidateQueries({ queryKey: ['booking-intelligence', currentProductionId] })
+    queryClient.invalidateQueries({ queryKey: ['person-booking-need'] })
+  }
+
+  const openEditBooking = (booking: Booking) => {
+    setEditingBooking(booking)
+    setPersonId(booking.person_id)
+    setShootDayId(booking.shoot_day_id ?? '')
+    setRole(booking.role ?? '')
+    setNotes(booking.notes ?? '')
+    setOpen(true)
+  }
+
   const getPersonName = (id: string) => personById.get(id)?.name ?? '—'
   const getDayLabel = (id: string | null) =>
     id ? shootDayById.get(id)?.shoot_date ?? '—' : '—'
@@ -380,6 +474,16 @@ export function BookingsPage() {
               </TabsTrigger>
             </TabsList>
           </Tabs>
+          <Button
+            variant="outline"
+            size="icon"
+            className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
+            onClick={() => setColorSettingsOpen(true)}
+            aria-label="Calendar color settings"
+            title="Calendar colors"
+          >
+            <Settings className="size-4" />
+          </Button>
           <Button
             className="bg-mint-600 text-white hover:bg-mint-700 focus-visible:ring-mint-500/50"
             onClick={() => {
@@ -582,8 +686,11 @@ export function BookingsPage() {
       {view === 'calendar' && (
         <BookingsCalendarView
           bookings={filteredBookings}
+          allBookings={bookings}
           shootDays={shootDays}
+          people={people}
           personById={personById}
+          colorConfig={activeColorConfig}
           bookingIntelligence={bookingIntelligence ?? undefined}
           filterUnit={filterUnit}
           setFilterUnit={setFilterUnit}
@@ -593,6 +700,8 @@ export function BookingsPage() {
           setFilterCastCrew={setFilterCastCrew}
           units={units}
           departments={departments}
+          onApplyChanges={applyBookingChanges}
+          onEditBooking={openEditBooking}
         />
       )}
 
@@ -610,6 +719,10 @@ export function BookingsPage() {
           setGlobalFilter={setGlobalFilter}
           bookingIntelligence={bookingIntelligence ?? undefined}
           shootDayById={shootDayById}
+          personColor={(personId) => {
+            const p = personById.get(personId)
+            return p ? resolvePersonColor(p, activeColorConfig) : null
+          }}
           openAddBookingWithPrefill={(pId, dayId) => {
             setPersonId(pId)
             setShootDayId(dayId)
@@ -618,236 +731,18 @@ export function BookingsPage() {
             setEditingBooking(null)
             setOpen(true)
           }}
-          onEditBooking={(booking) => {
-            setEditingBooking(booking)
-            setPersonId(booking.person_id)
-            setShootDayId(booking.shoot_day_id ?? '')
-            setRole(booking.role ?? '')
-            setNotes(booking.notes ?? '')
-            setOpen(true)
-          }}
+          onEditBooking={openEditBooking}
         />
       )}
+
+      <BookingColorSettingsDialog
+        open={colorSettingsOpen}
+        onOpenChange={setColorSettingsOpen}
+        people={people}
+        config={activeColorConfig}
+        onSave={handleSaveColors}
+      />
     </div>
-  )
-}
-
-function BookingsCalendarView({
-  bookings,
-  shootDays,
-  personById,
-  bookingIntelligence,
-  filterUnit,
-  setFilterUnit,
-  filterDepartment,
-  setFilterDepartment,
-  filterCastCrew,
-  setFilterCastCrew,
-  units,
-  departments,
-}: {
-  bookings: Booking[]
-  shootDays: ShootDay[]
-  personById: Map<string, Person>
-  bookingIntelligence?: BookingIntelligenceSummary
-  filterUnit: string
-  setFilterUnit: (v: string) => void
-  filterDepartment: string
-  setFilterDepartment: (v: string) => void
-  filterCastCrew: string
-  setFilterCastCrew: (v: string) => void
-  units: Unit[]
-  departments: string[]
-}) {
-  const [month, setMonth] = useState(() => new Date())
-
-  const monthStart = new Date(month.getFullYear(), month.getMonth(), 1)
-  const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0)
-  const startDay = monthStart.getDay()
-  const daysInMonth = monthEnd.getDate()
-  const blanks = Array(startDay).fill(null)
-  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
-
-  const bookingsByDate = useMemo(() => {
-    const m = new Map<string, Booking[]>()
-    for (const b of bookings) {
-      const date = b.shoot_day_id ? shootDays.find((d) => d.id === b.shoot_day_id)?.shoot_date : null
-      if (date) {
-        const arr = m.get(date) ?? []
-        arr.push(b)
-        m.set(date, arr)
-      }
-    }
-    return m
-  }, [bookings, shootDays])
-
-  const shootDayByDate = useMemo(() => {
-    const m = new Map<string, ShootDay>()
-    for (const d of shootDays) m.set(d.shoot_date, d)
-    return m
-  }, [shootDays])
-
-  return (
-    <>
-      <Card className="rounded-lg border-border bg-card">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Label className="text-muted-foreground text-sm whitespace-nowrap">Unit</Label>
-              <Select value={filterUnit} onValueChange={setFilterUnit}>
-                <SelectTrigger className="w-[140px] focus-visible:ring-mint-500/50 focus-visible:border-mint-500">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  {units.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-muted-foreground text-sm whitespace-nowrap">Department</Label>
-              <Select value={filterDepartment} onValueChange={setFilterDepartment}>
-                <SelectTrigger className="w-[140px] focus-visible:ring-mint-500/50 focus-visible:border-mint-500">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  {departments.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-muted-foreground text-sm whitespace-nowrap">Cast/Crew</Label>
-              <Select value={filterCastCrew} onValueChange={setFilterCastCrew}>
-                <SelectTrigger className="w-[120px] focus-visible:ring-mint-500/50 focus-visible:border-mint-500">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="cast">Cast</SelectItem>
-                  <SelectItem value="crew">Crew</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
-        <Button
-          variant="outline"
-          size="icon"
-          className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
-          onClick={() =>
-            setMonth(new Date(month.getFullYear(), month.getMonth() - 1))
-          }
-        >
-          <ChevronLeft className="size-4" />
-        </Button>
-        <span className="min-w-[180px] text-center font-medium text-foreground">
-          {month.toLocaleString('default', { month: 'long', year: 'numeric' })}
-        </span>
-        <Button
-          variant="outline"
-          size="icon"
-          className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
-          onClick={() =>
-            setMonth(new Date(month.getFullYear(), month.getMonth() + 1))
-          }
-        >
-          <ChevronRight className="size-4" />
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-7 gap-1.5 text-center text-sm text-muted-foreground">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-          <div key={d} className="py-2 font-medium">
-            {d}
-          </div>
-        ))}
-        {blanks.map((_, i) => (
-          <div key={`b-${i}`} className="min-h-[88px] rounded-md border border-border bg-muted/20 p-2" />
-        ))}
-        {days.map((d) => {
-          const dateStr = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-          const dayBookings = bookingsByDate.get(dateStr) ?? []
-          const shootDay = shootDayByDate.get(dateStr)
-          const coverage =
-            bookingIntelligence && shootDay
-              ? bookingIntelligence.byShootDay.get(shootDay.id)
-              : null
-          const hasBookings = dayBookings.length > 0
-          return (
-            <div
-              key={d}
-              className={`min-h-[88px] rounded-md border p-2 text-left transition-colors ${
-                hasBookings
-                  ? 'border-mint-500/40 bg-mint-500/5 dark:bg-mint-500/10'
-                  : 'border-border bg-muted/20'
-              }`}
-            >
-              <span className="text-foreground font-medium">{d}</span>
-              {coverage && (coverage.missingCount > 0 || coverage.unnecessaryCount > 0) && (
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {coverage.missingCount > 0 && (
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] border-amber-500/60 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                      title={`${coverage.missingCount} needed but not booked`}
-                    >
-                      {coverage.missingCount} missing
-                    </Badge>
-                  )}
-                  {coverage.unnecessaryCount > 0 && (
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] border-border bg-muted/50 text-muted-foreground"
-                      title={`${coverage.unnecessaryCount} booked but not needed`}
-                    >
-                      {coverage.unnecessaryCount} extra
-                    </Badge>
-                  )}
-                </div>
-              )}
-              {dayBookings.length > 0 && (
-                <div className="mt-1.5 space-y-1">
-                  {dayBookings.map((b) => (
-                    <Badge
-                      key={b.id}
-                      variant="secondary"
-                      className="block w-full justify-start text-xs bg-mint-500/15 text-mint-800 dark:text-mint-200 border-mint-500/30"
-                    >
-                      {personById.get(b.person_id)?.name ?? '—'}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {bookings.length === 0 && (
-        <Card className="rounded-lg border-border bg-card">
-          <CardHeader>
-            <CardTitle className="text-foreground">No bookings</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground text-sm">
-              Add a booking above to assign people to shoot days.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-    </>
   )
 }
 
@@ -864,6 +759,7 @@ function BookingsListView({
   setGlobalFilter,
   bookingIntelligence,
   shootDayById,
+  personColor,
   openAddBookingWithPrefill,
   onEditBooking,
 }: {
@@ -879,6 +775,7 @@ function BookingsListView({
   setGlobalFilter: (s: string) => void
   bookingIntelligence?: BookingIntelligenceSummary
   shootDayById: Map<string, ShootDay>
+  personColor: (personId: string) => string | null
   openAddBookingWithPrefill: (personId: string, shootDayId: string) => void
   onEditBooking: (booking: Booking) => void
 }) {
@@ -933,7 +830,25 @@ function BookingsListView({
 
   const columns: ColumnDef<Row>[] = useMemo(
     () => [
-      { accessorKey: 'personName', header: 'Person' },
+      {
+        accessorKey: 'personName',
+        header: 'Person',
+        cell: ({ row }) => {
+          const color = personColor(row.original.person_id)
+          return (
+            <span className="flex items-center gap-2">
+              {color && (
+                <span
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: color }}
+                  aria-hidden
+                />
+              )}
+              <span>{row.original.personName}</span>
+            </span>
+          )
+        },
+      },
       {
         id: 'roleDepartment',
         header: 'Role / Department',
@@ -986,7 +901,7 @@ function BookingsListView({
         ),
       },
     ],
-    [people, deleteMutation, onEditBooking]
+    [people, deleteMutation, onEditBooking, personColor]
   )
 
   const table = useReactTable({
