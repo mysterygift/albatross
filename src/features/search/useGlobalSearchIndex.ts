@@ -9,13 +9,36 @@ import { listVendorPurchaseOrdersByProduction } from '@/lib/db/repositories/vend
 import { listVendors } from '@/lib/db/repositories/vendors'
 import { useEnrichedDocuments } from '@/features/documents/useEnrichedDocuments'
 import { getDocumentCategoryId } from '@/lib/documents/catalog'
-import type { GlobalSearchResult } from '@/features/search/types'
+import { useCurrentProduction } from '@/features/productions/context'
+import { useCurrency } from '@/hooks/useCurrency'
+import type { GlobalSearchResult, PreviewField } from '@/features/search/types'
 
 function joinSearchText(parts: Array<string | null | undefined>): string {
   return parts
     .filter((p): p is string => !!p && p.trim().length > 0)
     .join(' ')
     .toLowerCase()
+}
+
+/** Builds a preview field list, dropping any entries with empty values. */
+function previewFields(
+  entries: Array<{ label: string; value: string | number | null | undefined }>
+): PreviewField[] {
+  const out: PreviewField[] = []
+  for (const { label, value } of entries) {
+    if (value == null) continue
+    const str = String(value).trim()
+    if (str.length === 0) continue
+    out.push({ label, value: str })
+  }
+  return out
+}
+
+function formatDate(value: string | null | undefined): string | null {
+  if (!value) return null
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 /**
@@ -69,6 +92,12 @@ export function useGlobalSearchIndex(
     enabled ? productionId : null
   )
 
+  const { currentProduction } = useCurrentProduction()
+  const { format } = useCurrency()
+  const currencyCode = currentProduction?.currency_code ?? 'GBP'
+  const money = (amount: number | null | undefined): string | null =>
+    amount == null ? null : format(amount, currencyCode).formatted
+
   const results = useMemo<GlobalSearchResult[]>(() => {
     const out: GlobalSearchResult[] = []
 
@@ -86,6 +115,18 @@ export function useGlobalSearchIndex(
           person.agent_name,
         ]),
         to: `/people/${person.id}`,
+        preview: {
+          heading: person.name,
+          subheading: person.role_name ?? null,
+          fields: previewFields([
+            { label: 'Role / character', value: person.role_name },
+            { label: 'Cast number', value: person.cast_number },
+            { label: 'Agent', value: person.agent_name },
+            { label: 'Email', value: person.email },
+            { label: 'Phone', value: person.phone },
+            { label: 'Contributor form', value: person.contributor_form_status },
+          ]),
+        },
       })
     }
 
@@ -107,6 +148,17 @@ export function useGlobalSearchIndex(
           person.phone,
         ]),
         to: `/people/crew/${person.id}`,
+        preview: {
+          heading: person.name,
+          subheading: subtitle || null,
+          fields: previewFields([
+            { label: 'Department', value: person.department },
+            { label: 'Role', value: person.role_name },
+            { label: 'Email', value: person.email },
+            { label: 'Phone', value: person.phone },
+            { label: 'Contributor form', value: person.contributor_form_status },
+          ]),
+        },
       })
     }
 
@@ -125,6 +177,19 @@ export function useGlobalSearchIndex(
           location.booked_status,
         ]),
         to: `/locations?highlight=${location.id}`,
+        preview: {
+          heading: location.name,
+          subheading: location.booked_status,
+          fields: previewFields([
+            { label: 'Status', value: location.booked_status },
+            { label: 'Address', value: location.address },
+            { label: 'what3words', value: location.what3words },
+            { label: 'Parking', value: location.parking_info },
+            { label: 'Permit fee', value: money(location.permit_fee) },
+            { label: 'Location fee', value: money(location.location_fee) },
+            { label: 'Availability', value: location.availability_constraints },
+          ]),
+        },
       })
     }
 
@@ -156,6 +221,21 @@ export function useGlobalSearchIndex(
           locationName,
         ]),
         to: `/schedule/shots?highlight=${scene.id}`,
+        preview: {
+          heading: `Scene ${scene.scene_number}`,
+          subheading: scene.title ?? scene.description ?? null,
+          fields: previewFields([
+            { label: 'Scene number', value: scene.scene_number },
+            { label: 'Int / Ext', value: scene.int_ext },
+            { label: 'Day / Night', value: scene.day_night },
+            { label: 'Location', value: locationName },
+            { label: 'Page eighths', value: scene.page_eighths },
+            {
+              label: 'Duration',
+              value: scene.duration_minutes != null ? `${scene.duration_minutes} min` : null,
+            },
+          ]),
+        },
       })
     }
 
@@ -177,6 +257,21 @@ export function useGlobalSearchIndex(
           item.notes,
         ]),
         to: `/equipment?highlight=${item.id}`,
+        preview: {
+          heading: item.name,
+          subheading: item.category ?? null,
+          fields: previewFields([
+            { label: 'Category', value: item.category },
+            { label: 'Status', value: item.status },
+            { label: 'Department', value: item.department },
+            { label: 'Quantity', value: item.quantity },
+            { label: 'Source', value: item.source_type },
+            { label: 'Vendor', value: item.vendor },
+            { label: 'Rental start', value: formatDate(item.rental_start_date) },
+            { label: 'Return due', value: formatDate(item.return_due_date) },
+            { label: 'Notes', value: item.notes },
+          ]),
+        },
       })
     }
 
@@ -198,6 +293,17 @@ export function useGlobalSearchIndex(
           doc.groupTitle,
         ]),
         to: `/documents/${categoryId}?highlight=${doc.id}`,
+        preview: {
+          heading: doc.file_name,
+          subheading: doc.typeLabel ?? null,
+          fields: previewFields([
+            { label: 'Type', value: doc.typeLabel },
+            { label: 'Context', value: doc.contextLabel },
+            { label: 'Group', value: doc.groupTitle },
+            { label: 'Added', value: formatDate(doc.created_at) },
+            { label: 'File name', value: doc.file_name },
+          ]),
+        },
       })
     }
 
@@ -218,6 +324,15 @@ export function useGlobalSearchIndex(
           vendor.primary_contact_email,
         ]),
         to: `/budget/vendors/${vendor.id}`,
+        preview: {
+          heading: vendor.company_name,
+          subheading: vendor.primary_contact_full_name ?? null,
+          fields: previewFields([
+            { label: 'Contact', value: vendor.primary_contact_full_name },
+            { label: 'Email', value: vendor.primary_contact_email },
+            { label: 'Global vendor', value: vendor.is_global ? 'Yes' : 'No' },
+          ]),
+        },
       })
     }
 
@@ -240,10 +355,26 @@ export function useGlobalSearchIndex(
           vendorName,
         ]),
         to: `/budget/vendors/${po.vendor_id}?highlight=${po.id}`,
+        preview: {
+          heading: po.po_number,
+          subheading: vendorName,
+          fields: previewFields([
+            { label: 'PO number', value: po.po_number },
+            { label: 'Vendor', value: vendorName },
+            { label: 'Status', value: po.status },
+            { label: 'Amount', value: money(po.amount) },
+            { label: 'Issue date', value: formatDate(po.issue_date) },
+            { label: 'Due date', value: formatDate(po.due_date) },
+            { label: 'Approval', value: po.approval === 1 ? 'Approved' : 'Not approved' },
+            { label: 'Description', value: po.description },
+          ]),
+        },
       })
     }
 
     return out
+    // `money` is derived from `format`/`currencyCode`; depend on those instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     castQuery.data,
     crewQuery.data,
@@ -253,6 +384,8 @@ export function useGlobalSearchIndex(
     vendorsQuery.data,
     equipmentQuery.data,
     documents,
+    format,
+    currencyCode,
   ])
 
   const isLoading =

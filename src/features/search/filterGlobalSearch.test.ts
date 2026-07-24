@@ -19,6 +19,7 @@ function makeResult(
     subtitle: null,
     searchText: searchText.toLowerCase(),
     to: `/${type}/${id}`,
+    preview: { heading: searchText, subheading: null, fields: [] },
   }
 }
 

@@ -8,6 +8,16 @@ export type GlobalSearchResultType =
   | 'vendor'
   | 'equipment'
 
+/** A single label/value pair shown in a result's preview overview. */
+export type PreviewField = { label: string; value: string }
+
+/** Tailored, type-specific overview shown in the anchored preview card. */
+export type GlobalSearchPreview = {
+  heading: string
+  subheading: string | null
+  fields: PreviewField[]
+}
+
 export type GlobalSearchResult = {
   /** Underlying entity id. */
   id: string
@@ -20,6 +30,8 @@ export type GlobalSearchResult = {
   searchText: string
   /** Route (with any query params) to navigate to on select. */
   to: string
+  /** Tailored overview shown when the row's preview is opened. */
+  preview: GlobalSearchPreview
 }
 
 /** Section metadata for grouping/labeling results in the UI. */

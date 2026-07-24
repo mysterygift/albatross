@@ -34,6 +34,8 @@ function CommandDialog({
   className,
   showCloseButton = true,
   shouldFilter,
+  onInteractOutside,
+  onPointerDownOutside,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string
@@ -42,6 +44,9 @@ function CommandDialog({
   showCloseButton?: boolean
   /** Forwarded to the underlying cmdk Command; set false to filter manually. */
   shouldFilter?: boolean
+  /** Forwarded to DialogContent; call preventDefault() to keep the dialog open. */
+  onInteractOutside?: React.ComponentProps<typeof DialogContent>["onInteractOutside"]
+  onPointerDownOutside?: React.ComponentProps<typeof DialogContent>["onPointerDownOutside"]
 }) {
   return (
     <Dialog {...props}>
@@ -53,6 +58,8 @@ function CommandDialog({
         className={cn("overflow-hidden p-0", className)}
         showCloseButton={showCloseButton}
         dismissOnOutsideInteraction
+        onInteractOutside={onInteractOutside}
+        onPointerDownOutside={onPointerDownOutside}
       >
         <Command
           shouldFilter={shouldFilter}
