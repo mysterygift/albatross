@@ -12,6 +12,7 @@ type DocumentRowProps = {
   onDelete?: (docId: string) => void
   isDeleting?: boolean
   showType?: boolean
+  highlighted?: boolean
 }
 
 export function DocumentRow({
@@ -20,11 +21,22 @@ export function DocumentRow({
   onDelete,
   isDeleting,
   showType = true,
+  highlighted = false,
 }: DocumentRowProps) {
   const sourceRoute = getDocumentSourceRoute(doc.entity_type)
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 last:border-b-0">
+    <div
+      id={`document-row-${doc.id}`}
+      ref={(el) => {
+        if (el && highlighted) el.scrollIntoView({ block: 'center' })
+      }}
+      className={
+        highlighted
+          ? 'flex flex-wrap items-center justify-between gap-3 border-b border-border bg-accent/60 px-4 py-3 transition-colors last:border-b-0'
+          : 'flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 last:border-b-0'
+      }
+    >
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium">{doc.file_name}</p>
         {doc.contextLabel && (

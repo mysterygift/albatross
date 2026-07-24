@@ -5,6 +5,7 @@ import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useHighlightParam } from '@/features/search/useHighlightParam'
 import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
 import { useCurrency } from '@/hooks/useCurrency'
 import { getVendorById, updateVendor, softDeleteVendor, promoteVendorToGlobal, removeVendorFromProject } from '@/lib/db/repositories/vendors'
@@ -216,6 +217,7 @@ export function VendorDetailPage() {
   const [linkExpensesInvoice, setLinkExpensesInvoice] = useState<VendorInvoice | null>(null)
   const [linkExpensesPO, setLinkExpensesPO] = useState<VendorPurchaseOrder | null>(null)
   const [ingestEquipmentInvoice, setIngestEquipmentInvoice] = useState<VendorInvoice | null>(null)
+  const highlightedPoId = useHighlightParam()
 
   const { data: vendor, isLoading: vendorLoading } = useQuery({
     queryKey: ['vendor', vendorId],
@@ -1017,6 +1019,7 @@ export function VendorDetailPage() {
                       onArchive={() => setArchivePOId(po.id)}
                       onLinkExpenses={() => setLinkExpensesPO(po)}
                       showActions={!isArchived}
+                      highlighted={po.id === highlightedPoId}
                     />
                   ))
                 )}
@@ -1610,6 +1613,7 @@ function VendorPORow({
   onArchive,
   onLinkExpenses,
   showActions,
+  highlighted = false,
 }: {
   po: VendorPurchaseOrder
   linkedInvoiceCount: number
@@ -1620,6 +1624,7 @@ function VendorPORow({
   onArchive: () => void
   onLinkExpenses: () => void
   showActions: boolean
+  highlighted?: boolean
 }) {
   const dateFmt = (d: string | null) =>
     d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
@@ -1629,7 +1634,15 @@ function VendorPORow({
   })
   const poDoc = poDocuments[0]
   return (
-    <TableRow className="border-border">
+    <TableRow
+      data-po-id={po.id}
+      ref={(el) => {
+        if (el && highlighted) el.scrollIntoView({ block: 'center' })
+      }}
+      className={
+        highlighted ? 'border-border bg-accent/60 transition-colors' : 'border-border'
+      }
+    >
       <TableCell className="text-sm py-2 w-[90px] font-medium text-foreground">
         <span className="inline-flex items-center gap-1">
           {po.po_number}

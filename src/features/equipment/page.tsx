@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useHighlightParam } from '@/features/search/useHighlightParam'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { equipmentTutorialSteps } from '@/features/tutorial/sections/equipmentTutorial'
@@ -175,6 +176,7 @@ export function EquipmentPage() {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<EquipmentTab>('registry')
   const [selectedListId, setSelectedListId] = useState<string | null>(null)
+  const highlightedId = useHighlightParam()
   const queryClient = useQueryClient()
   const [tutorialOpen, setTutorialOpen] = useState(false)
 
@@ -202,6 +204,11 @@ export function EquipmentPage() {
     queryFn: () => listEquipmentByProduction(currentProductionId ?? ''),
     enabled: !!currentProductionId,
   })
+
+  // Spotlight Search deep-link: ensure the registry (where items live) is shown.
+  useEffect(() => {
+    if (highlightedId) setTab('registry')
+  }, [highlightedId])
 
   const { data: vendors = [] } = useQuery({
     queryKey: ['vendors', currentProductionId],
@@ -601,18 +608,28 @@ export function EquipmentPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      className={cn((cell.column.columnDef.meta as { className?: string })?.className)}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              table.getRowModel().rows.map((row) => {
+                const isHighlighted = row.original.id === highlightedId
+                return (
+                  <TableRow
+                    key={row.id}
+                    data-equipment-id={row.original.id}
+                    ref={(el) => {
+                      if (el && isHighlighted) el.scrollIntoView({ block: 'center' })
+                    }}
+                    className={isHighlighted ? 'bg-accent/60 transition-colors' : undefined}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell
+                        key={cell.id}
+                        className={cn((cell.column.columnDef.meta as { className?: string })?.className)}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>

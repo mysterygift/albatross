@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useHighlightParam } from '@/features/search/useHighlightParam'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { locationsTutorialSteps } from '@/features/tutorial/sections/locationsTutorial'
@@ -83,6 +84,7 @@ export function LocationsPage() {
   const [open, setOpen] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
   const [tutorialOpen, setTutorialOpen] = useState(false)
+  const highlightedId = useHighlightParam()
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -206,13 +208,23 @@ export function LocationsPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
-                ))}
-              </TableRow>
-            ))}
+            {table.getRowModel().rows.map((row) => {
+              const isHighlighted = row.original.id === highlightedId
+              return (
+                <TableRow
+                  key={row.id}
+                  data-location-id={row.original.id}
+                  ref={(el) => {
+                    if (el && isHighlighted) el.scrollIntoView({ block: 'center' })
+                  }}
+                  className={isHighlighted ? 'bg-accent/60 transition-colors' : undefined}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                  ))}
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
       </div>

@@ -14,6 +14,7 @@ import { TutorialEntryModal } from '@/features/tutorial/TutorialEntryModal'
 import { ensureAndOpenDemoProductionForTutorial } from '@/features/tutorial/ensureAndOpenDemoProductionForTutorial'
 import { ApfDesktopOpenBridge } from '@/features/productions/ApfDesktopOpenBridge'
 import { ApfMenuEventBridge } from '@/features/productions/ApfMenuEventBridge'
+import { GlobalSearchDialog } from '@/features/search/GlobalSearchDialog'
 import { ServerCollabBanner } from '@/features/server/ServerCollabBanner'
 import { useCurrentProduction } from '@/features/productions/context'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
@@ -188,6 +189,8 @@ function AppLayoutShell() {
   const queryClient = useQueryClient()
   const [tutorialEntryOpen, setTutorialEntryOpen] = useState(false)
   const [tutorialOpen, setTutorialOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const openSearch = useCallback(() => setSearchOpen(true), [])
   const [isPreparingTutorial, setIsPreparingTutorial] = useState(false)
   const [isPreparingTutorialHub, setIsPreparingTutorialHub] = useState(false)
   const [tutorialStartupError, setTutorialStartupError] = useState<string | null>(null)
@@ -330,17 +333,26 @@ function AppLayoutShell() {
   return (
     <SidebarProvider>
       <MenuSidebarBridge />
+      <GlobalSearchShortcutBridge onOpen={openSearch} />
       <ApfDesktopOpenBridge />
       <ApfMenuEventBridge />
       <AppSidebar />
       <SidebarInset>
-        <TopBar onOpenTutorial={handleOpenTutorialFromHelp} />
+        <TopBar
+          onOpenTutorial={handleOpenTutorialFromHelp}
+          onOpenSearch={openSearch}
+        />
         <ServerCollabBanner />
         <main className="flex-1 overflow-auto p-4">
           <Outlet />
         </main>
       </SidebarInset>
       <DevPerfHud />
+      <GlobalSearchDialog
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        productionId={currentProduction?.id ?? null}
+      />
       <TutorialEntryModal
         open={tutorialEntryOpen}
         isPreparing={isPreparingTutorial}
@@ -400,6 +412,36 @@ function MenuSidebarBridge() {
     window.addEventListener('albatross-menu-view-toggle-sidebar', onToggleSidebar)
     return () => window.removeEventListener('albatross-menu-view-toggle-sidebar', onToggleSidebar)
   }, [toggleSidebar])
+
+  return null
+}
+
+/**
+ * Opens Spotlight Search on Cmd+Option+Space (mac) / Ctrl+Alt+Space
+ * (Windows/Linux). Suppressed while any dialog or sheet ("card") is open so it
+ * never interrupts form data entry. Kept as a JS window listener rather than a
+ * native Tauri accelerator to avoid the OS window-menu conflict with Alt+Space.
+ */
+function GlobalSearchShortcutBridge({ onOpen }: { onOpen: () => void }) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' || !event.altKey) return
+      const comboPressed =
+        (event.metaKey || event.ctrlKey) && event.altKey
+      if (!comboPressed) return
+
+      // Suppress while a dialog/sheet ("card") is open to avoid interrupting forms.
+      const overlayOpen = document.querySelector(
+        '[data-slot="dialog-content"][data-state="open"], [data-slot="sheet-content"][data-state="open"]'
+      )
+      if (overlayOpen) return
+
+      event.preventDefault()
+      onOpen()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onOpen])
 
   return null
 }

@@ -1,4 +1,4 @@
-import { HelpCircle } from 'lucide-react'
+import { HelpCircle, Search } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -13,9 +13,10 @@ import { useLocation } from 'react-router-dom'
 
 type TopBarProps = {
   onOpenTutorial?: () => void
+  onOpenSearch?: () => void
 }
 
-export function TopBar({ onOpenTutorial }: TopBarProps) {
+export function TopBar({ onOpenTutorial, onOpenSearch }: TopBarProps) {
   const {
     productions,
     currentProductionId,
@@ -51,6 +52,17 @@ export function TopBar({ onOpenTutorial }: TopBarProps) {
         </div>
       )}
       <div className="ml-auto flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            onOpenSearch?.()
+          }}
+          aria-label="Search"
+        >
+          <Search className="size-4" />
+        </Button>
         <Button
           variant="ghost"
           size="icon"

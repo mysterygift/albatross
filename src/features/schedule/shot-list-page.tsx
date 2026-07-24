@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useHighlightParam } from '@/features/search/useHighlightParam'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
 import {
@@ -430,6 +431,14 @@ export function ShotListPage() {
   })
 
   const scenesByNumber = useMemo(() => sortScenesByNumber(scenes), [scenes])
+
+  // Spotlight Search deep-link: select the highlighted scene once it has loaded.
+  const highlightedSceneId = useHighlightParam()
+  useEffect(() => {
+    if (!highlightedSceneId) return
+    if (!scenes.some((s) => s.id === highlightedSceneId)) return
+    setSelectedSceneId((current) => (current === highlightedSceneId ? current : highlightedSceneId))
+  }, [highlightedSceneId, scenes])
 
   const { data: shots = [] } = useQuery({
     queryKey: ['shots', selectedSceneId],

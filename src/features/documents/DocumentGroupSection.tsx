@@ -8,6 +8,7 @@ type DocumentGroupSectionProps = {
   onDelete?: (docId: string) => void
   isDeleting?: boolean
   showType?: boolean
+  highlightedId?: string | null
 }
 
 export function DocumentGroupSection({
@@ -16,6 +17,7 @@ export function DocumentGroupSection({
   onDelete,
   isDeleting,
   showType,
+  highlightedId,
 }: DocumentGroupSectionProps) {
   return (
     <section className="rounded-md border border-border">
@@ -34,6 +36,7 @@ export function DocumentGroupSection({
             onDelete={onDelete}
             isDeleting={isDeleting}
             showType={showType}
+            highlighted={doc.id === highlightedId}
           />
         ))}
       </div>

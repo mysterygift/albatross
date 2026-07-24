@@ -5,6 +5,7 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener'
 
 import { Button } from '@/components/ui/button'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useHighlightParam } from '@/features/search/useHighlightParam'
 import { DocumentGroupSection } from '@/features/documents/DocumentGroupSection'
 import { useEnrichedDocuments } from '@/features/documents/useEnrichedDocuments'
 import { deleteDocument } from '@/lib/db/repositories/document'
@@ -21,6 +22,7 @@ export function DocumentsCategoryPage() {
   const { category: categorySlug } = useParams<{ category: string }>()
   const { currentProductionId } = useCurrentProduction()
   const queryClient = useQueryClient()
+  const highlightedId = useHighlightParam()
   const { getCategoryDocuments, isLoading } = useEnrichedDocuments(currentProductionId)
 
   const categoryId: DocumentCategoryId | null =
@@ -117,6 +119,7 @@ export function DocumentsCategoryPage() {
               onDelete={(id) => deleteMutation.mutate(id)}
               isDeleting={deleteMutation.isPending}
               showType={categoryId !== 'general'}
+              highlightedId={highlightedId}
             />
           ))}
         </div>
