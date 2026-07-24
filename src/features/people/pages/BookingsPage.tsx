@@ -443,6 +443,26 @@ export function BookingsPage() {
     return Array.from(set).sort()
   }, [people])
 
+  const neededBookingRows = useMemo(() => {
+    if (!bookingIntelligence) return []
+    const rows: { key: string; date: string; role: string; name: string }[] = []
+    for (const day of bookingIntelligence.shootDays) {
+      const cov = bookingIntelligence.byShootDay.get(day.id)
+      if (!cov) continue
+      for (const pid of cov.neededButNotBooked) {
+        const p = personById.get(pid)
+        rows.push({
+          key: `${day.id}-${pid}`,
+          date: day.shoot_date,
+          role: p?.role_name?.trim() || '—',
+          name: p?.name ?? '—',
+        })
+      }
+    }
+    rows.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name))
+    return rows
+  }, [bookingIntelligence, personById])
+
   if (!currentProductionId) {
     return (
       <div>
@@ -627,10 +647,13 @@ export function BookingsPage() {
         </Card>
       )}
 
-      {bookingIntelligence && bookingIntelligence.shootDays.length > 0 && (
+      {neededBookingRows.length > 0 && (
         <Card className="rounded-lg border-border bg-card">
           <CardHeader className="py-3 px-4 border-b border-border">
-            <CardTitle className="text-sm font-medium text-foreground">Shoot Day Booking Overview</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-2 text-foreground">
+              <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
+              Cast needed but not booked
+            </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 pt-0">
             <div className="overflow-x-auto">
@@ -638,44 +661,18 @@ export function BookingsPage() {
                 <TableHeader>
                   <TableRow className="border-border hover:bg-transparent">
                     <TableHead className="text-muted-foreground text-xs font-medium">Date</TableHead>
-                    <TableHead className="text-muted-foreground text-xs font-medium">Needed</TableHead>
-                    <TableHead className="text-muted-foreground text-xs font-medium">Booked</TableHead>
-                    <TableHead className="text-muted-foreground text-xs font-medium">Missing</TableHead>
-                    <TableHead className="text-muted-foreground text-xs font-medium">Extra</TableHead>
+                    <TableHead className="text-muted-foreground text-xs font-medium">Role</TableHead>
+                    <TableHead className="text-muted-foreground text-xs font-medium">Cast</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {bookingIntelligence.shootDays.map((day) => {
-                    const cov = bookingIntelligence.byShootDay.get(day.id)
-                    if (!cov) return null
-                    const hasIssue = cov.missingCount > 0 || cov.unnecessaryCount > 0
-                    return (
-                      <TableRow
-                        key={day.id}
-                        className={`border-border ${hasIssue ? 'bg-amber-500/5 dark:bg-amber-950/20' : ''}`}
-                      >
-                        <TableCell className="text-sm py-2 text-foreground">{day.shoot_date}</TableCell>
-                        <TableCell className="text-sm py-2">{cov.neededPersonIds.size}</TableCell>
-                        <TableCell className="text-sm py-2">{cov.bookedPersonIds.size}</TableCell>
-                        <TableCell className="text-sm py-2">
-                          {cov.missingCount > 0 ? (
-                            <span className="font-medium text-amber-600 dark:text-amber-400">
-                              {cov.missingCount}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">0</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm py-2">
-                          {cov.unnecessaryCount > 0 ? (
-                            <span className="text-muted-foreground">{cov.unnecessaryCount}</span>
-                          ) : (
-                            <span className="text-muted-foreground">0</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
+                  {neededBookingRows.map((row) => (
+                    <TableRow key={row.key} className="border-border">
+                      <TableCell className="text-sm py-2 text-foreground">{row.date}</TableCell>
+                      <TableCell className="text-sm py-2 text-muted-foreground">{row.role}</TableCell>
+                      <TableCell className="text-sm py-2 text-foreground">{row.name}</TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>

@@ -512,7 +512,7 @@ export function BookingsCalendarView({
                   return (
                     <div
                       key={`${spanKeyOf(span)}-${lane}`}
-                      className={cn('px-px', continuesLeft && 'pl-0', continuesRight && 'pr-0')}
+                      className={cn('px-px pb-0.5', continuesLeft && 'pl-0', continuesRight && 'pr-0')}
                       style={{
                         gridColumn: `${startCol + 1} / ${endCol + 2}`,
                         gridRow: lane + 2,

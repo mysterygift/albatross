@@ -76,7 +76,12 @@ export function BookingSpanPill({
             continuesRight ? 'rounded-r-none' : 'rounded-r-md',
             isDragging && 'opacity-40'
           )}
-          style={{ backgroundColor: color, color: textColor }}
+          style={{
+            backgroundColor: color,
+            color: textColor,
+            backgroundImage:
+              'linear-gradient(to bottom, rgba(0,0,0,0) 45%, rgba(0,0,0,0.28) 100%)',
+          }}
         >
           <button
             type="button"
