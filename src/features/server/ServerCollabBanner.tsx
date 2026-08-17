@@ -7,7 +7,7 @@ import { getLinkedProjectByProductionId } from '@/lib/server/linkedProjectReposi
 import { getQueuedMutationCount, runServerSyncOnce } from '@/lib/server/syncEngine'
 import { resolveServerPublishContext } from '@/lib/db/projectDataSource'
 import { subscribePresence } from '@/lib/server/presenceClient'
-import { useServerPublishEnabled } from '@/hooks/useServerPublishEnabled'
+import { useLegacyServerPublishEnabled } from '@/hooks/useServerPublishEnabled'
 
 const AUTO_SYNC_MS = 25_000
 
@@ -19,7 +19,7 @@ function linkedStatesForRuntime(
 
 export function ServerCollabBanner() {
   const { currentProductionId } = useCurrentProduction()
-  const feature = useServerPublishEnabled()
+  const feature = useLegacyServerPublishEnabled()
   const qc = useQueryClient()
   const [online, setOnline] = useState<number | null>(null)
 
@@ -28,16 +28,17 @@ export function ServerCollabBanner() {
     queryFn: () => (currentProductionId ? getLinkedProjectByProductionId(currentProductionId) : null),
     enabled: !!currentProductionId && !!feature.data,
   })
+  const linkedProject = linkedQuery.data
 
   const pendingQuery = useQuery({
     queryKey: ['server-outbox-count', currentProductionId],
     queryFn: () => (currentProductionId ? getQueuedMutationCount(currentProductionId) : 0),
-    enabled: !!currentProductionId && !!linkedQuery.data && linkedStatesForRuntime(linkedQuery.data.link_state),
+    enabled: !!currentProductionId && !!linkedProject && linkedStatesForRuntime(linkedProject.link_state),
     refetchInterval: 5000,
   })
 
   useEffect(() => {
-    if (!currentProductionId || !feature.data || !linkedQuery.data) return
+    if (!currentProductionId || !feature.data || !linkedProject) return
     let unsub: (() => void) | undefined
     ;(async () => {
       const ctx = await resolveServerPublishContext(currentProductionId)
@@ -54,7 +55,7 @@ export function ServerCollabBanner() {
       unsub?.()
       setOnline(null)
     }
-  }, [currentProductionId, feature.data, linkedQuery.data])
+  }, [currentProductionId, feature.data, linkedProject])
 
   const syncMutation = useMutation({
     mutationFn: async () => {
@@ -69,8 +70,8 @@ export function ServerCollabBanner() {
   })
 
   useEffect(() => {
-    if (!currentProductionId || !feature.data || !linkedQuery.data) return
-    if (!linkedStatesForRuntime(linkedQuery.data.link_state)) return
+    if (!currentProductionId || !feature.data || !linkedProject) return
+    if (!linkedStatesForRuntime(linkedProject.link_state)) return
 
     const onOnline = () => {
       void runServerSyncOnce(currentProductionId).then(() => {
@@ -81,11 +82,11 @@ export function ServerCollabBanner() {
     }
     window.addEventListener('online', onOnline)
     return () => window.removeEventListener('online', onOnline)
-  }, [currentProductionId, feature.data, linkedQuery.data, qc])
+  }, [currentProductionId, feature.data, linkedProject, qc])
 
   useEffect(() => {
-    if (!currentProductionId || !feature.data || !linkedQuery.data) return
-    if (linkedQuery.data.link_state !== 'linked') return
+    if (!currentProductionId || !feature.data || !linkedProject) return
+    if (linkedProject.link_state !== 'linked') return
 
     const id = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return
@@ -95,11 +96,11 @@ export function ServerCollabBanner() {
       })
     }, AUTO_SYNC_MS)
     return () => window.clearInterval(id)
-  }, [currentProductionId, feature.data, linkedQuery.data?.link_state, qc])
+  }, [currentProductionId, feature.data, linkedProject, qc])
 
-  if (!feature.data || !linkedQuery.data || linkedQuery.data.link_state === 'publishing') return null
+  if (!feature.data || !linkedProject || linkedProject.link_state === 'publishing') return null
 
-  const st = linkedQuery.data.link_state
+  const st = linkedProject.link_state
   const queued = pendingQuery.data ?? 0
 
   return (

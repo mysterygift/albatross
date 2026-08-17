@@ -8,5 +8,7 @@ export interface DatabaseAdapter {
   execute(query: string, bindValues?: unknown[]): Promise<QueryResult>
   select<T>(query: string, bindValues?: unknown[]): Promise<T>
   executeBatch(statements: SqlStatement[]): Promise<void>
+  /** Optional same-connection transaction primitive; required for crash-atomic sync writes. */
+  executeTransaction?(statements: SqlStatement[]): Promise<void>
   runInSerializedTransaction<T>(fn: () => Promise<T>): Promise<T>
 }

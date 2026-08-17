@@ -18,12 +18,26 @@ function createRawDbStub(): RawDbStub {
 }
 
 describe('SQLiteDatabaseAdapter', () => {
-  it('exposes the expected four compatibility methods', () => {
+  it('exposes the expected compatibility methods', () => {
     const adapter = new SQLiteDatabaseAdapter(createRawDbStub() as never)
     expect(typeof adapter.execute).toBe('function')
     expect(typeof adapter.select).toBe('function')
     expect(typeof adapter.executeBatch).toBe('function')
+    expect(typeof adapter.executeTransaction).toBe('function')
     expect(typeof adapter.runInSerializedTransaction).toBe('function')
+  })
+
+  it('uses one compatibility batch for transactions when no database URL is available', async () => {
+    const raw = createRawDbStub()
+    const adapter = new SQLiteDatabaseAdapter(raw as never)
+    await adapter.executeTransaction([
+      { sql: 'UPDATE t SET name = $1 WHERE id = $2', bindValues: ['Name', 'id-1'] },
+    ])
+    expect(raw.execute).toHaveBeenCalledTimes(1)
+    expect(raw.execute).toHaveBeenCalledWith(
+      ['BEGIN', 'UPDATE t SET name = $1 WHERE id = $2', 'COMMIT'].join(';\n'),
+      ['Name', 'id-1'],
+    )
   })
 
   it('execute delegates to the wrapped sqlite client', async () => {

@@ -90,7 +90,7 @@ import {
 import type { Client, Production } from '@/lib/db/types'
 import { useCurrentProduction } from './context'
 import { useApfActions } from '@/features/productions/useApfActions'
-import { useServerPublishEnabled } from '@/hooks/useServerPublishEnabled'
+import { useLegacyServerPublishEnabled } from '@/hooks/useServerPublishEnabled'
 import { usePublishToServerActions } from '@/features/server/usePublishToServerActions'
 import { ConnectServerDialog } from '@/features/server/ConnectServerDialog'
 import { PreflightPublishSheet } from '@/features/server/PreflightPublishSheet'
@@ -483,7 +483,7 @@ export function ProductionsPage() {
       setTimeout(() => setActionToast(null), msg.timeoutMs)
     },
   })
-  const featureServer = useServerPublishEnabled()
+  const featureServer = useLegacyServerPublishEnabled()
   const publishActions = usePublishToServerActions()
   const [unlinkTarget, setUnlinkTarget] = useState<Production | null>(null)
   const [unlinkBusy, setUnlinkBusy] = useState(false)
@@ -589,6 +589,14 @@ export function ProductionsPage() {
 
   useEffect(() => {
     const onPublishMenu = () => {
+      if (featureServer.data !== true) {
+        setActionToast({
+          type: 'error',
+          message: 'Legacy server publishing is not enabled.',
+        })
+        setTimeout(() => setActionToast(null), 5000)
+        return
+      }
       if (!currentProduction) {
         setActionToast({
           type: 'error',
@@ -601,7 +609,7 @@ export function ProductionsPage() {
     }
     window.addEventListener('albatross-menu-publish-to-server', onPublishMenu)
     return () => window.removeEventListener('albatross-menu-publish-to-server', onPublishMenu)
-  }, [currentProduction, publishActions])
+  }, [currentProduction, featureServer.data, publishActions])
 
   const createMutation = useMutation({
     mutationFn: (data: NewProductionForm) =>

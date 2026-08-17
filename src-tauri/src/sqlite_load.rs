@@ -13,6 +13,14 @@ use tauri_plugin_sql::{DbInstances, DbPool, Migration, MigrationKind};
 
 use crate::sqlite_paths::sqlite_db_path;
 
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SqliteTransactionStatement {
+    sql: String,
+    #[serde(default)]
+    bind_values: Vec<serde_json::Value>,
+}
+
 pub struct AlbatrossSqlMigrations(pub Vec<Migration>);
 
 fn copy_migrations(v: &[Migration]) -> Vec<Migration> {
@@ -137,4 +145,105 @@ pub async fn run_sqlite_migrations(
         .map_err(|e| e.to_string())?;
     migrator.run(pool).await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Executes all statements on one pooled SQLite connection and commits them
+/// atomically. SQL errors roll back through the same transaction/connection.
+#[tauri::command]
+pub async fn execute_sqlite_transaction(
+    db_instances: State<'_, DbInstances>,
+    db: String,
+    statements: Vec<SqliteTransactionStatement>,
+) -> Result<(), String> {
+    let instances = db_instances.0.read().await;
+    let pool = instances
+        .get(&db)
+        .ok_or_else(|| format!("database {db} not loaded"))?;
+    let DbPool::Sqlite(pool) = pool;
+    execute_sqlite_transaction_on_pool(pool, statements).await
+}
+
+async fn execute_sqlite_transaction_on_pool(
+    pool: &SqlitePool,
+    statements: Vec<SqliteTransactionStatement>,
+) -> Result<(), String> {
+    let mut transaction = pool.begin().await.map_err(|e| e.to_string())?;
+
+    for statement in statements {
+        let mut query = sqlx::query(&statement.sql);
+        for value in statement.bind_values {
+            query = match value {
+                serde_json::Value::Null => query.bind(Option::<String>::None),
+                serde_json::Value::Bool(value) => query.bind(value),
+                serde_json::Value::Number(value) => {
+                    if let Some(integer) = value.as_i64() {
+                        query.bind(integer)
+                    } else if let Some(unsigned) = value.as_u64() {
+                        let integer = i64::try_from(unsigned)
+                            .map_err(|_| "SQLite integer bind exceeds i64 range".to_string())?;
+                        query.bind(integer)
+                    } else if let Some(float) = value.as_f64() {
+                        if !float.is_finite() {
+                            return Err("SQLite transaction cannot bind a non-finite number".into());
+                        }
+                        query.bind(float)
+                    } else {
+                        return Err("Unsupported SQLite numeric bind".into());
+                    }
+                }
+                serde_json::Value::String(value) => query.bind(value),
+                serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                    return Err("SQLite transaction bind values must be scalar".into());
+                }
+            };
+        }
+        query
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    transaction.commit().await.map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sqlite_transaction_rolls_back_all_statements_on_failure() {
+        tauri::async_runtime::block_on(async {
+            let pool = SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect("sqlite::memory:")
+                .await
+                .expect("in-memory SQLite pool");
+            sqlx::query("CREATE TABLE test_rows (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+                .execute(&pool)
+                .await
+                .expect("create test table");
+
+            let result = execute_sqlite_transaction_on_pool(
+                &pool,
+                vec![
+                    SqliteTransactionStatement {
+                        sql: "INSERT INTO test_rows (id, name) VALUES ($1, $2)".into(),
+                        bind_values: vec![serde_json::json!(1), serde_json::json!("first")],
+                    },
+                    SqliteTransactionStatement {
+                        sql: "INSERT INTO test_rows (id, name) VALUES ($1, $2)".into(),
+                        bind_values: vec![serde_json::json!(1), serde_json::json!("duplicate")],
+                    },
+                ],
+            )
+            .await;
+
+            assert!(result.is_err());
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM test_rows")
+                .fetch_one(&pool)
+                .await
+                .expect("count test rows");
+            assert_eq!(count, 0);
+        });
+    }
 }

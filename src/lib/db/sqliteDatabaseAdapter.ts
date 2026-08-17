@@ -111,10 +111,12 @@ export class SQLiteDatabaseAdapter implements DatabaseAdapter {
   readonly dialect = 'sqlite' as const
   private readonly raw: Database
   private readonly sqlCipherPassphrase: string | undefined
+  private readonly dbUrl: string | undefined
 
-  constructor(raw: Database, sqlCipherPassphrase?: string) {
+  constructor(raw: Database, sqlCipherPassphrase?: string, dbUrl?: string) {
     this.raw = raw
     this.sqlCipherPassphrase = sqlCipherPassphrase
+    this.dbUrl = dbUrl
   }
 
   private async ensureSqlCipherKeyOnConnection(): Promise<void> {
@@ -135,7 +137,7 @@ export class SQLiteDatabaseAdapter implements DatabaseAdapter {
       raw = await Database.load(dbUrl)
       await invoke('run_sqlite_migrations', { db: dbUrl })
     }
-    const adapter = new SQLiteDatabaseAdapter(raw, options?.sqlCipherPassphrase)
+    const adapter = new SQLiteDatabaseAdapter(raw, options?.sqlCipherPassphrase, dbUrl)
     if (options?.sqlCipherPassphrase) {
       const escaped = escapeSqlStringLiteral(options.sqlCipherPassphrase)
       await raw.execute(
@@ -231,6 +233,18 @@ export class SQLiteDatabaseAdapter implements DatabaseAdapter {
 
   async executeBatch(statements: SqlStatement[]): Promise<void> {
     await executeBatchCompat(this, statements)
+  }
+
+  async executeTransaction(statements: SqlStatement[]): Promise<void> {
+    if (!this.dbUrl) {
+      await this.executeBatch([
+        { sql: 'BEGIN', bindValues: [] },
+        ...statements,
+        { sql: 'COMMIT', bindValues: [] },
+      ])
+      return
+    }
+    await invoke('execute_sqlite_transaction', { db: this.dbUrl, statements })
   }
 
   runInSerializedTransaction<T>(fn: () => Promise<T>): Promise<T> {

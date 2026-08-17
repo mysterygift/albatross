@@ -940,6 +940,12 @@ pub fn run() {
             sql: include_str!("../migrations/0086_sensitive_entity_field_encryption.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 87,
+            description: "sync_v2_foundation",
+            sql: include_str!("../migrations/0087_sync_v2_foundation.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
@@ -973,6 +979,7 @@ pub fn run() {
             db_encryption::sqlcipher_self_test,
             sqlite_load::load_sqlite_with_passphrase,
             sqlite_load::run_sqlite_migrations,
+            sqlite_load::execute_sqlite_transaction,
             open_route_service::get_driving_travel_time_minutes,
             open_route_service::get_route_summary,
             open_route_service::geocode_location_to_lat_lng,

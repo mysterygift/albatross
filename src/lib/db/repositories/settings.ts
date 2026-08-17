@@ -4,13 +4,14 @@ const TABLE = 'settings'
 
 /** One-time: flip legacy default `false` to on; dev users who opt out once keep `false` after this runs. */
 const CURRENCY_API_DEFAULT_ON_MIGRATION_KEY = '_migration_currency_api_default_on_v1'
+const LOCAL_COLLABORATION_SETTING_MIGRATION_KEY = '_migration_local_collaboration_setting_v1'
 
 const DEFAULTS: Record<string, string> = {
   display_currency: 'GBP',
   enable_currency_conversion_api: 'true',
   enable_api_call_tracking: 'false',
-  /** When true, shows Server publishing (Beta) and related flows. */
-  feature_server_publish_enabled: 'false',
+  /** Enables collaboration traffic and management UI on this device; never starts a local host. */
+  local_collaboration_enabled: 'false',
 }
 
 export const FIRST_LAUNCH_TUTORIAL_SEEN_KEY = 'first_launch_tutorial_seen'
@@ -80,6 +81,28 @@ export async function ensureSettingsDefaults(): Promise<void> {
         `INSERT INTO ${TABLE} (key, value) VALUES ($1, $2)
          ON CONFLICT (key) DO UPDATE SET value = $2`,
         [CURRENCY_API_DEFAULT_ON_MIGRATION_KEY, 'true']
+      )
+    }
+
+    const collaborationMigRows = await db.select<{ value: string }[]>(
+      `SELECT value FROM ${TABLE} WHERE key = $1`,
+      [LOCAL_COLLABORATION_SETTING_MIGRATION_KEY]
+    )
+    if (collaborationMigRows.length === 0 || collaborationMigRows[0]!.value !== 'true') {
+      const legacyRows = await db.select<{ value: string }[]>(
+        `SELECT value FROM ${TABLE} WHERE key = 'feature_server_publish_enabled'`
+      )
+      const legacyValue = legacyRows[0]?.value
+      if (legacyValue === 'true' || legacyValue === 'false') {
+        await db.execute(
+          `UPDATE ${TABLE} SET value = $1 WHERE key = 'local_collaboration_enabled'`,
+          [legacyValue]
+        )
+      }
+      await db.execute(
+        `INSERT INTO ${TABLE} (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = $2`,
+        [LOCAL_COLLABORATION_SETTING_MIGRATION_KEY, 'true']
       )
     }
   })
