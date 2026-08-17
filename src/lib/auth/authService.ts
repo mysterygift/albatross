@@ -244,7 +244,7 @@ export async function bootstrapFirstAdmin(
     actorUserId: user.id,
     targetUserId: user.id,
     action: 'auth.bootstrap_admin_created',
-    metadata: { username: user.username, role: user.role },
+    metadata: { role: user.role },
     ipAddress: input.sourceIp ?? null,
     userAgent: input.userAgent ?? null,
   })
@@ -289,7 +289,7 @@ export async function setupInitialAdmin(
     actorUserId: user.id,
     targetUserId: user.id,
     action: 'auth.initial_admin_created',
-    metadata: { username: user.username, role: user.role },
+    metadata: { role: user.role },
     ipAddress: input.sourceIp ?? null,
     userAgent: input.userAgent ?? null,
   })
@@ -335,7 +335,7 @@ export async function login(
     actorUserId: user.id,
     targetUserId: user.id,
     action: 'auth.login_succeeded',
-    metadata: { username: user.username, role: user.role },
+    metadata: { role: user.role },
     ipAddress: input.sourceIp ?? null,
     userAgent: input.userAgent ?? null,
   })
@@ -417,4 +417,3 @@ export async function resolveAuthenticatedUserFromSessionToken(
     },
   }
 }
-

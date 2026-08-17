@@ -45,6 +45,10 @@ import {
 describe('sensitiveDataAccess', () => {
   beforeEach(async () => {
     await makeDb()
+    await dbAdapter.execute(
+      `INSERT INTO users (id, username, password_hash, role) VALUES ('user-1', 'admin', 'test-hash', 'admin')`,
+      []
+    )
     clearDataEncryptionKey()
     setTestDataEncryptionKeyForTests(null)
   })
@@ -55,11 +59,11 @@ describe('sensitiveDataAccess', () => {
     expect(canFetchSensitiveClientData(true, true)).toBe(true)
   })
 
-  it('requireSensitiveDataAccess throws when UAM1 present and no DEK', async () => {
+  it('requireSensitiveDataAccess throws when a UAM1 account exists and no DEK is loaded', async () => {
     await expect(requireSensitiveDataAccess()).rejects.toBeInstanceOf(EncryptionKeyUnavailableError)
   })
 
-  it('listClients fails closed without DEK when users table exists', async () => {
+  it('listClients fails closed without DEK when a user account exists', async () => {
     await expect(listClients()).rejects.toBeInstanceOf(EncryptionKeyUnavailableError)
   })
 })

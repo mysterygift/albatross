@@ -12,6 +12,9 @@ import { getDocumentCategoryId } from '@/lib/documents/catalog'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
 import type { GlobalSearchResult, PreviewField } from '@/features/search/types'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
+import { requireProjectViewAccess } from '@/lib/access/projectAccessService'
 
 function joinSearchText(parts: Array<string | null | undefined>): string {
   return parts
@@ -50,7 +53,23 @@ export function useGlobalSearchIndex(
   productionId: string | null | undefined,
   options?: { enabled?: boolean }
 ): { results: GlobalSearchResult[]; isLoading: boolean } {
-  const enabled = !!productionId && (options?.enabled ?? true)
+  const authSession = useAuthSession()
+  const requested = !!productionId && (options?.enabled ?? true)
+  const accessQuery = useQuery({
+    queryKey: ['global-search-project-access', productionId, authSession.currentUser?.id],
+    queryFn: async () => {
+      if (authSession.authSupported) {
+        const db = await getDb()
+        await requireProjectViewAccess(db, authSession.currentUser, productionId!)
+      }
+      return true
+    },
+    enabled: requested && (!authSession.authSupported || !!authSession.currentUser),
+  })
+  // Do not start any index query until the authenticated actor's project access has
+  // been established. AppLayout is the primary gate; this is defense in depth for
+  // a hook whose results intentionally contain names, contact details and addresses.
+  const enabled = requested && accessQuery.data === true
 
   const castQuery = useQuery({
     queryKey: ['cast', productionId],
@@ -389,15 +408,17 @@ export function useGlobalSearchIndex(
   ])
 
   const isLoading =
-    enabled &&
-    (castQuery.isLoading ||
+    requested &&
+    (accessQuery.isLoading ||
+      (enabled &&
+      (castQuery.isLoading ||
       crewQuery.isLoading ||
       scenesQuery.isLoading ||
       locationsQuery.isLoading ||
       posQuery.isLoading ||
       vendorsQuery.isLoading ||
       equipmentQuery.isLoading ||
-      documentsLoading)
+      documentsLoading)))
 
   return { results, isLoading }
 }

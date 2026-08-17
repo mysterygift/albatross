@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import initSqlJs, { type Database } from 'sql.js'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -15,6 +15,8 @@ import {
   NORTH_SHORE_SHOTS_PER_SCENE,
 } from '@/lib/db/seed/northShoreDemoContent'
 import { NORTH_SHORE_EPISODIC_CREW_MEMBER_COUNT } from '@/lib/db/seed/demoCrewSeed'
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
+import { listLocationsByProduction } from '@/lib/db/repositories/location'
 
 let dbAdapter: ReturnType<typeof createSqlJsTauriAdapter>
 
@@ -88,9 +90,11 @@ describe('North Shore episodic demo seed', () => {
   let db: Database
 
   beforeEach(async () => {
+    setTestDataEncryptionKeyForTests(new Uint8Array(32).fill(10))
     vi.clearAllMocks()
     db = await makeDb()
   })
+  afterEach(() => setTestDataEncryptionKeyForTests(null))
 
   it('seeds episodic production with structural constraints and non-overlapping blocs', async () => {
     await runEpisodicFullSeed()
@@ -136,13 +140,10 @@ describe('North Shore episodic demo seed', () => {
     expect(scalar(db, `SELECT COUNT(*) FROM locations WHERE production_id = '${pid}' AND deleted_at IS NULL`)).toBe(
       NORTH_SHORE_LOCATION_COUNT
     )
-    for (const label of NORTH_SHORE_LOCATIONS.map((l) => l.name.replace(/'/g, "''"))) {
-      expect(
-        scalar(
-          db,
-          `SELECT COUNT(*) FROM locations WHERE production_id = '${pid}' AND name = '${label}' AND address IS NOT NULL AND LENGTH(TRIM(address)) > 10`
-        )
-      ).toBeGreaterThanOrEqual(1)
+    const locations = await listLocationsByProduction(pid)
+    for (const expected of NORTH_SHORE_LOCATIONS) {
+      const location = locations.find((candidate) => candidate.name === expected.name)
+      expect(location?.address?.trim().length ?? 0).toBeGreaterThan(10)
     }
 
     expect(

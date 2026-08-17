@@ -50,7 +50,9 @@ For full instance recovery (including admin self-reset with DEK re-encryption wh
   - password reset
   - role change
   - failed admin authorization attempts
-- audit metadata is sanitized and never stores plaintext passwords, password hashes, secrets, or session tokens
+- audit metadata is deny-by-default: each known action has a narrow allowlist of validated operational fields
+- usernames, names, contact details, passwords, hashes, secrets, recovery keys, and session tokens are excluded from metadata
+- unknown audit actions are still recorded, but their metadata is discarded until an explicit policy is added
 
 ## Rate limiting
 

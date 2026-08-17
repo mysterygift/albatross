@@ -41,9 +41,9 @@ describe('reencryptClientFields', () => {
       async (_query: string, _bindValues?: unknown[]) => ({ rowsAffected: 1, lastInsertId: 0 })
     )
     const db = mockDbAdapter({
-      select: vi.fn(async () => [
+      select: vi.fn(async (sql: string) => sql.includes('FROM clients') ? [
         { id: 'client-1', name: nameEnc, email: emailEnc, phone: null },
-      ]) as DatabaseAdapter['select'],
+      ] : []) as DatabaseAdapter['select'],
     })
     const batchDb = mockDbAdapter({ execute: batchExecute })
     clientMocks.getDb.mockResolvedValue(batchDb)

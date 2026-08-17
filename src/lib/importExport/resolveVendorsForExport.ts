@@ -1,5 +1,8 @@
 import { getDb } from '@/lib/db/client'
 import type { ApfTableRow } from '@/lib/importExport/payload'
+import { isClientEncryptionEnabled } from '@/lib/security/dataEncryptionContext'
+import { requireSensitiveDataAccess } from '@/lib/security/sensitiveDataAccess'
+import { decryptVendorFields } from '@/lib/security/sensitiveEntityFieldCrypto'
 
 function asRow(r: Record<string, unknown>): ApfTableRow {
   return r as ApfTableRow
@@ -10,7 +13,9 @@ function asRow(r: Record<string, unknown>): ApfTableRow {
  * referenced global vendors (materialized as local rows for self-contained packages).
  */
 export async function resolveVendorsForExport(productionId: string): Promise<ApfTableRow[]> {
+  await requireSensitiveDataAccess()
   const db = await getDb()
+  const encryptionEnabled = await isClientEncryptionEnabled(db)
 
   const productionVendors = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM vendors WHERE production_id = $1 AND deleted_at IS NULL`,
@@ -19,7 +24,7 @@ export async function resolveVendorsForExport(productionId: string): Promise<Apf
 
   const byId = new Map<string, ApfTableRow>()
   for (const row of productionVendors) {
-    byId.set(String(row.id), asRow({ ...row }))
+    byId.set(String(row.id), asRow(encryptionEnabled ? await decryptVendorFields(row) : { ...row }))
   }
 
   const referencedGlobal = await db.select<Record<string, unknown>[]>(
@@ -47,7 +52,7 @@ export async function resolveVendorsForExport(productionId: string): Promise<Apf
     byId.set(
       id,
       asRow({
-        ...row,
+        ...(encryptionEnabled ? await decryptVendorFields(row) : row),
         production_id: productionId,
         is_global: 0,
       })

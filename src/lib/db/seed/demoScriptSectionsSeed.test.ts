@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import initSqlJs, { type Database } from 'sql.js'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -9,6 +9,7 @@ import { DEMO_SCRIPT_VERSION_LABEL, seedDemoScriptSections } from './demoScriptS
 import { listScriptVersionsByProduction } from '@/lib/db/repositories/scriptVersions'
 import { listSectionsByScriptVersion } from '@/lib/db/repositories/scriptSections'
 import { listSidesExportsByShootDay } from '@/lib/db/repositories/sidesExports'
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
 
 let dbAdapter: ReturnType<typeof createSqlJsTauriAdapter>
 
@@ -76,6 +77,7 @@ async function seedMinimalMintHeistGraph(db: Database): Promise<void> {
 
 describe('demoScriptSectionsSeed', () => {
   beforeEach(async () => {
+    setTestDataEncryptionKeyForTests(new Uint8Array(32).fill(15))
     const SQL = await initSqlJs({})
     const db = new SQL.Database()
     applyAllMigrations(db)
@@ -83,6 +85,7 @@ describe('demoScriptSectionsSeed', () => {
     await seedMinimalMintHeistGraph(db)
     dbAdapter = createSqlJsTauriAdapter(db)
   })
+  afterEach(() => setTestDataEncryptionKeyForTests(null))
 
   it('seeds deterministic script version, sections, and sides export', async () => {
     await seedDemoScriptSections(IDS.production)

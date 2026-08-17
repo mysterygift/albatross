@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import { AppLayout } from '@/app/layout'
 import {
@@ -186,6 +186,55 @@ describe('AppLayout setup transition', () => {
 
     expect(screen.getByTestId('auth-gate')).toBeTruthy()
     expect(screen.queryByTestId('setup-workspace-transition-overlay')).toBeNull()
+  })
+
+  it('does not mount sensitive call-sheet or movement-order routes before authentication', () => {
+    const sensitiveRouteRender = vi.fn()
+    const SensitiveRouteProbe = () => {
+      sensitiveRouteRender()
+      return <div data-testid="sensitive-route">Sensitive operational route</div>
+    }
+    authMocks.useAuthSession.mockReturnValue({
+      status: 'success',
+      isPending: false,
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      data: {
+        supported: true,
+        dbDialect: 'sqlite',
+        dbLocked: false,
+        sessionToken: null,
+        user: null,
+      },
+      authSupported: true,
+      authDbDialect: 'sqlite',
+      isAuthenticated: false,
+      dbLocked: false,
+      currentUser: null,
+      clearSession: vi.fn(),
+    })
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    })
+    queryClient.setQueryData(INITIAL_SETUP_STATUS_QUERY_KEY, true)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/movement-orders']}>
+          <Routes>
+            <Route element={<AppLayout />}>
+              <Route path="movement-orders" element={<SensitiveRouteProbe />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByTestId('auth-gate')).toBeTruthy()
+    expect(screen.queryByTestId('sensitive-route')).toBeNull()
+    expect(sensitiveRouteRender).not.toHaveBeenCalled()
   })
 
   it('renders app shell after transition completes and handoff disarms', () => {

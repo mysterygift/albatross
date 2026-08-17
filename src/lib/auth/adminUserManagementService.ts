@@ -218,7 +218,7 @@ export async function createUserAsAdmin(args: {
     actorUserId: args.actor.id,
     targetUserId: created.id,
     action: 'admin.user_created',
-    metadata: { role: created.role, username: created.username },
+    metadata: { role: created.role },
     ipAddress: args.options?.sourceIp ?? null,
     userAgent: args.options?.userAgent ?? null,
   })
@@ -329,7 +329,7 @@ export async function deleteUserAsAdmin(args: {
     actorUserId: args.actor.id,
     targetUserId: null,
     action: 'admin.user_deleted',
-    metadata: { deletedUserId: args.targetUserId, deletedUsername: target.username, deletedRole: target.role },
+    metadata: { deletedUserId: args.targetUserId, deletedRole: target.role },
     ipAddress: args.options?.sourceIp ?? null,
     userAgent: args.options?.userAgent ?? null,
   })

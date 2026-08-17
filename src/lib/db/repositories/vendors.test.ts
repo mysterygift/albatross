@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import initSqlJs, { type Database } from 'sql.js'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createSqlJsTauriAdapter } from '@/test/apf/sqlJsTauriAdapter'
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
 
 let dbAdapter: ReturnType<typeof createSqlJsTauriAdapter>
 
@@ -83,8 +84,11 @@ async function seedProductions(): Promise<void> {
 describe('vendors repository — global vendors', () => {
   beforeEach(async () => {
     await makeDb()
+    setTestDataEncryptionKeyForTests(new Uint8Array(32).fill(7))
     await seedProductions()
   })
+
+  afterEach(() => setTestDataEncryptionKeyForTests(null))
 
   it('listVendors includes global vendors from other productions', async () => {
     const local = await createVendor({

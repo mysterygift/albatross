@@ -2,6 +2,24 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { useCurrentProduction } from '@/features/productions/context'
+import { useAuthSession } from '@/lib/auth/useAuthSession'
+import { getDb } from '@/lib/db/client'
+import {
+  getCastIdsBySceneIdsForActor,
+  getCastIdsByShotIdsForActor,
+  getProductionByIdForActor,
+  getShootDayByIdForActor,
+  listBookingsByShootDayForActor,
+  listCastForActor,
+  listCrewForActor,
+  listLocationsByProductionForActor,
+  listScenesByProductionForActor,
+  listShootDaysByProductionForActor,
+  listShootDayUnitsByShootDayForActor,
+  listShotsByProductionForActor,
+  listStripsByShootDayForActor,
+  listUnitsByProductionForActor,
+} from '@/lib/access/projectDomainService'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
 import { movementOrdersTutorialSteps } from '@/features/tutorial/sections/movementOrdersTutorial'
@@ -70,6 +88,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 export function MovementOrdersPage() {
   const { currentProductionId } = useCurrentProduction()
+  const authSession = useAuthSession()
   const queryClient = useQueryClient()
   const { progress, updateProgress } = useFirstLaunchTutorial()
   const [shootDayId, setShootDayId] = useState<string | null>(null)
@@ -88,6 +107,7 @@ export function MovementOrdersPage() {
   >(null)
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const defaultCrewHierarchy = getDefaultCrewHierarchyConfig()
+  const canLoadProjectData = !authSession.authSupported || !!authSession.currentUser
 
   useEffect(() => {
     if (progress?.currentSection === 'movement_orders') {
@@ -97,80 +117,152 @@ export function MovementOrdersPage() {
 
   const { data: production } = useQuery({
     queryKey: ['production', currentProductionId],
-    queryFn: () => getProductionById(currentProductionId!),
-    enabled: !!currentProductionId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getProductionByIdForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return getProductionById(currentProductionId!)
+    },
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: shootDays = [] } = useQuery({
     queryKey: ['shoot-days', currentProductionId],
-    queryFn: () => listShootDaysByProduction(currentProductionId ?? ''),
-    enabled: !!currentProductionId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDaysByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listShootDaysByProduction(currentProductionId ?? '')
+    },
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: units = [] } = useQuery({
     queryKey: ['units', currentProductionId],
-    queryFn: () => listUnitsByProduction(currentProductionId ?? ''),
-    enabled: !!currentProductionId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listUnitsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listUnitsByProduction(currentProductionId ?? '')
+    },
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: shootDay } = useQuery({
     queryKey: ['shoot-day', shootDayId],
-    queryFn: () => getShootDayById(shootDayId!),
-    enabled: !!shootDayId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return getShootDayByIdForActor({ db, actor: authSession.currentUser, shootDayId: shootDayId! })
+      }
+      return getShootDayById(shootDayId!)
+    },
+    enabled: !!shootDayId && canLoadProjectData,
   })
 
   const { data: dayUnits = [] } = useQuery({
     queryKey: ['shoot-day-units', shootDayId],
-    queryFn: () => listShootDayUnitsByShootDay(shootDayId!),
-    enabled: !!shootDayId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootDayUnitsByShootDayForActor({ db, actor: authSession.currentUser, shootDayId: shootDayId! })
+      }
+      return listShootDayUnitsByShootDay(shootDayId!)
+    },
+    enabled: !!shootDayId && canLoadProjectData,
   })
 
   const { data: strips = [] } = useQuery({
     queryKey: ['strips', shootDayId],
-    queryFn: () => listStripsByShootDay(shootDayId!),
-    enabled: !!shootDayId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listStripsByShootDayForActor({ db, actor: authSession.currentUser, shootDayId: shootDayId! })
+      }
+      return listStripsByShootDay(shootDayId!)
+    },
+    enabled: !!shootDayId && canLoadProjectData,
   })
 
   const { data: scenes = [] } = useQuery({
     queryKey: ['scenes', currentProductionId],
-    queryFn: () => listScenesByProduction(currentProductionId ?? ''),
-    enabled: !!currentProductionId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listScenesByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listScenesByProduction(currentProductionId ?? '')
+    },
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: shots = [] } = useQuery({
     queryKey: ['shots', currentProductionId],
-    queryFn: () => listShotsByProduction(currentProductionId ?? ''),
-    enabled: !!currentProductionId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShotsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listShotsByProduction(currentProductionId ?? '')
+    },
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: locations = [] } = useQuery({
     queryKey: ['locations', currentProductionId],
-    queryFn: () => listLocationsByProduction(currentProductionId ?? ''),
-    enabled: !!currentProductionId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listLocationsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listLocationsByProduction(currentProductionId ?? '')
+    },
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: cast = [] } = useQuery({
     queryKey: ['cast', currentProductionId],
-    queryFn: () => listCast(currentProductionId ?? ''),
-    enabled: !!currentProductionId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCastForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listCast(currentProductionId ?? '')
+    },
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: crew = [] } = useQuery({
     queryKey: ['crew', currentProductionId],
-    queryFn: () => listCrew(currentProductionId ?? ''),
-    enabled: !!currentProductionId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listCrewForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listCrew(currentProductionId ?? '')
+    },
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: bookingsForDay = [] } = useQuery({
     queryKey: ['bookings-by-shoot-day', shootDayId],
-    queryFn: () => listBookingsByShootDay(shootDayId!),
-    enabled: !!shootDayId,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listBookingsByShootDayForActor({ db, actor: authSession.currentUser, shootDayId: shootDayId! })
+      }
+      return listBookingsByShootDay(shootDayId!)
+    },
+    enabled: !!shootDayId && canLoadProjectData,
   })
 
   const { data: hierarchyData } = useQuery({
     queryKey: ['crew-hierarchy', currentProductionId],
     queryFn: () => getEffectiveCrewHierarchyOrDefault(currentProductionId),
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
   const crewHierarchy = hierarchyData ?? defaultCrewHierarchy
 
@@ -203,14 +295,36 @@ export function MovementOrdersPage() {
 
   const { data: castBySceneId = new Map<string, string[]>() } = useQuery({
     queryKey: ['cast-by-scene-movement-order-distribution', sceneIdsScheduled.join(',')],
-    queryFn: () => getCastIdsBySceneIds(sceneIdsScheduled),
-    enabled: sceneIdsScheduled.length > 0,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser && currentProductionId) {
+        const db = await getDb()
+        return getCastIdsBySceneIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          sceneIds: sceneIdsScheduled,
+        })
+      }
+      return getCastIdsBySceneIds(sceneIdsScheduled)
+    },
+    enabled: sceneIdsScheduled.length > 0 && canLoadProjectData,
   })
 
   const { data: castByShotId = new Map<string, string[]>() } = useQuery({
     queryKey: ['cast-by-shot-movement-order-distribution', shotIdsScheduled.join(',')],
-    queryFn: () => getCastIdsByShotIds(shotIdsScheduled),
-    enabled: shotIdsScheduled.length > 0,
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser && currentProductionId) {
+        const db = await getDb()
+        return getCastIdsByShotIdsForActor({
+          db,
+          actor: authSession.currentUser,
+          productionId: currentProductionId,
+          shotIds: shotIdsScheduled,
+        })
+      }
+      return getCastIdsByShotIds(shotIdsScheduled)
+    },
+    enabled: shotIdsScheduled.length > 0 && canLoadProjectData,
   })
 
   const castResult: CallSheetCastResult = useMemo(() => {

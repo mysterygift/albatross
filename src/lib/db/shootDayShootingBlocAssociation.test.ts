@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import initSqlJs, { type Database } from 'sql.js'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createSqlJsTauriAdapter } from '@/test/apf/sqlJsTauriAdapter'
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
 
 let dbAdapter: ReturnType<typeof createSqlJsTauriAdapter>
 
@@ -84,8 +85,10 @@ async function episodicProdWithBloc() {
 
 describe('shoot day ↔ shooting bloc association', () => {
   beforeEach(() => {
+    setTestDataEncryptionKeyForTests(new Uint8Array(32).fill(14))
     vi.clearAllMocks()
   })
+  afterEach(() => setTestDataEncryptionKeyForTests(null))
 
   it('assigns shooting_bloc_id when creating a day inside the bloc range', async () => {
     await makeDb()

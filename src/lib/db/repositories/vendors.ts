@@ -1,17 +1,25 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxStatementForRow } from '../outbox'
 import type { Vendor } from '../types'
+import { isClientEncryptionEnabled } from '@/lib/security/dataEncryptionContext'
+import { requireSensitiveDataAccess } from '@/lib/security/sensitiveDataAccess'
+import {
+  decryptVendorFields,
+  encryptVendorFields,
+  VENDOR_PROTECTED_FIELDS,
+} from '@/lib/security/sensitiveEntityFieldCrypto'
 
 const TABLE = 'vendors'
 
-function rowToVendor(r: Record<string, unknown>): Vendor {
+async function rowToVendor(r: Record<string, unknown>, encryptionEnabled: boolean): Promise<Vendor> {
+  const fields = encryptionEnabled ? await decryptVendorFields(r) : r
   return {
     id: r.id as string,
     production_id: r.production_id as string,
     is_global: Number(r.is_global ?? 0) === 1,
-    company_name: r.company_name as string,
-    primary_contact_full_name: (r.primary_contact_full_name as string | null) ?? null,
-    primary_contact_email: (r.primary_contact_email as string | null) ?? null,
+    company_name: fields.company_name as string,
+    primary_contact_full_name: (fields.primary_contact_full_name as string | null) ?? null,
+    primary_contact_email: (fields.primary_contact_email as string | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: (r.deleted_at as string | null) ?? null,
@@ -19,7 +27,9 @@ function rowToVendor(r: Record<string, unknown>): Vendor {
 }
 
 export async function listVendors(productionId: string): Promise<Vendor[]> {
+  await requireSensitiveDataAccess()
   const db = await getDb()
+  const encryptionEnabled = await isClientEncryptionEnabled(db)
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT v.* FROM ${TABLE} v
      WHERE v.deleted_at IS NULL
@@ -28,30 +38,35 @@ export async function listVendors(productionId: string): Promise<Vendor[]> {
          SELECT 1 FROM vendor_production_exclusions e
          WHERE e.vendor_id = v.id AND e.production_id = $1
        )
-     ORDER BY v.company_name`,
+    `,
     [productionId]
   )
-  return rows.map(rowToVendor)
+  const vendors = await Promise.all(rows.map((row) => rowToVendor(row, encryptionEnabled)))
+  return vendors.sort((a, b) => a.company_name.localeCompare(b.company_name))
 }
 
 /** Returns active vendor by id (excludes soft-deleted). Use for pickers and active lists. */
 export async function getVendor(id: string): Promise<Vendor | null> {
+  await requireSensitiveDataAccess()
   const db = await getDb()
+  const encryptionEnabled = await isClientEncryptionEnabled(db)
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
     [id]
   )
-  return rows.length > 0 ? rowToVendor(rows[0]!) : null
+  return rows.length > 0 ? await rowToVendor(rows[0]!, encryptionEnabled) : null
 }
 
 /** Returns vendor by id including archived (deleted_at set). Use for detail page to show archived state. */
 export async function getVendorById(id: string): Promise<Vendor | null> {
+  await requireSensitiveDataAccess()
   const db = await getDb()
+  const encryptionEnabled = await isClientEncryptionEnabled(db)
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${TABLE} WHERE id = $1 LIMIT 1`,
     [id]
   )
-  return rows.length > 0 ? rowToVendor(rows[0]!) : null
+  return rows.length > 0 ? await rowToVendor(rows[0]!, encryptionEnabled) : null
 }
 
 /**
@@ -65,21 +80,25 @@ export async function createVendor(data: {
   primary_contact_email?: string | null
   is_global?: boolean
 }): Promise<Vendor> {
+  await requireSensitiveDataAccess()
+  const db = await getDb()
   const id = uuid()
   const ts = now()
   const isGlobal = data.is_global ? 1 : 0
+  const stored: Record<string, unknown> = await isClientEncryptionEnabled(db) ? await encryptVendorFields(data) : data
   const statements: Array<{ sql: string; bindValues: unknown[] }> = [
     { sql: 'BEGIN', bindValues: [] },
     {
-      sql: `INSERT INTO ${TABLE} (id, production_id, is_global, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      sql: `INSERT INTO ${TABLE} (id, production_id, is_global, company_name, company_name_sort_key, primary_contact_full_name, primary_contact_email, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       bindValues: [
         id,
         data.production_id,
         isGlobal,
-        data.company_name,
-        data.primary_contact_full_name ?? null,
-        data.primary_contact_email ?? null,
+        stored.company_name,
+        stored.company_name_sort_key ?? null,
+        stored.primary_contact_full_name ?? null,
+        stored.primary_contact_email ?? null,
         ts,
         ts,
       ],
@@ -88,7 +107,7 @@ export async function createVendor(data: {
       entity: TABLE,
       entityId: id,
       operation: 'create',
-      payloadJson: JSON.stringify({ ...data, id, is_global: isGlobal === 1 }),
+      payloadJson: JSON.stringify({ ...stored, id, is_global: isGlobal === 1 }),
     }),
     { sql: 'COMMIT', bindValues: [] },
   ]
@@ -96,9 +115,8 @@ export async function createVendor(data: {
     const db = await getDb()
     await executeBatch(db, statements)
   })
-  const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [id])
-  return rowToVendor(rows[0]!)
+  return rowToVendor(rows[0]!, await isClientEncryptionEnabled(db))
 }
 
 /**
@@ -109,20 +127,38 @@ export async function updateVendor(
   id: string,
   data: Partial<Pick<Vendor, 'company_name' | 'primary_contact_full_name' | 'primary_contact_email'>>
 ): Promise<Vendor> {
+  await requireSensitiveDataAccess()
   const db = await getDb()
+  const encryptionEnabled = await isClientEncryptionEnabled(db)
   const ts = now()
   const cols: string[] = []
   const vals: unknown[] = []
   let i = 1
+  const protectedUpdates = Object.fromEntries(
+    VENDOR_PROTECTED_FIELDS.filter((field) => data[field] !== undefined).map((field) => [field, data[field]])
+  )
+  const encryptedAll = Object.keys(protectedUpdates).length > 0 && encryptionEnabled
+    ? await encryptVendorFields({ company_name: data.company_name ?? (await getVendor(id))?.company_name ?? '', ...protectedUpdates })
+    : protectedUpdates
+  const encryptedUpdates: Record<string, unknown> = Object.fromEntries(
+    Object.keys(protectedUpdates).map((field) => [field, encryptedAll[field]])
+  )
+  if (data.company_name !== undefined && encryptedAll.company_name_sort_key !== undefined) {
+    encryptedUpdates.company_name_sort_key = encryptedAll.company_name_sort_key
+  }
   for (const k of ['company_name', 'primary_contact_full_name', 'primary_contact_email'] as const) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(data[k])
+      vals.push(encryptedUpdates[k])
     }
   }
   if (cols.length === 0) {
     const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL`, [id])
-    return rows.length ? rowToVendor(rows[0]!) : (await listVendors(''))[0]!
+    return rows.length ? await rowToVendor(rows[0]!, encryptionEnabled) : (await listVendors(''))[0]!
+  }
+  if (data.company_name !== undefined && encryptedUpdates.company_name_sort_key !== undefined) {
+    cols.push(`company_name_sort_key = $${i++}`)
+    vals.push(encryptedUpdates.company_name_sort_key)
   }
   cols.push(`updated_at = $${i}`)
   vals.push(ts, id)
@@ -136,7 +172,7 @@ export async function updateVendor(
       entity: TABLE,
       entityId: id,
       operation: 'update',
-      payloadJson: JSON.stringify(data),
+      payloadJson: JSON.stringify({ ...data, ...encryptedUpdates }),
     }),
     { sql: 'COMMIT', bindValues: [] },
   ]
@@ -145,7 +181,7 @@ export async function updateVendor(
     await executeBatch(conn, statements)
   })
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [id])
-  return rowToVendor(rows[0]!)
+  return rowToVendor(rows[0]!, encryptionEnabled)
 }
 
 export class VendorPromoteError extends Error {
@@ -202,7 +238,7 @@ export async function promoteVendorToGlobal(
     await executeBatch(conn, statements)
   })
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [id])
-  return rowToVendor(rows[0]!)
+  return rowToVendor(rows[0]!, await isClientEncryptionEnabled(db))
 }
 
 /**
@@ -244,7 +280,7 @@ export async function demoteVendorToLocal(
     await executeBatch(conn, statements)
   })
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [id])
-  return rowToVendor(rows[0]!)
+  return rowToVendor(rows[0]!, await isClientEncryptionEnabled(db))
 }
 
 /**

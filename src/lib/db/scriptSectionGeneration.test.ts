@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import initSqlJs, { type Database } from 'sql.js'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createSqlJsTauriAdapter } from '@/test/apf/sqlJsTauriAdapter'
 import type { ParsedScene } from '@/lib/script-parser'
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
 
 let dbAdapter: ReturnType<typeof createSqlJsTauriAdapter>
 let dataSourceOverride: 'local_sqlite' | 'remote_server' | null = null
@@ -129,9 +130,11 @@ async function seedAndGenerate() {
 
 describe('script section generation service', () => {
   beforeEach(() => {
+    setTestDataEncryptionKeyForTests(new Uint8Array(32).fill(12))
     vi.clearAllMocks()
     dataSourceOverride = null
   })
+  afterEach(() => setTestDataEncryptionKeyForTests(null))
 
   it('creates exactly one script version per import', async () => {
     await makeDb()

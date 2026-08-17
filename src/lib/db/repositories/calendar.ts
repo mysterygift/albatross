@@ -11,6 +11,10 @@ import type {
   CalendarDateRange,
   CalendarEventFilters,
 } from '../types'
+import { isClientEncryptionEnabled } from '@/lib/security/dataEncryptionContext'
+import { requireSensitiveDataAccess } from '@/lib/security/sensitiveDataAccess'
+import { decryptClientField } from '@/lib/security/clientFieldCrypto'
+import { getDataEncryptionKey } from '@/lib/security/dataEncryptionContext'
 
 /**
  * Extract lunch time from meal_times_json array.
@@ -38,7 +42,9 @@ export async function listCalendarShootDayEvents(
   dateRange: CalendarDateRange,
   filters?: CalendarEventFilters
 ): Promise<CalendarShootDayEvent[]> {
+  await requireSensitiveDataAccess()
   const db = await getDb()
+  const encryptionEnabled = await isClientEncryptionEnabled(db)
   const params: unknown[] = [productionId, dateRange.start, dateRange.end]
   let unitFilter = ''
   if (filters?.unitId) {
@@ -134,7 +140,10 @@ export async function listCalendarShootDayEvents(
       locationIds
     )
     for (const r of locRows) {
-      locationMap.set(r.id as string, r.name as string)
+      const name = encryptionEnabled
+        ? await decryptClientField(r.name == null ? null : String(r.name), getDataEncryptionKey())
+        : r.name as string
+      locationMap.set(r.id as string, name ?? '')
     }
   }
 

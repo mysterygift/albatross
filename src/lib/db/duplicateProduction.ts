@@ -190,19 +190,20 @@ export async function duplicateProduction(
     const id = newId()
     personIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO people (id, production_id, name, is_cast, email, phone, department, phases, notes, contributor_form_status, cast_number, agent_name, agent_email, agent_phone, role_name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-      bindValues: [id, newProdId, r.name, coerceBoolean(r.is_cast, false), r.email, r.phone, r.department, r.phases, r.notes, r.contributor_form_status ?? 'not_requested', r.cast_number ?? null, r.agent_name ?? null, r.agent_email ?? null, r.agent_phone ?? null, r.role_name ?? null, ts, ts],
+      sql: `INSERT INTO people (id, production_id, name, name_sort_key, is_cast, email, phone, department, phases, notes, contributor_form_status, cast_number, agent_name, agent_email, agent_phone, role_name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+      bindValues: [id, newProdId, r.name, r.name_sort_key ?? null, coerceBoolean(r.is_cast, false), r.email, r.phone, r.department, r.phases, r.notes, r.contributor_form_status ?? 'not_requested', r.cast_number ?? null, r.agent_name ?? null, r.agent_email ?? null, r.agent_phone ?? null, r.role_name ?? null, ts, ts],
     })
   }
   for (const r of locations) {
     const id = newId()
     locationIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO locations (id, production_id, name, booked_status, address, what3words, parking_info, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      sql: `INSERT INTO locations (id, production_id, name, name_sort_key, booked_status, address, what3words, parking_info, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       bindValues: [
         id,
         newProdId,
         r.name,
+        r.name_sort_key ?? null,
         r.booked_status ?? 'unbooked',
         r.address,
         r.what3words ?? null,
@@ -357,8 +358,8 @@ export async function duplicateProduction(
     const id = newId()
     vendorIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO vendors (id, production_id, is_global, company_name, primary_contact_full_name, primary_contact_email, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      bindValues: [id, newProdId, r.is_global ?? 0, r.company_name, r.primary_contact_full_name ?? null, r.primary_contact_email ?? null, ts, ts],
+      sql: `INSERT INTO vendors (id, production_id, is_global, company_name, company_name_sort_key, primary_contact_full_name, primary_contact_email, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      bindValues: [id, newProdId, r.is_global ?? 0, r.company_name, r.company_name_sort_key ?? null, r.primary_contact_full_name ?? null, r.primary_contact_email ?? null, ts, ts],
     })
   }
   for (const r of budgetItems) {

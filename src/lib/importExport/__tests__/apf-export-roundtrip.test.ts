@@ -132,4 +132,46 @@ describe('export artifact → parse round-trip (no DB)', () => {
     const zipPath = `files/documents/${TEST_DOCUMENT_ID}/invoice.pdf`
     expect(index.has(zipPath)).toBe(true)
   })
+
+  it('round-trips identifying fields without privacy redaction', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    tables.people = [
+      {
+        id: 'person-privacy-1',
+        production_id: TEST_PRODUCTION_ID,
+        name: 'Morgan Camera',
+        email: 'morgan@example.test',
+        phone: '+44 7700 900123',
+        agent_name: 'Alex Agent',
+        agent_email: 'alex.agent@example.test',
+        agent_phone: '+44 7700 900456',
+      },
+    ]
+    tables.locations = [
+      {
+        id: 'location-privacy-1',
+        production_id: TEST_PRODUCTION_ID,
+        name: 'Private Residence',
+        address: '12 Sensitive Street, London',
+      },
+    ]
+    tables.vendors = [
+      {
+        id: 'vendor-privacy-1',
+        production_id: TEST_PRODUCTION_ID,
+        company_name: 'Private Supplier',
+        primary_contact_full_name: 'Taylor Vendor',
+        primary_contact_email: 'taylor@example.test',
+        primary_contact_phone: '+44 7700 900789',
+        address: '44 Supplier Road, London',
+      },
+    ]
+
+    const parsed = parseApfArchiveBytes(buildValidApfZipBytes({ tables })).normalized.data.tables
+
+    expect(parsed.people[0]).toEqual(tables.people[0])
+    expect(parsed.locations[0]).toEqual(tables.locations[0])
+    expect(parsed.vendors[0]).toEqual(tables.vendors[0])
+  })
 })

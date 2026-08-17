@@ -6,6 +6,7 @@ import {
 } from '@/lib/auth/setupEncryptionService'
 import { closeDb, getDb, isDbUnlocked } from '@/lib/db/client'
 import { backfillClientEncryptionIfNeeded } from '@/lib/db/migrations/backfillClientEncryption'
+import { backfillSensitiveEntityEncryptionIfNeeded } from '@/lib/db/migrations/backfillSensitiveEntityEncryption'
 import { backfillPeopleIsCastIntegerIfNeeded } from '@/lib/db/migrations/backfillPeopleIsCastInteger'
 import {
   establishDataEncryptionKey,
@@ -99,6 +100,7 @@ export async function runSetupCommit(
         dekHex: exportDataEncryptionKeyHex(),
       })
       await backfillClientEncryptionIfNeeded(db)
+      await backfillSensitiveEntityEncryptionIfNeeded(db)
       repairedPeople = await backfillPeopleIsCastIntegerIfNeeded(db)
 
       if (!(await verifySetupCommitPredicates())) {

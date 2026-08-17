@@ -35,6 +35,7 @@ import { BaseDirectory, mkdir, remove, writeFile, writeTextFile } from '@tauri-a
 import { generateCueSheet, generateLocationReleaseCover, generateContributorFormCover } from '@/lib/pdf'
 import { generateCallSheetPdf, parseCallSheetWeatherJson } from '@/lib/pdf/callSheet'
 import { isLockError } from '../perf'
+import { backfillSensitiveEntityEncryptionIfNeeded } from '../migrations/backfillSensitiveEntityEncryption'
 import {
   enrichCallSheetStripEpisodeLabel,
   shootingBlocMastheadLabelForCallSheet,
@@ -1308,6 +1309,7 @@ async function runDemoContentSeed(
     }
   }
 
+  await backfillSensitiveEntityEncryptionIfNeeded(db)
   await getOrCreateLiveBudgetRevisionIdForProduction(productionId)
 }
 

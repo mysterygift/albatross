@@ -21,6 +21,7 @@ import { apfNodeFsTestContext } from '@/test/apf/apfNodeFsTestContext'
 import { applyAlbatrossMigrationsSqlJs } from '@/test/apf/applyMigrationsSqlJs'
 import { sqlJsApfE2eContext } from '@/test/apf/sqlJsApfE2eContext'
 import { createSqlJsTauriAdapter } from '@/test/apf/sqlJsTauriAdapter'
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
 import {
   apfE2eExecuteBatchMock,
   sequentialExecuteBatchOnDb,
@@ -123,6 +124,7 @@ describe('apf E2E (sql.js + real FS)', () => {
   }, 120_000)
 
   afterAll(() => {
+    setTestDataEncryptionKeyForTests(null)
     sqlJsApfE2eContext.adapter = null
     sqlJsApfE2eContext.rawDb?.close()
     sqlJsApfE2eContext.rawDb = null
@@ -130,6 +132,7 @@ describe('apf E2E (sql.js + real FS)', () => {
   })
 
   beforeEach(async () => {
+    setTestDataEncryptionKeyForTests(new Uint8Array(32).fill(11))
     resetApfImportPragmaCache()
     clearUserData()
     await rm(join(apfNodeFsTestContext.appDataRoot, 'attachments'), { recursive: true, force: true }).catch(() => {})

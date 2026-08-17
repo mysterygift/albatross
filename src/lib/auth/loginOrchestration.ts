@@ -4,6 +4,7 @@ import { unlockLocalDatabaseWithPassword, type UnlockCredentials } from '@/lib/d
 import { login, type AuthResult } from '@/lib/auth/authService'
 import { backfillClientEncryptionIfNeeded } from '@/lib/db/migrations/backfillClientEncryption'
 import { backfillPeopleIsCastIntegerIfNeeded } from '@/lib/db/migrations/backfillPeopleIsCastInteger'
+import { backfillSensitiveEntityEncryptionIfNeeded } from '@/lib/db/migrations/backfillSensitiveEntityEncryption'
 import { ensureDekEscrowOnLogin } from '@/lib/security/dekEscrowMigration'
 import { establishDataEncryptionKey } from '@/lib/security/dataEncryptionContext'
 import { migrateToInstanceKeyModeIfNeeded } from '@/lib/security/instanceKeyMigration'
@@ -41,6 +42,7 @@ export async function completeLoginAfterDatabaseUnlock(
     credentials.password
   )
   await backfillClientEncryptionIfNeeded(activeDb)
+  await backfillSensitiveEntityEncryptionIfNeeded(activeDb)
   const repairedPeople = await backfillPeopleIsCastIntegerIfNeeded(activeDb)
   return { ...result, repairedPeople }
 }

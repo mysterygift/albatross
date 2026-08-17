@@ -7,6 +7,9 @@ import type { ApfTableRow, ApfV1Tables } from '@/lib/importExport/payload'
 import type { ApfV1TableKey } from '@/lib/importExport/tableKeys'
 import { APF_V1_TABLE_KEYS } from '@/lib/importExport/tableKeys'
 import { resolveVendorsForExport } from '@/lib/importExport/resolveVendorsForExport'
+import { isClientEncryptionEnabled } from '@/lib/security/dataEncryptionContext'
+import { requireSensitiveDataAccess } from '@/lib/security/sensitiveDataAccess'
+import { decryptLocationFields, decryptPersonFields } from '@/lib/security/sensitiveEntityFieldCrypto'
 
 function asRows(r: Record<string, unknown>[]): ApfTableRow[] {
   return r as ApfTableRow[]
@@ -16,7 +19,9 @@ function asRows(r: Record<string, unknown>[]): ApfTableRow[] {
  * Loads production-scoped rows. Order of queries is arbitrary; payload builder sorts by `id`.
  */
 export async function loadApfV1ProductionTables(productionId: string): Promise<ApfV1Tables> {
+  await requireSensitiveDataAccess()
   const db = await getDb()
+  const encryptionEnabled = await isClientEncryptionEnabled(db)
   const $1 = productionId
 
   const [
@@ -373,14 +378,16 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
   ])
 
   const vendors = await resolveVendorsForExport(productionId)
+  const exportedPeople = encryptionEnabled ? await Promise.all(people.map(decryptPersonFields)) : people
+  const exportedLocations = encryptionEnabled ? await Promise.all(locations.map(decryptLocationFields)) : locations
 
   const raw: Record<ApfV1TableKey, ApfTableRow[]> = {
     productions: asRows(productions),
     episodes: asRows(episodeRows),
     shooting_blocs: asRows(shootingBlocRows),
     units: asRows(units),
-    people: asRows(people),
-    locations: asRows(locations),
+    people: asRows(exportedPeople),
+    locations: asRows(exportedLocations),
     shoot_days: asRows(shootDays),
     budget_categories: asRows(budgetCategories),
     budget_accounts: asRows(budgetAccounts),

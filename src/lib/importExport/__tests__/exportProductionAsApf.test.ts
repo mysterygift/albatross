@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { exportProductionAsApf } from '@/lib/importExport/exportProduction'
+import {
+  exportProductionAsApf,
+  exportProductionAsApfForActor,
+} from '@/lib/importExport/exportProduction'
 import { parseApfArchiveBytes } from '@/lib/importExport/readApfArchive'
 import { documentFixtureRow, emptyApfTables, minimalProductionRow, TEST_PRODUCTION_ID } from '@/test/apf/fixtures'
 
@@ -20,10 +23,15 @@ vi.mock('@/lib/importExport/collectApfDocumentFiles', () => ({
   collectApfDocumentBundledEntries: vi.fn(),
 }))
 
+vi.mock('@/lib/access/projectAccessService', () => ({
+  requireProjectViewAccess: vi.fn(),
+}))
+
 import { collectApfDocumentBundledEntries } from '@/lib/importExport/collectApfDocumentFiles'
 import { loadApfV1ProductionTables } from '@/lib/importExport/exportLoadProductionData'
 import { getProductionById } from '@/lib/db/repositories/production'
 import { writeFile } from '@tauri-apps/plugin-fs'
+import { requireProjectViewAccess } from '@/lib/access/projectAccessService'
 
 describe('exportProductionAsApf', () => {
   beforeEach(() => {
@@ -32,6 +40,8 @@ describe('exportProductionAsApf', () => {
     vi.mocked(collectApfDocumentBundledEntries).mockReset()
     vi.mocked(writeFile).mockReset()
     vi.mocked(writeFile).mockResolvedValue(undefined)
+    vi.mocked(requireProjectViewAccess).mockReset()
+    vi.mocked(requireProjectViewAccess).mockResolvedValue(undefined)
   })
 
   it('writes a parseable .apf with manifest, data, and bundled document entries', async () => {
@@ -85,5 +95,91 @@ describe('exportProductionAsApf', () => {
     vi.mocked(getProductionById).mockResolvedValue(null)
     await expect(exportProductionAsApf('missing', '/tmp/x.apf')).rejects.toThrow(/not found/i)
     expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('does not load or write APF data before project view access is granted', async () => {
+    vi.mocked(requireProjectViewAccess).mockRejectedValue(new Error('Forbidden'))
+
+    await expect(
+      exportProductionAsApfForActor({
+        db: { dialect: 'postgres' } as never,
+        actor: { id: 'user-1', username: 'viewer', role: 'user' },
+        productionId: TEST_PRODUCTION_ID,
+        outputPath: '/tmp/denied.apf',
+      }),
+    ).rejects.toThrow('Forbidden')
+
+    expect(getProductionById).not.toHaveBeenCalled()
+    expect(loadApfV1ProductionTables).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('intentionally preserves identifying fields in an authorized APF export', async () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    tables.people = [
+      {
+        id: 'person-1',
+        production_id: TEST_PRODUCTION_ID,
+        name: 'Morgan Camera',
+        email: 'morgan@example.test',
+        phone: '+44 7700 900123',
+      },
+    ]
+    tables.locations = [
+      {
+        id: 'location-1',
+        production_id: TEST_PRODUCTION_ID,
+        name: 'Private Residence',
+        address: '12 Sensitive Street, London',
+      },
+    ]
+    tables.vendors = [
+      {
+        id: 'vendor-1',
+        production_id: TEST_PRODUCTION_ID,
+        company_name: 'Private Supplier',
+        primary_contact_full_name: 'Taylor Vendor',
+        primary_contact_email: 'taylor@example.test',
+      },
+    ]
+    vi.mocked(getProductionById).mockResolvedValue({
+      id: TEST_PRODUCTION_ID,
+      name: 'Fixture Production',
+      slug: 'fixture-prod',
+    } as never)
+    vi.mocked(loadApfV1ProductionTables).mockResolvedValue(tables)
+    vi.mocked(collectApfDocumentBundledEntries).mockResolvedValue({
+      entries: [],
+      missingDocumentFileIds: [],
+    })
+
+    await exportProductionAsApfForActor({
+      db: { dialect: 'postgres' } as never,
+      actor: { id: 'user-1', username: 'viewer', role: 'user' },
+      productionId: TEST_PRODUCTION_ID,
+      outputPath: '/tmp/authorized.apf',
+    })
+
+    expect(requireProjectViewAccess).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 'user-1' }),
+      TEST_PRODUCTION_ID,
+    )
+    const [, bytes] = vi.mocked(writeFile).mock.calls[0]!
+    const exported = parseApfArchiveBytes(bytes as Uint8Array).normalized.data.tables
+    expect(exported.people[0]).toMatchObject({
+      name: 'Morgan Camera',
+      email: 'morgan@example.test',
+      phone: '+44 7700 900123',
+    })
+    expect(exported.locations[0]).toMatchObject({
+      name: 'Private Residence',
+      address: '12 Sensitive Street, London',
+    })
+    expect(exported.vendors[0]).toMatchObject({
+      primary_contact_full_name: 'Taylor Vendor',
+      primary_contact_email: 'taylor@example.test',
+    })
   })
 })

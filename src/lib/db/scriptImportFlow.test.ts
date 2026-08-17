@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import initSqlJs, { type Database } from 'sql.js'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -19,6 +19,7 @@ import { effectiveParsedLocation } from '@/lib/schedule/scriptImportReview'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { linkLocationScene } from '@/lib/db/repositories/location-scene'
 import { listLocationIdsByScene } from '@/lib/db/repositories/location-scene'
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
 
 let dbAdapter: ReturnType<typeof createSqlJsTauriAdapter>
 
@@ -71,9 +72,12 @@ Door opens.
 
 describe('script import flow (parser → scenes → generation)', () => {
   beforeEach(async () => {
+    setTestDataEncryptionKeyForTests(new Uint8Array(32).fill(17))
     vi.clearAllMocks()
     await makeDb()
   })
+
+  afterEach(() => setTestDataEncryptionKeyForTests(null))
 
   it('chains parse, scene create, and section generation', async () => {
     const production = await createProduction({ name: 'Import flow', notes: null }, { skipBudgetSeed: true })

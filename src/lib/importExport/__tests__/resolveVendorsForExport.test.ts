@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import initSqlJs, { type Database } from 'sql.js'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createSqlJsTauriAdapter } from '@/test/apf/sqlJsTauriAdapter'
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
 
 let dbAdapter: ReturnType<typeof createSqlJsTauriAdapter>
 
@@ -65,6 +66,7 @@ const TS = '2026-06-16T12:00:00.000Z'
 
 describe('resolveVendorsForExport', () => {
   beforeEach(async () => {
+    setTestDataEncryptionKeyForTests(new Uint8Array(32).fill(9))
     await makeDb()
     for (const id of [PROD_ORIGIN, PROD_EXPORT]) {
       await dbAdapter.execute(
@@ -73,6 +75,7 @@ describe('resolveVendorsForExport', () => {
       )
     }
   })
+  afterEach(() => setTestDataEncryptionKeyForTests(null))
 
   it('materializes referenced global vendors as local copies for export', async () => {
     const globalVendor = await createVendor({

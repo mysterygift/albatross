@@ -115,6 +115,7 @@ export function CallSheetsPage() {
   const queryClient = useQueryClient()
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
+  const canLoadProjectData = !authSession.authSupported || !!authSession.currentUser
   const { progress, updateProgress } = useFirstLaunchTutorial()
   const [shootDayId, setShootDayId] = useState<string | null>(null)
   const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
@@ -154,7 +155,7 @@ export function CallSheetsPage() {
       }
       return getProductionById(currentProductionId!)
     },
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: episodesForProduction = [] } = useQuery({
@@ -166,7 +167,7 @@ export function CallSheetsPage() {
       }
       return listEpisodesByProduction(currentProductionId!)
     },
-    enabled: !!currentProductionId && production?.is_episodic === true,
+    enabled: !!currentProductionId && canLoadProjectData && production?.is_episodic === true,
   })
 
   const { data: shootingBlocsForProduction = [] } = useQuery({
@@ -178,7 +179,7 @@ export function CallSheetsPage() {
       }
       return listShootingBlocsByProduction(currentProductionId!)
     },
-    enabled: !!currentProductionId && production?.is_episodic === true,
+    enabled: !!currentProductionId && canLoadProjectData && production?.is_episodic === true,
   })
 
   const includeEpisodesSettingKey =
@@ -187,7 +188,7 @@ export function CallSheetsPage() {
   const { data: includeEpisodesRaw = null } = useQuery({
     queryKey: ['call-sheet-include-episodes', includeEpisodesSettingKey],
     queryFn: () => getSetting(includeEpisodesSettingKey!),
-    enabled: !!includeEpisodesSettingKey && production?.is_episodic === true,
+    enabled: !!includeEpisodesSettingKey && canLoadProjectData && production?.is_episodic === true,
   })
 
   const includeEpisodesPersisted = includeEpisodesRaw === 'true'
@@ -214,7 +215,7 @@ export function CallSheetsPage() {
       }
       return listShootDaysByProduction(currentProductionId)
     },
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: shootDay } = useQuery({
@@ -226,7 +227,7 @@ export function CallSheetsPage() {
       }
       return getShootDayById(shootDayId!)
     },
-    enabled: !!shootDayId,
+    enabled: !!shootDayId && canLoadProjectData,
   })
 
   const { data: dayUnits = [] } = useQuery({
@@ -238,7 +239,7 @@ export function CallSheetsPage() {
       }
       return listShootDayUnitsByShootDay(shootDayId!)
     },
-    enabled: !!shootDayId,
+    enabled: !!shootDayId && canLoadProjectData,
   })
 
   const { data: strips = [] } = useQuery({
@@ -250,7 +251,7 @@ export function CallSheetsPage() {
       }
       return listStripsByShootDay(shootDayId!)
     },
-    enabled: !!shootDayId,
+    enabled: !!shootDayId && canLoadProjectData,
   })
 
   const { data: scenes = [] } = useQuery({
@@ -263,7 +264,7 @@ export function CallSheetsPage() {
       }
       return listScenesByProduction(currentProductionId)
     },
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: shots = [] } = useQuery({
@@ -276,7 +277,7 @@ export function CallSheetsPage() {
       }
       return listShotsByProduction(currentProductionId)
     },
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: locations = [] } = useQuery({
@@ -289,7 +290,7 @@ export function CallSheetsPage() {
       }
       return listLocationsByProduction(currentProductionId)
     },
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: keyContacts = [] } = useQuery({
@@ -302,13 +303,13 @@ export function CallSheetsPage() {
       }
       return listKeyContactsByProduction(currentProductionId)
     },
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: hierarchyData } = useQuery({
     queryKey: ['crew-hierarchy', currentProductionId],
     queryFn: () => getEffectiveCrewHierarchyOrDefault(currentProductionId),
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
   const crewHierarchy = hierarchyData ?? defaultCrewHierarchy
 
@@ -322,7 +323,7 @@ export function CallSheetsPage() {
       }
       return listCast(currentProductionId)
     },
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: crew = [] } = useQuery({
@@ -335,7 +336,7 @@ export function CallSheetsPage() {
       }
       return listCrew(currentProductionId)
     },
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: units = [] } = useQuery({
@@ -348,7 +349,7 @@ export function CallSheetsPage() {
       }
       return listUnitsByProduction(currentProductionId)
     },
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: allProductionStrips = [] } = useQuery({
@@ -360,7 +361,7 @@ export function CallSheetsPage() {
       }
       return listStripsByProduction(currentProductionId!)
     },
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const { data: allShootDayUnits = [] } = useQuery({
@@ -372,7 +373,7 @@ export function CallSheetsPage() {
       }
       return listShootDayUnitsByProduction(currentProductionId!)
     },
-    enabled: !!currentProductionId,
+    enabled: !!currentProductionId && canLoadProjectData,
   })
 
   const unitStrips = useMemo(
@@ -397,7 +398,7 @@ export function CallSheetsPage() {
       }
       return getCastIdsBySceneIds(sceneIdsScheduled)
     },
-    enabled: sceneIdsScheduled.length > 0,
+    enabled: sceneIdsScheduled.length > 0 && canLoadProjectData,
   })
 
   const { data: castByShotId = new Map<string, string[]>() } = useQuery({
@@ -414,7 +415,7 @@ export function CallSheetsPage() {
       }
       return getCastIdsByShotIds(shotIdsScheduled)
     },
-    enabled: shotIdsScheduled.length > 0,
+    enabled: shotIdsScheduled.length > 0 && canLoadProjectData,
   })
 
   const advancedFutureShootDayIds = useMemo(() => {
@@ -460,7 +461,7 @@ export function CallSheetsPage() {
       }
       return getCastIdsBySceneIds(advancedSceneIds)
     },
-    enabled: advancedSceneIds.length > 0,
+    enabled: advancedSceneIds.length > 0 && canLoadProjectData,
   })
 
   const { data: advCastByShotId = new Map<string, string[]>() } = useQuery({
@@ -477,7 +478,7 @@ export function CallSheetsPage() {
       }
       return getCastIdsByShotIds(advancedShotIds)
     },
-    enabled: advancedShotIds.length > 0,
+    enabled: advancedShotIds.length > 0 && canLoadProjectData,
   })
 
   const castBySceneMerged = useMemo(() => {
@@ -501,7 +502,7 @@ export function CallSheetsPage() {
       }
       return listBookingsByShootDay(shootDayId!)
     },
-    enabled: !!shootDayId,
+    enabled: !!shootDayId && canLoadProjectData,
   })
 
   const castResult: CallSheetCastResult = useMemo(() => {

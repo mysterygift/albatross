@@ -50,6 +50,7 @@ const authMocks = vi.hoisted(() => ({
 
 const backfillMocks = vi.hoisted(() => ({
   backfillClientEncryptionIfNeeded: vi.fn(async () => undefined),
+  backfillSensitiveEntityEncryptionIfNeeded: vi.fn(async () => undefined),
   backfillPeopleIsCastIntegerIfNeeded: vi.fn(async () => 0),
 }))
 
@@ -65,6 +66,9 @@ vi.mock('@/lib/security/dataEncryptionContext', () => dataEncryptionMocks)
 vi.mock('@/lib/auth/authService', () => authMocks)
 vi.mock('@/lib/db/migrations/backfillClientEncryption', () => ({
   backfillClientEncryptionIfNeeded: backfillMocks.backfillClientEncryptionIfNeeded,
+}))
+vi.mock('@/lib/db/migrations/backfillSensitiveEntityEncryption', () => ({
+  backfillSensitiveEntityEncryptionIfNeeded: backfillMocks.backfillSensitiveEntityEncryptionIfNeeded,
 }))
 vi.mock('@/lib/db/migrations/backfillPeopleIsCastInteger', () => ({
   backfillPeopleIsCastIntegerIfNeeded: backfillMocks.backfillPeopleIsCastIntegerIfNeeded,

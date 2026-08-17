@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import initSqlJs, { type Database } from 'sql.js'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { createSqlJsTauriAdapter } from '@/test/apf/sqlJsTauriAdapter'
 import { createProduction } from '@/lib/db/repositories/production'
 import { createLocation, listLocationsByProduction } from '@/lib/db/repositories/location'
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
 import {
   locationIdForParsedName,
   normalizeLocationKey,
@@ -53,9 +54,12 @@ describe('normalizeLocationKey', () => {
 
 describe('resolveImportLocations', () => {
   beforeEach(async () => {
+    setTestDataEncryptionKeyForTests(new Uint8Array(32).fill(16))
     vi.clearAllMocks()
     await makeDb()
   })
+
+  afterEach(() => setTestDataEncryptionKeyForTests(null))
 
   it('matches existing locations case-insensitively', async () => {
     const production = await createProduction({ name: 'Loc match', notes: null }, { skipBudgetSeed: true })

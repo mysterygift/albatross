@@ -11,6 +11,9 @@ import { ApfError, ApfImportDbError } from '@/lib/importExport/errors'
 import { extractApfDocumentsForImport } from '@/lib/importExport/extractApfDocumentsForImport'
 import type { ImportProductionResult } from '@/lib/importExport/importTypes'
 import { planApfImportStatements } from '@/lib/importExport/planImportStatements'
+import { isClientEncryptionEnabled } from '@/lib/security/dataEncryptionContext'
+import { requireSensitiveDataAccess } from '@/lib/security/sensitiveDataAccess'
+import { encryptLocationFields, encryptPersonFields, encryptVendorFields } from '@/lib/security/sensitiveEntityFieldCrypto'
 import { preflightApfImportDb } from '@/lib/importExport/preflightApfImport'
 import type { ApfV1DataFile } from '@/lib/importExport/payload'
 import { parseApfArchiveBytes } from '@/lib/importExport/readApfArchive'
@@ -51,6 +54,7 @@ async function grantApfReadScopeIfNeeded(path: string): Promise<void> {
  * written under `attachments/<productionId>/` for this attempt are removed.
  */
 export async function importProductionFromApf(apfPath: string): Promise<ImportProductionResult> {
+  await requireSensitiveDataAccess()
   const writtenRelPaths: string[] = []
   let dbBatchAttempted = false
 
@@ -68,6 +72,12 @@ export async function importProductionFromApf(apfPath: string): Promise<ImportPr
 
     const productionId = normalized.manifest.production.id
     const dataForDb = cloneDataFile(normalized.data)
+    const importDb = await getDb()
+    if (await isClientEncryptionEnabled(importDb)) {
+      dataForDb.tables.people = await Promise.all(dataForDb.tables.people.map(encryptPersonFields))
+      dataForDb.tables.locations = await Promise.all(dataForDb.tables.locations.map(encryptLocationFields))
+      dataForDb.tables.vendors = await Promise.all(dataForDb.tables.vendors.map(encryptVendorFields))
+    }
 
     const { filesRestored, warnings } = await extractApfDocumentsForImport({
       zipIndex: index,
@@ -77,7 +87,7 @@ export async function importProductionFromApf(apfPath: string): Promise<ImportPr
       writtenRelPaths,
     })
 
-    const insertStatements = await planApfImportStatements(await getDb(), dataForDb)
+    const insertStatements = await planApfImportStatements(importDb, dataForDb)
     dbBatchAttempted = true
 
     await runInSerializedTransaction(async () => {

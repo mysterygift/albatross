@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import initSqlJs, { type Database } from 'sql.js'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createSqlJsTauriAdapter } from '@/test/apf/sqlJsTauriAdapter'
 import type { ParsedScene } from '@/lib/script-parser'
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
 
 let dbAdapter: ReturnType<typeof createSqlJsTauriAdapter>
 let dataSourceOverride: 'local_sqlite' | 'remote_server' | null = null
@@ -120,9 +121,11 @@ async function importVersion(
 
 describe('script section reconciliation (SB8)', () => {
   beforeEach(() => {
+    setTestDataEncryptionKeyForTests(new Uint8Array(32).fill(13))
     vi.clearAllMocks()
     dataSourceOverride = null
   })
+  afterEach(() => setTestDataEncryptionKeyForTests(null))
 
   it('links a new import to the previous script version when enabled', async () => {
     await makeDb()

@@ -934,6 +934,12 @@ pub fn run() {
             sql: include_str!("../migrations/0085_scenes_int_ext_clear_unk.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 86,
+            description: "sensitive_entity_field_encryption",
+            sql: include_str!("../migrations/0086_sensitive_entity_field_encryption.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
@@ -1113,4 +1119,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
