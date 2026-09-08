@@ -4,6 +4,7 @@ import {
   parsePushMutationRequest,
   parsePushMutationResponse,
   parseSnapshotMetadata,
+  parseSyncHead,
   parseSyncV2Discovery,
   syncV2ErrorBodySchema,
 } from '@/lib/server/syncV2/codecs'
@@ -20,6 +21,7 @@ import type {
   SyncV2Discovery,
   SyncV2ErrorBody,
   SyncV2ErrorCode,
+  SyncHead,
 } from '@/lib/server/syncV2/types'
 
 export type SyncV2TransportRequest = {
@@ -159,6 +161,15 @@ export class SyncV2Client {
     return this.parseResponse(() => {
       const parsed = parseSnapshotMetadata(body)
       if (parsed.projectId !== projectId) throw new Error('Snapshot response project does not match the request.')
+      return parsed
+    })
+  }
+
+  async getHead(projectId: string): Promise<SyncHead> {
+    const body = await this.request('GET', `${this.syncPath(projectId)}/head`)
+    return this.parseResponse(() => {
+      const parsed = parseSyncHead(body)
+      if (parsed.projectId !== projectId) throw new Error('Head response project does not match the request.')
       return parsed
     })
   }

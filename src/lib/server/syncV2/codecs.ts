@@ -10,6 +10,7 @@ import {
   type PushMutationRequest,
   type PushMutationResponse,
   type SnapshotMetadata,
+  type SyncHead,
   type SyncV2Discovery,
   type SyncV2ErrorBody,
 } from '@/lib/server/syncV2/types'
@@ -77,6 +78,22 @@ export const snapshotMetadataSchema = z.strictObject({
   byteLength: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   tableCounts: z.record(z.string(), z.number().int().nonnegative()),
   assetsManifestHash: nonEmptyString.nullable(),
+})
+
+export const syncHeadSchema = z.strictObject({
+  projectId: durableId,
+  productionId: durableId,
+  cursor: syncCursorSchema,
+  minimumRetainedCursor: syncCursorSchema,
+  schemaVersion: positiveVersion,
+  registryHash: nonEmptyString,
+}).superRefine((head, context) => {
+  if (head.cursor.epoch !== head.minimumRetainedCursor.epoch) {
+    context.addIssue({ code: 'custom', message: 'Head cursors must share one epoch.' })
+  }
+  if (head.minimumRetainedCursor.sequence > head.cursor.sequence) {
+    context.addIssue({ code: 'custom', message: 'Minimum retained cursor cannot be ahead of the head.' })
+  }
 })
 
 const changeRowBase = {
@@ -250,6 +267,9 @@ export const parseSyncV2Discovery = (input: unknown): SyncV2Discovery =>
 
 export const parseSnapshotMetadata = (input: unknown): SnapshotMetadata =>
   parse(snapshotMetadataSchema, input, 'snapshot metadata')
+
+export const parseSyncHead = (input: unknown): SyncHead =>
+  parse(syncHeadSchema, input, 'sync head')
 
 export const parsePullChangesResponse = (input: unknown): PullChangesResponse =>
   parse(pullChangesResponseSchema, input, 'pull changes response')

@@ -13,6 +13,10 @@ import { serverRuntimeMutate } from '@/lib/server/serverClient'
 import { ServerRequestError } from '@/lib/server/serverErrors'
 import { enqueueServerOutbox } from '@/lib/server/serverOutboxRepository'
 import { updateLinkedProjectState } from '@/lib/server/linkedProjectRepository'
+import {
+  executeSyncMutationTransaction,
+  getLocalWriteMutationContext,
+} from '@/lib/server/syncV2/localStore'
 import { normalizeSceneDayNight, normalizeSceneIntExt } from '@/lib/schedule/sceneFields'
 import { OptimisticConcurrencyConflictError } from '../concurrency'
 import {
@@ -1590,6 +1594,11 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
   }
 
   const personIds = [...new Set((data.person_ids ?? []).filter((id) => typeof id === 'string' && id.trim()))]
+  const db = await getDb()
+  const syncContext = await getLocalWriteMutationContext(db, scene.production_id)
+  if (syncContext && personIds.length > 0) {
+    throw new Error('Shot cast collaboration is not available in the row-sync pilot')
+  }
 
   for (const personId of personIds) {
     const person = await getPersonById(personId)
@@ -1604,7 +1613,6 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
     }
   }
 
-  const db = await getDb()
   const dup = await db.select<Record<string, unknown>[]>(
     `SELECT 1 AS n FROM ${SHOT_TABLE} WHERE scene_id = $1 AND shot_number = $2 AND deleted_at IS NULL LIMIT 1`,
     [sceneId, shotNumber]
@@ -1646,13 +1654,36 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
     camera_movement: data.camera_movement ?? null,
     notes: data.notes ?? null,
   }
+  const shotWireRow = {
+    ...shotOutboxPayload,
+    created_at: ts,
+    updated_at: ts,
+    deleted_at: null,
+  }
 
   const insertSql = `INSERT INTO ${SHOT_TABLE} (id, scene_id, shot_number, shot_description, subject, shot_size, support, lens, duration_seconds, estimated_shoot_minutes, camera_movement, notes, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
-
   if (personIds.length === 0) {
-    await db.execute(insertSql, insertBinds)
-    await outboxPush(SHOT_TABLE, id, 'create', JSON.stringify(shotOutboxPayload))
+    if (syncContext) {
+      await executeSyncMutationTransaction(db, {
+        ...syncContext,
+        operationName: 'create shot',
+        domainStatements: [{ sql: insertSql, bindValues: insertBinds }],
+        operations: [
+          {
+            table: SHOT_TABLE,
+            rowId: id,
+            operation: 'create',
+            baseVersion: null,
+            fullRow: shotWireRow,
+            localResult: shotWireRow,
+          },
+        ],
+      })
+    } else {
+      await db.execute(insertSql, insertBinds)
+      await outboxPush(SHOT_TABLE, id, 'create', JSON.stringify(shotOutboxPayload))
+    }
     const shot = await getShotById(id)
     if (!shot) {
       throw new Error('Shot not found after create')
@@ -1666,64 +1697,66 @@ export async function createShot(data: CreateShotInput): Promise<CreateShotResul
   )
   const sceneCastPersonIds = new Set(sceneCastRows.map((r) => r.person_id as string))
 
-  await runInSerializedTransaction(async () => {
-    const conn = await getDb()
-    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
-      { sql: 'BEGIN', bindValues: [] },
-      { sql: insertSql, bindValues: insertBinds },
-      outboxStatementForRow({
-        entity: SHOT_TABLE,
-        entityId: id,
-        operation: 'create',
-        payloadJson: JSON.stringify(shotOutboxPayload),
-      }),
-    ]
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+    { sql: insertSql, bindValues: insertBinds },
+    outboxStatementForRow({
+      entity: SHOT_TABLE,
+      entityId: id,
+      operation: 'create',
+      payloadJson: JSON.stringify(shotOutboxPayload),
+    }),
+  ]
 
-    for (const personId of personIds) {
-      if (!sceneCastPersonIds.has(personId)) {
-        const sceneCastId = uuid()
-        statements.push({
-          sql: `INSERT INTO ${SCENE_CAST_TABLE} (id, production_id, scene_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
-          bindValues: [sceneCastId, scene.production_id, sceneId, personId, ts, ts],
-        })
-        statements.push(
-          outboxStatementForRow({
-            entity: SCENE_CAST_TABLE,
-            entityId: sceneCastId,
-            operation: 'create',
-            payloadJson: JSON.stringify({
-              id: sceneCastId,
-              production_id: scene.production_id,
-              scene_id: sceneId,
-              person_id: personId,
-            }),
-          })
-        )
-        sceneCastPersonIds.add(personId)
-      }
-
-      const shotCastId = uuid()
+  for (const personId of personIds) {
+    if (!sceneCastPersonIds.has(personId)) {
+      const sceneCastId = uuid()
       statements.push({
-        sql: `INSERT INTO ${SHOT_CAST_TABLE} (id, production_id, shot_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
-        bindValues: [shotCastId, scene.production_id, id, personId, ts, ts],
+        sql: `INSERT INTO ${SCENE_CAST_TABLE} (id, production_id, scene_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+        bindValues: [sceneCastId, scene.production_id, sceneId, personId, ts, ts],
       })
       statements.push(
         outboxStatementForRow({
-          entity: SHOT_CAST_TABLE,
-          entityId: shotCastId,
+          entity: SCENE_CAST_TABLE,
+          entityId: sceneCastId,
           operation: 'create',
           payloadJson: JSON.stringify({
-            id: shotCastId,
+            id: sceneCastId,
             production_id: scene.production_id,
-            shot_id: id,
+            scene_id: sceneId,
             person_id: personId,
           }),
         })
       )
+      sceneCastPersonIds.add(personId)
     }
 
-    statements.push({ sql: 'COMMIT', bindValues: [] })
-    await executeBatch(conn, statements)
+    const shotCastId = uuid()
+    statements.push({
+      sql: `INSERT INTO ${SHOT_CAST_TABLE} (id, production_id, shot_id, person_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      bindValues: [shotCastId, scene.production_id, id, personId, ts, ts],
+    })
+    statements.push(
+      outboxStatementForRow({
+        entity: SHOT_CAST_TABLE,
+        entityId: shotCastId,
+        operation: 'create',
+        payloadJson: JSON.stringify({
+          id: shotCastId,
+          production_id: scene.production_id,
+          shot_id: id,
+          person_id: personId,
+        }),
+      })
+    )
+  }
+
+  await runInSerializedTransaction(async () => {
+    const conn = await getDb()
+    await executeBatch(conn, [
+      { sql: 'BEGIN', bindValues: [] },
+      ...statements,
+      { sql: 'COMMIT', bindValues: [] },
+    ])
   })
 
   const shot = await getShotById(id)

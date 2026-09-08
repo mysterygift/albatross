@@ -4,12 +4,13 @@ import { now, uuid } from '@/lib/db/client'
 import { getCollaborationTable, getDeferredForeignKeyColumns } from './registry'
 import { parsePushMutationRequest } from './codecs'
 import { encodeSyncCursor } from './cursor'
-import type {
-  JsonObject,
-  MutationOperation,
-  PushMutationRequest,
-  SyncCursor,
-  SyncV2ProtocolVersion,
+import {
+  SYNC_V2_PROTOCOL_VERSION,
+  type JsonObject,
+  type MutationOperation,
+  type PushMutationRequest,
+  type SyncCursor,
+  type SyncV2ProtocolVersion,
 } from './types'
 
 export type SyncProjectMode =
@@ -58,6 +59,15 @@ export type EnqueueMutationInput = {
   domainStatements: readonly SqlStatement[]
   batchId?: string
   createdAt?: string
+}
+
+export type LocalWriteMutationContext = {
+  productionId: string
+  clientId: string
+  baseCursor: SyncCursor
+  protocolVersion: SyncV2ProtocolVersion
+  schemaVersion: number
+  registryHash: string
 }
 
 export type AppliedRowState = {
@@ -131,7 +141,7 @@ function assertNoDeferredForeignKeys(operation: LocalMutationOperation): void {
       : [operation.baseValues]
   for (const column of getDeferredForeignKeyColumns(operation.table)) {
     for (const payload of payloads) {
-      if (payload[column] != null) {
+      if (Object.prototype.hasOwnProperty.call(payload, column)) {
         throw new Error(`Pilot sync defers foreign key ${operation.table}.${column}`)
       }
     }
@@ -274,6 +284,69 @@ export async function getSyncProjectState(
     [productionId],
   )
   return rows[0] ?? null
+}
+
+type LocalWriteContextRow = {
+  production_id: string
+  mode: SyncProjectMode
+  epoch: string | null
+  applied_cursor: number
+  protocol_version: string | null
+  schema_version: number | null
+  registry_hash: string | null
+  client_id: string | null
+}
+
+/**
+ * Resolves the immutable sync basis a SQLite repository must capture before a
+ * local write. Pausing traffic does not disable journalling: collaborative,
+ * offline, paused, and conflict-mode projects all retain local mutations.
+ *
+ * A partially configured collaborative project fails closed so a domain write
+ * can never commit without its durable mutation journal.
+ */
+export async function getLocalWriteMutationContext(
+  db: Pick<DatabaseAdapter, 'select' | 'dialect'>,
+  productionId: string,
+): Promise<LocalWriteMutationContext | null> {
+  if (db.dialect !== 'sqlite') return null
+  const rows = await db.select<LocalWriteContextRow[]>(
+    `SELECT state.production_id, state.mode, state.epoch, state.applied_cursor,
+            state.protocol_version, state.schema_version, state.registry_hash,
+            (SELECT identity.id
+             FROM sync_client_identity identity
+             ORDER BY identity.created_at ASC, identity.id ASC
+             LIMIT 1) AS client_id
+     FROM sync_project_state state
+     WHERE state.production_id = $1`,
+    [productionId],
+  )
+  const state = rows[0]
+  if (!state || state.mode === 'local_only') {
+    return null
+  }
+  if (!(['collaborative', 'offline', 'paused', 'conflicts'] as SyncProjectMode[]).includes(state.mode)) {
+    throw new Error(`Collaborative writes are unavailable while production ${productionId} is ${state.mode}`)
+  }
+  if (
+    !state.client_id ||
+    !state.epoch ||
+    state.protocol_version !== '2.0' ||
+    state.schema_version == null ||
+    !state.registry_hash
+  ) {
+    throw new Error(`Collaborative production ${productionId} has incomplete sync metadata`)
+  }
+  assertNonNegativeInteger(state.applied_cursor, 'appliedCursor')
+  assertPositiveInteger(state.schema_version, 'schemaVersion')
+  return {
+    productionId: state.production_id,
+    clientId: state.client_id,
+    baseCursor: { epoch: state.epoch, sequence: state.applied_cursor },
+    protocolVersion: SYNC_V2_PROTOCOL_VERSION,
+    schemaVersion: state.schema_version,
+    registryHash: state.registry_hash,
+  }
 }
 
 type PersistedMutationBatch = {

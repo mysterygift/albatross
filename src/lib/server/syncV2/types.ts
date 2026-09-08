@@ -69,6 +69,15 @@ export type SnapshotMetadata = {
   assetsManifestHash: string | null
 }
 
+export type SyncHead = {
+  projectId: string
+  productionId: string
+  cursor: SyncCursor
+  minimumRetainedCursor: SyncCursor
+  schemaVersion: number
+  registryHash: string
+}
+
 export type ChangeTombstone = {
   deletedAt: string
   deletedBy: string | null

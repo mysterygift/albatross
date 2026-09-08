@@ -282,6 +282,30 @@ describe('SyncV2Client', () => {
     }))
   })
 
+  it('reads and correlates the server sync head', async () => {
+    const fake = fakeTransport(() => ({
+      status: 200,
+      body: {
+        projectId: 'project-0001',
+        productionId: 'production-0001',
+        cursor: `${EPOCH}:12`,
+        minimumRetainedCursor: `${EPOCH}:2`,
+        schemaVersion: 87,
+        registryHash: 'sha256:registry',
+      },
+    }))
+    const client = new SyncV2Client({ baseUrl: 'http://host', token: 'tok', transport: fake.transport })
+
+    await expect(client.getHead('project-0001')).resolves.toMatchObject({
+      productionId: 'production-0001',
+      cursor: { epoch: EPOCH, sequence: 12 },
+    })
+    expect(fake.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'GET',
+      url: 'http://host/v2/projects/project-0001/sync/head',
+    }))
+  })
+
   it('rejects successful responses that do not belong to the request', async () => {
     const pullTransport = fakeTransport(() => ({
       status: 200,

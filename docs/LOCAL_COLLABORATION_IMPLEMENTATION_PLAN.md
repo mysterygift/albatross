@@ -4,7 +4,7 @@ Status: architecture and delivery plan with product decisions confirmed
 Reviewed: `albatross` and the current working tree of `albatross-server`  
 Date: 17 August 2026
 
-Implementation started: 17 August 2026. The desktop foundation now includes the durable collaboration setting migration, global-off routing guard, separately gated legacy remote runtime, sync-v2 SQLite control schema, pilot productions/scenes/shots registry with explicit deferred FKs, versioned/correlated HTTP client contract, immutable mutation-to-wire reconstruction, and atomic local mutation/pull-apply transaction helpers with rollback and stale-cursor guards. Server endpoints, managed PostgreSQL/server process supervision, repository adoption, and live end-to-end replication remain subsequent work.
+Implementation started: 17 August 2026. Milestone 2 began on 8 September 2026. The server now has the non-PII pilot `collab`/`domain` schema, project heads, durable receipts, integer entity versions, change batches/tombstones, user-bound client cursors, and discovery/head/pull/push/ack endpoints. The desktop now has a per-production coordinator, a registry-aware crash-atomic inbound applier, and the first repository adoption (`createShot` without cast links). Bootstrap/snapshot, coordinator lifecycle and credential wiring, the remaining scene/shot/production writers, managed host supervision, encrypted sensitive-field envelopes, and live multi-client PostgreSQL verification remain subsequent work.
 
 ## 1. Executive decision
 
@@ -758,6 +758,15 @@ The smallest useful vertical slice is not another direct REST resource. It is:
 3. Server mutation receipt + numeric row versions + durable change batch.
 4. Desktop atomic SQLite journal + inbound applier + background coordinator.
 5. Host bootstrap, second-client snapshot, one offline edit, and one same-field conflict.
+
+Current progress (8 September 2026):
+
+- Complete: client sync-v2 control schema, contract, immutable journal, pull transaction, and SQLite-only routing.
+- Complete: server discovery/head/pull/push/ack foundation for the non-PII productions/scenes/shots ring, with durable replay and atomic numeric-version conflicts.
+- Complete: desktop coordinator core and inbound productions/scenes/shots applier.
+- Complete: `createShot` local-first mutation adoption when no cast/PII links are present.
+- Next: bootstrap plus consistent snapshot, secure coordinator lifecycle wiring, production/scene writers and remaining shot writers, then a real PostgreSQL two-client convergence test.
+- Security gate: do not add people, locations, vendors, clients, cast links, or any classified sensitive column until project-key envelope encryption and recovery are implemented and verified.
 6. A joint test proving A -> PostgreSQL -> B and B offline -> PostgreSQL -> A, followed by equal hashes.
 
 Only after that slice passes should schedule, budget, or other repository branches be added.
