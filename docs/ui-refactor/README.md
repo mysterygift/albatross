@@ -9,7 +9,7 @@ Worktree: `/Users/arandavies/Development/albatross-ui-experimental` (branch `ui-
 | 01 | Foundations (PageHeader, EmptyState, ConfirmDialog, sonner, RequireProduction, DashboardCard) | [01-foundations.md](01-foundations.md) | done |
 | 02 | Production switcher | [02-production-switcher.md](02-production-switcher.md) | done |
 | 03 | Feedback and confirm | [03-feedback-confirm.md](03-feedback-confirm.md) | done |
-| 04 | Page shell and tokens | [04-page-shell-and-tokens.md](04-page-shell-and-tokens.md) | pending |
+| 04 | Page shell and tokens | [04-page-shell-and-tokens.md](04-page-shell-and-tokens.md) | done |
 | 05 | Navigation | [05-navigation.md](05-navigation.md) | pending |
 | 06 | Search and shortcuts | [06-search-and-shortcuts.md](06-search-and-shortcuts.md) | pending |
 | 07 | Onboarding | [07-onboarding.md](07-onboarding.md) | pending |
@@ -40,6 +40,10 @@ Run in the worktree: `npm run build`, `npm test`, `npm run lint:ci`. All must pa
 - (02) `CastDetailPage` missing-`personId` fallback text changed to "Select a person first."
 - (03) `DevPerfHud` still uses its own toast state (excluded by doc). `ApfMenuEventBridge` now renders nothing (toast only).
 - (03) Stripboard Undo restores a strip to its prior day/unit/sort_index via a single `moveStrip`; sort_index may have shifted by other edits since.
+- (04) `FirstLaunchTutorial.tsx` still has zinc classes (deleted in step 07); after that, re-run `python3 scripts/generate-theme-overrides.py` so the 4 remaining zinc rules in `overrides.css` drop.
+- (04) Huge pages (budget, calendar, equipment, shot-list, settings, stripboard excluded) only had the `<h1>` swapped for `<PageHeader title=... />` in place; their header rows keep their old flex wrappers. Dashboard still has 5 other `animate-pulse` divs (lines ~433, 544, 637, 759, 887) for step 09.
+- (04) `DocumentsCategoryPage` lost the category icon box beside the title (PageHeader title is a string). `actualisation/page.tsx` embedded guard now has no title (parent Budget owns the h1). `script-section-script-panel` `renderPageContentHighlights` param renamed `_variant` (unused, API kept).
+- (04) Vendor/Cast/Crew detail pages keep their back-arrow button beside PageHeader; person/vendor metadata now sits in PageHeader `description`.
 
 ## Baseline (recorded on ui-experimental at a81a90e, before any step)
 `dev` is NOT green, so the per-step gate is **no new failures versus this baseline**, not "everything passes":

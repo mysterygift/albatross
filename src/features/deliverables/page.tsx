@@ -1,4 +1,5 @@
 import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -272,201 +273,203 @@ export function DeliverablesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Deliverables</h1>
-        <div className="flex items-center gap-2">
-          <Dialog
-            open={applyTemplateOpen}
-            onOpenChange={(o) => {
-              setApplyTemplateOpen(o)
-              if (!o) {
-                setApplyTemplateScopeMode('project_wide')
-                setApplyTemplateEpisodeId('')
-              }
-            }}
-          >
-            <Button variant="outline" onClick={() => setApplyTemplateOpen(true)}>
-              <LayoutTemplate className="mr-2 size-4" />Apply template
-            </Button>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Apply deliverable template</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label>Template</Label>
-                  <Select value={applyTemplateId} onValueChange={setApplyTemplateId}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Choose a template" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {deliverableTemplates.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Anchor date (optional)</Label>
-                  <Input
-                    type="date"
-                    value={applyAnchorDate}
-                    onChange={(e) => setApplyAnchorDate(e.target.value)}
-                    placeholder="Due dates = anchor + offset"
-                  />
-                  <p className="text-muted-foreground text-xs">
-                    If set, each deliverable due date is anchor date + its offset (days). Leave empty for no due dates.
-                  </p>
-                </div>
-                {isEpisodic && (
-                  <div className="space-y-3 rounded-md border border-border bg-muted/15 p-3">
-                    <div className="space-y-1.5">
-                      <Label>Scope</Label>
-                      <Select
-                        value={applyTemplateScopeMode}
-                        onValueChange={(v) => {
-                          setApplyTemplateScopeMode(v as ScopeMode)
-                          if (v === 'project_wide') setApplyTemplateEpisodeId('')
-                        }}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="project_wide">Project-wide</SelectItem>
-                          <SelectItem value="episode">Specific episode</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {applyTemplateScopeMode === 'episode' && (
-                      <div className="space-y-1.5">
-                        <Label>Episode</Label>
-                        <Select value={applyTemplateEpisodeId} onValueChange={setApplyTemplateEpisodeId}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Choose episode" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {activeEpisodes.map((e) => (
-                              <SelectItem key={e.id} value={e.id}>
-                                {e.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setApplyTemplateOpen(false)}>Cancel</Button>
-                <Button
-                  onClick={() => applyTemplateMutation.mutate()}
-                  disabled={
-                    !applyTemplateId ||
-                    applyTemplateMutation.isPending ||
-                    (isEpisodic &&
-                      applyTemplateScopeMode === 'episode' &&
-                      applyTemplateEpisodeId.trim() === '')
+      <PageHeader
+        title="Deliverables"
+        actions={
+          <>
+              <Dialog
+                open={applyTemplateOpen}
+                onOpenChange={(o) => {
+                  setApplyTemplateOpen(o)
+                  if (!o) {
+                    setApplyTemplateScopeMode('project_wide')
+                    setApplyTemplateEpisodeId('')
                   }
-                >
-                  Apply
+                }}
+              >
+                <Button variant="outline" onClick={() => setApplyTemplateOpen(true)}>
+                  <LayoutTemplate className="mr-2 size-4" />Apply template
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <Dialog
-            open={open}
-            onOpenChange={(o) => {
-              setOpen(o)
-              if (!o) {
-                setName('')
-                setDueDate('')
-                setRecipient('')
-                setCreateScopeMode('project_wide')
-                setCreateEpisodeId('')
-              }
-            }}
-          >
-            <DialogTrigger asChild>
-              <Button><Plus className="mr-2 size-4" />Add deliverable</Button>
-            </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New deliverable</DialogTitle></DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label>Name</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Picture Master" />
-              </div>
-              {isEpisodic && (
-                <div className="space-y-3 rounded-md border border-border bg-muted/15 p-3">
-                  <div className="space-y-1.5">
-                    <Label>Scope</Label>
-                    <Select
-                      value={createScopeMode}
-                      onValueChange={(v) => {
-                        setCreateScopeMode(v as ScopeMode)
-                        if (v === 'project_wide') setCreateEpisodeId('')
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="project_wide">Project-wide</SelectItem>
-                        <SelectItem value="episode">Specific episode</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {createScopeMode === 'episode' && (
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Apply deliverable template</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
                     <div className="space-y-1.5">
-                      <Label>Episode</Label>
-                      <Select value={createEpisodeId} onValueChange={setCreateEpisodeId}>
+                      <Label>Template</Label>
+                      <Select value={applyTemplateId} onValueChange={setApplyTemplateId}>
                         <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Choose episode" />
+                          <SelectValue placeholder="Choose a template" />
                         </SelectTrigger>
                         <SelectContent>
-                          {activeEpisodes.map((e) => (
-                            <SelectItem key={e.id} value={e.id}>
-                              {e.name}
+                          {deliverableTemplates.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
-                  )}
-                </div>
-              )}
-              <div>
-                <Label>Recipient (optional)</Label>
-                <Input value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="Who this is sent to" />
-              </div>
-              <div>
-                <Label>Due date (optional)</Label>
-                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button
-                onClick={() => createMutation.mutate()}
-                disabled={
-                  !name.trim() ||
-                  createMutation.isPending ||
-                  (isEpisodic &&
-                    createScopeMode === 'episode' &&
-                    createEpisodeId.trim() === '')
-                }
+                    <div className="space-y-1.5">
+                      <Label>Anchor date (optional)</Label>
+                      <Input
+                        type="date"
+                        value={applyAnchorDate}
+                        onChange={(e) => setApplyAnchorDate(e.target.value)}
+                        placeholder="Due dates = anchor + offset"
+                      />
+                      <p className="text-muted-foreground text-xs">
+                        If set, each deliverable due date is anchor date + its offset (days). Leave empty for no due dates.
+                      </p>
+                    </div>
+                    {isEpisodic && (
+                      <div className="space-y-3 rounded-md border border-border bg-muted/15 p-3">
+                        <div className="space-y-1.5">
+                          <Label>Scope</Label>
+                          <Select
+                            value={applyTemplateScopeMode}
+                            onValueChange={(v) => {
+                              setApplyTemplateScopeMode(v as ScopeMode)
+                              if (v === 'project_wide') setApplyTemplateEpisodeId('')
+                            }}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="project_wide">Project-wide</SelectItem>
+                              <SelectItem value="episode">Specific episode</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {applyTemplateScopeMode === 'episode' && (
+                          <div className="space-y-1.5">
+                            <Label>Episode</Label>
+                            <Select value={applyTemplateEpisodeId} onValueChange={setApplyTemplateEpisodeId}>
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Choose episode" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {activeEpisodes.map((e) => (
+                                  <SelectItem key={e.id} value={e.id}>
+                                    {e.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setApplyTemplateOpen(false)}>Cancel</Button>
+                    <Button
+                      onClick={() => applyTemplateMutation.mutate()}
+                      disabled={
+                        !applyTemplateId ||
+                        applyTemplateMutation.isPending ||
+                        (isEpisodic &&
+                          applyTemplateScopeMode === 'episode' &&
+                          applyTemplateEpisodeId.trim() === '')
+                      }
+                    >
+                      Apply
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              <Dialog
+                open={open}
+                onOpenChange={(o) => {
+                  setOpen(o)
+                  if (!o) {
+                    setName('')
+                    setDueDate('')
+                    setRecipient('')
+                    setCreateScopeMode('project_wide')
+                    setCreateEpisodeId('')
+                  }
+                }}
               >
-                Add
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        </div>
-      </div>
+                <DialogTrigger asChild>
+                  <Button><Plus className="mr-2 size-4" />Add deliverable</Button>
+                </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>New deliverable</DialogTitle></DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Name</Label>
+                    <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Picture Master" />
+                  </div>
+                  {isEpisodic && (
+                    <div className="space-y-3 rounded-md border border-border bg-muted/15 p-3">
+                      <div className="space-y-1.5">
+                        <Label>Scope</Label>
+                        <Select
+                          value={createScopeMode}
+                          onValueChange={(v) => {
+                            setCreateScopeMode(v as ScopeMode)
+                            if (v === 'project_wide') setCreateEpisodeId('')
+                          }}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="project_wide">Project-wide</SelectItem>
+                            <SelectItem value="episode">Specific episode</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {createScopeMode === 'episode' && (
+                        <div className="space-y-1.5">
+                          <Label>Episode</Label>
+                          <Select value={createEpisodeId} onValueChange={setCreateEpisodeId}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Choose episode" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {activeEpisodes.map((e) => (
+                                <SelectItem key={e.id} value={e.id}>
+                                  {e.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div>
+                    <Label>Recipient (optional)</Label>
+                    <Input value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="Who this is sent to" />
+                  </div>
+                  <div>
+                    <Label>Due date (optional)</Label>
+                    <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button
+                    onClick={() => createMutation.mutate()}
+                    disabled={
+                      !name.trim() ||
+                      createMutation.isPending ||
+                      (isEpisodic &&
+                        createScopeMode === 'episode' &&
+                        createEpisodeId.trim() === '')
+                    }
+                  >
+                    Add
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </>
+        }
+      />
       {isEpisodic && (
         <div className="flex flex-wrap items-center gap-2">
           <Label className="text-muted-foreground shrink-0 text-xs font-medium uppercase tracking-wide">

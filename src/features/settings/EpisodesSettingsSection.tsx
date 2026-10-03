@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useState } from 'react'
 import {
   appendEpisode,
@@ -225,7 +226,11 @@ export function EpisodesSettingsSection({ productionId }: Props) {
       )}
 
       {isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading episodes…</p>
+        <div role="status" aria-label="Loading episodes" className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
       ) : (
         <div className="rounded-md border">
           <Table>

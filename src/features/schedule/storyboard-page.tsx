@@ -1,4 +1,6 @@
 import { RequireProduction } from '@/components/require-production'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/page-header'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -578,15 +580,15 @@ export function StoryboardPage() {
     <>
       {confirmDialog}
       {!currentProductionId ? (
-        <RequireProduction title="Schedule — Storyboard">{null}</RequireProduction>
+        <RequireProduction title="Storyboard">{null}</RequireProduction>
       ) : scenesQuery.isError || shotsQuery.isError || imagesQuery.isError ? (
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>
+          <PageHeader title="Storyboard" />
           <p className="text-destructive">Could not load storyboard data.</p>
         </div>
       ) : (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>
+      <PageHeader title="Storyboard" />
       <div className="grid gap-3 md:grid-cols-[minmax(0,320px)_minmax(0,260px)_auto] md:items-end">
         <div className="space-y-1.5">
           <p className="text-sm text-muted-foreground">Display</p>
@@ -630,7 +632,11 @@ export function StoryboardPage() {
         </div>
       </div>
       {(scenesQuery.isPending || shotsQuery.isPending || imagesQuery.isPending) && (
-        <p className="text-muted-foreground">Loading storyboard...</p>
+        <div role="status" aria-label="Loading storyboard" className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
       )}
       {actionError && (
         <p className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">{actionError}</p>

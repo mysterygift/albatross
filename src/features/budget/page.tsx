@@ -1,4 +1,5 @@
 import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useState, useMemo, useEffect, useRef, useCallback, Fragment, type ReactNode } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -1421,7 +1422,7 @@ export function BudgetPage() {
         </p>
       )}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Budget</h1>
+        <PageHeader title="Budget" />
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-2 py-1">
             <span className="text-xs text-muted-foreground">Revision</span>

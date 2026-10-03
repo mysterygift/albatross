@@ -1,4 +1,6 @@
 import { useMemo, useState, useEffect } from 'react'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/page-header'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useForm, Controller, type Resolver } from 'react-hook-form'
@@ -640,9 +642,16 @@ export function VendorDetailPage() {
 
   if (vendorLoading || vendor == null) {
     return (
-      <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
-        {vendorLoading ? 'Loading…' : 'Vendor not found.'}
-      </div>
+      vendorLoading ? (
+        <div role="status" aria-label="Loading" className="space-y-4">
+          <Skeleton className="h-8 w-1/3" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
+          Vendor not found.
+        </div>
+      )
     )
   }
 
@@ -689,35 +698,40 @@ export function VendorDetailPage() {
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 min-w-0">
-            <h1 className="text-xl font-semibold text-foreground truncate">{vendor.company_name}</h1>
+        <PageHeader
+          title={vendor.company_name}
+          description={
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {vendor.is_global && <GlobalVendorBadge className="size-4" />}
-          </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
             {vendor.is_global && <span>Shared across all projects</span>}
             {vendor.primary_contact_full_name && <span>{vendor.primary_contact_full_name}</span>}
             {vendor.primary_contact_email && <span>{vendor.primary_contact_email}</span>}
-          </div>
-        </div>
-        {!isArchived && (
-          <>
-            {canPromoteToGlobal && (
-              <Button variant="outline" size="sm" onClick={() => setPromoteConfirmOpen(true)}>
-                <Globe className="mr-2 size-4" />
-                Share across all projects
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-              <Pencil className="mr-2 size-4" />
-              Edit
-            </Button>
-            <Button variant="outline" size="sm" onClick={openRemoveFlow} className="text-muted-foreground">
-              <Trash2 className="mr-2 size-4" />
-              Remove
-            </Button>
-          </>
-        )}
+          </span>
+        }
+          className="min-w-0 flex-1"
+          actions={
+            <>
+              {!isArchived && (
+                <>
+                  {canPromoteToGlobal && (
+                    <Button variant="outline" size="sm" onClick={() => setPromoteConfirmOpen(true)}>
+                      <Globe className="mr-2 size-4" />
+                      Share across all projects
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                    <Pencil className="mr-2 size-4" />
+                    Edit
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={openRemoveFlow} className="text-muted-foreground">
+                    <Trash2 className="mr-2 size-4" />
+                    Remove
+                  </Button>
+                </>
+              )}
+            </>
+          }
+        />
       </div>
 
       {/* Summary cards */}

@@ -1,4 +1,5 @@
 import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -178,22 +179,26 @@ export function LocationsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between">
-        <h1 className="text-2xl font-semibold">Locations</h1>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="mr-2 size-4" />Add location</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <LocationForm
-              defaultValues={{ name: '', booked_status: 'unbooked' }}
-              onSubmit={createMutation.mutate}
-              onCancel={() => setOpen(false)}
-              isLoading={createMutation.isPending}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
+      <PageHeader
+        title="Locations"
+        actions={
+          <>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button><Plus className="mr-2 size-4" />Add location</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <LocationForm
+                  defaultValues={{ name: '', booked_status: 'unbooked' }}
+                  onSubmit={createMutation.mutate}
+                  onCancel={() => setOpen(false)}
+                  isLoading={createMutation.isPending}
+                />
+              </DialogContent>
+            </Dialog>
+          </>
+        }
+      />
       <div className="rounded-md border">
         <Table>
           <TableHeader>

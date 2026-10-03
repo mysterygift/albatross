@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/page-header'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -114,7 +116,7 @@ function NextShootDayCard({
           <CardDescription>The next scheduled shooting day for this production</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-24 rounded bg-muted/50 animate-pulse" />
+          <Skeleton className="h-24 w-full" />
         </CardContent>
       </Card>
     )
@@ -308,7 +310,7 @@ function BudgetHealthCard({
           <CardDescription>A quick view of current budget spend and variance</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-32 rounded bg-muted/50 animate-pulse" />
+          <Skeleton className="h-32 w-full" />
         </CardContent>
       </Card>
     )
@@ -1089,24 +1091,22 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6 relative">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
-          <p className="text-muted-foreground">
-            {currentProduction
-              ? `${currentProduction.name} — production overview`
-              : 'Select a production to see the dashboard.'}
-          </p>
-        </div>
-        {currentProductionId && (
-          <Button variant="destructive" asChild>
-            <Link to="/wrap-production" className="inline-flex items-center gap-2">
-              <Clapperboard className="size-4" />
-              Wrap Production
-            </Link>
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description={currentProduction ? `${currentProduction.name} — production overview` : 'Select a production to see the dashboard.'}
+        actions={
+          <>
+            {currentProductionId && (
+              <Button variant="destructive" asChild>
+                <Link to="/wrap-production" className="inline-flex items-center gap-2">
+                  <Clapperboard className="size-4" />
+                  Wrap Production
+                </Link>
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {wrapSuccess && (
         <Alert className="border-green-600/50 bg-green-500 dark:bg-green-90/30 dark:border-green-80 py-3 px-4">

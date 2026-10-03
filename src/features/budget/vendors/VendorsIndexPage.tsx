@@ -1,4 +1,6 @@
 import { useMemo, useState, useEffect } from 'react'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/page-header'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
@@ -113,13 +115,17 @@ export function VendorsIndexPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold text-foreground">Vendor Management</h1>
-        <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 size-4" />
-          New vendor
-        </Button>
-      </div>
+      <PageHeader
+        title="Vendors"
+        actions={
+          <>
+            <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-2 size-4" />
+              New vendor
+            </Button>
+          </>
+        }
+      />
 
       <CreateVendorDialog
         open={createOpen}
@@ -144,7 +150,11 @@ export function VendorsIndexPage() {
           </CardHeader>
           <CardContent className="flex-1 overflow-y-auto p-0">
             {isLoading ? (
-              <div className="p-4 text-sm text-muted-foreground">Loading vendors…</div>
+              <div className="p-4"><div role="status" aria-label="Loading vendors" className="space-y-2">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div></div>
             ) : filtered.length === 0 ? (
               <div className="p-4 text-sm text-muted-foreground">
                 {search.trim() ? 'No vendors match your search.' : 'No vendors yet. Add one to get started.'}

@@ -154,7 +154,7 @@ export function IngestEquipmentFromInvoiceModal({
         onOpenChange(o)
       }}
     >
-      <DialogContent className="max-h-[90vh] overflow-hidden flex flex-col max-w-3xl bg-card border-border">
+      <DialogContent className="max-h-[90vh] overflow-hidden flex flex-col max-w-3xl">
         <DialogHeader>
           <DialogTitle>Add equipment from invoice</DialogTitle>
         </DialogHeader>

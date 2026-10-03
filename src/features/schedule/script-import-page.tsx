@@ -1,4 +1,5 @@
 import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -420,13 +421,10 @@ export function ScriptImportPage() {
   return (
     <>
       {!currentProductionId ? (
-        <RequireProduction title="Schedule — Script import">{null}</RequireProduction>
+        <RequireProduction title="Script Import">{null}</RequireProduction>
       ) : (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Schedule — Script import</h1>
-      <p className="text-muted-foreground">
-        Attach a script file (.txt or .pdf) or paste text. Scenes are detected by lines starting with INT., EXT., etc. PDFs are parsed using standard screenplay layout.
-      </p>
+      <PageHeader title="Script Import" description="Attach a script file (.txt or .pdf) or paste text. Scenes are detected by lines starting with INT., EXT., etc. PDFs are parsed using standard screenplay layout." />
 
       {isRemoteProduction && <SbRemoteNotice />}
 

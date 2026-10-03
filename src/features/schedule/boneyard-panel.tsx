@@ -55,13 +55,13 @@ export function BoneyardPanel({
   return (
     <div
       ref={setNodeRef}
-      className={`flex w-64 shrink-0 flex-col rounded-lg border min-h-0 overflow-hidden transition-colors bg-zinc-200/90 dark:bg-zinc-800/90 border-amber-500/60 ${
+      className={`flex w-64 shrink-0 flex-col rounded-lg border min-h-0 overflow-hidden transition-colors bg-muted border-amber-500/60 ${
         isOver ? 'ring-2 ring-amber-500/50 border-amber-500' : ''
       }`}
       title={isOver ? 'Drop to send to Boneyard' : undefined}
     >
       <div className="px-4 py-3 border-b border-amber-500/30">
-        <h2 className="font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+        <h2 className="font-semibold text-foreground flex items-center gap-2">
           <Skull className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
           Boneyard
         </h2>

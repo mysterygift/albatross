@@ -1,4 +1,5 @@
 import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Document, Page, pdfjs } from 'react-pdf'
@@ -562,10 +563,7 @@ export function MovementOrdersPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Movement Orders</h1>
-      <p className="text-muted-foreground text-sm">
-        Generate movement orders for a selected shoot day and unit.
-      </p>
+      <PageHeader title="Movement Orders" description="Generate movement orders for a selected shoot day and unit." />
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="border-border bg-card">

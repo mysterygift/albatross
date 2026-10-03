@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Skeleton } from '@/components/ui/skeleton'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { useEffect, useState } from 'react'
@@ -215,7 +216,11 @@ export function ClientsSettingsSection() {
         {isError ? (
           <p className="text-destructive text-sm">{encryptionKeyUnavailableMessage(clientsQueryError)}</p>
         ) : isLoading ? (
-          <p className="text-muted-foreground text-sm">Loading clients…</p>
+          <div role="status" aria-label="Loading clients" className="space-y-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
         ) : clients.length === 0 ? (
           <p className="text-muted-foreground text-sm">No clients yet. Add one or create a client when editing a project.</p>
         ) : (

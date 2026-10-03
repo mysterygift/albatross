@@ -1,4 +1,5 @@
 import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -358,13 +359,7 @@ export function WrapProductionPage() {
 
   return (
     <div className="mx-auto max-w-3xl rounded-xl bg-stone-100/10 px-8 py-8 dark:bg-stone-950/50">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Wrap Production</h1>
-        <p className="text-muted-foreground">
-          Review outstanding financial, scheduling, and delivery items before completing and
-          archiving this production.
-        </p>
-      </header>
+      <PageHeader title="Wrap Production" description="Review outstanding financial, scheduling, and delivery items before completing and archiving this production." />
 
       <section className="mt-10 space-y-4">
         {/* Budget and Actualisation — real readiness section */}

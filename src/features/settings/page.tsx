@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { PageHeader } from '@/components/page-header'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
@@ -392,7 +393,7 @@ export function SettingsPage() {
   return (
     <TooltipProvider>
     <div className="space-y-5">
-      <h1 className="text-2xl font-semibold">Settings</h1>
+      <PageHeader title="Settings" />
       {confirmDialog}
 
       <AppearanceSettingsSection />
@@ -654,13 +655,13 @@ export function SettingsPage() {
 
         <TabsContent value="people" className="space-y-5 mt-5 outline-none">
       {currentProductionId && (
-        <Card className="border-zinc-700 bg-zinc-900 text-foreground">
+        <Card className="border-border bg-card text-foreground">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-zinc-100">
+            <CardTitle className="flex items-center gap-2 text-foreground">
               <Users className="size-5" />
               Crew Structure
             </CardTitle>
-            <CardDescription className="text-zinc-400">
+            <CardDescription className="text-muted-foreground">
               Configure departments, roles, Heads of Department, and task department mappings for this production.
               This drives Crew Manager options, HOD derivation, task responsibility mapping, and call-sheet crew grouping and order.
             </CardDescription>

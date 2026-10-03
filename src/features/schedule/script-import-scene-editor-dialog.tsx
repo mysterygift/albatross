@@ -93,7 +93,7 @@ export function ScriptImportSceneEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md bg-card border-border">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Edit parsed scene</DialogTitle>
           <DialogDescription>

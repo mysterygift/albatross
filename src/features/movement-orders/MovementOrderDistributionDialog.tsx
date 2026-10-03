@@ -99,7 +99,7 @@ export function MovementOrderDistributionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl border-border bg-card flex max-h-[min(90vh,720px)] flex-col gap-4 overflow-hidden">
+      <DialogContent className="max-w-xl flex max-h-[min(90vh,720px)] flex-col gap-4 overflow-hidden">
         <DialogHeader className="shrink-0">
           <DialogTitle>Distribute Movement Orders</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">

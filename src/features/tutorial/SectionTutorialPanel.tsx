@@ -77,11 +77,11 @@ export function SectionTutorialPanel({
     <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
       <DialogContent
         showOverlay={false}
-        className="max-w-md border-zinc-700 bg-zinc-900 text-foreground shadow-2xl sm:top-6 sm:translate-y-0"
+        className="max-w-md border-border bg-card text-foreground shadow-2xl sm:top-6 sm:translate-y-0"
       >
         <DialogHeader className="space-y-1">
           <DialogTitle className="text-sm font-semibold flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full bg-zinc-800 px-2 py-0.5 text-[11px] text-mint-300">
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-mint-300">
               Tutorial
             </span>
             <span>{sectionTitle}</span>
@@ -94,7 +94,7 @@ export function SectionTutorialPanel({
         <div className="mt-2 space-y-3 text-sm">
           <p className="text-xs text-muted-foreground whitespace-pre-line">{step.body}</p>
           <div className="flex items-center justify-between">
-            <Badge variant="outline" className="text-[11px] border-zinc-700 text-muted-foreground">
+            <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
               Step {stepLabel}
             </Badge>
           </div>
@@ -113,7 +113,7 @@ export function SectionTutorialPanel({
             <Button
               variant="outline"
               size="sm"
-              className="text-[11px] border-zinc-700 px-2"
+              className="text-[11px] border-border px-2"
               onClick={handleBack}
               disabled={clampedIndex === 0}
             >

@@ -1,5 +1,6 @@
 'use client'
 
+import { PageHeader } from '@/components/page-header'
 import { RequireProduction } from '@/components/require-production'
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -428,19 +429,18 @@ export function CrewManagerPage() {
 
   return (
     <div className="space-y-4 relative">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Crew Manager</h1>
-          <p className="text-muted-foreground text-sm">
-            View and manage crew for this production. Department and role are aligned with the
-            canonical crew hierarchy for task and call-sheet integration.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-          <Plus className="mr-2 size-4" />
-          Add crew
-        </Button>
-      </div>
+      <PageHeader
+        title="Crew Manager"
+        description="View and manage crew for this production. Department and role are aligned with the canonical crew hierarchy for task and call-sheet integration."
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="mr-2 size-4" />
+              Add crew
+            </Button>
+          </>
+        }
+      />
 
       {/* Summary strip */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { PageHeader } from '@/components/page-header'
 import { Navigate } from 'react-router-dom'
 import type { UseMutationResult } from '@tanstack/react-query'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -246,14 +247,16 @@ export function UserManagementPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">User Management</h1>
-        </div>
-        <Button type="button" onClick={() => setCreateOpen(true)}>
-          Create user
-        </Button>
-      </div>
+      <PageHeader
+        title="User Management"
+        actions={
+          <>
+            <Button type="button" onClick={() => setCreateOpen(true)}>
+              Create user
+            </Button>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader>

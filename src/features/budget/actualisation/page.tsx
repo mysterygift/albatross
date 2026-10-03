@@ -459,7 +459,7 @@ export function ActualisationPage() {
 
   if (!currentProductionId) {
     return (
-      <RequireProduction title="Match Expenses">{null}</RequireProduction>
+      <RequireProduction>{null}</RequireProduction>
     )
   }
 

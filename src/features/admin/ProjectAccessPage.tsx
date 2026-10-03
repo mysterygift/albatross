@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { PageHeader } from '@/components/page-header'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -170,12 +171,7 @@ export function ProjectAccessRoute() {
   return (
     <div className="space-y-5">
       {confirmDialog}
-      <div>
-        <h1 className="text-2xl font-semibold">Project Access</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage project membership access levels: viewer, editor, and administrator.
-        </p>
-      </div>
+      <PageHeader title="Project Access" description="Manage project membership access levels: viewer, editor, and administrator." />
 
       <Card>
         <CardHeader>

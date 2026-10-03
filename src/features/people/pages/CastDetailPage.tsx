@@ -1,4 +1,6 @@
 import { RequireProduction } from '@/components/require-production'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/page-header'
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, useParams } from 'react-router-dom'
@@ -644,9 +646,16 @@ export function CastDetailPage() {
 
   if (personLoading || person == null) {
     return (
-      <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
-        {personLoading ? 'Loading…' : 'Person not found.'}
-      </div>
+      personLoading ? (
+        <div role="status" aria-label="Loading" className="space-y-4">
+          <Skeleton className="h-8 w-1/3" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
+          Person not found.
+        </div>
+      )
     )
   }
 
@@ -674,17 +683,24 @@ export function CastDetailPage() {
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold text-foreground truncate">{person.name}</h1>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        <PageHeader
+          title={person.name}
+          description={
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span>{typeLabel}</span>
             {person.department && <span>{person.department}</span>}
-          </div>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-          <Pencil className="mr-2 size-4" />
-          Edit
-        </Button>
+          </span>
+        }
+          className="min-w-0 flex-1"
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                <Pencil className="mr-2 size-4" />
+                Edit
+              </Button>
+            </>
+          }
+        />
       </div>
 
       {/* Summary cards */}
@@ -792,7 +808,7 @@ export function CastDetailPage() {
                 <span className="text-amber-600 dark:text-amber-400"> · Missing: {personNeedSummary.daysMissingBooking}</span>
               )}
               {personNeedSummary.daysBookedButNotNeeded > 0 && (
-                <span className="text-zinc-500"> · Booked but not needed: {personNeedSummary.daysBookedButNotNeeded}</span>
+                <span className="text-muted-foreground"> · Booked but not needed: {personNeedSummary.daysBookedButNotNeeded}</span>
               )}
             </p>
           )}

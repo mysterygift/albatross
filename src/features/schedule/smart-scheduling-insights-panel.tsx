@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import { Skeleton } from '@/components/ui/skeleton'
 import { ChevronDown, Lightbulb } from 'lucide-react'
 import type { Location, Scene, ShootDay, Shot, StripboardStrip } from '@/lib/db/types'
 import {
@@ -160,9 +161,10 @@ export function SmartSchedulingInsightsPanel({
   let body: ReactNode
   if (isLoading) {
     body = (
-      <p className="text-sm text-muted-foreground">
-        Loading shot and cast metadata for insights…
-      </p>
+      <div role="status" aria-label="Loading insights" className="space-y-2">
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-4 w-1/2" />
+      </div>
     )
   } else if (result.state === 'empty_insufficient') {
     body = (

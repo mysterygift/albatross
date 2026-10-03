@@ -1,5 +1,6 @@
 'use client'
 
+import { Skeleton } from '@/components/ui/skeleton'
 import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
@@ -383,8 +384,10 @@ export function CrewStructureEditor({ productionId }: Props) {
 
   if (isLoading || !loadedConfig) {
     return (
-      <div className="rounded-lg border border-zinc-700 bg-zinc-900/80 p-6 text-center text-muted-foreground text-sm">
-        Loading crew structure…
+      <div role="status" aria-label="Loading crew structure" className="space-y-3 rounded-lg border border-border bg-card/80 p-6">
+        <Skeleton className="h-6 w-1/3" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
       </div>
     )
   }
@@ -424,7 +427,7 @@ export function CrewStructureEditor({ productionId }: Props) {
           <Button
             size="sm"
             variant="outline"
-            className="border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+            className="border-border text-foreground hover:bg-muted"
             onClick={revertToInitial}
           >
             Cancel
@@ -433,7 +436,7 @@ export function CrewStructureEditor({ productionId }: Props) {
         <Button
           size="sm"
           variant="outline"
-          className="border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+          className="border-border text-foreground hover:bg-muted"
           onClick={() => setResetConfirmOpen(true)}
           disabled={resetMutation.isPending}
         >
@@ -449,7 +452,7 @@ export function CrewStructureEditor({ productionId }: Props) {
           return (
             <div
               key={dept.id}
-              className="rounded-lg border border-zinc-700 bg-zinc-800/90 p-4 space-y-3"
+              className="rounded-lg border border-border bg-muted/90 p-4 space-y-3"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-1">
@@ -457,7 +460,7 @@ export function CrewStructureEditor({ productionId }: Props) {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 text-zinc-400 hover:text-zinc-200"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
                     onClick={() => moveDepartment(deptIndex, -1)}
                     disabled={deptIndex === 0}
                     aria-label="Move up"
@@ -468,7 +471,7 @@ export function CrewStructureEditor({ productionId }: Props) {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 text-zinc-400 hover:text-zinc-200"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
                     onClick={() => moveDepartment(deptIndex, 1)}
                     disabled={deptIndex === sortedDepts.length - 1}
                     aria-label="Move down"
@@ -479,7 +482,7 @@ export function CrewStructureEditor({ productionId }: Props) {
                 <Input
                   value={dept.name}
                   onChange={(e) => setDepartmentName(deptIndex, e.target.value)}
-                  className="max-w-[220px] bg-zinc-900 border-zinc-600 text-foreground font-medium"
+                  className="max-w-[220px] bg-card border-border text-foreground font-medium"
                   placeholder="Department name"
                 />
                 <span className="text-muted-foreground text-xs">
@@ -515,7 +518,7 @@ export function CrewStructureEditor({ productionId }: Props) {
                       )
                     }
                   >
-                    <SelectTrigger className="mt-1.5 bg-zinc-900 border-zinc-600 text-foreground">
+                    <SelectTrigger className="mt-1.5 bg-card border-border text-foreground">
                       <SelectValue placeholder="Select HOD" />
                     </SelectTrigger>
                     <SelectContent>
@@ -542,12 +545,12 @@ export function CrewStructureEditor({ productionId }: Props) {
                     {taskLabels.map((l) => (
                       <span
                         key={l}
-                        className="inline-flex items-center gap-1 rounded-md bg-zinc-700 px-2 py-0.5 text-xs text-zinc-200"
+                        className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-xs text-foreground"
                       >
                         {l}
                         <button
                           type="button"
-                          className="text-zinc-400 hover:text-zinc-200"
+                          className="text-muted-foreground hover:text-foreground"
                           onClick={() => removeTaskLabel(deptIndex, l)}
                           aria-label={`Remove ${l}`}
                         >
@@ -569,12 +572,12 @@ export function CrewStructureEditor({ productionId }: Props) {
                         key={role.id}
                         className="flex flex-wrap items-center gap-2"
                       >
-                        <div className="inline-flex flex-col gap-0 rounded border border-zinc-600 bg-zinc-900/50 p-0.5">
+                        <div className="inline-flex flex-col gap-0 rounded border border-border bg-card/50 p-0.5">
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6 text-zinc-500 hover:text-zinc-300"
+                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
                             onClick={() => moveRole(deptIndex, roleIndex, -1)}
                             disabled={roleIndex === 0}
                             aria-label="Move role up"
@@ -585,7 +588,7 @@ export function CrewStructureEditor({ productionId }: Props) {
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6 text-zinc-500 hover:text-zinc-300"
+                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
                             onClick={() => moveRole(deptIndex, roleIndex, 1)}
                             disabled={roleIndex === roles.length - 1}
                             aria-label="Move role down"
@@ -598,13 +601,13 @@ export function CrewStructureEditor({ productionId }: Props) {
                           onChange={(e) =>
                             setRoleName(deptIndex, role.id, e.target.value)
                           }
-                          className="h-8 w-48 bg-zinc-900 border-zinc-600 text-sm text-foreground"
+                          className="h-8 w-48 bg-card border-border text-sm text-foreground"
                         />
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-500 hover:text-destructive"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
                           onClick={() => removeRole(deptIndex, role.id)}
                           aria-label="Remove role"
                         >
@@ -617,7 +620,7 @@ export function CrewStructureEditor({ productionId }: Props) {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="border-zinc-600 text-zinc-300 hover:bg-zinc-700"
+                    className="border-border text-foreground hover:bg-secondary"
                     onClick={() => addRole(deptIndex)}
                   >
                     <Plus className="mr-1 size-3" />
@@ -634,7 +637,7 @@ export function CrewStructureEditor({ productionId }: Props) {
         type="button"
         variant="outline"
         size="sm"
-        className="border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+        className="border-border text-foreground hover:bg-muted"
         onClick={addDepartment}
       >
         <Plus className="mr-2 size-4" />
@@ -642,7 +645,7 @@ export function CrewStructureEditor({ productionId }: Props) {
       </Button>
 
       <Dialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
-        <DialogContent className="max-w-md border-zinc-700 bg-zinc-900 text-foreground">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Reset to default</DialogTitle>
           </DialogHeader>
@@ -654,7 +657,7 @@ export function CrewStructureEditor({ productionId }: Props) {
           <DialogFooter>
             <Button
               variant="outline"
-              className="border-zinc-600"
+              className="border-border"
               onClick={() => setResetConfirmOpen(false)}
             >
               Cancel
@@ -690,13 +693,13 @@ function AddTaskLabelControl({ onAdd }: { onAdd: (label: string) => void }) {
           }
         }}
         placeholder="Add task label"
-        className="h-7 w-28 bg-zinc-900 border-zinc-600 text-xs text-foreground"
+        className="h-7 w-28 bg-card border-border text-xs text-foreground"
       />
       <Button
         type="button"
         size="sm"
         variant="ghost"
-        className="h-7 px-2 text-zinc-400"
+        className="h-7 px-2 text-muted-foreground"
         onClick={() => {
           if (value.trim()) {
             onAdd(value.trim())

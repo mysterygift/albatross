@@ -1,4 +1,6 @@
 import { RequireProduction } from '@/components/require-production'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/page-header'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, Upload } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
@@ -80,27 +82,29 @@ export function DocumentsHub() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Documents</h1>
-          <p className="text-sm text-muted-foreground">
-            Browse production files by category — scripts, set paperwork, deliverables, and more.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setSearchOpen(true)}>
-            <Search className="mr-2 size-4" />
-            Search
-          </Button>
-          <Button onClick={startUpload} disabled={uploadMutation.isPending}>
-            <Upload className="mr-2 size-4" />
-            Upload file
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Documents"
+        description="Browse production files by category — scripts, set paperwork, deliverables, and more."
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setSearchOpen(true)}>
+              <Search className="mr-2 size-4" />
+              Search
+            </Button>
+            <Button onClick={startUpload} disabled={uploadMutation.isPending}>
+              <Upload className="mr-2 size-4" />
+              Upload file
+            </Button>
+          </>
+        }
+      />
 
       {isLoading ? (
-        <p className="text-muted-foreground">Loading documents…</p>
+        <div role="status" aria-label="Loading documents" className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {categorySummaries.map((summary) => (

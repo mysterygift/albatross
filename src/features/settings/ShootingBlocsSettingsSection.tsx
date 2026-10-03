@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useState } from 'react'
 import {
   addCalendarDaysToIso,
@@ -300,7 +301,11 @@ export function ShootingBlocsSettingsSection({ productionId }: Props) {
       </div>
 
       {isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading blocs…</p>
+        <div role="status" aria-label="Loading blocs" className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
       ) : blocs.length === 0 ? (
         <p className="text-muted-foreground text-sm">
           No shooting blocs yet. Enabling episodic mode creates a default shooting bloc named{' '}

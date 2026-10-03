@@ -1,4 +1,5 @@
 import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -390,53 +391,53 @@ export function ReadinessPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-          <p className="text-muted-foreground text-sm">Production tasks and deadlines</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="font-medium tabular-nums">
-            {score}% complete
-          </Badge>
-          <ManageSectionsSheet
-            productionId={currentProductionId}
-            sections={sections}
-            filteredTasks={filteredTasks}
-            onCreateSection={(data) => createSectionMutation.mutate(data)}
-            onUpdateSection={(id, patch) => updateSectionMutation.mutate({ id, patch })}
-            onDeleteSection={(id) => deleteSectionMutation.mutate(id)}
-            isCreatePending={createSectionMutation.isPending}
-            isUpdatePending={updateSectionMutation.isPending}
-            isDeletePending={deleteSectionMutation.isPending}
-            open={sectionsOpen}
-            onOpenChange={setSectionsOpen}
-          />
-          <Button variant="outline" size="sm" onClick={() => setTemplatesOpen(true)} className="gap-1.5">
-            <FileStack className="size-4" />
-            Templates
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setApplyTemplateOpen(true)} className="gap-1.5">
-            <Play className="size-4" />
-            Apply Template
-          </Button>
-          <NewTaskDialog
-            productionId={currentProductionId}
-            parentTaskId={addSubtaskParent?.id ?? null}
-            sections={sections}
-            open={createOpen || !!addSubtaskParent}
-            onOpenChange={(open) => {
-              setCreateOpen(open)
-              if (!open) setAddSubtaskParent(null)
-            }}
-            onSubmit={(data) => {
-              createMutation.mutate(data)
-              setAddSubtaskParent(null)
-            }}
-            isPending={createMutation.isPending}
-          />
-        </div>
-      </div>
+      <PageHeader
+        title="Tasks"
+        description="Production tasks and deadlines"
+        actions={
+          <>
+            <Badge variant="secondary" className="font-medium tabular-nums">
+              {score}% complete
+            </Badge>
+            <ManageSectionsSheet
+              productionId={currentProductionId}
+              sections={sections}
+              filteredTasks={filteredTasks}
+              onCreateSection={(data) => createSectionMutation.mutate(data)}
+              onUpdateSection={(id, patch) => updateSectionMutation.mutate({ id, patch })}
+              onDeleteSection={(id) => deleteSectionMutation.mutate(id)}
+              isCreatePending={createSectionMutation.isPending}
+              isUpdatePending={updateSectionMutation.isPending}
+              isDeletePending={deleteSectionMutation.isPending}
+              open={sectionsOpen}
+              onOpenChange={setSectionsOpen}
+            />
+            <Button variant="outline" size="sm" onClick={() => setTemplatesOpen(true)} className="gap-1.5">
+              <FileStack className="size-4" />
+              Templates
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setApplyTemplateOpen(true)} className="gap-1.5">
+              <Play className="size-4" />
+              Apply Template
+            </Button>
+            <NewTaskDialog
+              productionId={currentProductionId}
+              parentTaskId={addSubtaskParent?.id ?? null}
+              sections={sections}
+              open={createOpen || !!addSubtaskParent}
+              onOpenChange={(open) => {
+                setCreateOpen(open)
+                if (!open) setAddSubtaskParent(null)
+              }}
+              onSubmit={(data) => {
+                createMutation.mutate(data)
+                setAddSubtaskParent(null)
+              }}
+              isPending={createMutation.isPending}
+            />
+          </>
+        }
+      />
 
       <div className="flex flex-wrap gap-4 items-end">
         <div className="flex-1 sm:max-w-[240px]">
