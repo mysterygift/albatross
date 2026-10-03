@@ -13,10 +13,19 @@ import type { StripboardStrip } from '@/lib/db/types'
 import type { Scene, Shot, Episode, Location } from '@/lib/db/types'
 import type { UpdateStripData } from '@/lib/db/repositories/stripboard-strips'
 import { unitNameToKey } from '@/lib/schedule/unitKey'
+import {
+  DEFAULT_COLUMN_FILTER,
+  filterStripsByColumnFilter,
+  isColumnFilterActive,
+  type ColumnFilter,
+} from '@/lib/schedule/stripboardRows'
+import {
+  computeStripboardTotals,
+  formatRuntime,
+  runtimeWarningLevel,
+} from '@/lib/schedule/stripboardDayTotals'
 
-export type ColumnFilter = { int: boolean; ext: boolean; day: boolean; night: boolean }
-
-const DEFAULT_COLUMN_FILTER: ColumnFilter = { int: false, ext: false, day: false, night: false }
+export type { ColumnFilter }
 
 export function StripboardDayColumn({
   day,
@@ -216,68 +225,17 @@ function UnitColumn({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: colId })
 
-  const filtersActive = columnFilter.int || columnFilter.ext || columnFilter.day || columnFilter.night
+  const filtersActive = isColumnFilterActive(columnFilter)
+  const displayStrips = filterStripsByColumnFilter(strips, shots, scenes, columnFilter)
 
-  const displayStrips = strips.filter((strip) => {
-    if (strip.strip_type !== 'SHOT') return true
-    const shot = strip.shot_id ? shots.find((sh) => sh.id === strip.shot_id) : null
-    const scene = shot ? scenes.find((s) => s.id === shot.scene_id) : (strip.scene_id ? scenes.find((s) => s.id === strip.scene_id) : null)
-    if (!scene) return true
-    const intExtMatch =
-      !columnFilter.int && !columnFilter.ext
-        ? true
-        : (columnFilter.int && scene.int_ext === 'INT') || (columnFilter.ext && scene.int_ext === 'EXT')
-    const dayNightMatch =
-      !columnFilter.day && !columnFilter.night
-        ? true
-        : (columnFilter.day && scene.day_night === 'DAY') || (columnFilter.night && scene.day_night === 'NIGHT')
-    return intExtMatch && dayNightMatch
-  })
-
-  const shotStrips = strips.filter((s) => s.strip_type === 'SHOT')
-  const estimatedRuntimeMinutes = shotStrips.reduce((sum, s) => {
-    const override = s.estimated_minutes
-    const fromShot = s.shot_id ? estimatedShootMinutesByShotId.get(s.shot_id) ?? 0 : 0
-    return sum + (override ?? fromShot)
-  }, 0)
-  const runtimeHours = Math.floor(estimatedRuntimeMinutes / 60)
-  const runtimeMins = estimatedRuntimeMinutes % 60
-  const runtimeLabel = `Estimated Runtime: ${runtimeHours}h ${runtimeMins}m`
-  const over10h = estimatedRuntimeMinutes > 600
-  const over10_5h = estimatedRuntimeMinutes > 630
-
-  const totalEighths = shotStrips.reduce((sum, s) => {
-    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
-    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
-    return sum + (scene?.page_eighths ?? 0)
-  }, 0)
-  const overPages = totalEighths > pageEighthsTarget
-  const noLocation = shotStrips.some((s) => {
-    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
-    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
-    return scene && !scene.location_id
-  })
-
-  const intCount = shotStrips.filter((s) => {
-    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
-    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
-    return scene?.int_ext === 'INT'
-  }).length
-  const extCount = shotStrips.filter((s) => {
-    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
-    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
-    return scene?.int_ext === 'EXT'
-  }).length
-  const dayCount = shotStrips.filter((s) => {
-    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
-    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
-    return scene?.day_night === 'DAY'
-  }).length
-  const nightCount = shotStrips.filter((s) => {
-    const shot = s.shot_id ? shots.find((sh) => sh.id === s.shot_id) : null
-    const scene = shot ? scenes.find((c) => c.id === shot.scene_id) : (s.scene_id ? scenes.find((c) => c.id === s.scene_id) : null)
-    return scene?.day_night === 'NIGHT'
-  }).length
+  const totals = computeStripboardTotals(strips, shots, scenes, estimatedShootMinutesByShotId)
+  const runtimeLabel = `Estimated Runtime: ${formatRuntime(totals.runtimeMinutes)}`
+  const warningLevel = runtimeWarningLevel(totals.runtimeMinutes)
+  const over10_5h = warningLevel === 'over10_5'
+  const over10h = warningLevel === 'over10'
+  const overPages = totals.totalEighths > pageEighthsTarget
+  const noLocation = totals.noLocation
+  const { intCount, extCount, dayCount, nightCount } = totals
 
   return (
     <div className="border-t border-border flex flex-col flex-1 min-h-0">
@@ -320,8 +278,8 @@ function UnitColumn({
             )}
           </div>
           <div className="flex gap-1 flex-wrap justify-end">
-            <Badge variant="outline" className="text-[10px]">{shotStrips.length} shots</Badge>
-            <Badge variant="outline" className="text-[10px]">{totalEighths}/8 pgs</Badge>
+            <Badge variant="outline" className="text-[10px]">{totals.shotCount} shots</Badge>
+            <Badge variant="outline" className="text-[10px]">{totals.totalEighths}/8 pgs</Badge>
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
