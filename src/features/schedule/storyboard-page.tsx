@@ -1,3 +1,6 @@
+import { RequireProduction } from '@/components/require-production'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/page-header'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -45,6 +48,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -98,6 +102,7 @@ async function cleanupImportCandidates(candidates: AthenaPanelCandidate[]): Prom
 }
 
 export function StoryboardPage() {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
   const queryClient = useQueryClient()
@@ -573,19 +578,17 @@ export function StoryboardPage() {
 
   return (
     <>
+      {confirmDialog}
       {!currentProductionId ? (
-        <div>
-          <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>
-          <p className="text-muted-foreground">Select a production first.</p>
-        </div>
+        <RequireProduction title="Storyboard">{null}</RequireProduction>
       ) : scenesQuery.isError || shotsQuery.isError || imagesQuery.isError ? (
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>
+          <PageHeader title="Storyboard" />
           <p className="text-destructive">Could not load storyboard data.</p>
         </div>
       ) : (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>
+      <PageHeader title="Storyboard" />
       <div className="grid gap-3 md:grid-cols-[minmax(0,320px)_minmax(0,260px)_auto] md:items-end">
         <div className="space-y-1.5">
           <p className="text-sm text-muted-foreground">Display</p>
@@ -629,7 +632,11 @@ export function StoryboardPage() {
         </div>
       </div>
       {(scenesQuery.isPending || shotsQuery.isPending || imagesQuery.isPending) && (
-        <p className="text-muted-foreground">Loading storyboard...</p>
+        <div role="status" aria-label="Loading storyboard" className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
       )}
       {actionError && (
         <p className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">{actionError}</p>
@@ -801,10 +808,12 @@ export function StoryboardPage() {
                                           size="sm"
                                           variant="ghost"
                                           className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                                          onClick={() => {
-                                            const accepted = window.confirm(
-                                              `Remove "${image.original_filename}" from this shot?`
-                                            )
+                                          onClick={async () => {
+                                            const accepted = await confirm({
+                                              title: `Remove "${image.original_filename}" from this shot?`,
+                                              confirmLabel: 'Remove',
+                                              destructive: true,
+                                            })
                                             if (!accepted) return
                                             setActionError(null)
                                             removeImageMutation.mutate(image)
@@ -896,10 +905,12 @@ export function StoryboardPage() {
                                                 size="sm"
                                                 variant="ghost"
                                                 className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                                                onClick={() => {
-                                                  const accepted = window.confirm(
-                                                    `Remove "${image.original_filename}" from this shot?`
-                                                  )
+                                                onClick={async () => {
+                                                  const accepted = await confirm({
+                                                    title: `Remove "${image.original_filename}" from this shot?`,
+                                                    confirmLabel: 'Remove',
+                                                    destructive: true,
+                                                  })
                                                   if (!accepted) return
                                                   setActionError(null)
                                                   removeImageMutation.mutate(image)

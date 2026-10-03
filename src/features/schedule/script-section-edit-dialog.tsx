@@ -161,7 +161,7 @@ export function ScriptSectionEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg bg-zinc-800 border-zinc-600">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {mode === 'create' ? 'New section' : editingGenerated ? 'Edit generated section' : 'Edit section'}
@@ -181,7 +181,7 @@ export function ScriptSectionEditDialog({
 
         <div className="space-y-4">
           <div>
-            <Label className="text-sm text-zinc-200">
+            <Label className="text-sm text-foreground">
               Linked scene{mode === 'create' && <span className="text-destructive">*</span>}
             </Label>
             <Select
@@ -203,7 +203,7 @@ export function ScriptSectionEditDialog({
           </div>
 
           <div>
-            <Label htmlFor="section-label" className="text-sm text-zinc-200">
+            <Label htmlFor="section-label" className="text-sm text-foreground">
               Label
             </Label>
             <Input
@@ -217,7 +217,7 @@ export function ScriptSectionEditDialog({
           </div>
 
           <div>
-            <Label className="text-sm text-zinc-200">Status</Label>
+            <Label className="text-sm text-foreground">Status</Label>
             <Select value={values.status} onValueChange={(v) => set('status', v as ScriptSectionStatus)}>
               <SelectTrigger className="mt-1 bg-input border-border">
                 <SelectValue />
@@ -234,7 +234,7 @@ export function ScriptSectionEditDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="start-page" className="text-sm text-zinc-200">
+              <Label htmlFor="start-page" className="text-sm text-foreground">
                 Start page
               </Label>
               <Input
@@ -246,7 +246,7 @@ export function ScriptSectionEditDialog({
               />
             </div>
             <div>
-              <Label htmlFor="start-eighth" className="text-sm text-zinc-200">
+              <Label htmlFor="start-eighth" className="text-sm text-foreground">
                 Start eighth ({MIN_EIGHTH}–{MAX_EIGHTH})
               </Label>
               <Input
@@ -260,7 +260,7 @@ export function ScriptSectionEditDialog({
               />
             </div>
             <div>
-              <Label htmlFor="end-page" className="text-sm text-zinc-200">
+              <Label htmlFor="end-page" className="text-sm text-foreground">
                 End page
               </Label>
               <Input
@@ -272,7 +272,7 @@ export function ScriptSectionEditDialog({
               />
             </div>
             <div>
-              <Label htmlFor="end-eighth" className="text-sm text-zinc-200">
+              <Label htmlFor="end-eighth" className="text-sm text-foreground">
                 End eighth ({MIN_EIGHTH}–{MAX_EIGHTH})
               </Label>
               <Input
@@ -289,7 +289,7 @@ export function ScriptSectionEditDialog({
 
           <div>
             <div className="flex items-center justify-between">
-              <Label className="text-sm text-zinc-200">Characters (name fallbacks)</Label>
+              <Label className="text-sm text-foreground">Characters (name fallbacks)</Label>
               {!lockLabelAndCharacters && (
                 <Button
                   type="button"
@@ -341,7 +341,7 @@ export function ScriptSectionEditDialog({
           </div>
 
           <div>
-            <Label htmlFor="section-notes" className="text-sm text-zinc-200">
+            <Label htmlFor="section-notes" className="text-sm text-foreground">
               Notes
             </Label>
             <Textarea

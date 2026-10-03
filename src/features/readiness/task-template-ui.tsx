@@ -45,6 +45,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Pencil, Trash2, ListTree } from 'lucide-react'
 
 export function TaskTemplatesSheet({
@@ -56,6 +57,7 @@ export function TaskTemplatesSheet({
   onOpenChange: (open: boolean) => void
   onEditTemplate: (templateId: string) => void
 }) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const queryClient = useQueryClient()
   const { data: templates = [] } = useQuery({
     queryKey: ['taskTemplates'],
@@ -178,10 +180,17 @@ export function TaskTemplatesSheet({
                       variant="ghost"
                       size="icon"
                       className="size-7 text-destructive"
-                      onClick={() =>
-                        window.confirm('Delete this template?') &&
-                        deleteMutation.mutate(t.id)
-                      }
+                      onClick={async () => {
+                        if (
+                          await confirm({
+                            title: 'Delete this template?',
+                            confirmLabel: 'Delete',
+                            destructive: true,
+                          })
+                        ) {
+                          deleteMutation.mutate(t.id)
+                        }
+                      }}
                       aria-label="Delete"
                     >
                       <Trash2 className="size-3.5" />
@@ -198,6 +207,7 @@ export function TaskTemplatesSheet({
           )}
         </div>
       </SheetContent>
+      {confirmDialog}
     </Sheet>
   )
 }

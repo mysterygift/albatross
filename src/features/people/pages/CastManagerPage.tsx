@@ -1,3 +1,6 @@
+import { RequireProduction } from '@/components/require-production'
+import { EmptyState } from '@/components/empty-state'
+import { PageHeader } from '@/components/page-header'
 import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -283,27 +286,24 @@ export function CastManagerPage() {
 
   if (!currentProductionId) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Cast Manager</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Cast Manager">{null}</RequireProduction>
     )
   }
 
   return (
     <div className="space-y-4 relative">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Cast Manager</h1>
-          <p className="text-muted-foreground text-sm">
-            Manage cast members and their roles for this production.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-          <Plus className="mr-2 size-4" />
-          Add cast
-        </Button>
-      </div>
+      <PageHeader
+        title="Cast Manager"
+        description="Manage cast members and their roles for this production."
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="mr-2 size-4" />
+              Add cast
+            </Button>
+          </>
+        }
+      />
 
       {/* Summary strip */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -381,12 +381,17 @@ export function CastManagerPage() {
       <Card>
         <CardContent className="p-0">
           {cast.length === 0 ? (
-            <div className="py-12 px-4 text-center">
-              <p className="text-muted-foreground">No cast members yet.</p>
-              <p className="text-muted-foreground text-sm mt-1">
-                Add people as cast from the People list to see them here.
-              </p>
-            </div>
+            <EmptyState
+              className="m-4"
+              title="No cast members yet"
+              description="Add a cast member to see them here."
+              action={
+                <Button size="sm" onClick={() => setAddOpen(true)}>
+                  <Plus className="mr-2 size-4" />
+                  Add cast
+                </Button>
+              }
+            />
           ) : filteredCast.length === 0 ? (
             <div className="py-12 px-4 text-center text-muted-foreground text-sm">
               No cast match the current search or filters.

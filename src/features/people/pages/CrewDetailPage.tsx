@@ -1,5 +1,8 @@
 'use client'
 
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/page-header'
+import { RequireProduction } from '@/components/require-production'
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, Navigate } from 'react-router-dom'
@@ -323,9 +326,7 @@ export function CrewDetailPage() {
   // Guards: no production, no personId
   if (!currentProductionId) {
     return (
-      <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
-        Select a production first.
-      </div>
+      <RequireProduction>{null}</RequireProduction>
     )
   }
 
@@ -339,9 +340,16 @@ export function CrewDetailPage() {
 
   if (personLoading || person == null) {
     return (
-      <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
-        {personLoading ? 'Loading…' : 'Crew member not found.'}
-      </div>
+      personLoading ? (
+        <div role="status" aria-label="Loading" className="space-y-4">
+          <Skeleton className="h-8 w-1/3" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
+          Crew member not found.
+        </div>
+      )
     )
   }
 
@@ -376,9 +384,10 @@ export function CrewDetailPage() {
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold text-foreground truncate">{person.name}</h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+        <PageHeader
+          title={person.name}
+          description={
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {person.department && <span>{person.department}</span>}
             {person.role_name && <span>{person.role_name}</span>}
             {isHod && (
@@ -386,12 +395,18 @@ export function CrewDetailPage() {
                 HOD
               </Badge>
             )}
-          </div>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-          <Pencil className="mr-2 size-4" />
-          Edit
-        </Button>
+          </span>
+        }
+          className="min-w-0 flex-1"
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                <Pencil className="mr-2 size-4" />
+                Edit
+              </Button>
+            </>
+          }
+        />
       </div>
 
       {/* Summary cards (dark, compact) */}

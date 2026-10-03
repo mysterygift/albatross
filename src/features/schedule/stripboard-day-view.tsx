@@ -257,7 +257,7 @@ function DayNavigator({
         <ChevronRight className="size-4" />
       </Button>
 
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1" aria-label="Shoot days. Drag a row onto a day to move it there.">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Shoot days. Drag a row onto a day to move it there.">
         {days.map((d) => {
           const mainDayUnit = dayUnitsByDayId.get(d.id)?.find((du) => units.some((u) => u.id === du.unit_id))
           const dropId = mainDayUnit ? columnId(d.id, mainDayUnit.id) : null

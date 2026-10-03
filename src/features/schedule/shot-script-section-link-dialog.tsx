@@ -97,9 +97,9 @@ export function ShotScriptSectionLinkDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] max-w-5xl flex-col bg-zinc-800 border-zinc-600">
-        <h3 className="text-base font-semibold text-zinc-100">Link script sections</h3>
-        <p className="text-sm text-zinc-400">
+      <DialogContent className="flex max-h-[85vh] max-w-5xl flex-col">
+        <h3 className="text-base font-semibold text-foreground">Link script sections</h3>
+        <p className="text-sm text-muted-foreground">
           Select the script sections covered by shot {shotNumber}. Click a section to preview its
           script text.
         </p>
@@ -115,16 +115,16 @@ export function ShotScriptSectionLinkDialog({
         )}
 
         {sections.length === 0 ? (
-          <p className="py-4 text-sm text-zinc-500">
+          <p className="py-4 text-sm text-muted-foreground">
             No script sections for this scene yet. Generate or add sections on the Script Sections
             page first.
           </p>
         ) : (
           <>
             <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
-              <div className="flex min-h-0 flex-col rounded-md border border-zinc-600">
-                <div className="border-b border-zinc-600 px-3 py-2">
-                  <h4 className="text-base font-semibold text-zinc-100">
+              <div className="flex min-h-0 flex-col rounded-md border border-border">
+                <div className="border-b border-border px-3 py-2">
+                  <h4 className="text-base font-semibold text-foreground">
                     Sections ({sections.length})
                   </h4>
                 </div>
@@ -147,7 +147,7 @@ export function ShotScriptSectionLinkDialog({
                               ? 'border-emerald-500/60 bg-emerald-500/10'
                               : checked
                                 ? 'border-emerald-700/40 bg-emerald-900/20'
-                                : 'border-zinc-600'
+                                : 'border-border'
                           )}
                         >
                           <div className="flex items-start gap-2">
@@ -164,18 +164,18 @@ export function ShotScriptSectionLinkDialog({
                               onClick={() => setPreviewSectionId(section.id)}
                             >
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="text-sm font-medium text-zinc-100">
+                                <span className="text-sm font-medium text-foreground">
                                   {section.label ?? 'Untitled section'}
                                 </span>
-                                <span className="rounded bg-zinc-700/80 px-1.5 py-0.5 text-xs text-zinc-300">
+                                <span className="rounded bg-secondary/80 px-1.5 py-0.5 text-xs text-foreground">
                                   {formatSectionStatus(section.status)}
                                 </span>
                                 <span
                                   className={cn(
                                     'rounded px-1.5 py-0.5 text-xs',
                                     isGenerated
-                                      ? 'bg-zinc-700/80 text-zinc-400'
-                                      : 'bg-zinc-600 text-zinc-200'
+                                      ? 'bg-secondary/80 text-muted-foreground'
+                                      : 'bg-secondary text-foreground'
                                   )}
                                 >
                                   {isGenerated ? 'Generated' : 'Manual'}
@@ -186,7 +186,7 @@ export function ShotScriptSectionLinkDialog({
                                   </span>
                                 )}
                                 {version && (
-                                  <span className="rounded bg-zinc-700/80 px-1.5 py-0.5 text-xs text-zinc-400">
+                                  <span className="rounded bg-secondary/80 px-1.5 py-0.5 text-xs text-muted-foreground">
                                     {formatScriptVersionLabel(version)}
                                   </span>
                                 )}
@@ -205,12 +205,12 @@ export function ShotScriptSectionLinkDialog({
                                   </span>
                                 )}
                               </div>
-                              <div className="mt-1 text-sm text-zinc-400">
+                              <div className="mt-1 text-sm text-muted-foreground">
                                 {scene ? sceneLabel(scene) : 'Unknown scene'} ·{' '}
                                 {formatScriptSectionRange(ranges?.[0])}
                               </div>
                               {characters.length > 0 && (
-                                <div className="mt-1 text-xs text-zinc-500">
+                                <div className="mt-1 text-xs text-muted-foreground">
                                   Characters:{' '}
                                   {characters
                                     .map((c) => c.character_name)
@@ -219,7 +219,7 @@ export function ShotScriptSectionLinkDialog({
                                 </div>
                               )}
                               {section.notes && (
-                                <div className="mt-1 text-xs italic text-zinc-500">{section.notes}</div>
+                                <div className="mt-1 text-xs italic text-muted-foreground">{section.notes}</div>
                               )}
                             </button>
                           </div>
@@ -230,7 +230,7 @@ export function ShotScriptSectionLinkDialog({
                 </div>
               </div>
 
-              <div className="min-h-0 rounded-md border border-zinc-600">
+              <div className="min-h-0 rounded-md border border-border">
                 <ScriptSectionScriptPanel
                   pages={previewPages}
                   previewSection={previewSection}

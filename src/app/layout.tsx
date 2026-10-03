@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from '@/components/ui/sonner'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { SidebarInset, SidebarProvider, useSidebar } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
+import { DemoProductionBanner } from '@/features/onboarding/DemoProductionBanner'
 import { TopBar } from '@/components/top-bar'
+import { SectionTabs } from '@/components/section-tabs'
 import { DevPerfHud } from '@/components/dev/DevPerfHud'
 import { getSetting } from '@/lib/db/repositories/settings'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
@@ -16,6 +19,8 @@ import { ensureAndOpenDemoProductionForTutorial } from '@/features/tutorial/ensu
 import { ApfDesktopOpenBridge } from '@/features/productions/ApfDesktopOpenBridge'
 import { ApfMenuEventBridge } from '@/features/productions/ApfMenuEventBridge'
 import { GlobalSearchDialog } from '@/features/search/GlobalSearchDialog'
+import { GlobalShortcutBridge } from '@/app/GlobalShortcutBridge'
+import { ShortcutCheatSheet } from '@/components/shortcut-cheat-sheet'
 import { ServerCollabBanner } from '@/features/server/ServerCollabBanner'
 import { useCurrentProduction } from '@/features/productions/context'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
@@ -193,11 +198,13 @@ function AppLayoutShell() {
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const openSearch = useCallback(() => setSearchOpen(true), [])
+  const toggleSearch = useCallback(() => setSearchOpen((prev) => !prev), [])
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const openShortcuts = useCallback(() => setShortcutsOpen(true), [])
   const [isPreparingTutorial, setIsPreparingTutorial] = useState(false)
   const [isPreparingTutorialHub, setIsPreparingTutorialHub] = useState(false)
   const [tutorialStartupError, setTutorialStartupError] = useState<string | null>(null)
   const [tutorialHubError, setTutorialHubError] = useState<string | null>(null)
-  const [completionToast, setCompletionToast] = useState<string | null>(null)
   const {
     isLoading: tutorialLoading,
     showFirstLaunchTutorial,
@@ -228,15 +235,9 @@ function AppLayoutShell() {
     const prev = prevAllCompleteRef.current
     prevAllCompleteRef.current = allComplete
     if (!prev && allComplete) {
-      setCompletionToast('All core tutorial sections completed.')
+      toast.success('All core tutorial sections completed.')
     }
   }, [allComplete])
-
-  useEffect(() => {
-    if (!completionToast) return
-    const t = setTimeout(() => setCompletionToast(null), 3200)
-    return () => clearTimeout(t)
-  }, [completionToast])
 
   useEffect(() => {
     if (!import.meta.env.DEV) return
@@ -298,7 +299,7 @@ function AppLayoutShell() {
     if (!state?.openTutorialHome) return
 
     const shouldReset = !!state.resetTutorial
-    navigate(location.pathname, { replace: true, state: {} })
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: {} })
 
     let cancelled = false
     setTutorialStartupError(null)
@@ -330,12 +331,16 @@ function AppLayoutShell() {
     return () => {
       cancelled = true
     }
-  }, [location.pathname, location.state, navigate, prepareDemoForTutorialHub, resetFirstLaunchTutorial])
+  }, [location.pathname, location.search, location.state, navigate, prepareDemoForTutorialHub, resetFirstLaunchTutorial])
 
   return (
     <SidebarProvider>
       <MenuSidebarBridge />
-      <GlobalSearchShortcutBridge onOpen={openSearch} />
+      <GlobalShortcutBridge
+        searchOpen={searchOpen}
+        onToggleSearch={toggleSearch}
+        onOpenShortcuts={openShortcuts}
+      />
       <ApfDesktopOpenBridge />
       <ApfMenuEventBridge />
       <AppSidebar />
@@ -343,9 +348,15 @@ function AppLayoutShell() {
         <TopBar
           onOpenTutorial={handleOpenTutorialFromHelp}
           onOpenSearch={openSearch}
+          onOpenShortcuts={openShortcuts}
         />
         <ServerCollabBanner />
+        <SectionTabs />
         <main className="flex-1 overflow-auto p-4">
+          <DemoProductionBanner
+            isDemo={isDemoProductionCurrent}
+            currentProduction={currentProduction}
+          />
           <Outlet />
         </main>
       </SidebarInset>
@@ -354,7 +365,9 @@ function AppLayoutShell() {
         open={searchOpen}
         onOpenChange={setSearchOpen}
         productionId={currentProduction?.id ?? null}
+        onOpenShortcuts={openShortcuts}
       />
+      <ShortcutCheatSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <TutorialEntryModal
         open={tutorialEntryOpen}
         isPreparing={isPreparingTutorial}
@@ -394,14 +407,6 @@ function AppLayoutShell() {
           }
         }}
       />
-      {completionToast && (
-        <div
-          role="status"
-          className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground shadow-lg"
-        >
-          {completionToast}
-        </div>
-      )}
     </SidebarProvider>
   )
 }
@@ -414,36 +419,6 @@ function MenuSidebarBridge() {
     window.addEventListener('albatross-menu-view-toggle-sidebar', onToggleSidebar)
     return () => window.removeEventListener('albatross-menu-view-toggle-sidebar', onToggleSidebar)
   }, [toggleSidebar])
-
-  return null
-}
-
-/**
- * Opens Spotlight Search on Cmd+Option+Space (mac) / Ctrl+Alt+Space
- * (Windows/Linux). Suppressed while any dialog or sheet ("card") is open so it
- * never interrupts form data entry. Kept as a JS window listener rather than a
- * native Tauri accelerator to avoid the OS window-menu conflict with Alt+Space.
- */
-function GlobalSearchShortcutBridge({ onOpen }: { onOpen: () => void }) {
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== 'Space' || !event.altKey) return
-      const comboPressed =
-        (event.metaKey || event.ctrlKey) && event.altKey
-      if (!comboPressed) return
-
-      // Suppress while a dialog/sheet ("card") is open to avoid interrupting forms.
-      const overlayOpen = document.querySelector(
-        '[data-slot="dialog-content"][data-state="open"], [data-slot="sheet-content"][data-state="open"]'
-      )
-      if (overlayOpen) return
-
-      event.preventDefault()
-      onOpen()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onOpen])
 
   return null
 }

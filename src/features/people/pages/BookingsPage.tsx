@@ -1,3 +1,5 @@
+import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState, useEffect, type SetStateAction } from 'react'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -465,10 +467,7 @@ export function BookingsPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Bookings</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Bookings">{null}</RequireProduction>
     )
   }
 
@@ -479,146 +478,148 @@ export function BookingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-foreground">Bookings</h1>
-        <div className="flex items-center gap-2">
-          <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)}>
-            <TabsList className="border border-border bg-muted/30">
-              <TabsTrigger value="calendar" className="gap-2 data-[state=active]:bg-mint-600 data-[state=active]:text-white data-[state=active]:border-transparent">
-                <Calendar className="size-4" />
-                Calendar
-              </TabsTrigger>
-              <TabsTrigger value="list" className="gap-2 data-[state=active]:bg-mint-600 data-[state=active]:text-white data-[state=active]:border-transparent">
-                <List className="size-4" />
-                List
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Button
-            variant="outline"
-            size="icon"
-            className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
-            onClick={() => setColorSettingsOpen(true)}
-            aria-label="Calendar color settings"
-            title="Calendar colors"
-          >
-            <Settings className="size-4" />
-          </Button>
-          <Button
-            className="bg-mint-600 text-white hover:bg-mint-700 focus-visible:ring-mint-500/50"
-            onClick={() => {
-              setEditingBooking(null)
-              setPersonId('')
-              setShootDayId('')
-              setRole('')
-              setNotes('')
-              setOpen(true)
-            }}
-          >
-            <Plus className="mr-2 size-4" />
-            Add booking
-          </Button>
-          <Dialog
-            open={open}
-            onOpenChange={(o) => {
-              setOpen(o)
-              if (!o) {
+      <PageHeader
+        title="Bookings"
+        actions={
+          <>
+            <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)}>
+              <TabsList className="border border-border bg-muted/30">
+                <TabsTrigger value="calendar" className="gap-2 data-[state=active]:bg-mint-600 data-[state=active]:text-white data-[state=active]:border-transparent">
+                  <Calendar className="size-4" />
+                  Calendar
+                </TabsTrigger>
+                <TabsTrigger value="list" className="gap-2 data-[state=active]:bg-mint-600 data-[state=active]:text-white data-[state=active]:border-transparent">
+                  <List className="size-4" />
+                  List
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Button
+              variant="outline"
+              size="icon"
+              className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
+              onClick={() => setColorSettingsOpen(true)}
+              aria-label="Calendar color settings"
+              title="Calendar colors"
+            >
+              <Settings className="size-4" />
+            </Button>
+            <Button
+              className="bg-mint-600 text-white hover:bg-mint-700 focus-visible:ring-mint-500/50"
+              onClick={() => {
                 setEditingBooking(null)
                 setPersonId('')
                 setShootDayId('')
                 setRole('')
                 setNotes('')
-              }
-            }}
-          >
-            <DialogContent className="rounded-lg border-border sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle className="text-lg">
-                  {editingBooking ? 'Edit booking' : 'Assign person to shoot day'}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-2">
-                <div className="space-y-2">
-                  <Label className="text-foreground">Person</Label>
-                  <Select value={personId} onValueChange={setPersonId}>
-                    <SelectTrigger className="w-full focus-visible:ring-mint-500/50 focus-visible:border-mint-500">
-                      <SelectValue placeholder="Select person..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {people.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {formatPersonBookingLabel(p)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                setOpen(true)
+              }}
+            >
+              <Plus className="mr-2 size-4" />
+              Add booking
+            </Button>
+            <Dialog
+              open={open}
+              onOpenChange={(o) => {
+                setOpen(o)
+                if (!o) {
+                  setEditingBooking(null)
+                  setPersonId('')
+                  setShootDayId('')
+                  setRole('')
+                  setNotes('')
+                }
+              }}
+            >
+              <DialogContent className="rounded-lg sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="text-lg">
+                    {editingBooking ? 'Edit booking' : 'Assign person to shoot day'}
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-2">
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Person</Label>
+                    <Select value={personId} onValueChange={setPersonId}>
+                      <SelectTrigger className="w-full focus-visible:ring-mint-500/50 focus-visible:border-mint-500">
+                        <SelectValue placeholder="Select person..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {people.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {formatPersonBookingLabel(p)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Shoot day</Label>
+                    <Select value={shootDayId} onValueChange={setShootDayId}>
+                      <SelectTrigger className="w-full focus-visible:ring-mint-500/50 focus-visible:border-mint-500">
+                        <SelectValue placeholder="Select shoot day..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {shootDays.map((d) => (
+                          <SelectItem key={d.id} value={d.id}>
+                            {d.shoot_date}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Role (optional)</Label>
+                    <Input
+                      value={role}
+                      onChange={(e) => setRole(e.target.value)}
+                      placeholder="e.g. Lead"
+                      className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Notes (optional)</Label>
+                    <Input
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="Notes"
+                      className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-foreground">Shoot day</Label>
-                  <Select value={shootDayId} onValueChange={setShootDayId}>
-                    <SelectTrigger className="w-full focus-visible:ring-mint-500/50 focus-visible:border-mint-500">
-                      <SelectValue placeholder="Select shoot day..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {shootDays.map((d) => (
-                        <SelectItem key={d.id} value={d.id}>
-                          {d.shoot_date}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">Role (optional)</Label>
-                  <Input
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    placeholder="e.g. Lead"
-                    className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">Notes (optional)</Label>
-                  <Input
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Notes"
-                    className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
-                  />
-                </div>
-              </div>
-              <DialogFooter className="gap-2 border-t border-border pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setOpen(false)
-                    setEditingBooking(null)
-                  }}
-                >
-                  Cancel
-                </Button>
-                {editingBooking ? (
+                <DialogFooter className="gap-2 border-t border-border pt-4">
                   <Button
-                    className="bg-mint-600 text-white hover:bg-mint-700 focus-visible:ring-mint-500/50"
-                    onClick={() => updateMutation.mutate()}
-                    disabled={!personId || updateMutation.isPending}
+                    variant="outline"
+                    onClick={() => {
+                      setOpen(false)
+                      setEditingBooking(null)
+                    }}
                   >
-                    Save changes
+                    Cancel
                   </Button>
-                ) : (
-                  <Button
-                    className="bg-mint-600 text-white hover:bg-mint-700 focus-visible:ring-mint-500/50"
-                    onClick={() => createMutation.mutate()}
-                    disabled={!personId || createMutation.isPending}
-                  >
-                    Add booking
-                  </Button>
-                )}
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
+                  {editingBooking ? (
+                    <Button
+                      className="bg-mint-600 text-white hover:bg-mint-700 focus-visible:ring-mint-500/50"
+                      onClick={() => updateMutation.mutate()}
+                      disabled={!personId || updateMutation.isPending}
+                    >
+                      Save changes
+                    </Button>
+                  ) : (
+                    <Button
+                      className="bg-mint-600 text-white hover:bg-mint-700 focus-visible:ring-mint-500/50"
+                      onClick={() => createMutation.mutate()}
+                      disabled={!personId || createMutation.isPending}
+                    >
+                      Add booking
+                    </Button>
+                  )}
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </>
+        }
+      />
 
       {bookingIntelligence && hasIntelligenceWarnings && (
         <Card className="rounded-lg border-amber-500/30 bg-amber-500/5 dark:border-amber-600/40 dark:bg-amber-950/30">

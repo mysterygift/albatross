@@ -1,3 +1,7 @@
+import { RequireProduction } from '@/components/require-production'
+import { EmptyState } from '@/components/empty-state'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/page-header'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -511,19 +515,21 @@ export function ScriptSectionsPage() {
   return (
     <>
       {!currentProductionId ? (
-        <div>
-          <h1 className="text-2xl font-semibold">Schedule — Script sections</h1>
-          <p className="text-muted-foreground">Select a production first.</p>
-        </div>
+        <RequireProduction title="Script Sections">{null}</RequireProduction>
       ) : (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Schedule — Script sections</h1>
+      <PageHeader title="Script Sections" />
 
       {isRemoteProduction && <SbRemoteNotice />}
 
-      {(versionsLoading || versionsError) && (
+      {versionsLoading && (
+        <div role="status" aria-label="Loading script versions" className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+        </div>
+      )}
+      {versionsError && !versionsLoading && (
         <p role="alert" className="text-sm text-muted-foreground">
-          {versionsLoading ? 'Loading script versions…' : 'Unable to load script versions.'}
+          Unable to load script versions.
         </p>
       )}
 
@@ -612,19 +618,21 @@ export function ScriptSectionsPage() {
       )}
 
       {versions.length === 0 && !versionsLoading && (
-        <p className="text-sm text-muted-foreground">
-          {isRemoteProduction ? (
-            'Script sections are not available for remote-server productions.'
-          ) : (
-            <>
-              No script versions yet.{' '}
-              <Link to="/schedule/script-import" className="underline underline-offset-2">
-                Import a script
-              </Link>{' '}
-              to generate sections.
-            </>
-          )}
-        </p>
+        isRemoteProduction ? (
+          <p className="text-sm text-muted-foreground">
+            Script sections are not available for remote-server productions.
+          </p>
+        ) : (
+          <EmptyState
+            title="No script versions yet"
+            description="Import a script to generate sections."
+            action={
+              <Button asChild>
+                <Link to="/schedule/script-import">Import a script</Link>
+              </Button>
+            }
+          />
+        )
       )}
 
       {selectedVersionId && (

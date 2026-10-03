@@ -1,3 +1,5 @@
+import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -79,6 +81,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Plus, Trash2, Pencil, ListTree, Search, X, ChevronDown, FolderInput, LayoutList, FileStack, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -367,10 +370,7 @@ export function ReadinessPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Tasks</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Tasks">{null}</RequireProduction>
     )
   }
 
@@ -391,53 +391,53 @@ export function ReadinessPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-          <p className="text-muted-foreground text-sm">Production tasks and deadlines</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="font-medium tabular-nums">
-            {score}% complete
-          </Badge>
-          <ManageSectionsSheet
-            productionId={currentProductionId}
-            sections={sections}
-            filteredTasks={filteredTasks}
-            onCreateSection={(data) => createSectionMutation.mutate(data)}
-            onUpdateSection={(id, patch) => updateSectionMutation.mutate({ id, patch })}
-            onDeleteSection={(id) => deleteSectionMutation.mutate(id)}
-            isCreatePending={createSectionMutation.isPending}
-            isUpdatePending={updateSectionMutation.isPending}
-            isDeletePending={deleteSectionMutation.isPending}
-            open={sectionsOpen}
-            onOpenChange={setSectionsOpen}
-          />
-          <Button variant="outline" size="sm" onClick={() => setTemplatesOpen(true)} className="gap-1.5">
-            <FileStack className="size-4" />
-            Templates
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setApplyTemplateOpen(true)} className="gap-1.5">
-            <Play className="size-4" />
-            Apply Template
-          </Button>
-          <NewTaskDialog
-            productionId={currentProductionId}
-            parentTaskId={addSubtaskParent?.id ?? null}
-            sections={sections}
-            open={createOpen || !!addSubtaskParent}
-            onOpenChange={(open) => {
-              setCreateOpen(open)
-              if (!open) setAddSubtaskParent(null)
-            }}
-            onSubmit={(data) => {
-              createMutation.mutate(data)
-              setAddSubtaskParent(null)
-            }}
-            isPending={createMutation.isPending}
-          />
-        </div>
-      </div>
+      <PageHeader
+        title="Tasks"
+        description="Production tasks and deadlines"
+        actions={
+          <>
+            <Badge variant="secondary" className="font-medium tabular-nums">
+              {score}% complete
+            </Badge>
+            <ManageSectionsSheet
+              productionId={currentProductionId}
+              sections={sections}
+              filteredTasks={filteredTasks}
+              onCreateSection={(data) => createSectionMutation.mutate(data)}
+              onUpdateSection={(id, patch) => updateSectionMutation.mutate({ id, patch })}
+              onDeleteSection={(id) => deleteSectionMutation.mutate(id)}
+              isCreatePending={createSectionMutation.isPending}
+              isUpdatePending={updateSectionMutation.isPending}
+              isDeletePending={deleteSectionMutation.isPending}
+              open={sectionsOpen}
+              onOpenChange={setSectionsOpen}
+            />
+            <Button variant="outline" size="sm" onClick={() => setTemplatesOpen(true)} className="gap-1.5">
+              <FileStack className="size-4" />
+              Templates
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setApplyTemplateOpen(true)} className="gap-1.5">
+              <Play className="size-4" />
+              Apply Template
+            </Button>
+            <NewTaskDialog
+              productionId={currentProductionId}
+              parentTaskId={addSubtaskParent?.id ?? null}
+              sections={sections}
+              open={createOpen || !!addSubtaskParent}
+              onOpenChange={(open) => {
+                setCreateOpen(open)
+                if (!open) setAddSubtaskParent(null)
+              }}
+              onSubmit={(data) => {
+                createMutation.mutate(data)
+                setAddSubtaskParent(null)
+              }}
+              isPending={createMutation.isPending}
+            />
+          </>
+        }
+      />
 
       <div className="flex flex-wrap gap-4 items-end">
         <div className="flex-1 sm:max-w-[240px]">
@@ -877,6 +877,7 @@ function ManageSectionsSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [newSectionName, setNewSectionName] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
@@ -910,10 +911,16 @@ function ManageSectionsSheet({
     setEditingName('')
   }
 
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = async (id: string, name: string) => {
     const count = taskCountBySection.get(id) ?? 0
-    if (count > 0 && !window.confirm(`Delete "${name}"? ${count} task${count !== 1 ? 's' : ''} will be moved to Unsectioned.`)) return
-    if (count === 0 && !window.confirm(`Delete "${name}"?`)) return
+    const ok = await confirm({
+      title: `Delete "${name}"?`,
+      description:
+        count > 0 ? `${count} task${count !== 1 ? 's' : ''} will be moved to Unsectioned.` : undefined,
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
     onDeleteSection(id)
   }
 
@@ -999,6 +1006,7 @@ function ManageSectionsSheet({
           )}
         </div>
       </SheetContent>
+      {confirmDialog}
     </Sheet>
   )
 }

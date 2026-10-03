@@ -142,7 +142,7 @@ export function CrewSetupWizard({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-lg border-zinc-700 bg-zinc-900 text-foreground shadow-xl">
+      <DialogContent className="max-w-lg shadow-xl">
         {step === 'intro' && (
           <>
             <DialogHeader>
@@ -154,7 +154,7 @@ export function CrewSetupWizard({
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2 sm:gap-0">
-              <Button variant="outline" onClick={handleSkip} className="border-zinc-600">
+              <Button variant="outline" onClick={handleSkip} className="border-border">
                 Skip for now
               </Button>
               <Button
@@ -187,14 +187,14 @@ export function CrewSetupWizard({
                 return (
                   <div
                     key={dept}
-                    className="rounded-lg border border-zinc-700 bg-zinc-800/80 p-3 space-y-3"
+                    className="rounded-lg border border-border bg-muted/80 p-3 space-y-3"
                   >
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleDepartment(dept)}
-                        className="rounded border-zinc-600 bg-zinc-800 text-primary focus:ring-primary/50"
+                        className="rounded border-border bg-muted text-primary focus:ring-primary/50"
                       />
                       <span className="font-medium text-sm text-foreground">{dept}</span>
                       <span className="text-muted-foreground text-xs">({hodRole})</span>
@@ -207,7 +207,7 @@ export function CrewSetupWizard({
                             value={row.name}
                             onChange={(e) => updateHodRow(dept, 'name', e.target.value)}
                             placeholder="Full name"
-                            className="mt-1 bg-zinc-800 border-zinc-600 text-foreground placeholder:text-muted-foreground"
+                            className="mt-1 bg-muted border-border text-foreground placeholder:text-muted-foreground"
                           />
                         </div>
                         <div>
@@ -216,7 +216,7 @@ export function CrewSetupWizard({
                             value={row.role}
                             onChange={(e) => updateHodRow(dept, 'role', e.target.value)}
                             placeholder={hodRole}
-                            className="mt-1 bg-zinc-800 border-zinc-600 text-foreground"
+                            className="mt-1 bg-muted border-border text-foreground"
                           />
                         </div>
                         <div>
@@ -226,7 +226,7 @@ export function CrewSetupWizard({
                             value={row.email}
                             onChange={(e) => updateHodRow(dept, 'email', e.target.value)}
                             placeholder="email@example.com"
-                            className="mt-1 bg-zinc-800 border-zinc-600 text-foreground"
+                            className="mt-1 bg-muted border-border text-foreground"
                           />
                         </div>
                         <div className="sm:col-span-2">
@@ -235,7 +235,7 @@ export function CrewSetupWizard({
                             value={row.phone}
                             onChange={(e) => updateHodRow(dept, 'phone', e.target.value)}
                             placeholder="Phone"
-                            className="mt-1 bg-zinc-800 border-zinc-600 text-foreground"
+                            className="mt-1 bg-muted border-border text-foreground"
                           />
                         </div>
                       </div>
@@ -249,14 +249,14 @@ export function CrewSetupWizard({
               <Button
                 variant="outline"
                 onClick={handleSkip}
-                className="border-zinc-600"
+                className="border-border"
               >
                 Skip for now
               </Button>
               <Button
                 variant="outline"
                 onClick={() => setStep('intro')}
-                className="border-zinc-600"
+                className="border-border"
               >
                 Back
               </Button>

@@ -113,7 +113,7 @@ export function TutorialHome({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl border-zinc-700 bg-zinc-900 text-foreground shadow-2xl">
+      <DialogContent className="max-w-3xl shadow-2xl">
         <div className="relative">
           <DialogHeader className="space-y-2">
             <DialogTitle className="text-xl font-semibold">
@@ -174,7 +174,7 @@ export function TutorialHome({
 
           {isPreparingDemo && (
             <div
-              className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-zinc-950/80 text-sm text-foreground"
+              className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-background/80 text-sm text-foreground"
               aria-live="polite"
               aria-busy="true"
             >
@@ -201,9 +201,9 @@ export function TutorialHome({
           )}
 
           {allComplete && (
-            <div className="rounded-md border border-zinc-700 bg-zinc-800/50 p-3">
+            <div className="rounded-md border border-border bg-muted/50 p-3">
               <div className="flex items-start gap-3">
-                <span className="inline-flex size-8 items-center justify-center rounded-full bg-zinc-900 text-mint-300">
+                <span className="inline-flex size-8 items-center justify-center rounded-full bg-card text-mint-300">
                   <CheckCircle2 className="size-4" />
                 </span>
                 <div className="min-w-0">
@@ -244,10 +244,10 @@ export function TutorialHome({
                   type="button"
                   disabled={sectionInteractDisabled}
                   onClick={() => void handleSectionClick(section.id)}
-                  className="flex w-full flex-col items-stretch gap-3 rounded-md border border-zinc-700 bg-zinc-800/70 p-4 text-left transition-colors hover:border-mint-500/80 hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-50"
+                  className="flex w-full flex-col items-stretch gap-3 rounded-md border border-border bg-muted/70 p-4 text-left transition-colors hover:border-mint-500/80 hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
                 >
                   <div className="flex items-start gap-3">
-                    <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-mint-400">
+                    <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-card text-mint-400">
                       <Icon className="size-4" />
                     </span>
                     <div className="min-w-0 flex-1 space-y-2">
@@ -277,7 +277,7 @@ export function TutorialHome({
           </div>
 
           <div className="mt-6 flex justify-end">
-            <Button variant="outline" size="sm" onClick={handleContinueLater} className="text-xs border-zinc-600">
+            <Button variant="outline" size="sm" onClick={handleContinueLater} className="text-xs border-border">
               Continue later
             </Button>
           </div>

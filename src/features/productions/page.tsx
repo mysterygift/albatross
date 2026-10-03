@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { PageHeader } from '@/components/page-header'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listProductions,
@@ -41,6 +43,7 @@ import {
   type ColumnDef,
 } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/components/ui/sonner'
 import {
   Table,
   TableBody,
@@ -453,12 +456,18 @@ export function ProductionsPage() {
   const authSession = useAuthSession()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setOpen(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
   const [productionToHardDelete, setProductionToHardDelete] = useState<Production | null>(null)
   const [duplicateSource, setDuplicateSource] = useState<Production | null>(null)
   const [duplicateName, setDuplicateName] = useState('')
   const [duplicateSuccessResult, setDuplicateSuccessResult] = useState<{ name: string; slug: string } | null>(null)
   const [duplicateError, setDuplicateError] = useState<string | null>(null)
-  const [actionToast, setActionToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [verifyDeleteResult, setVerifyDeleteResult] = useState<string | null>(null)
   const [verifyDeletePending, setVerifyDeletePending] = useState(false)
   const [demoOverrideTarget, setDemoOverrideTarget] = useState<{
@@ -479,8 +488,7 @@ export function ProductionsPage() {
     useCurrentProduction()
   const { apfBusy, handleImportApf, handleExportApf } = useApfActions({
     onMessage: (msg) => {
-      setActionToast({ type: msg.type, message: msg.message })
-      setTimeout(() => setActionToast(null), msg.timeoutMs)
+      toast[msg.type](msg.message, { duration: msg.timeoutMs })
     },
   })
   const featureServer = useLegacyServerPublishEnabled()
@@ -590,19 +598,11 @@ export function ProductionsPage() {
   useEffect(() => {
     const onPublishMenu = () => {
       if (featureServer.data !== true) {
-        setActionToast({
-          type: 'error',
-          message: 'Legacy server publishing is not enabled.',
-        })
-        setTimeout(() => setActionToast(null), 5000)
+        toast.error('Legacy server publishing is not enabled.')
         return
       }
       if (!currentProduction) {
-        setActionToast({
-          type: 'error',
-          message: 'Choose a current production from the app header before publishing.',
-        })
-        setTimeout(() => setActionToast(null), 5000)
+        toast.error('Choose a current production from the app header before publishing.')
         return
       }
       void publishActions.beginPublish(currentProduction.id, currentProduction.name)
@@ -674,12 +674,10 @@ export function ProductionsPage() {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
       setProductionToHardDelete(null)
-      setActionToast({ type: 'success', message: 'Production permanently deleted.' })
-      setTimeout(() => setActionToast(null), 4000)
+      toast.success('Production permanently deleted.')
     },
     onError: (err) => {
-      setActionToast({ type: 'error', message: err instanceof Error ? err.message : 'Delete failed' })
-      setTimeout(() => setActionToast(null), 5000)
+      toast.error(err instanceof Error ? err.message : 'Delete failed')
     },
   })
 
@@ -696,12 +694,10 @@ export function ProductionsPage() {
       if (currentProductionId === id) setCurrentProductionId(null)
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
-      setActionToast({ type: 'success', message: 'Project archived.' })
-      setTimeout(() => setActionToast(null), 4000)
+      toast.success('Project archived.')
     },
     onError: (err) => {
-      setActionToast({ type: 'error', message: err instanceof Error ? err.message : 'Archive failed' })
-      setTimeout(() => setActionToast(null), 5000)
+      toast.error(err instanceof Error ? err.message : 'Archive failed')
     },
   })
 
@@ -717,12 +713,10 @@ export function ProductionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
-      setActionToast({ type: 'success', message: 'Project restored.' })
-      setTimeout(() => setActionToast(null), 4000)
+      toast.success('Project restored.')
     },
     onError: (err) => {
-      setActionToast({ type: 'error', message: err instanceof Error ? err.message : 'Unarchive failed' })
-      setTimeout(() => setActionToast(null), 5000)
+      toast.error(err instanceof Error ? err.message : 'Unarchive failed')
     },
   })
 
@@ -934,174 +928,176 @@ export function ProductionsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Productions</h1>
-        <div className="flex min-w-0 flex-none items-center justify-end gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={apfBusy !== null}
-            onClick={() => void handleImportApf()}
-            title="Import a project from an .apf file"
-            aria-label="Import project"
-          >
-            {apfBusy === 'import' ? (
-              <Loader2 className="mr-2 size-4 shrink-0 animate-spin" aria-hidden />
-            ) : (
-              <Upload className="mr-2 size-4 shrink-0" aria-hidden />
-            )}
-            <span className="max-[640px]:sr-only">Import project</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!currentProduction || apfBusy !== null}
-            onClick={() => void handleExportApf()}
-            title={
-              currentProduction
-                ? 'Export current production as .apf'
-                : 'Choose a current production from the app header to export'
-            }
-            aria-label="Export project"
-          >
-            {apfBusy === 'export' ? (
-              <Loader2 className="mr-2 size-4 shrink-0 animate-spin" aria-hidden />
-            ) : (
-              <Download className="mr-2 size-4 shrink-0" aria-hidden />
-            )}
-            <span className="max-[640px]:sr-only">Export project</span>
-          </Button>
-          {featureServer.data === true && (
+      <PageHeader
+        title="Productions"
+        actions={
+          <>
             <Button
               variant="outline"
               size="sm"
-              disabled={!currentProduction || apfBusy !== null || !!currentProduction?.archived_at}
-              onClick={() =>
-                currentProduction &&
-                void publishActions.beginPublish(currentProduction.id, currentProduction.name)
-              }
-              title="Publish current production to collaboration server"
+              disabled={apfBusy !== null}
+              onClick={() => void handleImportApf()}
+              title="Import a project from an .apf file"
+              aria-label="Import project"
             >
-              <Cloud className="mr-2 size-4 shrink-0" aria-hidden />
-              <span className="max-[640px]:sr-only">Publish to Server</span>
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={toggleShowArchived}
-            title={showArchived ? 'Hide archived projects' : 'Show archived projects'}
-            aria-label={showArchived ? 'Hide archived projects' : 'Show archived projects'}
-            className={`flex max-w-[260px] flex-none items-center overflow-hidden transition-colors duration-200 ease-out focus-visible:ring-mint-500 ${showArchived ? 'border-mint-500/40 bg-mint-500/5 pr-2 text-mint-700 hover:bg-mint-500/15 hover:text-foreground dark:text-mint-400 dark:hover:bg-mint-500/20 dark:hover:text-foreground' : ''}`}
-          >
-            <PackageOpen className="size-4 shrink-0" />
-            <span
-              className={`inline-block shrink-0 whitespace-nowrap overflow-hidden transition-all duration-200 ease-out max-[900px]:!max-w-0 max-[900px]:!opacity-0 max-[900px]:!ml-0 ${showArchived ? 'max-w-[220px] opacity-100 ml-2' : 'max-w-0 opacity-0 ml-0'}`}
-            >
-              Hide archived projects
-            </span>
-          </Button>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button className="flex-none shrink-0">
-                <Plus className="mr-2 size-4" />
-                New production
-              </Button>
-            </DialogTrigger>
-          <DialogContent className={PRODUCTION_DIALOG_CONTENT_CLASS}>
-            <ProductionFormDialog
-              onSubmit={async (data) => {
-                if (data.template !== 'demo') {
-                  createMutation.mutate(data)
-                  return
-                }
-                const existing = await findExistingDemoTemplateProduction()
-                if (!existing) {
-                  createMutation.mutate(data)
-                  return
-                }
-                setDemoOverrideError(null)
-                setDemoOverrideTarget({ production: existing, formData: data })
-              }}
-              onCancel={() => setOpen(false)}
-              isLoading={createMutation.isPending}
-              error={createMutation.isError ? (createMutation.error instanceof Error ? createMutation.error.message : 'Something went wrong') : null}
-              onDismissError={() => createMutation.reset()}
-            />
-          </DialogContent>
-          </Dialog>
-
-          <Dialog
-            open={demoOverrideTarget !== null}
-            onOpenChange={(open) => {
-              if (!open) {
-                setDemoOverrideTarget(null)
-                setDemoOverrideError(null)
-              }
-            }}
-          >
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Creating a new project will override the existing demo project.</DialogTitle>
-                <p className="text-muted-foreground text-sm leading-snug">
-                  The current demo project will be permanently deleted. A new demo project will then be created with the name and description you entered.
-                </p>
-              </DialogHeader>
-              {demoOverrideError && (
-                <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-destructive text-sm">
-                  {demoOverrideError}
-                </div>
+              {apfBusy === 'import' ? (
+                <Loader2 className="mr-2 size-4 shrink-0 animate-spin" aria-hidden />
+              ) : (
+                <Upload className="mr-2 size-4 shrink-0" aria-hidden />
               )}
-              <DialogFooter className="gap-2 sm:gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setDemoOverrideTarget(null)
-                    setDemoOverrideError(null)
-                  }}
-                  disabled={overrideDeletePending}
-                >
-                  Cancel
+              <span className="max-[640px]:sr-only">Import project</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!currentProduction || apfBusy !== null}
+              onClick={() => void handleExportApf()}
+              title={
+                currentProduction
+                  ? 'Export current production as .apf'
+                  : 'Choose a current production from the app header to export'
+              }
+              aria-label="Export project"
+            >
+              {apfBusy === 'export' ? (
+                <Loader2 className="mr-2 size-4 shrink-0 animate-spin" aria-hidden />
+              ) : (
+                <Download className="mr-2 size-4 shrink-0" aria-hidden />
+              )}
+              <span className="max-[640px]:sr-only">Export project</span>
+            </Button>
+            {featureServer.data === true && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!currentProduction || apfBusy !== null || !!currentProduction?.archived_at}
+                onClick={() =>
+                  currentProduction &&
+                  void publishActions.beginPublish(currentProduction.id, currentProduction.name)
+                }
+                title="Publish current production to collaboration server"
+              >
+                <Cloud className="mr-2 size-4 shrink-0" aria-hidden />
+                <span className="max-[640px]:sr-only">Publish to Server</span>
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleShowArchived}
+              title={showArchived ? 'Hide archived projects' : 'Show archived projects'}
+              aria-label={showArchived ? 'Hide archived projects' : 'Show archived projects'}
+              className={`flex max-w-[260px] flex-none items-center overflow-hidden transition-colors duration-200 ease-out focus-visible:ring-mint-500 ${showArchived ? 'border-mint-500/40 bg-mint-500/5 pr-2 text-mint-700 hover:bg-mint-500/15 hover:text-foreground dark:text-mint-400 dark:hover:bg-mint-500/20 dark:hover:text-foreground' : ''}`}
+            >
+              <PackageOpen className="size-4 shrink-0" />
+              <span
+                className={`inline-block shrink-0 whitespace-nowrap overflow-hidden transition-all duration-200 ease-out max-[900px]:!max-w-0 max-[900px]:!opacity-0 max-[900px]:!ml-0 ${showArchived ? 'max-w-[220px] opacity-100 ml-2' : 'max-w-0 opacity-0 ml-0'}`}
+              >
+                Hide archived projects
+              </span>
+            </Button>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button className="flex-none shrink-0">
+                  <Plus className="mr-2 size-4" />
+                  New production
                 </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={overrideDeletePending || createMutation.isPending}
-                  onClick={async () => {
-                    if (!demoOverrideTarget) return
-                    setDemoOverrideError(null)
-                    setOverrideDeletePending(true)
-                    try {
-                      if (authSession.authSupported && authSession.currentUser) {
-                        const db = await getDb()
-                        await permanentlyDeleteProductionForActor(
-                          db,
-                          authSession.currentUser,
-                          demoOverrideTarget.production.id
-                        )
-                      } else {
-                        await permanentlyDeleteProduction(demoOverrideTarget.production.id)
-                      }
-                      if (currentProductionId === demoOverrideTarget.production.id) {
-                        setCurrentProductionId(null)
-                      }
-                      setDemoOverrideTarget(null)
-                      createMutation.mutate(demoOverrideTarget.formData)
-                    } catch (err) {
-                      setDemoOverrideError(err instanceof Error ? err.message : 'Delete failed')
-                    } finally {
-                      setOverrideDeletePending(false)
-                    }
-                  }}
-                >
-                  {overrideDeletePending || createMutation.isPending ? 'Overriding…' : 'Override demo project'}
-                </Button>
-              </DialogFooter>
+              </DialogTrigger>
+            <DialogContent className={PRODUCTION_DIALOG_CONTENT_CLASS}>
+              <ProductionFormDialog
+                onSubmit={async (data) => {
+                  if (data.template !== 'demo') {
+                    createMutation.mutate(data)
+                    return
+                  }
+                  const existing = await findExistingDemoTemplateProduction()
+                  if (!existing) {
+                    createMutation.mutate(data)
+                    return
+                  }
+                  setDemoOverrideError(null)
+                  setDemoOverrideTarget({ production: existing, formData: data })
+                }}
+                onCancel={() => setOpen(false)}
+                isLoading={createMutation.isPending}
+                error={createMutation.isError ? (createMutation.error instanceof Error ? createMutation.error.message : 'Something went wrong') : null}
+                onDismissError={() => createMutation.reset()}
+              />
             </DialogContent>
-          </Dialog>
-        </div>
-      </div>
+            </Dialog>
+
+            <Dialog
+              open={demoOverrideTarget !== null}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setDemoOverrideTarget(null)
+                  setDemoOverrideError(null)
+                }
+              }}
+            >
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Creating a new project will override the existing demo project.</DialogTitle>
+                  <p className="text-muted-foreground text-sm leading-snug">
+                    The current demo project will be permanently deleted. A new demo project will then be created with the name and description you entered.
+                  </p>
+                </DialogHeader>
+                {demoOverrideError && (
+                  <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-destructive text-sm">
+                    {demoOverrideError}
+                  </div>
+                )}
+                <DialogFooter className="gap-2 sm:gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setDemoOverrideTarget(null)
+                      setDemoOverrideError(null)
+                    }}
+                    disabled={overrideDeletePending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={overrideDeletePending || createMutation.isPending}
+                    onClick={async () => {
+                      if (!demoOverrideTarget) return
+                      setDemoOverrideError(null)
+                      setOverrideDeletePending(true)
+                      try {
+                        if (authSession.authSupported && authSession.currentUser) {
+                          const db = await getDb()
+                          await permanentlyDeleteProductionForActor(
+                            db,
+                            authSession.currentUser,
+                            demoOverrideTarget.production.id
+                          )
+                        } else {
+                          await permanentlyDeleteProduction(demoOverrideTarget.production.id)
+                        }
+                        if (currentProductionId === demoOverrideTarget.production.id) {
+                          setCurrentProductionId(null)
+                        }
+                        setDemoOverrideTarget(null)
+                        createMutation.mutate(demoOverrideTarget.formData)
+                      } catch (err) {
+                        setDemoOverrideError(err instanceof Error ? err.message : 'Delete failed')
+                      } finally {
+                        setOverrideDeletePending(false)
+                      }
+                    }}
+                  >
+                    {overrideDeletePending || createMutation.isPending ? 'Overriding…' : 'Override demo project'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </>
+        }
+      />
 
       {duplicateSuccessResult && (
         <p className="rounded-lg border border-mint-500/30 bg-mint-500/10 px-4 py-3 text-mint-700 dark:text-mint-400 text-sm">
@@ -1111,17 +1107,6 @@ export function ProductionsPage() {
       {duplicateError && (
         <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-400 text-sm">
           {duplicateError}
-        </p>
-      )}
-      {actionToast && (
-        <p
-          className={
-            actionToast.type === 'success'
-              ? 'rounded-lg border border-mint-500/30 bg-mint-500/10 px-4 py-3 text-mint-700 dark:text-mint-400 text-sm'
-              : 'rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-400 text-sm'
-          }
-        >
-          {actionToast.message}
         </p>
       )}
 
@@ -1314,14 +1299,9 @@ export function ProductionsPage() {
                   setUnlinkTarget(null)
                   await queryClient.invalidateQueries({ queryKey: ['linked-projects-map'] })
                   await queryClient.invalidateQueries({ queryKey: ['productions'] })
-                  setActionToast({ type: 'success', message: 'Unlinked from server.' })
-                  setTimeout(() => setActionToast(null), 4000)
+                  toast.success('Unlinked from server.')
                 } catch (e) {
-                  setActionToast({
-                    type: 'error',
-                    message: e instanceof Error ? e.message : 'Unlink failed',
-                  })
-                  setTimeout(() => setActionToast(null), 5000)
+                  toast.error(e instanceof Error ? e.message : 'Unlink failed')
                 } finally {
                   setUnlinkBusy(false)
                 }

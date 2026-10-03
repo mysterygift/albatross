@@ -1,3 +1,5 @@
+import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -462,10 +464,7 @@ export function EquipmentPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Equipment</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Equipment">{null}</RequireProduction>
     )
   }
 
@@ -479,7 +478,7 @@ export function EquipmentPage() {
         }}
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-semibold">Equipment</h1>
+          <PageHeader title="Equipment" />
           <TabsList>
             <TabsTrigger value="registry">Registry</TabsTrigger>
             <TabsTrigger value="lists">Equipment Lists</TabsTrigger>

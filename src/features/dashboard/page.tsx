@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { PageHeader } from '@/components/page-header'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -31,14 +32,22 @@ import { listPeopleByProductionForActor } from '@/lib/access/projectDomainServic
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/empty-state'
+import { DashboardCard } from '@/components/dashboard-card'
+import { ProductionSwitcher } from '@/components/production-switcher'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { AlertCircle, AlertTriangle, CheckCircle2, Clapperboard, Film, Truck, Phone, Utensils, Moon, StickyNote, ChevronRight, Package, ChevronDown } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle2, Film, Truck, Phone, Utensils, Moon, StickyNote, ChevronRight, Package, ChevronDown } from 'lucide-react'
 import type { StripboardStrip, StripType } from '@/lib/db/types'
 import type { Scene, Shot } from '@/lib/db/types'
 import type { DashboardBudgetHealthData } from '@/lib/dashboard/budgetHealth'
 import type { DashboardNextShootDayData } from '@/lib/dashboard/nextShootDay'
 import type { FloatExpenseLink, Person, PettyCashFloat, ProductionTask } from '@/lib/db/types'
 import { cn } from '@/lib/utils'
+import { GetStartedChecklist } from '@/features/onboarding/GetStartedChecklist'
+import { DashboardHero } from './DashboardHero'
+import { buildAttentionItems } from './attentionItems'
+import { CustomiseDashboardMenu } from './CustomiseDashboardMenu'
+import { readHiddenCards, writeHiddenCards, type DashboardCardId } from './dashboardLayoutPrefs'
 
 const TASK_PRIORITY_LABELS: Record<1 | 2 | 3, string> = {
   1: 'High',
@@ -105,45 +114,15 @@ function NextShootDayCard({
   onNavigate: () => void
 }) {
   if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Next Shoot Day</CardTitle>
-          <CardDescription>The next scheduled shooting day for this production</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-24 rounded bg-muted/50 animate-pulse" />
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Next Shoot Day" status="loading" />
   }
 
   if (isError) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Next Shoot Day</CardTitle>
-          <CardDescription>The next scheduled shooting day for this production</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load next shoot day.</p>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Next Shoot Day" status="error" errorMessage="Unable to load next shoot day." />
   }
 
   if (!data) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Next Shoot Day</CardTitle>
-          <CardDescription>The next scheduled shooting day for this production</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm">No upcoming shoot days scheduled.</p>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Next Shoot Day" status="empty" emptyMessage="No upcoming shoot days scheduled." />
   }
 
   const { shootDay, events, strips, scenes, shots } = data
@@ -299,46 +278,16 @@ function BudgetHealthCard({
   onNavigate: () => void
 }) {
   if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Budget Health Check</CardTitle>
-          <CardDescription>A quick view of current budget spend and variance</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-32 rounded bg-muted/50 animate-pulse" />
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Budget Health Check" status="loading" />
   }
 
   if (isError) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Budget Health Check</CardTitle>
-          <CardDescription>A quick view of current budget spend and variance</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load budget data.</p>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Budget Health Check" status="error" errorMessage="Unable to load budget data." />
   }
 
   const isEmpty = data && data.totalEstimated === 0 && data.totalActual === 0
   if (!data || isEmpty) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Budget Health Check</CardTitle>
-          <CardDescription>A quick view of current budget spend and variance</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm">No budget data available yet.</p>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Budget Health Check" status="empty" emptyMessage="No budget data available yet." />
   }
 
   const pctSpent = Math.min(100, Math.round(data.percentageSpent * 100))
@@ -417,35 +366,11 @@ function TasksDueSoonCard({
   const allComplete = requiredIncomplete.length === 0 && optionalIncomplete.length === 0
 
   if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Tasks Due Soon</CardTitle>
-          <CardDescription>Tasks that still need attention</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-4 rounded bg-muted/50 animate-pulse" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Tasks Due Soon" status="loading" />
   }
 
   if (isError) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Tasks Due Soon</CardTitle>
-          <CardDescription>Tasks that still need attention</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load tasks.</p>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Tasks Due Soon" status="error" errorMessage="Unable to load tasks." />
   }
 
   return (
@@ -500,7 +425,7 @@ function TasksDueSoonCard({
           </>
         )}
         <Link
-          to="/readiness"
+          to="/tasks"
           onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-2"
         >
@@ -528,35 +453,11 @@ function RiskWatchCard({
   currency: string
 }) {
   if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Risk Watch</CardTitle>
-          <CardDescription>Vendor finance and other exception conditions</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-12 rounded bg-muted/50 animate-pulse" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Risk Watch" status="loading" />
   }
 
   if (isError) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Risk Watch</CardTitle>
-          <CardDescription>Vendor finance and other exception conditions</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load risk items.</p>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Risk Watch" status="error" errorMessage="Unable to load risk items." />
   }
 
   return (
@@ -621,49 +522,15 @@ function VendorFinanceCards({
   onNavigate: () => void
 }) {
   if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Vendor finance</CardTitle>
-          <CardDescription>Invoices and purchase orders</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-16 rounded bg-muted/50 animate-pulse" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Vendor finance" status="loading" />
   }
 
   if (isError) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Vendor finance</CardTitle>
-          <CardDescription>Invoices and purchase orders</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load vendor finance summary.</p>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Vendor finance" status="error" errorMessage="Unable to load vendor finance summary." />
   }
 
   if (!data) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Vendor finance</CardTitle>
-          <CardDescription>Invoices and purchase orders</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm">No vendor finance data.</p>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Vendor finance" status="empty" emptyMessage="No vendor finance data." />
   }
 
   const items = [
@@ -745,31 +612,11 @@ function PettyCashFloatsCard({
     new Set(reminders.reminders.map((r) => r.currency)).size > 1
 
   if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Petty cash floats</CardTitle>
-          <CardDescription>Outstanding float reconciliation</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-20 rounded bg-muted/50 animate-pulse" />
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Petty cash floats" status="loading" />
   }
 
   if (isError) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Petty cash floats</CardTitle>
-          <CardDescription>Outstanding float reconciliation</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load float data.</p>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Petty cash floats" status="error" errorMessage="Unable to load float data." />
   }
 
   return (
@@ -873,31 +720,11 @@ function DeliverablesCard({
   const overdue = deliverables.filter((d) => d.due_date && d.due_date < today && d.status !== 'delivered')
 
   if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Deliverables</CardTitle>
-          <CardDescription>Due soon and overdue</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-16 rounded bg-muted/50 animate-pulse" />
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Deliverables" status="loading" />
   }
 
   if (isError) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Deliverables</CardTitle>
-          <CardDescription>Due soon and overdue</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm text-destructive/90">Unable to load deliverables.</p>
-        </CardContent>
-      </Card>
-    )
+    return <DashboardCard title="Deliverables" status="error" errorMessage="Unable to load deliverables." />
   }
 
   const hasAttention = dueSoon.length > 0 || overdue.length > 0
@@ -966,6 +793,12 @@ export function DashboardPage() {
   const wrapSuccess = (location.state as { wrapSuccess?: boolean } | null)?.wrapSuccess === true
   const { progress, updateProgress } = useFirstLaunchTutorial()
   const [tutorialOpen, setTutorialOpen] = useState(false)
+  const [hiddenCards, setHiddenCards] = useState<DashboardCardId[]>(() => readHiddenCards())
+  const updateHiddenCards = (next: DashboardCardId[]) => {
+    setHiddenCards(next)
+    writeHiddenCards(next)
+  }
+  const isShown = (id: DashboardCardId) => !hiddenCards.includes(id)
 
   useEffect(() => {
     if (progress?.currentSection === 'dashboard') {
@@ -1084,27 +917,24 @@ export function DashboardPage() {
   const requiredComplete = required.filter((t) => t.is_complete === 1).length
   const requiredScore = required.length === 0 ? 100 : Math.round((requiredComplete / required.length) * 100)
   const warnings = tasks.filter((t) => t.priority === 1 && t.is_complete === 0)
+  const attentionItems = buildAttentionItems({
+    requiredTasks: warnings,
+    riskItems: riskWatchItems,
+    deliverables,
+    today: new Date().toISOString().slice(0, 10),
+  })
 
   return (
     <div className="space-y-6 relative">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
-          <p className="text-muted-foreground">
-            {currentProduction
-              ? `${currentProduction.name} — production overview`
-              : 'Select a production to see the dashboard.'}
-          </p>
-        </div>
-        {currentProductionId && (
-          <Button variant="destructive" asChild>
-            <Link to="/wrap-production" className="inline-flex items-center gap-2">
-              <Clapperboard className="size-4" />
-              Wrap Production
-            </Link>
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description={currentProduction ? `${currentProduction.name} — production overview` : 'Select a production to see the dashboard.'}
+        actions={
+          currentProductionId ? (
+            <CustomiseDashboardMenu hidden={hiddenCards} onChange={updateHiddenCards} />
+          ) : undefined
+        }
+      />
 
       {wrapSuccess && (
         <Alert className="border-green-600/50 bg-green-500 dark:bg-green-90/30 dark:border-green-80 py-3 px-4">
@@ -1124,18 +954,30 @@ export function DashboardPage() {
         </Alert>
       )}
 
+      {currentProductionId && !wrapSuccess && <GetStartedChecklist />}
+
       {!currentProductionId && !wrapSuccess && (
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>No production selected</AlertTitle>
-          <AlertDescription>
-            No production open – please select one from the Productions page.
-          </AlertDescription>
-        </Alert>
+        <EmptyState
+          title="Open a production to see your dashboard"
+          description="Choose an existing production or create a new one."
+          action={
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <ProductionSwitcher />
+              <Button onClick={() => navigate('/productions?new=1')}>New production</Button>
+            </div>
+          }
+        />
       )}
 
       {currentProductionId && (
         <>
+          <DashboardHero
+            nextShootDay={nextShootDayData}
+            nextShootDayLoading={nextShootDayLoading}
+            nextShootDayError={nextShootDayError}
+            attentionItems={attentionItems}
+          />
+
           <Card>
             <CardHeader>
               <CardTitle>Required items</CardTitle>
@@ -1151,62 +993,76 @@ export function DashboardPage() {
             </CardContent>
           </Card>
 
-          <NextShootDayCard
-            data={nextShootDayData}
-            isLoading={nextShootDayLoading}
-            isError={nextShootDayError}
-            onNavigate={() => navigate('/schedule/stripboard')}
-          />
+          {isShown('nextShootDay') && (
+            <NextShootDayCard
+              data={nextShootDayData}
+              isLoading={nextShootDayLoading}
+              isError={nextShootDayError}
+              onNavigate={() => navigate('/schedule/stripboard')}
+            />
+          )}
 
-          <BudgetHealthCard
-            data={budgetHealthData}
-            isLoading={budgetHealthLoading}
-            isError={budgetHealthError}
-            format={format}
-            productionCurrency={productionCurrency}
-            onNavigate={() => navigate('/budget')}
-          />
+          {isShown('budgetHealth') && (
+            <BudgetHealthCard
+              data={budgetHealthData}
+              isLoading={budgetHealthLoading}
+              isError={budgetHealthError}
+              format={format}
+              productionCurrency={productionCurrency}
+              onNavigate={() => navigate('/budget')}
+            />
+          )}
 
-          <PettyCashFloatsCard
-            floats={dashFloats}
-            floatLinks={dashFloatLinks}
-            people={dashPeople}
-            isLoading={floatCardLoading}
-            isError={floatCardError}
-            format={format}
-            productionCurrency={productionCurrency}
-          />
+          {isShown('floats') && (
+            <PettyCashFloatsCard
+              floats={dashFloats}
+              floatLinks={dashFloatLinks}
+              people={dashPeople}
+              isLoading={floatCardLoading}
+              isError={floatCardError}
+              format={format}
+              productionCurrency={productionCurrency}
+            />
+          )}
 
-          <TasksDueSoonCard
-            tasks={tasks}
-            isLoading={tasksLoading}
-            isError={tasksError}
-            onNavigate={() => navigate('/readiness')}
-          />
+          {isShown('tasksDue') && (
+            <TasksDueSoonCard
+              tasks={tasks}
+              isLoading={tasksLoading}
+              isError={tasksError}
+              onNavigate={() => navigate('/tasks')}
+            />
+          )}
 
-          <DeliverablesCard
-            deliverables={deliverables}
-            isLoading={deliverablesLoading}
-            isError={deliverablesError}
-            onNavigate={() => navigate('/deliverables')}
-          />
+          {isShown('deliverables') && (
+            <DeliverablesCard
+              deliverables={deliverables}
+              isLoading={deliverablesLoading}
+              isError={deliverablesError}
+              onNavigate={() => navigate('/deliverables')}
+            />
+          )}
 
-          <VendorFinanceCards
-            data={vendorFinanceData}
-            isLoading={vendorFinanceLoading}
-            isError={vendorFinanceError}
-            format={format}
-            currency={productionCurrency}
-            onNavigate={() => navigate('/budget/vendors')}
-          />
+          {isShown('vendorFinance') && (
+            <VendorFinanceCards
+              data={vendorFinanceData}
+              isLoading={vendorFinanceLoading}
+              isError={vendorFinanceError}
+              format={format}
+              currency={productionCurrency}
+              onNavigate={() => navigate('/budget/vendors')}
+            />
+          )}
 
-          <RiskWatchCard
-            items={riskWatchItems}
-            isLoading={riskWatchLoading}
-            isError={riskWatchError}
-            format={format}
-            currency={productionCurrency}
-          />
+          {isShown('riskWatch') && (
+            <RiskWatchCard
+              items={riskWatchItems}
+              isLoading={riskWatchLoading}
+              isError={riskWatchError}
+              format={format}
+              currency={productionCurrency}
+            />
+          )}
 
           {warnings.length > 0 && (
             <Alert variant="destructive">
@@ -1221,6 +1077,12 @@ export function DashboardPage() {
               </AlertDescription>
             </Alert>
           )}
+          <p className="text-muted-foreground text-sm">
+            Finished shooting?{' '}
+            <Link to="/wrap-production" className="underline underline-offset-4 hover:text-foreground">
+              Wrap production
+            </Link>
+          </p>
         </>
       )}
 

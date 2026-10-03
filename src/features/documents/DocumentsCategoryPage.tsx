@@ -1,5 +1,8 @@
+import { RequireProduction } from '@/components/require-production'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
+import { PageHeader } from '@/components/page-header'
 import { Link, useParams } from 'react-router-dom'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 
@@ -49,10 +52,7 @@ export function DocumentsCategoryPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Documents</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Documents">{null}</RequireProduction>
     )
   }
 
@@ -73,35 +73,33 @@ export function DocumentsCategoryPage() {
   const category = getDocumentCategory(categoryId)
   const docs = getCategoryDocuments(categoryId)
   const groups = groupEnrichedDocuments(docs)
-  const Icon = category.icon
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-2">
-          <Button variant="ghost" size="sm" className="-ml-2 h-8 px-2" asChild>
-            <Link to="/documents">
-              <ArrowLeft className="mr-1 size-4" />
-              All categories
-            </Link>
-          </Button>
-          <div className="flex items-center gap-3">
-            <div className="rounded-md border border-border bg-muted/30 p-2">
-              <Icon className="size-5 text-muted-foreground" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold">{category.label}</h1>
-              <p className="text-sm text-muted-foreground">{category.description}</p>
-            </div>
-          </div>
-        </div>
-        <Button variant="outline" asChild>
-          <Link to={category.sourceRoute}>Open {category.label.split(' ')[0]}…</Link>
+      <div className="space-y-2">
+        <Button variant="ghost" size="sm" className="-ml-2 h-8 px-2" asChild>
+          <Link to="/documents">
+            <ArrowLeft className="mr-1 size-4" />
+            All categories
+          </Link>
         </Button>
+        <PageHeader
+          title={category.label}
+          description={category.description}
+          actions={
+            <Button variant="outline" asChild>
+              <Link to={category.sourceRoute}>Open {category.label.split(' ')[0]}…</Link>
+            </Button>
+          }
+        />
       </div>
 
       {isLoading ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <div role="status" aria-label="Loading documents" className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
       ) : docs.length === 0 ? (
         <div className="rounded-md border border-dashed border-border px-6 py-10 text-center">
           <p className="text-muted-foreground">{category.emptyMessage}</p>

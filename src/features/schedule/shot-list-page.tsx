@@ -1,3 +1,6 @@
+import { RequireProduction } from '@/components/require-production'
+import { EmptyState } from '@/components/empty-state'
+import { PageHeader } from '@/components/page-header'
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -1334,13 +1337,10 @@ export function ShotListPage() {
   return (
     <>
       {!currentProductionId ? (
-        <div>
-          <h1 className="text-2xl font-semibold">Schedule — Shot lists</h1>
-          <p className="text-muted-foreground">Select a production first.</p>
-        </div>
+        <RequireProduction title="Shot Lists">{null}</RequireProduction>
       ) : (
         <div className="space-y-4">
-          <h1 className="text-2xl font-semibold">Schedule — Shot lists</h1>
+          <PageHeader title="Shot Lists" />
 
       <div className="grid gap-4 md:grid-cols-3">
         <div>
@@ -1354,19 +1354,19 @@ export function ShotListPage() {
           >
             <SelectTrigger
               className={cn(
-                'h-9 w-full bg-zinc-800/80 text-zinc-200 border-zinc-600',
-                'hover:bg-zinc-700/80 focus-visible:ring-emerald-500/50 focus-visible:border-emerald-500'
+                'h-9 w-full bg-muted/80 text-foreground border-border',
+                'hover:bg-secondary/80 focus-visible:ring-emerald-500/50 focus-visible:border-emerald-500'
               )}
             >
               <SelectValue placeholder="Select scene…" />
             </SelectTrigger>
             <SelectContent
-              className="bg-zinc-800 border-zinc-600 shadow-xl"
+              className="bg-muted border-border shadow-xl"
               sideOffset={4}
             >
               <SelectItem
                 value={SELECT_NONE}
-                className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100 data-[highlight]:bg-emerald-600/20 data-[highlight]:text-emerald-100"
+                className="text-foreground focus:bg-secondary focus:text-foreground data-[highlight]:bg-emerald-600/20 data-[highlight]:text-emerald-100"
               >
                 Select scene…
               </SelectItem>
@@ -1374,7 +1374,7 @@ export function ShotListPage() {
                 <SelectItem
                   key={s.id}
                   value={s.id}
-                  className="text-zinc-300 focus:bg-zinc-700 focus:text-zinc-100 data-[highlight]:bg-emerald-600/20 data-[highlight]:text-emerald-100"
+                  className="text-foreground focus:bg-secondary focus:text-foreground data-[highlight]:bg-emerald-600/20 data-[highlight]:text-emerald-100"
                 >
                   {s.scene_number}. {sceneScheduleLabel(s, getLocationName(s.location_id))}
                 </SelectItem>
@@ -1386,7 +1386,7 @@ export function ShotListPage() {
           <Button
             type="button"
             variant="outline"
-            className="h-9 border-zinc-600 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
+            className="h-9 border-border text-foreground hover:bg-secondary hover:text-foreground"
             onClick={async () => {
               await prepareNewSceneForm()
               setCreateSceneOpen(true)
@@ -1400,7 +1400,7 @@ export function ShotListPage() {
             <Button
               type="button"
               variant="outline"
-              className="h-9 border-zinc-600 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
+              className="h-9 border-border text-foreground hover:bg-secondary hover:text-foreground"
               onClick={() => {
                 setEditSceneNumber(selectedScene.scene_number)
                 setEditSceneTitle(selectedScene.title ?? '')
@@ -1422,13 +1422,13 @@ export function ShotListPage() {
 
       {selectedSceneId && (
         <>
-          <Card className="border-zinc-700 bg-zinc-800/50">
-            <CardHeader className="border-b border-zinc-700 py-3">
-              <CardTitle className="text-sm font-medium text-zinc-200">Cast in this scene</CardTitle>
+          <Card className="border-border bg-muted/50">
+            <CardHeader className="border-b border-border py-3">
+              <CardTitle className="text-sm font-medium text-foreground">Cast in this scene</CardTitle>
             </CardHeader>
             <CardContent className="py-3">
               {castInScene.length === 0 ? (
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-muted-foreground">
                   No cast on any shot in this scene. Add cast to individual shots in the list below.
                 </p>
               ) : (
@@ -1436,7 +1436,7 @@ export function ShotListPage() {
                   {castInScene.map((person) => (
                     <span
                       key={person.id}
-                      className="inline-flex items-center rounded-md bg-zinc-700/80 px-2.5 py-1 text-sm text-zinc-200"
+                      className="inline-flex items-center rounded-md bg-secondary/80 px-2.5 py-1 text-sm text-foreground"
                     >
                       {person.name}
                     </span>
@@ -1461,7 +1461,7 @@ export function ShotListPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="gap-1.5 border-zinc-600 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+                  className="gap-1.5 border-border text-foreground hover:bg-secondary hover:text-foreground"
                   onClick={() => {
                     clearResetCastDialogResetTimer()
                     setResetCastError(null)
@@ -1477,7 +1477,7 @@ export function ShotListPage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="gap-1.5 border-zinc-600 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
+                className="gap-1.5 border-border text-foreground hover:bg-secondary hover:text-foreground"
                 onClick={() => {
                   clearAddShotDialogResetTimer()
                   setAddShotError(null)
@@ -1509,25 +1509,25 @@ export function ShotListPage() {
           <div className="rounded-lg border border-border overflow-hidden">
             <Table>
               <TableHeader>
-                <TableRow className="border-0 bg-zinc-800/90 hover:bg-zinc-800/90">
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3">
+                <TableRow className="border-0 bg-muted/90 hover:bg-muted/90">
+                  <TableHead className="text-foreground font-medium h-11 px-3">
                     Scene / Shot #
                   </TableHead>
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3">Subject</TableHead>
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3">
+                  <TableHead className="text-foreground font-medium h-11 px-3">Subject</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3">
                     Shot Description
                   </TableHead>
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3">Shot size</TableHead>
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3">Duration</TableHead>
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3">Est. min</TableHead>
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3">Movement</TableHead>
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3">Lens</TableHead>
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3">Support</TableHead>
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3">Notes</TableHead>
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3 w-[180px]">Cast</TableHead>
-                  <TableHead className="text-zinc-100 font-medium h-11 px-3 w-[170px]">Sections</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3">Shot size</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3">Duration</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3">Est. min</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3">Movement</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3">Lens</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3">Support</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3">Notes</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3 w-[180px]">Cast</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3 w-[170px]">Sections</TableHead>
                   {editMode && (
-                    <TableHead className="text-zinc-100 font-medium h-11 px-2 w-20 text-right">
+                    <TableHead className="text-foreground font-medium h-11 px-2 w-20 text-right">
                       <span className="sr-only">Shot actions</span>
                     </TableHead>
                   )}
@@ -1610,12 +1610,12 @@ export function ShotListPage() {
       )}
 
       <Dialog open={resetCastDialogOpen} onOpenChange={handleResetCastDialogOpenChange}>
-        <DialogContent className="max-w-md bg-zinc-800 border-zinc-600">
-          <h3 className="text-base font-semibold text-zinc-100">Reset cast for scene</h3>
+        <DialogContent className="max-w-md">
+          <h3 className="text-base font-semibold text-foreground">Reset cast for scene</h3>
           {selectedScene && (
-            <p className="text-sm text-zinc-300 mt-1">
+            <p className="text-sm text-foreground mt-1">
               Remove all cast from every shot in scene{' '}
-              <span className="font-medium text-zinc-100">{selectedScene.scene_number}</span>? This
+              <span className="font-medium text-foreground">{selectedScene.scene_number}</span>? This
               cannot be undone from this screen, but you can add cast back to individual shots
               afterward.
             </p>
@@ -1651,13 +1651,13 @@ export function ShotListPage() {
       </Dialog>
 
       <Dialog open={deleteDialogOpen} onOpenChange={handleDeleteDialogOpenChange}>
-        <DialogContent className="max-w-md bg-zinc-800 border-zinc-600">
-          <h3 className="text-base font-semibold text-zinc-100">Delete shot</h3>
+        <DialogContent className="max-w-md">
+          <h3 className="text-base font-semibold text-foreground">Delete shot</h3>
           {deleteShotTarget && (
             <>
-              <p className="text-sm text-zinc-300 mt-1">
+              <p className="text-sm text-foreground mt-1">
                 Are you sure you want to delete shot{' '}
-                <span className="font-medium text-zinc-100">{deleteShotTarget.shot.shot_number}</span>
+                <span className="font-medium text-foreground">{deleteShotTarget.shot.shot_number}</span>
                 {' '}
                 in scene{' '}
                 {scenes.find((sc) => sc.id === deleteShotTarget.sceneId)?.scene_number ??
@@ -1667,7 +1667,7 @@ export function ShotListPage() {
               {(() => {
                 const line = shotLabelForDeleteConfirm(deleteShotTarget.shot)
                 return line ? (
-                  <p className="text-sm text-zinc-400 mt-2 line-clamp-3">&ldquo;{line}&rdquo;</p>
+                  <p className="text-sm text-muted-foreground mt-2 line-clamp-3">&ldquo;{line}&rdquo;</p>
                 ) : null
               })()}
             </>
@@ -1706,7 +1706,7 @@ export function ShotListPage() {
       </Dialog>
 
       {!selectedSceneId && scenes.length > 0 && (
-        <p className="text-muted-foreground">Select a scene to view its shots.</p>
+        <EmptyState title="Select a scene" description="Choose a scene above to view its shots." />
       )}
 
       <Dialog open={createSceneOpen} onOpenChange={(open) => {
@@ -1715,9 +1715,9 @@ export function ShotListPage() {
           setCreateSceneError(null)
         }
       }}>
-        <DialogContent className="max-w-md bg-zinc-800 border-zinc-600">
-          <h3 className="text-base font-semibold text-zinc-100">New scene</h3>
-          <p className="text-sm text-zinc-400">
+        <DialogContent className="max-w-md">
+          <h3 className="text-base font-semibold text-foreground">New scene</h3>
+          <p className="text-sm text-muted-foreground">
             Create a scene in this production to start adding shots.
           </p>
           {createSceneError && (
@@ -1727,7 +1727,7 @@ export function ShotListPage() {
           )}
           <div className="mt-3 space-y-3">
             <div>
-              <Label htmlFor="scene-number" className="text-sm text-zinc-200">
+              <Label htmlFor="scene-number" className="text-sm text-foreground">
                 Scene number<span className="text-destructive">*</span>
               </Label>
               <Input
@@ -1735,13 +1735,13 @@ export function ShotListPage() {
                 value={newSceneNumber}
                 onChange={(e) => setNewSceneNumber(e.target.value)}
                 placeholder="e.g. 12A"
-                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                className="mt-1 h-8 bg-card border-border text-foreground"
                 autoFocus
                 disabled={createSceneMutation.isPending}
               />
             </div>
             <div>
-              <Label htmlFor="scene-title" className="text-sm text-zinc-200">
+              <Label htmlFor="scene-title" className="text-sm text-foreground">
                 Title<span className="text-destructive">*</span>
               </Label>
               <Input
@@ -1749,13 +1749,13 @@ export function ShotListPage() {
                 value={newSceneTitle}
                 onChange={(e) => setNewSceneTitle(e.target.value)}
                 placeholder="Defaults to scene number when empty"
-                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                className="mt-1 h-8 bg-card border-border text-foreground"
                 disabled={createSceneMutation.isPending}
               />
             </div>
             {isEpisodicProduction && (
               <div>
-                <Label className="text-sm text-zinc-200">
+                <Label className="text-sm text-foreground">
                   Episode<span className="text-destructive">*</span>
                 </Label>
                 <Select
@@ -1763,10 +1763,10 @@ export function ShotListPage() {
                   onValueChange={(v) => setNewSceneEpisodeId(v === SELECT_NONE ? '' : v)}
                   disabled={createSceneMutation.isPending || activeEpisodes.length === 0}
                 >
-                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                  <SelectTrigger className="mt-1 h-8 bg-card border-border text-foreground">
                     <SelectValue placeholder="Select episode" />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                  <SelectContent className="bg-muted border-border">
                     <SelectItem value={SELECT_NONE}>Select episode…</SelectItem>
                     {activeEpisodes.map((ep) => (
                       <SelectItem key={ep.id} value={ep.id}>
@@ -1784,17 +1784,17 @@ export function ShotListPage() {
             )}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-sm text-zinc-200">
+                <Label className="text-sm text-foreground">
                   INT / EXT<span className="text-destructive">*</span>
                 </Label>
                 <Select
                   value={newSceneIntExt ?? undefined}
                   onValueChange={(v) => setNewSceneIntExt(v as Scene['int_ext'])}
                 >
-                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                  <SelectTrigger className="mt-1 h-8 bg-card border-border text-foreground">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                  <SelectContent className="bg-muted border-border">
                     {SCENE_INT_EXT_VALUES.map((value) => (
                       <SelectItem key={value} value={value}>
                         {value}
@@ -1804,17 +1804,17 @@ export function ShotListPage() {
                 </Select>
               </div>
               <div>
-                <Label className="text-sm text-zinc-200">
+                <Label className="text-sm text-foreground">
                   Time of day<span className="text-destructive">*</span>
                 </Label>
                 <Select
                   value={newSceneDayNight ?? undefined}
                   onValueChange={(v) => setNewSceneDayNight(v as Scene['day_night'])}
                 >
-                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                  <SelectTrigger className="mt-1 h-8 bg-card border-border text-foreground">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                  <SelectContent className="bg-muted border-border">
                     {SCENE_DAY_NIGHT_VALUES.map((value) => (
                       <SelectItem key={value} value={value}>
                         {value}
@@ -1825,17 +1825,17 @@ export function ShotListPage() {
               </div>
             </div>
             <div>
-              <Label className="text-sm text-zinc-200">
+              <Label className="text-sm text-foreground">
                 Location<span className="text-destructive">*</span>
               </Label>
               <Select
                 value={newSceneLocationId ?? undefined}
                 onValueChange={(v) => setNewSceneLocationId(v)}
               >
-                <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                <SelectTrigger className="mt-1 h-8 bg-card border-border text-foreground">
                   <SelectValue placeholder="Default City" />
                 </SelectTrigger>
-                <SelectContent className="bg-zinc-800 border-zinc-600">
+                <SelectContent className="bg-muted border-border">
                   {locations.map((loc) => (
                     <SelectItem key={loc.id} value={loc.id}>
                       {loc.name}
@@ -1876,9 +1876,9 @@ export function ShotListPage() {
         setEditSceneOpen(open)
         if (!open) setEditSceneError(null)
       }}>
-        <DialogContent className="max-w-md bg-zinc-800 border-zinc-600">
-          <h3 className="text-base font-semibold text-zinc-100">Edit scene</h3>
-          <p className="text-sm text-zinc-400">
+        <DialogContent className="max-w-md">
+          <h3 className="text-base font-semibold text-foreground">Edit scene</h3>
+          <p className="text-sm text-muted-foreground">
             Update the selected scene’s metadata.
           </p>
           {editSceneError && (
@@ -1888,7 +1888,7 @@ export function ShotListPage() {
           )}
           <div className="mt-3 space-y-3">
             <div>
-              <Label htmlFor="edit-scene-number" className="text-sm text-zinc-200">
+              <Label htmlFor="edit-scene-number" className="text-sm text-foreground">
                 Scene number<span className="text-destructive">*</span>
               </Label>
               <Input
@@ -1896,13 +1896,13 @@ export function ShotListPage() {
                 value={editSceneNumber}
                 onChange={(e) => setEditSceneNumber(e.target.value)}
                 placeholder="e.g. 12A"
-                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                className="mt-1 h-8 bg-card border-border text-foreground"
                 autoFocus
                 disabled={updateSceneMutation.isPending}
               />
             </div>
             <div>
-              <Label htmlFor="edit-scene-title" className="text-sm text-zinc-200">
+              <Label htmlFor="edit-scene-title" className="text-sm text-foreground">
                 Title
               </Label>
               <Input
@@ -1910,13 +1910,13 @@ export function ShotListPage() {
                 value={editSceneTitle}
                 onChange={(e) => setEditSceneTitle(e.target.value)}
                 placeholder="Optional short description"
-                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                className="mt-1 h-8 bg-card border-border text-foreground"
                 disabled={updateSceneMutation.isPending}
               />
             </div>
             {isEpisodicProduction && (
               <div>
-                <Label className="text-sm text-zinc-200">
+                <Label className="text-sm text-foreground">
                   Episode<span className="text-destructive">*</span>
                 </Label>
                 <Select
@@ -1924,10 +1924,10 @@ export function ShotListPage() {
                   onValueChange={(v) => setEditSceneEpisodeId(v === SELECT_NONE ? '' : v)}
                   disabled={updateSceneMutation.isPending || editEpisodeSelectOptions.length === 0}
                 >
-                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                  <SelectTrigger className="mt-1 h-8 bg-card border-border text-foreground">
                     <SelectValue placeholder="Select episode" />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                  <SelectContent className="bg-muted border-border">
                     <SelectItem value={SELECT_NONE}>Select episode…</SelectItem>
                     {editEpisodeSelectOptions.map((o) => (
                       <SelectItem key={o.id} value={o.id}>
@@ -1945,17 +1945,17 @@ export function ShotListPage() {
             )}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-sm text-zinc-200">INT / EXT</Label>
+                <Label className="text-sm text-foreground">INT / EXT</Label>
                 <Select
                   value={editSceneIntExt ?? SELECT_NONE}
                   onValueChange={(v) =>
                     setEditSceneIntExt(v === SELECT_NONE ? null : (v as Scene['int_ext']))
                   }
                 >
-                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                  <SelectTrigger className="mt-1 h-8 bg-card border-border text-foreground">
                     <SelectValue placeholder="—" />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                  <SelectContent className="bg-muted border-border">
                     <SelectItem value={SELECT_NONE}>—</SelectItem>
                     {SCENE_INT_EXT_VALUES.map((value) => (
                       <SelectItem key={value} value={value}>
@@ -1966,17 +1966,17 @@ export function ShotListPage() {
                 </Select>
               </div>
               <div>
-                <Label className="text-sm text-zinc-200">Time of day</Label>
+                <Label className="text-sm text-foreground">Time of day</Label>
                 <Select
                   value={editSceneDayNight ?? SELECT_NONE}
                   onValueChange={(v) =>
                     setEditSceneDayNight(v === SELECT_NONE ? null : (v as Scene['day_night']))
                   }
                 >
-                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                  <SelectTrigger className="mt-1 h-8 bg-card border-border text-foreground">
                     <SelectValue placeholder="—" />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                  <SelectContent className="bg-muted border-border">
                     <SelectItem value={SELECT_NONE}>—</SelectItem>
                     {SCENE_DAY_NIGHT_VALUES.map((value) => (
                       <SelectItem key={value} value={value}>
@@ -1988,17 +1988,17 @@ export function ShotListPage() {
               </div>
             </div>
             <div>
-              <Label className="text-sm text-zinc-200">Location</Label>
+              <Label className="text-sm text-foreground">Location</Label>
               <Select
                 value={editSceneLocationId ?? SELECT_NONE}
                 onValueChange={(v) =>
                   setEditSceneLocationId(v === SELECT_NONE ? null : v)
                 }
               >
-                <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                <SelectTrigger className="mt-1 h-8 bg-card border-border text-foreground">
                   <SelectValue placeholder="—" />
                 </SelectTrigger>
-                <SelectContent className="bg-zinc-800 border-zinc-600">
+                <SelectContent className="bg-muted border-border">
                   <SelectItem value={SELECT_NONE}>—</SelectItem>
                   {locations.map((loc) => (
                     <SelectItem key={loc.id} value={loc.id}>
@@ -2037,9 +2037,9 @@ export function ShotListPage() {
       </Dialog>
 
       <Dialog open={addShotOpen} onOpenChange={handleAddShotDialogOpenChange}>
-        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col bg-zinc-800 border-zinc-600">
-          <h3 className="text-base font-semibold text-zinc-100">Add shot</h3>
-          <p className="text-sm text-zinc-400">
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+          <h3 className="text-base font-semibold text-foreground">Add shot</h3>
+          <p className="text-sm text-muted-foreground">
             Add a shot to scene {selectedScene?.scene_number ?? ''}. Fields match the shot list and database schema.
           </p>
           {addShotError && (
@@ -2049,7 +2049,7 @@ export function ShotListPage() {
           )}
           <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             <div>
-              <Label htmlFor="add-shot-number" className="text-sm text-zinc-200">
+              <Label htmlFor="add-shot-number" className="text-sm text-foreground">
                 Shot number<span className="text-destructive">*</span>
               </Label>
               <Input
@@ -2059,25 +2059,25 @@ export function ShotListPage() {
                   setAddShotForm((f) => ({ ...f, shot_number: e.target.value }))
                 }
                 placeholder="e.g. 1A"
-                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                className="mt-1 h-8 bg-card border-border text-foreground"
                 autoFocus
                 disabled={createShotMutation.isPending}
               />
             </div>
             <div>
-              <Label htmlFor="add-shot-subject" className="text-sm text-zinc-200">
+              <Label htmlFor="add-shot-subject" className="text-sm text-foreground">
                 Subject
               </Label>
               <Input
                 id="add-shot-subject"
                 value={addShotForm.subject}
                 onChange={(e) => setAddShotForm((f) => ({ ...f, subject: e.target.value }))}
-                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                className="mt-1 h-8 bg-card border-border text-foreground"
                 disabled={createShotMutation.isPending}
               />
             </div>
             <div>
-              <Label htmlFor="add-shot-shot-description" className="text-sm text-zinc-200">
+              <Label htmlFor="add-shot-shot-description" className="text-sm text-foreground">
                 Shot Description
               </Label>
               <Textarea
@@ -2086,14 +2086,14 @@ export function ShotListPage() {
                 onChange={(e) =>
                   setAddShotForm((f) => ({ ...f, shot_description: e.target.value }))
                 }
-                className="mt-1 min-h-[56px] bg-zinc-900 border-zinc-600 text-zinc-100"
+                className="mt-1 min-h-[56px] bg-card border-border text-foreground"
                 placeholder="Optional"
                 disabled={createShotMutation.isPending}
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-sm text-zinc-200">Shot size</Label>
+                <Label className="text-sm text-foreground">Shot size</Label>
                 <Select
                   value={addShotForm.shot_size ?? SELECT_NONE}
                   onValueChange={(v) =>
@@ -2104,10 +2104,10 @@ export function ShotListPage() {
                   }
                   disabled={createShotMutation.isPending}
                 >
-                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                  <SelectTrigger className="mt-1 h-8 bg-card border-border text-foreground">
                     <SelectValue placeholder="—" />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-800 border-zinc-600">
+                  <SelectContent className="bg-muted border-border">
                     <SelectItem value={SELECT_NONE}>—</SelectItem>
                     {SHOT_SIZE_VALUES.map((s) => (
                       <SelectItem key={s} value={s}>
@@ -2118,7 +2118,7 @@ export function ShotListPage() {
                 </Select>
               </div>
               <div>
-                <Label className="text-sm text-zinc-200">Movement</Label>
+                <Label className="text-sm text-foreground">Movement</Label>
                 <Select
                   value={addShotForm.camera_movement ?? SELECT_NONE}
                   onValueChange={(v) =>
@@ -2130,10 +2130,10 @@ export function ShotListPage() {
                   }
                   disabled={createShotMutation.isPending}
                 >
-                  <SelectTrigger className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100">
+                  <SelectTrigger className="mt-1 h-8 bg-card border-border text-foreground">
                     <SelectValue placeholder="—" />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-800 border-zinc-600 max-h-[280px]">
+                  <SelectContent className="bg-muted border-border max-h-[280px]">
                     <SelectItem value={SELECT_NONE}>—</SelectItem>
                     {CAMERA_MOVEMENT_VALUES.map((m) => (
                       <SelectItem key={m} value={m}>
@@ -2146,7 +2146,7 @@ export function ShotListPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="add-shot-duration" className="text-sm text-zinc-200">
+                <Label htmlFor="add-shot-duration" className="text-sm text-foreground">
                   Duration (m:ss)
                 </Label>
                 <Input
@@ -2159,12 +2159,12 @@ export function ShotListPage() {
                     }))
                   }
                   placeholder="e.g. 0:30"
-                  className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                  className="mt-1 h-8 bg-card border-border text-foreground"
                   disabled={createShotMutation.isPending}
                 />
               </div>
               <div>
-                <Label htmlFor="add-shot-est-min" className="text-sm text-zinc-200">
+                <Label htmlFor="add-shot-est-min" className="text-sm text-foreground">
                   Est. minutes
                 </Label>
                 <Input
@@ -2178,13 +2178,13 @@ export function ShotListPage() {
                     }
                   }}
                   placeholder="Optional"
-                  className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                  className="mt-1 h-8 bg-card border-border text-foreground"
                   disabled={createShotMutation.isPending}
                 />
               </div>
             </div>
             <div>
-              <Label htmlFor="add-shot-lens" className="text-sm text-zinc-200">
+              <Label htmlFor="add-shot-lens" className="text-sm text-foreground">
                 Lens
               </Label>
               <datalist id="add-shot-lens-dl">
@@ -2197,13 +2197,13 @@ export function ShotListPage() {
                 list="add-shot-lens-dl"
                 value={addShotForm.lens}
                 onChange={(e) => setAddShotForm((f) => ({ ...f, lens: e.target.value }))}
-                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                className="mt-1 h-8 bg-card border-border text-foreground"
                 placeholder="Optional"
                 disabled={createShotMutation.isPending}
               />
             </div>
             <div>
-              <Label htmlFor="add-shot-support" className="text-sm text-zinc-200">
+              <Label htmlFor="add-shot-support" className="text-sm text-foreground">
                 Support
               </Label>
               <datalist id="add-shot-support-dl">
@@ -2216,40 +2216,40 @@ export function ShotListPage() {
                 list="add-shot-support-dl"
                 value={addShotForm.support}
                 onChange={(e) => setAddShotForm((f) => ({ ...f, support: e.target.value }))}
-                className="mt-1 h-8 bg-zinc-900 border-zinc-600 text-zinc-100"
+                className="mt-1 h-8 bg-card border-border text-foreground"
                 placeholder="Optional"
                 disabled={createShotMutation.isPending}
               />
             </div>
             <div>
-              <Label htmlFor="add-shot-notes" className="text-sm text-zinc-200">
+              <Label htmlFor="add-shot-notes" className="text-sm text-foreground">
                 Notes
               </Label>
               <Textarea
                 id="add-shot-notes"
                 value={addShotForm.notes}
                 onChange={(e) => setAddShotForm((f) => ({ ...f, notes: e.target.value }))}
-                className="mt-1 min-h-[72px] bg-zinc-900 border-zinc-600 text-zinc-100"
+                className="mt-1 min-h-[72px] bg-card border-border text-foreground"
                 placeholder="Optional"
                 disabled={createShotMutation.isPending}
               />
             </div>
             <div>
-              <Label className="text-sm text-zinc-200">Cast on this shot</Label>
-              <p className="mt-0.5 text-xs text-zinc-500">
+              <Label className="text-sm text-foreground">Cast on this shot</Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Choose production cast (saved as linked people, not free text).
               </p>
               {cast.length === 0 ? (
-                <p className="mt-2 text-sm text-zinc-500">
+                <p className="mt-2 text-sm text-muted-foreground">
                   No cast in this production. Add cast under People first.
                 </p>
               ) : (
-                <div className="mt-2 max-h-40 space-y-2 overflow-y-auto rounded-md border border-zinc-600 bg-zinc-900/50 p-2">
+                <div className="mt-2 max-h-40 space-y-2 overflow-y-auto rounded-md border border-border bg-card/50 p-2">
                   {cast.map((person) => (
                     <label
                       key={person.id}
                       className={cn(
-                        'flex items-center gap-2 rounded px-1 py-1 text-sm text-zinc-200 hover:bg-zinc-800/80',
+                        'flex items-center gap-2 rounded px-1 py-1 text-sm text-foreground hover:bg-muted/80',
                         createShotMutation.isPending ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
                       )}
                     >
@@ -2269,7 +2269,7 @@ export function ShotListPage() {
                       <span>
                         {person.name}
                         {person.cast_number ? (
-                          <span className="ml-1.5 text-zinc-500">#{person.cast_number}</span>
+                          <span className="ml-1.5 text-muted-foreground">#{person.cast_number}</span>
                         ) : null}
                       </span>
                     </label>
@@ -2278,7 +2278,7 @@ export function ShotListPage() {
               )}
             </div>
           </div>
-          <div className="mt-4 flex justify-end gap-2 border-t border-zinc-700 pt-3">
+          <div className="mt-4 flex justify-end gap-2 border-t border-border pt-3">
             <Button
               type="button"
               variant="ghost"
@@ -2331,9 +2331,9 @@ export function ShotListPage() {
 
       {/* Add cast to shot dialog */}
       <Dialog open={addShotCastShotId != null} onOpenChange={(open) => !open && setAddShotCastShotId(null)}>
-        <DialogContent className="max-h-[85vh] flex flex-col bg-zinc-800 border-zinc-600">
-          <h3 className="text-base font-semibold text-zinc-100">Add cast to shot</h3>
-          <p className="text-sm text-zinc-400">
+        <DialogContent className="max-h-[85vh] flex flex-col">
+          <h3 className="text-base font-semibold text-foreground">Add cast to shot</h3>
+          <p className="text-sm text-muted-foreground">
             {addShotCastShotId
               ? `Select a cast member to add to shot ${shots.find((s) => s.id === addShotCastShotId)?.shot_number ?? ''}. They will be added to the scene if not already in it.`
               : ''}
@@ -2343,7 +2343,7 @@ export function ShotListPage() {
             const personIdsOnShot = new Set(onShot.map((sc) => sc.person_id))
             const available = cast.filter((c) => !personIdsOnShot.has(c.id))
             return available.length === 0 ? (
-              <p className="py-4 text-sm text-zinc-500">All cast are already on this shot.</p>
+              <p className="py-4 text-sm text-muted-foreground">All cast are already on this shot.</p>
             ) : (
               <div className="flex-1 min-h-0 overflow-auto py-2">
                 <div className="flex flex-col gap-1">
@@ -2351,13 +2351,13 @@ export function ShotListPage() {
                     <Button
                       key={person.id}
                       variant="ghost"
-                      className="justify-start text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100"
+                      className="justify-start text-foreground hover:bg-secondary hover:text-foreground"
                       onClick={() => addShotCastMutation.mutate({ shotId: addShotCastShotId, personId: person.id })}
                       disabled={addShotCastMutation.isPending}
                     >
                       {person.name}
                       {person.cast_number && (
-                        <span className="ml-2 text-zinc-500">#{person.cast_number}</span>
+                        <span className="ml-2 text-muted-foreground">#{person.cast_number}</span>
                       )}
                     </Button>
                   ))}
@@ -2481,8 +2481,8 @@ function ShotRow({
   const cellClass = (field: EditableField) =>
     cn(
       'align-middle px-3 py-2 max-w-[180px]',
-      editMode && 'cursor-pointer hover:bg-zinc-800/50 rounded',
-      editingField === field && 'ring-2 ring-emerald-500/50 ring-inset rounded bg-zinc-800/30'
+      editMode && 'cursor-pointer hover:bg-muted/50 rounded',
+      editingField === field && 'ring-2 ring-emerald-500/50 ring-inset rounded bg-muted/30'
     )
 
   return (
@@ -2490,9 +2490,9 @@ function ShotRow({
       <TableCell
         className={cn(
           'font-medium px-3 py-2 align-middle',
-          editMode && 'cursor-pointer hover:bg-zinc-800/50 rounded',
+          editMode && 'cursor-pointer hover:bg-muted/50 rounded',
           editingField === 'shot_number' &&
-            'ring-2 ring-emerald-500/50 ring-inset rounded bg-zinc-800/30'
+            'ring-2 ring-emerald-500/50 ring-inset rounded bg-muted/30'
         )}
         onClick={() => editMode && !editingField && startEdit('shot_number')}
       >
@@ -2500,7 +2500,7 @@ function ShotRow({
           <span className="text-muted-foreground shrink-0">{sceneNumber} /</span>
           {editingField === 'shot_number' ? (
             <Input
-              className="h-8 min-w-[4rem] max-w-[120px] bg-background border-zinc-600 focus-visible:ring-emerald-500/50"
+              className="h-8 min-w-[4rem] max-w-[120px] bg-background border-border focus-visible:ring-emerald-500/50"
               value={localValue}
               onChange={(e) => setLocalValue(e.target.value)}
               onBlur={() => commitEdit(shot.id, 'shot_number', localValue)}
@@ -2522,7 +2522,7 @@ function ShotRow({
       >
         {editingField === 'subject' ? (
           <Input
-            className="h-8 bg-background border-zinc-600 focus-visible:ring-emerald-500/50"
+            className="h-8 bg-background border-border focus-visible:ring-emerald-500/50"
             value={localValue}
             onChange={(e) => setLocalValue(e.target.value)}
             onBlur={() => commitEdit(shot.id, 'subject', localValue.trim() || null)}
@@ -2546,13 +2546,13 @@ function ShotRow({
               <span className="block truncate text-sm">{localValue || '(empty)'}</span>
             </PopoverTrigger>
             <PopoverContent
-              className="w-80 bg-zinc-900 border-zinc-600"
+              className="w-80 bg-card border-border"
               align="start"
               onOpenAutoFocus={(e) => e.preventDefault()}
               onInteractOutside={cancelEdit}
             >
               <Textarea
-                className="min-h-[80px] bg-background border-zinc-600"
+                className="min-h-[80px] bg-background border-border"
                 value={localValue}
                 onChange={(e) => setLocalValue(e.target.value)}
                 onKeyDown={(e) => {
@@ -2604,10 +2604,10 @@ function ShotRow({
             }
             defaultOpen
           >
-            <SelectTrigger className="h-8 w-full max-w-[90px] bg-background border-zinc-600">
+            <SelectTrigger className="h-8 w-full max-w-[90px] bg-background border-border">
               <SelectValue placeholder="Size" />
             </SelectTrigger>
-            <SelectContent className="bg-zinc-800 border-zinc-600">
+            <SelectContent className="bg-muted border-border">
               <SelectItem value={SELECT_NONE}>—</SelectItem>
               {SHOT_SIZE_VALUES.map((s) => (
                 <SelectItem key={s} value={s}>
@@ -2681,10 +2681,10 @@ function ShotRow({
             }
             defaultOpen
           >
-            <SelectTrigger className="h-8 w-full max-w-[140px] bg-background border-zinc-600">
+            <SelectTrigger className="h-8 w-full max-w-[140px] bg-background border-border">
               <SelectValue placeholder="Movement" />
             </SelectTrigger>
-            <SelectContent className="bg-zinc-800 border-zinc-600 max-h-[280px]">
+            <SelectContent className="bg-muted border-border max-h-[280px]">
               <SelectItem value={SELECT_NONE}>—</SelectItem>
               {CAMERA_MOVEMENT_VALUES.map((m) => (
                 <SelectItem key={m} value={m}>
@@ -2749,13 +2749,13 @@ function ShotRow({
               <span className="block truncate text-sm">{localValue || '(empty)'}</span>
             </PopoverTrigger>
             <PopoverContent
-              className="w-80 bg-zinc-900 border-zinc-600"
+              className="w-80 bg-card border-border"
               align="start"
               onOpenAutoFocus={(e) => e.preventDefault()}
               onInteractOutside={cancelEdit}
             >
               <Textarea
-                className="min-h-[100px] bg-background border-zinc-600"
+                className="min-h-[100px] bg-background border-border"
                 value={localValue}
                 onChange={(e) => setLocalValue(e.target.value)}
                 onKeyDown={(e) => {
@@ -2802,13 +2802,13 @@ function ShotRow({
             return (
               <span
                 key={sc.id}
-                className="inline-flex items-center gap-1 rounded bg-zinc-700/80 px-1.5 py-0.5 text-xs text-zinc-200"
+                className="inline-flex items-center gap-1 rounded bg-secondary/80 px-1.5 py-0.5 text-xs text-foreground"
               >
                 {person?.name ?? '—'}
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-4 w-4 shrink-0 text-zinc-400 hover:text-destructive"
+                  className="h-4 w-4 shrink-0 text-muted-foreground hover:text-destructive"
                   onClick={(e) => {
                     e.stopPropagation()
                     onRemoveShotCast(sc.id)
@@ -2824,7 +2824,7 @@ function ShotRow({
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+            className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
             onClick={onAddCastClick}
           >
             <Plus className="mr-1 size-3" />
@@ -2865,7 +2865,7 @@ function ShotRow({
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+            className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
             onClick={onManageSectionsClick}
           >
             <Pencil className="mr-1 size-3" />
@@ -2882,7 +2882,7 @@ function ShotRow({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-zinc-400 hover:bg-zinc-700/80 hover:text-zinc-100"
+                className="h-8 w-8 text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
                 onClick={(e) => {
                   e.stopPropagation()
                   onDuplicate(shot)
@@ -2988,7 +2988,7 @@ function DurationEditor({
   return (
     <div className="flex items-center gap-1 pr-0">
       <Input
-        className="h-8 w-24 bg-background border-zinc-600 focus-visible:ring-emerald-500/50"
+        className="h-8 w-24 bg-background border-border focus-visible:ring-emerald-500/50"
         placeholder="m:ss"
         value={value}
         onChange={(e) => onChange(e.target.value.replace(/[^\d:]/g, ''))}
@@ -3058,7 +3058,7 @@ function EstMinutesEditor({
           type="text"
           inputMode="numeric"
           className={cn(
-            'h-8 w-20 bg-background border-zinc-600 focus-visible:ring-emerald-500/50',
+            'h-8 w-20 bg-background border-border focus-visible:ring-emerald-500/50',
             invalid && 'border-destructive aria-invalid'
           )}
           placeholder="min"
@@ -3110,7 +3110,7 @@ function LensSupportCombobox({
         <span className="block w-full min-w-[80px]">{value || placeholder}</span>
       </PopoverTrigger>
       <PopoverContent
-        className="w-56 p-0 bg-zinc-800 border-zinc-600"
+        className="w-56 p-0 bg-muted border-border"
         align="start"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
@@ -3119,7 +3119,7 @@ function LensSupportCombobox({
             placeholder={placeholder}
             value={value}
             onValueChange={onChange}
-            className="text-zinc-200"
+            className="text-foreground"
           />
           <CommandList>
             <CommandEmpty>No match. Type to add new.</CommandEmpty>
@@ -3132,7 +3132,7 @@ function LensSupportCombobox({
                     onCommit(opt)
                     setOpen(false)
                   }}
-                  className="text-zinc-200 focus:bg-zinc-700 focus:text-zinc-100"
+                  className="text-foreground focus:bg-secondary focus:text-foreground"
                 >
                   {opt}
                 </CommandItem>
@@ -3144,7 +3144,7 @@ function LensSupportCombobox({
                     onCommit(value.trim())
                     setOpen(false)
                   }}
-                  className="text-emerald-400 focus:bg-zinc-700"
+                  className="text-emerald-400 focus:bg-secondary"
                 >
                   Add &quot;{value.trim()}&quot;
                 </CommandItem>
@@ -3152,7 +3152,7 @@ function LensSupportCombobox({
             </CommandGroup>
           </CommandList>
         </Command>
-        <div className="flex justify-end gap-1 p-2 border-t border-zinc-600">
+        <div className="flex justify-end gap-1 p-2 border-t border-border">
           <Button variant="ghost" size="sm" onClick={onCancel}>
             Cancel
           </Button>

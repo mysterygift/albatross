@@ -47,7 +47,7 @@ export function renderPageContentHighlights(
   pageNumber: string | null,
   selectedRange: ScriptSectionRange | undefined,
   conflictRanges: ScriptSectionRange[],
-  variant: 'card' | 'dark' = 'card'
+  _variant: 'card' | 'dark' = 'card'
 ): ReactNode {
   const pageNum =
     parseLeadingPageNumber(pageNumber) ?? (pageNumber != null ? Number(pageNumber) : null)
@@ -62,10 +62,7 @@ export function renderPageContentHighlights(
   const segments = buildPageHighlightSegments(len, selectedSlice, conflictSlices)
   if (segments.length === 0) return content
 
-  const selectedMarkClass =
-    variant === 'dark'
-      ? 'rounded-sm bg-emerald-500/30 px-0.5 outline outline-1 outline-emerald-400/60'
-      : 'rounded-sm bg-primary/25 px-0.5'
+  const selectedMarkClass = 'rounded-sm bg-primary/25 px-0.5'
 
   const nodes: ReactNode[] = []
   let cursor = 0
@@ -151,19 +148,12 @@ export function ScriptSectionScriptPanel({
     return scenePages.length > 0 ? scenePages : pages
   }, [pages, previewSection])
 
-  const isDark = variant === 'dark'
-  const emptyTextClass = isDark ? 'text-sm text-zinc-500' : 'text-sm text-muted-foreground'
-  const pageMetaClass = isDark ? 'text-xs text-zinc-400' : 'text-xs text-muted-foreground'
-  const pageBorderInRange = isDark
-    ? 'border-emerald-500/50 bg-emerald-500/10'
-    : 'border-primary bg-primary/5'
-  const pageBorderConflict = isDark
-    ? 'border-red-500/50 bg-red-500/10 outline outline-2 outline-red-500/40'
-    : 'border-destructive bg-destructive/5 outline outline-2 outline-destructive/50'
-  const pageBorderDefault = isDark ? 'border-zinc-600' : 'border-border'
-  const preClass = isDark
-    ? 'whitespace-pre-wrap font-mono text-xs text-zinc-100'
-    : 'whitespace-pre-wrap font-mono text-xs text-foreground'
+  const emptyTextClass = 'text-sm text-muted-foreground'
+  const pageMetaClass = 'text-xs text-muted-foreground'
+  const pageBorderInRange = 'border-primary bg-primary/5'
+  const pageBorderConflict = 'border-destructive bg-destructive/5 outline outline-2 outline-destructive/50'
+  const pageBorderDefault = 'border-border'
+  const preClass = 'whitespace-pre-wrap font-mono text-xs text-foreground'
 
   const body =
     scriptTextPages.length === 0 ? (
@@ -192,7 +182,7 @@ export function ScriptSectionScriptPanel({
                 <span>Page {page.page_number ?? page.page_index + 1}</span>
                 {page.eighths != null && <span>· {page.eighths}/8</span>}
                 {hasConflictOnPage && (
-                  <span className={isDark ? 'text-red-400' : 'text-destructive'}>· overlapping range</span>
+                  <span className="text-destructive">· overlapping range</span>
                 )}
               </div>
               <pre className={preClass}>
@@ -216,11 +206,11 @@ export function ScriptSectionScriptPanel({
     return (
       <div className="flex min-h-0 flex-col">
         {(title || subtitle) && (
-          <div className={`border-b py-2 ${isDark ? 'border-zinc-600' : 'border-border'}`}>
-            <h4 className={`text-base font-semibold ${isDark ? 'text-zinc-100' : ''}`}>
+          <div className="border-b border-border py-2">
+            <h4 className="text-base font-semibold text-foreground">
               {title}
               {subtitle && (
-                <span className={`ml-2 text-sm font-normal ${isDark ? 'text-zinc-400' : 'text-muted-foreground'}`}>
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
                   {subtitle}
                 </span>
               )}

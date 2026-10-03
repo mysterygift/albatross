@@ -185,6 +185,22 @@ fn rebuild_menu(
         .accelerator("CmdOrCtrl+9")
         .build(app)
         .map_err(|err| err.to_string())?;
+    let view_go_call_sheets = MenuItemBuilder::with_id("view_go_call_sheets", "Call Sheets")
+        .accelerator("CmdOrCtrl+Alt+1")
+        .build(app)
+        .map_err(|err| err.to_string())?;
+    let view_go_movement_orders = MenuItemBuilder::with_id("view_go_movement_orders", "Movement Orders")
+        .accelerator("CmdOrCtrl+Alt+2")
+        .build(app)
+        .map_err(|err| err.to_string())?;
+    let view_go_equipment = MenuItemBuilder::with_id("view_go_equipment", "Equipment")
+        .accelerator("CmdOrCtrl+Alt+3")
+        .build(app)
+        .map_err(|err| err.to_string())?;
+    let view_go_music_clearance = MenuItemBuilder::with_id("view_go_music_clearance", "Music & Archive")
+        .accelerator("CmdOrCtrl+Alt+4")
+        .build(app)
+        .map_err(|err| err.to_string())?;
     let view_toggle_sidebar = MenuItemBuilder::with_id("view_toggle_sidebar", "Toggle Sidebar")
         .accelerator("CmdOrCtrl+B")
         .build(app)
@@ -200,6 +216,10 @@ fn rebuild_menu(
             &view_go_documents,
             &view_go_deliverables,
             &view_go_tasks,
+            &view_go_call_sheets,
+            &view_go_movement_orders,
+            &view_go_equipment,
+            &view_go_music_clearance,
             &view_toggle_sidebar,
         ])
         .build()
@@ -1044,6 +1064,18 @@ pub fn run() {
                 }
                 "view_go_tasks" => {
                     let _ = app_handle.emit("albatross-menu-view-go-tasks", ());
+                }
+                "view_go_call_sheets" => {
+                    let _ = app_handle.emit("albatross-menu-view-go-call-sheets", ());
+                }
+                "view_go_movement_orders" => {
+                    let _ = app_handle.emit("albatross-menu-view-go-movement-orders", ());
+                }
+                "view_go_equipment" => {
+                    let _ = app_handle.emit("albatross-menu-view-go-equipment", ());
+                }
+                "view_go_music_clearance" => {
+                    let _ = app_handle.emit("albatross-menu-view-go-music-clearance", ());
                 }
                 "view_toggle_sidebar" => {
                     let _ = app_handle.emit("albatross-menu-view-toggle-sidebar", ());

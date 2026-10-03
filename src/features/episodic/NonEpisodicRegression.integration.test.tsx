@@ -250,6 +250,7 @@ vi.mock('@/lib/db/repositories/settings', () => ({
   FIRST_LAUNCH_TUTORIAL_SEEN_KEY: 'x',
   setFirstLaunchTutorialSeen: vi.fn(),
   API_CALL_TRACKING_SETTING_KEY: 'y',
+  DEVELOPER_MODE_SETTING_KEY: 'developer_mode',
   OPENROUTESERVICE_API_KEY_SETTING: 'z',
 }))
 

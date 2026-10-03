@@ -1,0 +1,44 @@
+# 06 - Visible search, Cmd/Ctrl+K palette, Go to / Create actions, shortcut cheat-sheet
+
+## Goal
+Make search and keyboard shortcuts discoverable: a visible "Search ⌘K" field in the top bar, Cmd/Ctrl+K opens the palette, the palette also offers "Go to…" and "Create…" commands (same ids as the native menu), shortcut hints on tooltips, a `?` cheat-sheet dialog, and Cmd+1-9 gaps filled without accelerator conflicts.
+
+## Prerequisites
+Steps 01 and 02 merged (top bar has production switcher). Step 05 preferred (routes `/tasks`, nav groups, `navigation.ts` as the single list of destinations). If 05 is not merged, use the current `navItems` and `/readiness`.
+
+## Files to touch (exhaustive)
+- `src/components/top-bar.tsx` (replace the icon-only Search button, lines ~48-59, with a search-field-styled button; keep `onOpenSearch`).
+- `src/app/layout.tsx` (`GlobalSearchShortcutBridge`, lines ~420-449, rename/rewrite; add `?` bridge and cheat-sheet state next to `searchOpen` @194; render `<ShortcutCheatSheet/>`).
+- `src/features/search/GlobalSearchDialog.tsx` (add Go to / Create groups; update `description`).
+- `src/features/search/commands.ts` (new: builds command list), `src/features/search/filterGlobalSearch.ts` (extend or add `filterCommands`), `src/features/search/types.ts` (add `GlobalSearchCommand`).
+- `src/app/menuSchema.ts` (accelerators for new go-to commands, `formatAccelerator()` helper, `commandLabels`), `src/app/navigation.ts` (read-only reuse).
+- `src/features/productions/ApfMenuEventBridge.tsx` (register new `albatross-menu-view-go-*` ids; lines ~150-166 list).
+- `src-tauri/src/lib.rs` (View menu items near lines 152-203, and the match on menu id near line 1021 that `emit`s `albatross-menu-view-go-*`).
+- `src/components/shortcut-cheat-sheet.tsx` (new, uses `components/ui/dialog.tsx`), `src/components/shortcut-hint.tsx` (new, tiny `<kbd>` + tooltip helper), `src/components/app-sidebar.tsx` (tooltips only).
+- Tests: `src/features/search/filterCommands.test.ts` (new, modelled on `filterGlobalSearch.test.ts`), `src/app/menuSchema.test.ts` (extend/create), `src/app/AppLayout.setupTransition.test.tsx` (verify still passes).
+
+## Reuse
+`GlobalSearchDialog` + `CommandDialog` (`components/ui/command.tsx`, cmdk, `shouldFilter={false}`, so filtering is ours); `filterGlobalSearch.ts`; `menuSchema.ts` `globalMenuCommands`/`sectionMenuSpecs`/`getAcceleratorConflicts`; `ApfMenuEventBridge` helpers `bindNavigateCommand`/`bindDispatchCommand` and browser events (`albatross-menu-people-add-cast`, `albatross-menu-budget-log-spend`, `albatross-menu-schedule-new-shoot-day`, `albatross-menu-tasks-new-task`, `albatross-menu-locations-add-location`, `albatross-menu-documents-upload-file`, `albatross-menu-deliverables-add-deliverable`, `albatross-open-new-production-dialog`); `components/ui/tooltip.tsx`; `SidebarMenuButton tooltip` prop.
+
+## Concrete tasks
+1. Conflict audit (done pre-plan, re-verify): `grep -n "accelerator" src-tauri/src/lib.rs` shows no `CmdOrCtrl+K`, no global-shortcut plugin (`grep -rn "global_shortcut\|global-shortcut" src-tauri` is empty), Edit menu uses predefined cut/copy/paste/select-all. Cmd+K is therefore free. Cmd+T = new task, Cmd+B = sidebar, Cmd+, = settings, Cmd+N/O = new/import project. Keep Cmd+K as a JS listener (not native) so it can be suppressed in inputs.
+2. Rewrite the bridge: trigger on `(metaKey||ctrlKey) && key.toLowerCase()==='k' && !altKey && !shiftKey`; toggle (press again closes). Keep the existing guard that suppresses it while a `[data-slot="dialog-content"][data-state="open"]` or sheet is open, EXCEPT when the open dialog is the search dialog itself (so toggle works). Update the doc comment (currently says Cmd+Option+Space) and remove the old combo entirely. Add `?` listener: `event.key==='?'`, ignored when `target` is input/textarea/select/contenteditable or any overlay is open; opens cheat sheet.
+3. Top bar: replace the icon button with `<button>` styled like an input (`border border-border bg-muted/40 text-muted-foreground`, `Search` icon, text "Search", right-aligned `<kbd>⌘K</kbd>`; show `Ctrl K` when `navigator.platform` is not Mac). `aria-label="Search (⌘K)"`, min width ~`w-56`, collapses to icon below `md`. Also add a `?` icon button (with tooltip "Keyboard shortcuts ?") next to the help button.
+4. `menuSchema.ts`: add `formatAccelerator(acc, isMac)` (`CmdOrCtrl+Shift+D` -> `⌘⇧D` / `Ctrl+Shift+D`) and a `commandLabels: Record<id,string>` for every command id in the schema (used by palette + cheat sheet, avoiding a second list of shortcuts).
+5. Palette commands (`search/commands.ts`): `Go to…` entries derived from `navigation.ts` (group label as subtitle) plus Productions/Dashboard/Settings; `Create…` entries mapped to existing command ids: New production (`new_project`), Add cast (`people_add_cast`), Add crew, Add booking, Log spend, Add line item, New shoot day, Add strip, New task, Add location, Upload document, Add deliverable. Each entry = `{id, label, group:'go'|'create', keywords, run(navigate)}` where `run` navigates and dispatches the same browser events `ApfMenuEventBridge` uses. Extract those event-name/route pairs from the bridge into one exported table (`menuCommandTargets` in `menuSchema.ts`) and make both the bridge and palette read it; bridge behaviour must not change. Disable "Create…" items needing a production when `productionId` is null (use `RequireProduction` semantics from step 01: show them disabled with hint "Select a production").
+6. `GlobalSearchDialog.tsx`: with empty query show "Go to" (top 6) and "Create" groups; with a query, filter commands via `filterCommands` (case-insensitive, token-AND over label+keywords+group; prefix `>` shows commands only, prefix none shows entity results first then commands) and render below entity results. Selecting a command calls `close()` then `run`. Show the accelerator via `CommandShortcut` (add to `command.tsx` if missing, shadcn standard). Keep the preview/arrow-key logic untouched.
+7. Fill Cmd+1-9 gaps. Cmd+1..9 are taken (Dashboard, Productions, Budget, Schedule, People, Locations, Documents, Deliverables, Tasks). Add `CmdOrCtrl+Alt+1..4` = Call Sheets, Movement Orders, Equipment, Music & Archive (ids `view_go_call_sheets`, `view_go_movement_orders`, `view_go_equipment`, `view_go_music_clearance`). Avoid `Shift+3/4/5` (macOS screenshots) and `Shift+<letter>` already used (C R K L I S D T O V E). Add to `globalMenuCommands`, `lib.rs` View menu (+ match arm emitting `albatross-menu-view-go-*`), and bridge `bindNavigateCommand`. Verify with `getAcceleratorConflicts` for every `MenuSection` (test asserts `[]`).
+8. Tooltips: add hint text from `formatAccelerator` to sidebar toggle ("Toggle sidebar ⌘B"), top-bar search/help, sidebar items that have shortcuts (via `SidebarMenuButton tooltip`), and the Add buttons that have menu accelerators where trivial (Add Location, New Task); do not edit the four huge pages beyond `title`/tooltip prop on an existing button.
+9. `shortcut-cheat-sheet.tsx`: dialog titled "Keyboard shortcuts", sections Navigation / Create / View / General (⌘K search, ? this sheet, ⌘B sidebar, ⌘, settings), generated from `menuSchema` + `commandLabels`; two-column on `sm`; closes on Esc. Also reachable from the palette ("Keyboard shortcuts") and from the native Help/View menu is optional (skip Rust).
+10. Tests: `filterCommands.test.ts` (matching, `>` prefix, empty query default groups, disabled-without-production, ordering) following `filterGlobalSearch.test.ts` style; `menuSchema.test.ts` (no conflicts per section, every accelerator has a label, `formatAccelerator` mac/non-mac); a component test for the bridge: dispatch `keydown {key:'k', metaKey:true}` opens, and is ignored inside an open non-search dialog.
+
+## Out of scope
+Per-page help `?` buttons and onboarding (07), nav regrouping (05), user-customisable shortcuts, global OS-level shortcuts, changing existing accelerators, searching new entity types.
+
+## Acceptance checks
+- `npm run build && npm test && npm run lint:ci` green vs baseline; `cargo check` in `src-tauri` passes (menu change).
+- Manual (Tauri dev: `npm run tauri:dev` or browser for JS parts): Cmd/Ctrl+K opens and toggles search from any page, including with focus in a text field; ignored while a form dialog is open; `?` opens cheat sheet but not while typing; Cmd+Option+Space does nothing; top bar shows "Search ⌘K"; palette empty state lists Go to and Create; "Create > Add location" navigates to `/locations` and opens the dialog; Cmd+Alt+1..4 reach Call Sheets, Movement Orders, Equipment, Music & Archive and appear in View menu with no duplicate accelerators; native Cmd+1-9 and Cmd+T unchanged; tooltips show hints.
+- `grep -rn "Option+Space\|Alt+Space" src` empty.
+
+## Commit message
+`feat(ui): visible search with Cmd/Ctrl+K palette commands, shortcut hints and cheat-sheet`

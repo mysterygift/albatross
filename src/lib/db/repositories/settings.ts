@@ -7,11 +7,15 @@ const TABLE = 'settings'
 const CURRENCY_API_DEFAULT_ON_MIGRATION_KEY = '_migration_currency_api_default_on_v1'
 const LOCAL_COLLABORATION_SETTING_MIGRATION_KEY = '_migration_local_collaboration_setting_v1'
 
+/** Setting key for the developer-mode flag (shows diagnostics in Settings). */
+export const DEVELOPER_MODE_SETTING_KEY = 'developer_mode'
+
 const DEFAULTS: Record<string, string> = {
   display_currency: 'GBP',
   ui_theme: DEFAULT_UI_THEME,
   enable_currency_conversion_api: 'true',
   enable_api_call_tracking: 'false',
+  developer_mode: 'false',
   /** Enables collaboration traffic and management UI on this device; never starts a local host. */
   local_collaboration_enabled: 'false',
 }

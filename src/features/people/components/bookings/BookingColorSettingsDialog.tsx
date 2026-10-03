@@ -103,7 +103,7 @@ export function BookingColorSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-lg border-border sm:max-w-lg">
+      <DialogContent className="rounded-lg sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-lg">Calendar colors</DialogTitle>
           <DialogDescription>

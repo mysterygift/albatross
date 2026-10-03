@@ -7,6 +7,10 @@
  * Test: DnD strips between columns, drag scene from unscheduled to column, Add dropdown,
  * multi-select Assign to Day, location/search filters, day totals & runtime warning (>10h), lock toggle.
  */
+import { PageHeader } from '@/components/page-header'
+import { RequireProduction } from '@/components/require-production'
+import { useSearchParams } from 'react-router-dom'
+import { applyStripboardParams, parseStripboardParams, type StripboardUrlPatch } from './stripboardUrlState'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
@@ -46,6 +50,7 @@ import { StripboardDayColumn } from './stripboard-day-column'
 import { StripboardDayView, CollapsedPanelRail } from './stripboard-day-view'
 import type { ColumnFilter } from '@/lib/schedule/stripboardRows'
 import { StripItem } from './strip-item'
+import { toast } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Plus, Layers2, LayoutGrid, CalendarDays, PanelLeftClose, PanelRightClose } from 'lucide-react'
@@ -325,22 +330,31 @@ export function StripboardPage() {
   const queryClient = useQueryClient()
   const isEpisodicProduction = currentProduction?.is_episodic === true
 
-  const [search, setSearch] = useState('')
-  const [locationId, setLocationId] = useState<string | null | undefined>(undefined)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlState = useMemo(() => parseStripboardParams(searchParams), [searchParams])
+  const updateUrl = useCallback(
+    (patch: StripboardUrlPatch, replace: boolean) => {
+      setSearchParams((prev) => applyStripboardParams(prev, patch), { replace })
+    },
+    [setSearchParams]
+  )
+  const search = urlState.q
+  const locationId = urlState.locationId
+  const setSearch = useCallback((q: string) => updateUrl({ q }, true), [updateUrl])
+  const setLocationId = useCallback(
+    (id: string | null | undefined) => updateUrl({ locationId: id }, true),
+    [updateUrl]
+  )
   const [selectedShotIds, setSelectedShotIds] = useState<Set<string>>(new Set())
   const [activeData, setActiveData] = useState<{ type: 'strip'; strip: StripboardStrip } | { type: 'unscheduled-shot'; item: ShotWithScene } | null>(null)
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({})
-  const [unscheduleToast, setUnscheduleToast] = useState(false)
-  const [boneyardToast, setBoneyardToast] = useState(false)
   const [newDayOpen, setNewDayOpen] = useState(false)
   const [newDayDate, setNewDayDate] = useState('')
   const [newDayError, setNewDayError] = useState<string | null>(null)
   const [newlyCreatedShootDayId, setNewlyCreatedShootDayId] = useState<string | null>(null)
-  const [newDaySuccessToast, setNewDaySuccessToast] = useState(false)
   const [addSecondUnitOpen, setAddSecondUnitOpen] = useState(false)
   const [selectedSecondUnitDayIds, setSelectedSecondUnitDayIds] = useState<Set<string>>(new Set())
   const [addSecondUnitError, setAddSecondUnitError] = useState<string | null>(null)
-  const [addSecondUnitSuccessToast, setAddSecondUnitSuccessToast] = useState<string | null>(null)
   const [deleteShootDayTarget, setDeleteShootDayTarget] = useState<{
     id: string
     shoot_date: string
@@ -356,14 +370,26 @@ export function StripboardPage() {
   } | null>(null)
   const [removeSecondUnitDialogOpen, setRemoveSecondUnitDialogOpen] = useState(false)
   const [removeSecondUnitError, setRemoveSecondUnitError] = useState<string | null>(null)
-  const [removeSecondUnitSuccessToast, setRemoveSecondUnitSuccessToast] = useState(false)
   const newDayColumnRef = useRef<HTMLDivElement | null>(null)
   const columnsScrollRef = useRef<HTMLDivElement | null>(null)
   const [showColumnsLeftFeather, setShowColumnsLeftFeather] = useState(false)
   const [addStripOpen, setAddStripOpen] = useState(false)
-  const [blocViewFilter, setBlocViewFilter] = useState<ShootingBlocViewFilter>('all')
-  const [viewMode, setViewMode] = useState<StripboardViewMode>(readStoredViewMode)
-  const [activeDayId, setActiveDayId] = useState<string | null>(null)
+  const blocViewFilter: ShootingBlocViewFilter = urlState.bloc
+  const setBlocViewFilter = useCallback(
+    (bloc: ShootingBlocViewFilter) => updateUrl({ bloc }, true),
+    [updateUrl]
+  )
+  // Precedence: URL `view` > localStorage > default (board).
+  const viewMode: StripboardViewMode = urlState.view ?? readStoredViewMode()
+  const setViewMode = useCallback(
+    (view: StripboardViewMode) => updateUrl({ view }, false),
+    [updateUrl]
+  )
+  const activeDayId = urlState.day
+  const setActiveDayId = useCallback(
+    (day: string | null) => updateUrl({ day }, true),
+    [updateUrl]
+  )
   const [unscheduledOpen, setUnscheduledOpen] = useState(true)
   const [boneyardOpen, setBoneyardOpen] = useState(false)
 
@@ -375,9 +401,16 @@ export function StripboardPage() {
     }
   }, [viewMode])
 
+  // Reset the bloc filter when the user switches production (not on first load, which would
+  // discard a deep-linked `bloc` param).
+  const previousProductionIdRef = useRef(currentProductionId)
   useEffect(() => {
-    setBlocViewFilter('all')
-  }, [currentProductionId])
+    const previous = previousProductionIdRef.current
+    previousProductionIdRef.current = currentProductionId
+    if (previous && currentProductionId && previous !== currentProductionId) {
+      setBlocViewFilter('all')
+    }
+  }, [currentProductionId, setBlocViewFilter])
 
   const stripboard = useStripboard(currentProductionId ?? null)
   const filters = { search: search || undefined, locationId }
@@ -511,7 +544,7 @@ export function StripboardPage() {
       setNewDayError(null)
       setNewlyCreatedShootDayId(result.shootDay.id)
       setActiveDayId(result.shootDay.id)
-      setNewDaySuccessToast(true)
+      toast.success('Shoot day created.')
       void invalidateStripboardCaches(queryClient, currentProductionId)
     },
     onError: (error) => {
@@ -557,7 +590,7 @@ export function StripboardPage() {
       setSelectedSecondUnitDayIds(new Set())
       setAddSecondUnitError(null)
       const linkedCount = result.linkedShootDayUnitIds.length
-      setAddSecondUnitSuccessToast(
+      toast.success(
         linkedCount === 1
           ? 'Second Unit added to 1 shoot day.'
           : `Second Unit added to ${linkedCount} shoot day(s).`
@@ -701,36 +734,6 @@ export function StripboardPage() {
   }
 
   useEffect(() => {
-    if (!unscheduleToast) return
-    const t = setTimeout(() => setUnscheduleToast(false), 3000)
-    return () => clearTimeout(t)
-  }, [unscheduleToast])
-
-  useEffect(() => {
-    if (!boneyardToast) return
-    const t = setTimeout(() => setBoneyardToast(false), 3000)
-    return () => clearTimeout(t)
-  }, [boneyardToast])
-
-  useEffect(() => {
-    if (!newDaySuccessToast) return
-    const t = setTimeout(() => setNewDaySuccessToast(false), 3000)
-    return () => clearTimeout(t)
-  }, [newDaySuccessToast])
-
-  useEffect(() => {
-    if (!addSecondUnitSuccessToast) return
-    const t = setTimeout(() => setAddSecondUnitSuccessToast(null), 3000)
-    return () => clearTimeout(t)
-  }, [addSecondUnitSuccessToast])
-
-  useEffect(() => {
-    if (!removeSecondUnitSuccessToast) return
-    const t = setTimeout(() => setRemoveSecondUnitSuccessToast(false), 3000)
-    return () => clearTimeout(t)
-  }, [removeSecondUnitSuccessToast])
-
-  useEffect(() => {
     const onMenuNewShootDay = () => {
       setNewDayError(null)
       setNewDayOpen(true)
@@ -756,6 +759,25 @@ export function StripboardPage() {
     }
   }, [newlyCreatedShootDayId, shootDays])
 
+  /** Sonner action that moves a strip back to its prior shoot day slot (single repository call). */
+  const undoMoveAction = (prior: StripboardStrip) =>
+    prior.shoot_day_id && prior.shoot_day_unit_id
+      ? {
+          label: 'Undo',
+          onClick: () => {
+            moveStripMutation.mutate(
+              {
+                stripId: prior.id,
+                toShootDayId: prior.shoot_day_id!,
+                toShootDayUnitId: prior.shoot_day_unit_id!,
+                toSortIndex: prior.sort_index,
+              },
+              { onError: () => toast.error('Could not undo the move.') }
+            )
+          },
+        }
+      : undefined
+
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveData(null)
     const { active, over } = event
@@ -766,8 +788,9 @@ export function StripboardPage() {
 
     if (overStr === 'unscheduled-panel') {
       if (data?.type === 'strip') {
-        await moveToUnscheduledMutation.mutateAsync(data.strip.id)
-        setUnscheduleToast(true)
+        const prior = data.strip
+        await moveToUnscheduledMutation.mutateAsync(prior.id)
+        toast.success('Shot moved to Unscheduled.', { action: undoMoveAction(prior) })
         return
       }
       if (data?.type === 'boneyard-strip') {
@@ -777,8 +800,9 @@ export function StripboardPage() {
     }
 
     if (overStr === 'boneyard-panel' && (data?.type === 'strip' || data?.type === 'boneyard-strip')) {
-      await moveToBoneyardMutation.mutateAsync(data.strip.id)
-      setBoneyardToast(true)
+      const prior = data.strip
+      await moveToBoneyardMutation.mutateAsync(prior.id)
+      toast.success('Moved to Boneyard.', { action: undoMoveAction(prior) })
       return
     }
 
@@ -883,126 +907,100 @@ export function StripboardPage() {
   return (
     <>
       {!currentProductionId ? (
-        <div>
-          <h1 className="text-2xl font-semibold">Schedule — Stripboard</h1>
-          <p className="text-muted-foreground">Select a production first.</p>
-        </div>
+        <RequireProduction title="Stripboard">{null}</RequireProduction>
       ) : (
     <div className="flex h-full flex-col gap-4">
-      {unscheduleToast && (
-        <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">
-          Shot moved to Unscheduled.
-        </div>
-      )}
-      {boneyardToast && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-700 dark:text-amber-400">
-          Moved to Boneyard.
-        </div>
-      )}
-      {newDaySuccessToast && (
-        <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">
-          Shoot day created.
-        </div>
-      )}
-      {addSecondUnitSuccessToast && (
-        <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">
-          {addSecondUnitSuccessToast}
-        </div>
-      )}
-      {removeSecondUnitSuccessToast && (
-        <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">
-          Second Unit removed. Shots moved to Unscheduled.
-        </div>
-      )}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-semibold">Schedule — Stripboard</h1>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          <div role="group" aria-label="Stripboard view" className="inline-flex rounded-md border border-border p-0.5">
+      <PageHeader
+        title="Stripboard"
+        actions={
+          <>
+            <div role="group" aria-label="Stripboard view" className="inline-flex rounded-md border border-border p-0.5">
+              <Button
+                variant={viewMode === 'board' ? 'default' : 'ghost'}
+                size="sm"
+                className="h-7 gap-1"
+                aria-pressed={viewMode === 'board'}
+                onClick={() => setViewMode('board')}
+              >
+                <LayoutGrid className="size-4" />
+                Board
+              </Button>
+              <Button
+                variant={viewMode === 'day' ? 'default' : 'ghost'}
+                size="sm"
+                className="h-7 gap-1"
+                aria-pressed={viewMode === 'day'}
+                onClick={() => setViewMode('day')}
+              >
+                <CalendarDays className="size-4" />
+                Day
+              </Button>
+            </div>
+            {isEpisodicProduction && (
+              <Select
+                value={blocViewFilter}
+                onValueChange={(v) => setBlocViewFilter(v as ShootingBlocViewFilter)}
+              >
+                <SelectTrigger className="h-9 w-[200px]" aria-label="Filter stripboard by shooting bloc">
+                  <SelectValue placeholder="Bloc" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All blocs</SelectItem>
+                  <SelectItem value="unassigned">Outside blocs</SelectItem>
+                  {shootingBlocs.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Button
-              variant={viewMode === 'board' ? 'default' : 'ghost'}
+              variant="outline"
               size="sm"
-              className="h-7 gap-1"
-              aria-pressed={viewMode === 'board'}
-              onClick={() => setViewMode('board')}
+              className="gap-1"
+              onClick={() => {
+                setAddSecondUnitError(null)
+                setSelectedSecondUnitDayIds(new Set())
+                setAddSecondUnitOpen(true)
+              }}
+              disabled={
+                !currentProductionId ||
+                shootDays.length === 0 ||
+                shootDaysEligibleForSecond.length === 0
+              }
             >
-              <LayoutGrid className="size-4" />
-              Board
+              <Layers2 className="size-4" />
+              Add Second Unit
             </Button>
             <Button
-              variant={viewMode === 'day' ? 'default' : 'ghost'}
+              variant="outline"
               size="sm"
-              className="h-7 gap-1"
-              aria-pressed={viewMode === 'day'}
-              onClick={() => setViewMode('day')}
+              className="gap-1"
+              onClick={() => {
+                setNewDayError(null)
+                setNewDayOpen(true)
+              }}
+              disabled={!currentProductionId}
             >
-              <CalendarDays className="size-4" />
-              Day
+              <Plus className="size-4" />
+              New shoot day
             </Button>
-          </div>
-          {isEpisodicProduction && (
-            <Select
-              value={blocViewFilter}
-              onValueChange={(v) => setBlocViewFilter(v as ShootingBlocViewFilter)}
-            >
-              <SelectTrigger className="h-9 w-[200px]" aria-label="Filter stripboard by shooting bloc">
-                <SelectValue placeholder="Bloc" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All blocs</SelectItem>
-                <SelectItem value="unassigned">Outside blocs</SelectItem>
-                {shootingBlocs.map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {b.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1"
-            onClick={() => {
-              setAddSecondUnitError(null)
-              setSelectedSecondUnitDayIds(new Set())
-              setAddSecondUnitOpen(true)
-            }}
-            disabled={
-              !currentProductionId ||
-              shootDays.length === 0 ||
-              shootDaysEligibleForSecond.length === 0
-            }
-          >
-            <Layers2 className="size-4" />
-            Add Second Unit
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1"
-            onClick={() => {
-              setNewDayError(null)
-              setNewDayOpen(true)
-            }}
-            disabled={!currentProductionId}
-          >
-            <Plus className="size-4" />
-            New shoot day
-          </Button>
-          <AddStripPopover
-            productionId={currentProductionId}
-            shootDays={visibleShootDays}
-            dayUnits={dayUnits}
-            units={units}
-            locations={locations}
-            onCreate={(data) => createStripMutation.mutate(data)}
-            stripsByDayUnitKey={stripsByDayUnit}
-            isPending={createStripMutation.isPending}
-            open={addStripOpen}
-            onOpenChange={setAddStripOpen}
-          />
-        </div>
-      </div>
+            <AddStripPopover
+              productionId={currentProductionId}
+              shootDays={visibleShootDays}
+              dayUnits={dayUnits}
+              units={units}
+              locations={locations}
+              onCreate={(data) => createStripMutation.mutate(data)}
+              stripsByDayUnitKey={stripsByDayUnit}
+              isPending={createStripMutation.isPending}
+              open={addStripOpen}
+              onOpenChange={setAddStripOpen}
+            />
+          </>
+        }
+      />
 
       <SmartSchedulingInsightsPanel
         strips={strips}
@@ -1088,8 +1086,9 @@ export function StripboardPage() {
                       isLocked={false}
                       pageEighthsTarget={PAGE_EIGHTHS_TARGET}
                       onSendToBoneyard={(strip) => {
-                        moveToBoneyardMutation.mutate(strip.id)
-                        setBoneyardToast(true)
+                        moveToBoneyardMutation.mutate(strip.id, {
+                          onSuccess: () => toast.success('Moved to Boneyard.', { action: undoMoveAction(strip) }),
+                        })
                       }}
                       onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
                       onToggleLock={(shootDayUnitId, isLocked) =>
@@ -1192,8 +1191,9 @@ export function StripboardPage() {
               onUpdateCallWrapTime={(stripId, time) => updateCallWrapTimeMutation.mutate({ stripId, time })}
               onUpdateMoveStrip={(stripId, data) => updateStripMutation.mutate({ stripId, data })}
               onSendToBoneyard={(strip) => {
-                moveToBoneyardMutation.mutate(strip.id)
-                setBoneyardToast(true)
+                moveToBoneyardMutation.mutate(strip.id, {
+                  onSuccess: () => toast.success('Moved to Boneyard.', { action: undoMoveAction(strip) }),
+                })
               }}
               onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
             />
@@ -1276,9 +1276,9 @@ export function StripboardPage() {
           }
         }}
       >
-        <DialogContent className="max-w-md bg-zinc-900 border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-100">New shoot day</h3>
-          <p className="text-sm text-zinc-400">
+        <DialogContent className="max-w-md">
+          <h3 className="text-base font-semibold text-foreground">New shoot day</h3>
+          <p className="text-sm text-muted-foreground">
             Create an empty shoot day for this production. Main Unit will be added by default.
           </p>
           {newDayError && (
@@ -1288,13 +1288,13 @@ export function StripboardPage() {
           )}
           <div className="mt-3 space-y-3">
             <div>
-              <Label htmlFor="shoot-date" className="text-sm text-zinc-200">
+              <Label htmlFor="shoot-date" className="text-sm text-foreground">
                 Shoot date<span className="text-destructive">*</span>
               </Label>
               <Input
                 id="shoot-date"
                 type="date"
-                className="mt-1 h-9 bg-zinc-900 border-zinc-600 text-zinc-100"
+                className="mt-1 h-9 bg-card border-border text-foreground"
                 value={newDayDate}
                 onChange={(e) => setNewDayDate(e.target.value)}
                 disabled={createShootDayMutation.isPending}
@@ -1332,9 +1332,9 @@ export function StripboardPage() {
           }
         }}
       >
-        <DialogContent className="max-w-md bg-zinc-900 border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-100">Add Second Unit</h3>
-          <p className="text-sm text-zinc-400">
+        <DialogContent className="max-w-md">
+          <h3 className="text-base font-semibold text-foreground">Add Second Unit</h3>
+          <p className="text-sm text-muted-foreground">
             Add a Second Unit column to selected shoot days. Main Unit columns are unchanged.
           </p>
           {addSecondUnitError && (
@@ -1359,7 +1359,7 @@ export function StripboardPage() {
                 </button>
                 <button
                   type="button"
-                  className="text-zinc-400 hover:underline"
+                  className="text-muted-foreground hover:underline"
                   onClick={() => setSelectedSecondUnitDayIds(new Set())}
                   disabled={addSecondUnitMutation.isPending}
                 >
@@ -1377,7 +1377,7 @@ export function StripboardPage() {
                 return (
                   <label
                     key={day.id}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1.5 hover:bg-zinc-800/60"
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1.5 hover:bg-muted/60"
                   >
                     <Checkbox
                       checked={checked}
@@ -1391,7 +1391,7 @@ export function StripboardPage() {
                       }}
                       disabled={addSecondUnitMutation.isPending}
                     />
-                    <span className="text-sm text-zinc-200">{label}</span>
+                    <span className="text-sm text-foreground">{label}</span>
                   </label>
                 )
               })}
@@ -1432,19 +1432,19 @@ export function StripboardPage() {
           }
         }}
       >
-        <DialogContent className="max-w-md bg-zinc-900 border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-100">Remove Second Unit</h3>
+        <DialogContent className="max-w-md">
+          <h3 className="text-base font-semibold text-foreground">Remove Second Unit</h3>
           {removeSecondUnitTarget && (
             <>
-              <p className="text-sm text-zinc-300 mt-1">
+              <p className="text-sm text-foreground mt-1">
                 Remove Second Unit from shoot day{' '}
-                <span className="font-medium text-zinc-100">{removeSecondUnitTarget.shootDate}</span>
+                <span className="font-medium text-foreground">{removeSecondUnitTarget.shootDate}</span>
                 {removeSecondUnitTarget.dayNumber != null
                   ? ` (Day ${removeSecondUnitTarget.dayNumber})`
                   : ''}
                 ?
               </p>
-              <p className="text-sm text-zinc-400 mt-2">
+              <p className="text-sm text-muted-foreground mt-2">
                 All shots scheduled on {removeSecondUnitTarget.unitName} for this day will move to
                 Unscheduled. Main Unit is unchanged.
               </p>
@@ -1475,7 +1475,7 @@ export function StripboardPage() {
                   onSuccess: () => {
                     setRemoveSecondUnitDialogOpen(false)
                     setRemoveSecondUnitTarget(null)
-                    setRemoveSecondUnitSuccessToast(true)
+                    toast.success('Second Unit removed. Shots moved to Unscheduled.')
                   },
                   onError: (error) => {
                     const message =
@@ -1507,19 +1507,19 @@ export function StripboardPage() {
           }
         }}
       >
-        <DialogContent className="max-w-md bg-zinc-900 border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-100">Delete shoot day</h3>
+        <DialogContent className="max-w-md">
+          <h3 className="text-base font-semibold text-foreground">Delete shoot day</h3>
           {deleteShootDayTarget && (
             <>
-              <p className="text-sm text-zinc-300 mt-1">
+              <p className="text-sm text-foreground mt-1">
                 Are you sure you want to delete shoot day{' '}
-                <span className="font-medium text-zinc-100">{deleteShootDayTarget.shoot_date}</span>
+                <span className="font-medium text-foreground">{deleteShootDayTarget.shoot_date}</span>
                 {deleteShootDayTarget.day_number != null
                   ? ` (Day ${deleteShootDayTarget.day_number})`
                   : ''}
                 ?
               </p>
-              <p className="text-sm text-zinc-400 mt-2">
+              <p className="text-sm text-muted-foreground mt-2">
                 Scheduled shot and scene strips on this day will be moved to the Boneyard. This cannot
                 be undone from this action alone.
               </p>

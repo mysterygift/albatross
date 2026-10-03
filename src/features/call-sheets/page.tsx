@@ -1,3 +1,5 @@
+import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Document, Page, pdfjs } from 'react-pdf'
@@ -963,19 +965,13 @@ export function CallSheetsPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Call Sheets</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Call Sheets">{null}</RequireProduction>
     )
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Call Sheets</h1>
-      <p className="text-muted-foreground text-sm">
-        Select shoot day and unit. Edit fields below. Generate PDF with required sections; preview and save.
-      </p>
+      <PageHeader title="Call Sheets" description="Select shoot day and unit. Edit fields below. Generate PDF with required sections; preview and save." />
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="border-border bg-card">

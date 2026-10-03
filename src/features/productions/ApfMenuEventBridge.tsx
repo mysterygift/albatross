@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
+import { toast } from '@/components/ui/sonner'
 import { invoke } from '@tauri-apps/api/core'
 import { useQueryClient } from '@tanstack/react-query'
 import { useQuery } from '@tanstack/react-query'
@@ -13,7 +14,7 @@ import {
   runDuplicateLiveAsDraftFromMenu,
 } from '@/features/productions/budgetMenuActions'
 import { listBudgetRevisionsByProduction } from '@/lib/db/repositories/budgetRevisions'
-import { getAcceleratorConflicts, resolveMenuSectionForPath } from '@/app/menuSchema'
+import { getAcceleratorConflicts, menuCommandTargets, resolveMenuSectionForPath } from '@/app/menuSchema'
 import { clearPersistedAuthSession } from '@/lib/auth/authService'
 import { getDb } from '@/lib/db/client'
 
@@ -22,7 +23,6 @@ export function ApfMenuEventBridge() {
   const location = useLocation()
   const queryClient = useQueryClient()
   const { currentProductionId, setSelectedBudgetRevisionId } = useCurrentProduction()
-  const [banner, setBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [duplicateBusy, setDuplicateBusy] = useState(false)
   const { data: revisions = [] } = useQuery({
     queryKey: ['budget-revisions', currentProductionId],
@@ -38,8 +38,7 @@ export function ApfMenuEventBridge() {
 
   const { handleImportApf, handleExportApf } = useApfActions({
     onMessage: (msg: ApfActionMessage) => {
-      setBanner({ type: msg.type, message: msg.message })
-      window.setTimeout(() => setBanner(null), msg.timeoutMs)
+      toast[msg.type](msg.message, { duration: msg.timeoutMs })
     },
   })
 
@@ -88,8 +87,7 @@ export function ApfMenuEventBridge() {
           invalidateQueries: (queryKey) => queryClient.invalidateQueries({ queryKey }),
         })
         if (result) {
-          setBanner({ type: result.type, message: result.message })
-          window.setTimeout(() => setBanner(null), result.timeoutMs)
+          toast[result.type](result.message, { duration: result.timeoutMs })
         }
       } finally {
         setDuplicateBusy(false)
@@ -153,85 +151,16 @@ export function ApfMenuEventBridge() {
           }, unlistenCommands)
         }
 
-        await bindNavigateCommand('albatross-menu-view-go-dashboard', '/')
-        await bindNavigateCommand('albatross-menu-view-go-productions', '/productions')
-        await bindNavigateCommand('albatross-menu-view-go-budget', '/budget')
-        await bindNavigateCommand('albatross-menu-view-go-schedule', '/schedule/calendar')
-        await bindNavigateCommand('albatross-menu-view-go-people', '/people/bookings')
-        await bindNavigateCommand('albatross-menu-view-go-locations', '/locations')
-        await bindNavigateCommand('albatross-menu-view-go-documents', '/documents')
-        await bindNavigateCommand('albatross-menu-view-go-deliverables', '/deliverables')
-        await bindNavigateCommand('albatross-menu-view-go-tasks', '/readiness')
+        for (const [id, target] of Object.entries(menuCommandTargets)) {
+          // new_project is handled above (identical behaviour via the same table entry).
+          if (id === 'new_project') continue
+          if (target.browserEvent) {
+            await bindDispatchCommand(target.eventName, target.browserEvent, target.to)
+          } else if (target.to) {
+            await bindNavigateCommand(target.eventName, target.to)
+          }
+        }
         await bindDispatchCommand('albatross-menu-view-toggle-sidebar', 'albatross-menu-view-toggle-sidebar')
-
-        await bindDispatchCommand(
-          'albatross-menu-people-add-cast',
-          'albatross-menu-people-add-cast',
-          '/people/cast-manager',
-        )
-        await bindDispatchCommand(
-          'albatross-menu-people-add-crew',
-          'albatross-menu-people-add-crew',
-          '/people/crew-manager',
-        )
-        await bindDispatchCommand(
-          'albatross-menu-people-add-booking',
-          'albatross-menu-people-add-booking',
-          '/people/bookings',
-        )
-        await bindNavigateCommand('albatross-menu-people-open-cast-manager', '/people/cast-manager')
-        await bindNavigateCommand('albatross-menu-people-open-crew-manager', '/people/crew-manager')
-
-        await bindDispatchCommand('albatross-menu-budget-log-spend', 'albatross-menu-budget-log-spend', '/budget')
-        await bindDispatchCommand('albatross-menu-budget-add-line-item', 'albatross-menu-budget-add-line-item', '/budget')
-        await bindDispatchCommand(
-          'albatross-menu-budget-manage-revisions',
-          'albatross-menu-budget-manage-revisions',
-          '/budget',
-        )
-        await bindDispatchCommand('albatross-menu-budget-export-csv', 'albatross-menu-budget-export-csv', '/budget')
-
-        await bindDispatchCommand(
-          'albatross-menu-schedule-new-shoot-day',
-          'albatross-menu-schedule-new-shoot-day',
-          '/schedule/stripboard',
-        )
-        await bindDispatchCommand(
-          'albatross-menu-schedule-add-strip',
-          'albatross-menu-schedule-add-strip',
-          '/schedule/stripboard',
-        )
-        await bindNavigateCommand('albatross-menu-schedule-open-stripboard', '/schedule/stripboard')
-        await bindNavigateCommand('albatross-menu-schedule-open-shot-list', '/schedule/shots')
-        await bindNavigateCommand('albatross-menu-schedule-parse-script-scenes', '/schedule/script-import')
-        await bindDispatchCommand(
-          'albatross-menu-tasks-new-task',
-          'albatross-menu-tasks-new-task',
-          '/readiness',
-        )
-
-        await bindDispatchCommand(
-          'albatross-menu-locations-add-location',
-          'albatross-menu-locations-add-location',
-          '/locations',
-        )
-
-        await bindDispatchCommand(
-          'albatross-menu-documents-upload-file',
-          'albatross-menu-documents-upload-file',
-          '/documents',
-        )
-
-        await bindDispatchCommand(
-          'albatross-menu-deliverables-add-deliverable',
-          'albatross-menu-deliverables-add-deliverable',
-          '/deliverables',
-        )
-        await bindDispatchCommand(
-          'albatross-menu-deliverables-apply-template',
-          'albatross-menu-deliverables-apply-template',
-          '/deliverables',
-        )
       } catch {
         /* not running in tauri */
       }
@@ -270,18 +199,5 @@ export function ApfMenuEventBridge() {
     setSelectedBudgetRevisionId,
   ])
 
-  if (!banner) return null
-
-  return (
-    <div
-      role="status"
-      className={
-        banner.type === 'success'
-          ? 'fixed top-4 left-1/2 z-[100] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-mint-500/30 bg-mint-500/10 px-4 py-3 text-sm text-mint-700 shadow-lg dark:text-mint-400'
-          : 'fixed top-4 left-1/2 z-[100] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 shadow-lg dark:text-red-400'
-      }
-    >
-      {banner.message}
-    </div>
-  )
+  return null
 }

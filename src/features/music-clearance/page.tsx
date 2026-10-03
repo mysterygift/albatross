@@ -1,3 +1,5 @@
+import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -263,113 +265,112 @@ export function MusicClearancePage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Music & Archive Clearance</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Music & Archive">{null}</RequireProduction>
     )
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Music & Archive Clearance</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          {isEpisodic && (
-            <div className="flex items-center gap-2">
-              <Label className="text-muted-foreground whitespace-nowrap text-sm">Show</Label>
-              <Select value={listFilter} onValueChange={setListFilter}>
-                <SelectTrigger className="w-[220px]">
-                  <SelectValue placeholder="Filter" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={FILTER_ALL}>All tracks</SelectItem>
-                  <SelectItem value={SCOPE_PROJECT}>Project-wide</SelectItem>
-                  {activeEpisodes.map((ep) => (
-                    <SelectItem key={ep.id} value={ep.id}>
-                      {ep.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <Button
-            variant="outline"
-            onClick={() => generateCueSheetMutation.mutate()}
-            disabled={allTracksForCue.length === 0 || generateCueSheetMutation.isPending}
-          >
-            Generate cue sheet PDF
-          </Button>
-          <Dialog
-            open={addTrackOpen}
-            onOpenChange={(open) => {
-              setAddTrackOpen(open)
-              if (open) {
-                setScopeForAdd(SCOPE_PROJECT)
-              }
-            }}
-          >
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 size-4" />
-                Add track
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>New music track</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                {isEpisodic && (
-                  <div>
-                    <Label className="py-2">Applies to</Label>
-                    <Select value={scopeForAdd} onValueChange={setScopeForAdd}>
-                      <SelectTrigger className="mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={SCOPE_PROJECT}>Project-wide</SelectItem>
-                        {activeEpisodes.map((ep) => (
-                          <SelectItem key={ep.id} value={ep.id}>
-                            {ep.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-muted-foreground mt-1 text-xs">
-                      Project-wide assets are not tied to a single episode.
-                    </p>
-                  </div>
-                )}
-                <div>
-                  <Label className="py-2">Title</Label>
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-                </div>
-                <div>
-                  <Label className="py-2">Artist</Label>
-                  <Input value={artist} onChange={(e) => setArtist(e.target.value)} />
-                </div>
-                <div>
-                  <Label className="py-2">Publisher / Label</Label>
-                  <Input value={publisher} onChange={(e) => setPublisher(e.target.value)} />
-                </div>
+      <PageHeader
+        title="Music & Archive"
+        actions={
+          <>
+            {isEpisodic && (
+              <div className="flex items-center gap-2">
+                <Label className="text-muted-foreground whitespace-nowrap text-sm">Show</Label>
+                <Select value={listFilter} onValueChange={setListFilter}>
+                  <SelectTrigger className="w-[220px]">
+                    <SelectValue placeholder="Filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={FILTER_ALL}>All tracks</SelectItem>
+                    <SelectItem value={SCOPE_PROJECT}>Project-wide</SelectItem>
+                    {activeEpisodes.map((ep) => (
+                      <SelectItem key={ep.id} value={ep.id}>
+                        {ep.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setAddTrackOpen(false)}>
-                  Cancel
+            )}
+            <Button
+              variant="outline"
+              onClick={() => generateCueSheetMutation.mutate()}
+              disabled={allTracksForCue.length === 0 || generateCueSheetMutation.isPending}
+            >
+              Generate cue sheet PDF
+            </Button>
+            <Dialog
+              open={addTrackOpen}
+              onOpenChange={(open) => {
+                setAddTrackOpen(open)
+                if (open) {
+                  setScopeForAdd(SCOPE_PROJECT)
+                }
+              }}
+            >
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 size-4" />
+                  Add track
                 </Button>
-                <Button
-                  onClick={() => createTrackMutation.mutate()}
-                  disabled={!addCanSubmit || createTrackMutation.isPending}
-                >
-                  Add
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>New music track</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  {isEpisodic && (
+                    <div>
+                      <Label className="py-2">Applies to</Label>
+                      <Select value={scopeForAdd} onValueChange={setScopeForAdd}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={SCOPE_PROJECT}>Project-wide</SelectItem>
+                          {activeEpisodes.map((ep) => (
+                            <SelectItem key={ep.id} value={ep.id}>
+                              {ep.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-muted-foreground mt-1 text-xs">
+                        Project-wide assets are not tied to a single episode.
+                      </p>
+                    </div>
+                  )}
+                  <div>
+                    <Label className="py-2">Title</Label>
+                    <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="py-2">Artist</Label>
+                    <Input value={artist} onChange={(e) => setArtist(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="py-2">Publisher / Label</Label>
+                    <Input value={publisher} onChange={(e) => setPublisher(e.target.value)} />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setAddTrackOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => createTrackMutation.mutate()}
+                    disabled={!addCanSubmit || createTrackMutation.isPending}
+                  >
+                    Add
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </>
+        }
+      />
       <div className="rounded-md border">
         <Table>
           <TableHeader>

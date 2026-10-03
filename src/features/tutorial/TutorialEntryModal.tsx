@@ -20,7 +20,7 @@ export function TutorialEntryModal({
 }: TutorialEntryModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl border-zinc-700 bg-zinc-900 text-foreground shadow-2xl">
+      <DialogContent className="max-w-xl shadow-2xl">
         <DialogHeader className="space-y-2">
           <DialogTitle className="text-xl font-semibold">Welcome to Albatross</DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
@@ -29,7 +29,7 @@ export function TutorialEntryModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-4 rounded-md border border-zinc-700 bg-zinc-800/50 p-3 text-sm">
+        <div className="mt-4 rounded-md border border-border bg-muted/50 p-3 text-sm">
           <p className="font-medium text-foreground">A guided tour, when you’re ready</p>
           <p className="mt-1 text-xs text-muted-foreground">
             This is just the entry point. You can start now, or skip and explore the app normally.
@@ -49,7 +49,7 @@ export function TutorialEntryModal({
           <Button
             variant="outline"
             onClick={onSkipForNow}
-            className="border-zinc-600 text-sm"
+            className="border-border text-sm"
             disabled={isPreparing}
           >
             Skip for now

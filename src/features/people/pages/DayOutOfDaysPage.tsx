@@ -1,3 +1,5 @@
+import { RequireProduction } from '@/components/require-production'
+import { PageHeader } from '@/components/page-header'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -289,47 +291,46 @@ export function DayOutOfDaysPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Day Out of Days</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Day Out of Days">{null}</RequireProduction>
     )
   }
 
   return (
     <TooltipProvider>
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold">Day Out of Days</h1>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search cast..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-48 pl-8 bg-input border-border"
-              />
-            </div>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-              <input
-                type="checkbox"
-                checked={onlyWithClashes}
-                onChange={(e) => setOnlyWithClashes(e.target.checked)}
-                className="rounded border-border"
-              />
-              Only with clashes
-            </label>
-            <Button variant="outline" size="sm" onClick={handleExportCsv}>
-              <FileDown className="mr-2 size-4" />
-              CSV
-            </Button>
-            <Button size="sm" onClick={handleExportPdf}>
-              <Download className="mr-2 size-4" />
-              PDF
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          title="Day Out of Days"
+          actions={
+            <>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search cast..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-48 pl-8 bg-input border-border"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={onlyWithClashes}
+                  onChange={(e) => setOnlyWithClashes(e.target.checked)}
+                  className="rounded border-border"
+                />
+                Only with clashes
+              </label>
+              <Button variant="outline" size="sm" onClick={handleExportCsv}>
+                <FileDown className="mr-2 size-4" />
+                CSV
+              </Button>
+              <Button size="sm" onClick={handleExportPdf}>
+                <Download className="mr-2 size-4" />
+                PDF
+              </Button>
+            </>
+          }
+        />
 
         <p className="text-muted-foreground text-sm">
           Cast-only. WORK = scheduled that day (from stripboard scenes). HOLD = between start/finish, not working. CLASH = working but marked unavailable. Unavailable dates are edited from Cast Manager or cast person detail.
