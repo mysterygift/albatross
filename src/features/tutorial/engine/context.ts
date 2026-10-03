@@ -4,6 +4,9 @@ import type { TutorialSectionId } from '../tutorialSections'
 import type { MissingNeed } from '../prerequisites'
 import type { TutorialFlow, TutorialStep } from './types'
 
+/** A viewport-relative box. Covers every visible element that carries the same tutorial target. */
+export type Box = { left: number; top: number; width: number; height: number }
+
 export type StartOptions = {
   /** `all` continues into the following sections; `section` stops after one. */
   scope?: 'all' | 'section'
@@ -27,8 +30,8 @@ export type TutorialContextValue = {
   /** A record the step needs is missing from the tutorial project. */
   missingNeed: MissingNeed | null
   hint: string | null
-  /** Bounding box of the highlighted target, or null when there is no target on screen. */
-  rect: DOMRect | null
+  /** Box around the highlighted target(s), or null when there is no target on screen. */
+  rect: Box | null
   /** A target is expected on this page but not rendered yet. */
   waiting: boolean
   /** A Radix dialog is open. The overlay stops blocking so the user can finish the form. */

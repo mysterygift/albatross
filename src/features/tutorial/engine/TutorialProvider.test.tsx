@@ -98,6 +98,8 @@ describe('TutorialProvider', () => {
     target.setAttribute('data-tutorial', 'budget-add-line-item')
     target.textContent = 'Add line item'
     document.body.appendChild(target)
+    // jsdom has no layout, so give the target a size to make the spotlight appear.
+    target.getBoundingClientRect = () => ({ left: 10, top: 10, width: 30, height: 30, right: 40, bottom: 40, x: 10, y: 10, toJSON: () => ({}) }) as DOMRect
 
     renderTutorial('/')
     await waitFor(() => expect(ctx().progress).not.toBeNull())
@@ -107,6 +109,8 @@ describe('TutorialProvider', () => {
     await waitFor(() => expect(ctx().satisfied).toBe(true)) // overview is a view step on /budget
 
     act(() => ctx().next())
+    expect(ctx().step?.id).toBe('explore')
+    act(() => ctx().next())
     expect(ctx().step?.id).toBe('add-line-item')
     expect(ctx().satisfied).toBe(false)
 
@@ -115,15 +119,22 @@ describe('TutorialProvider', () => {
     act(() => ctx().next())
     expect(ctx().step?.id).toBe('add-line-item')
 
+    // The spotlight belongs to the step that has a target. Once the tour moves past it, the box must go.
+    expect(ctx().rect).not.toBeNull()
+
     // Clicking the highlighted target opens the form, so the tour moves straight to the save step.
     await act(async () => {
       target.click()
     })
     await waitFor(() => expect(ctx().step?.id).toBe('save-line-item'))
     expect(ctx().satisfied).toBe(false)
+    // The spotlight belongs to the step that has a target. Once the tour moves past it, the box must go.
+    await waitFor(() => expect(ctx().rect).toBeNull())
 
     act(() => emitTutorialEvent('budget.item_created', 'tutorial-project'))
     await waitFor(() => expect(ctx().satisfied).toBe(true))
+    act(() => ctx().next())
+    expect(ctx().step?.id).toBe('compare')
     act(() => ctx().next())
 
     // Budget is the only started section, so the run ends and the section is marked complete.

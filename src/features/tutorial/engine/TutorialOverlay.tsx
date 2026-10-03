@@ -1,15 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
-import { useTutorial } from './context'
+import { useTutorial, type Box } from './context'
 import { TUTORIAL_SECTIONS } from '../tutorialSections'
 
 const PAD = 8
 const CARD_WIDTH = 340
 const CARD_HEIGHT_ESTIMATE = 280
 const DIM = 'rgba(0, 0, 0, 0.6)'
-
-type Box = { left: number; top: number; width: number; height: number }
 
 /** Four panels that dim everything outside the spotlight. Clicks on them count as off-step. */
 function surroundingBoxes(hole: Box): Box[] {
@@ -27,12 +25,12 @@ function surroundingBoxes(hole: Box): Box[] {
   ]
 }
 
-function cardPosition(rect: DOMRect | null): { left: number; top: number } | null {
+function cardPosition(rect: Box | null): { left: number; top: number } | null {
   if (!rect) return null
   const vw = window.innerWidth
   const vh = window.innerHeight
   const left = Math.min(Math.max(16, rect.left), vw - CARD_WIDTH - 16)
-  const below = rect.bottom + PAD + 12
+  const below = rect.top + rect.height + PAD + 12
   const top = below + CARD_HEIGHT_ESTIMATE < vh ? below : Math.max(16, rect.top - PAD - 12 - CARD_HEIGHT_ESTIMATE)
   return { left, top }
 }
@@ -65,15 +63,22 @@ export function TutorialOverlay() {
 
   if (status !== 'running' || !step || !t.flow) return null
 
-  const blocking = !dialogOpen
-  const hole = rect && !dialogOpen ? { left: rect.left - PAD, top: rect.top - PAD, width: rect.width + PAD * 2, height: rect.height + PAD * 2 } : null
-  const position = dialogOpen ? null : cardPosition(rect)
+  // Blocking is lifted while a dialog is open, and for steps that need the user to prepare the target.
+  const blocking = !dialogOpen && !step.passthrough
+  // The ring is drawn whenever the target is on screen, even if a dialog is open, so the target is always visible.
+  const hole = rect ? { left: rect.left - PAD, top: rect.top - PAD, width: rect.width + PAD * 2, height: rect.height + PAD * 2 } : null
+  // The card moves to the corner for passthrough steps, so it does not cover the controls the user needs.
+  const position = dialogOpen || step.passthrough ? null : cardPosition(rect)
   const cardStyle = position
     ? { left: position.left, top: position.top, width: CARD_WIDTH }
     : { right: 24, bottom: 24, width: CARD_WIDTH }
   const total = t.flow.steps.length
   const stepLabel = `Step ${t.stepIndex + 1} of ${total}`
-  const offStepPanels = blocking ? (hole ? surroundingBoxes(hole) : [{ left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }]) : []
+  const offStepPanels = !dialogOpen && !step.passthrough
+    ? hole
+      ? surroundingBoxes(hole)
+      : [{ left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }]
+    : []
 
   return createPortal(
     <>
@@ -83,10 +88,10 @@ export function TutorialOverlay() {
           aria-hidden
           data-tutorial-ui="block"
           onPointerDown={() => t.reportOffStep()}
-          style={{ position: 'fixed', ...box, background: DIM, zIndex: 9000, pointerEvents: 'auto' }}
+          style={{ position: 'fixed', ...box, background: DIM, zIndex: 9000, pointerEvents: blocking ? 'auto' : 'none' }}
         />
       ))}
-      {hole && !dialogOpen && (
+      {hole && (
         <div
           aria-hidden
           data-tutorial-ui="spotlight"
@@ -147,7 +152,9 @@ export function TutorialOverlay() {
           </p>
         )}
         {t.waiting && !dialogOpen && (
-          <p className="mt-2 text-[11px] text-muted-foreground">Waiting for the page to show this…</p>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            {step.hint ?? 'Waiting for the page to show this…'}
+          </p>
         )}
         {t.satisfied ? (
           <p className="mt-2 text-[11px] text-mint-300">Done. Press Next to continue.</p>

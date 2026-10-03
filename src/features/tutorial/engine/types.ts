@@ -35,6 +35,11 @@ export type TutorialStep = {
   needs?: TutorialNeedKind[]
   /** Allows "Skip step" without the requirement. */
   optional?: boolean
+  /**
+   * The rest of the page stays usable while this step is active, for example to expand a group so the target
+   * appears. The highlight still shows; only the blocking of other controls is lifted.
+   */
+  passthrough?: boolean
 }
 
 export type TutorialFlow = {

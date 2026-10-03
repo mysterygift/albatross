@@ -14,7 +14,7 @@ import { TUTORIAL_FLOWS, resolveTutorialSection } from '../flows'
 import { ensureTutorialProject } from '../tutorialProject'
 import { findMissingNeed, type MissingNeed } from '../prerequisites'
 import { subscribeTutorialEvents } from './events'
-import { TutorialContext, type StartOptions, type TutorialContextValue } from './context'
+import { TutorialContext, type Box, type StartOptions, type TutorialContextValue } from './context'
 import { TutorialOverlay } from './TutorialOverlay'
 import { TutorialEntryModal } from '../TutorialEntryModal'
 import { TutorialHome } from '../TutorialHome'
@@ -48,8 +48,28 @@ function finishSection(p: FirstLaunchTutorialProgress, sid: TutorialSectionId): 
   return { ...p, sections, run: { status: 'idle', sectionId: null, stepId: null, scope: p.run.scope } }
 }
 
-function rectKey(r: DOMRect | null): string {
+function rectKey(r: Box | null): string {
   return r ? [r.left, r.top, r.width, r.height].map((n) => Math.round(n)).join(',') : ''
+}
+
+/** One box around every visible match. Lists such as the budget have one control per row, and any of them is the target. */
+function unionOf(elements: HTMLElement[]): { box: Box | null; first: HTMLElement | null } {
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  let first: HTMLElement | null = null
+  for (const el of elements) {
+    const r = el.getBoundingClientRect()
+    if (r.width === 0 || r.height === 0) continue
+    first ??= el
+    left = Math.min(left, r.left)
+    top = Math.min(top, r.top)
+    right = Math.max(right, r.right)
+    bottom = Math.max(bottom, r.bottom)
+  }
+  if (!first) return { box: null, first: null }
+  return { box: { left, top, width: right - left, height: bottom - top }, first }
 }
 
 /**
@@ -69,7 +89,7 @@ export function TutorialProvider({ children }: { children: ReactNode }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [done, setDone] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
-  const [rect, setRect] = useState<DOMRect | null>(null)
+  const [rect, setRect] = useState<Box | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const advanceRef = useRef<() => void>(() => {})
 
@@ -169,19 +189,20 @@ export function TutorialProvider({ children }: { children: ReactNode }) {
       return
     }
     const target = atStepPlace ? step?.target : undefined
-    let last = ''
+    // null, not '', so the first tick always publishes: a step with no target must clear the previous box.
+    let last: string | null = null
     let scrolled = false
     const tick = () => {
-      const el = target ? document.querySelector<HTMLElement>(`[data-tutorial="${target}"]`) : null
-      if (el && !scrolled) {
+      const all = target ? Array.from(document.querySelectorAll<HTMLElement>(`[data-tutorial="${target}"]`)) : []
+      const { box, first } = unionOf(all)
+      if (first && !scrolled) {
         scrolled = true
-        el.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+        first.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
       }
-      const r = el ? el.getBoundingClientRect() : null
-      const key = rectKey(r)
+      const key = rectKey(box)
       if (key !== last) {
         last = key
-        setRect(r)
+        setRect(box)
       }
       setDialogOpen(!!document.querySelector('[role="dialog"][data-state="open"]:not([data-tutorial-ui])'))
     }

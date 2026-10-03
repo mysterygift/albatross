@@ -12,6 +12,7 @@ import {
   type CreateProductionOptions,
 } from './repositories/production'
 import { listAccounts } from './repositories/budgetAccounts'
+import { createBudgetItem, createExpense } from './repositories/budget'
 import { createContingencyRule } from './repositories/budgetDerived'
 import { applyTaskTemplateToProduction } from './repositories/taskTemplates'
 import { seedChartOfAccountsAndTotalsOnly } from './seed/demoBudgetSeed'
@@ -84,12 +85,13 @@ export async function createProductionFromTemplate(
     }
 
     case 'tutorial': {
-      // Default project structure only. The tutorial creates its own scenes, shots and days as it goes.
+      // Default project structure plus a small starter budget. The tutorial creates its own scenes, shots and days as it goes.
       const production = await createProduction(
         { name, notes },
         createOptionsFromParams({ skipBudgetSeed: true }, params)
       )
       await seedDefaultProductionContent(production.id)
+      await seedTutorialStarterBudget(production.id)
       await setProductionCreatedFromTemplate(production.id, 'tutorial')
       return production
     }
@@ -98,6 +100,40 @@ export async function createProductionFromTemplate(
       const _exhaust: never = template
       return _exhaust
     }
+  }
+}
+
+/**
+ * A few estimates and one expense on real leaf accounts, so the budget has something to read. The tour adds
+ * its own line item on top. Accounts are looked up by code, so a missing account is skipped rather than fatal.
+ */
+async function seedTutorialStarterBudget(productionId: string): Promise<void> {
+  const accounts = await listAccounts(productionId)
+  const byCode = new Map(accounts.map((a) => [a.code, a]))
+  const estimates = [
+    { code: '1102', description: 'Writer fees – screenplay', estimated_cost: 85000 },
+    { code: '1301', description: 'Director fee', estimated_cost: 125000 },
+    { code: '1401', description: 'Principal cast block booking', estimated_cost: 380000 },
+  ]
+  for (const item of estimates) {
+    const account = byCode.get(item.code)
+    if (!account) continue
+    await createBudgetItem({
+      production_id: productionId,
+      account_id: account.id,
+      description: item.description,
+      estimated_cost: item.estimated_cost,
+    })
+  }
+  const writer = byCode.get('1102')
+  if (writer) {
+    await createExpense({
+      production_id: productionId,
+      account_id: writer.id,
+      amount: 20000,
+      date: new Date().toISOString().slice(0, 10),
+      notes: 'Deposit to screenwriter',
+    })
   }
 }
 
