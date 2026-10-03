@@ -6,7 +6,7 @@ Worktree: `/Users/arandavies/Development/albatross-ui-experimental` (branch `ui-
 
 | # | Step | Doc | Status |
 |---|------|-----|--------|
-| 01 | Foundations (PageHeader, EmptyState, ConfirmDialog, sonner, RequireProduction, DashboardCard) | [01-foundations.md](01-foundations.md) | pending |
+| 01 | Foundations (PageHeader, EmptyState, ConfirmDialog, sonner, RequireProduction, DashboardCard) | [01-foundations.md](01-foundations.md) | done |
 | 02 | Production switcher | [02-production-switcher.md](02-production-switcher.md) | pending |
 | 03 | Feedback and confirm | [03-feedback-confirm.md](03-feedback-confirm.md) | pending |
 | 04 | Page shell and tokens | [04-page-shell-and-tokens.md](04-page-shell-and-tokens.md) | pending |
