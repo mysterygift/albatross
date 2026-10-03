@@ -4,9 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useHighlightParam } from '@/features/search/useHighlightParam'
-import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
-import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
-import { equipmentTutorialSteps } from '@/features/tutorial/sections/equipmentTutorial'
 import {
   listEquipmentByProduction,
 } from '@/lib/db/repositories/equipment'
@@ -173,20 +170,13 @@ type EquipmentTab = 'registry' | 'lists'
 
 export function EquipmentPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
-  const { progress, updateProgress } = useFirstLaunchTutorial()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<EquipmentTab>('registry')
   const [selectedListId, setSelectedListId] = useState<string | null>(null)
   const highlightedId = useHighlightParam()
   const queryClient = useQueryClient()
-  const [tutorialOpen, setTutorialOpen] = useState(false)
 
-  useEffect(() => {
-    if (progress?.currentSection === 'equipment') {
-      setTutorialOpen(true)
-    }
-  }, [progress?.currentSection])
 
   const [filterCategory, setFilterCategory] = useState<string>('')
   const [filterSource, setFilterSource] = useState<string>('')
@@ -596,7 +586,7 @@ export function EquipmentPage() {
                   {equipment.length === 0 ? (
                     <>
                       <p className="mb-3">Add equipment to your production registry.</p>
-                      <Button onClick={() => setOpen(true)}>
+                      <Button data-tutorial="equipment-add" onClick={() => setOpen(true)}>
                         <Plus className="mr-2 size-4" />
                         Add Equipment
                       </Button>
@@ -683,39 +673,6 @@ export function EquipmentPage() {
         </TabsContent>
       </Tabs>
 
-      <SectionTutorialPanel
-        open={tutorialOpen}
-        onOpenChange={(open) => {
-          setTutorialOpen(open)
-          if (!open) {
-            updateProgress((prev) => ({
-              ...prev,
-              currentSection: prev.currentSection === 'equipment' ? null : prev.currentSection,
-              sections: {
-                ...prev.sections,
-                equipment:
-                  prev.sections.equipment === 'not_started' ? 'in_progress' : prev.sections.equipment,
-              },
-            }))
-          }
-        }}
-        sectionId="equipment"
-        sectionTitle="Equipment"
-        steps={equipmentTutorialSteps}
-        progress={progress}
-        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
-        onCompleteSection={() => {
-          setTutorialOpen(false)
-          updateProgress((prev) => ({
-            ...prev,
-            currentSection: prev.currentSection === 'equipment' ? null : prev.currentSection,
-            sections: {
-              ...prev.sections,
-              equipment: 'complete',
-            },
-          }))
-        }}
-      />
     </div>
   )
 }

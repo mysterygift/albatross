@@ -5,9 +5,6 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
-import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
-import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
-import { budgetTutorialSteps } from '@/features/tutorial/sections/budgetTutorial'
 import {
   listBudgetCategoriesByProduction,
   listBudgetItemsByProduction,
@@ -260,9 +257,7 @@ export function BudgetPage() {
   })
   const revisionId = workingBudgetRevision?.id
   const { format, ensureRate, conversionBanner } = useCurrency()
-  const { progress, updateProgress } = useFirstLaunchTutorial()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
-  const [tutorialOpen, setTutorialOpen] = useState(false)
   const [addItemOpen, setAddItemOpen] = useState(false)
   const [logSpendOpen, setLogSpendOpen] = useState(false)
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
@@ -322,11 +317,6 @@ export function BudgetPage() {
     localStorage.setItem(COST_REPORT_LAYOUT_MODE_KEY, costReportLayoutMode)
   }, [costReportLayoutMode])
 
-  useEffect(() => {
-    if (progress?.currentSection === 'budget') {
-      queueMicrotask(() => setTutorialOpen(true))
-    }
-  }, [progress?.currentSection])
 
   // Open expense panel when navigating from vendor ledger (Examine Spend)
   const state = location.state as { examineExpenseId?: string } | null
@@ -2614,38 +2604,6 @@ export function BudgetPage() {
         error={deleteLineItemMutation.error instanceof Error ? deleteLineItemMutation.error.message : null}
       />
 
-      <SectionTutorialPanel
-        open={tutorialOpen}
-        onOpenChange={(open) => {
-          setTutorialOpen(open)
-          if (!open) {
-            updateProgress((prev) => ({
-              ...prev,
-              currentSection: prev.currentSection === 'budget' ? null : prev.currentSection,
-              sections: {
-                ...prev.sections,
-                budget: prev.sections.budget === 'not_started' ? 'in_progress' : prev.sections.budget,
-              },
-            }))
-          }
-        }}
-        sectionId="budget"
-        sectionTitle="Budget"
-        steps={budgetTutorialSteps}
-        progress={progress}
-        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
-        onCompleteSection={() => {
-          setTutorialOpen(false)
-          updateProgress((prev) => ({
-            ...prev,
-            currentSection: prev.currentSection === 'budget' ? null : prev.currentSection,
-            sections: {
-              ...prev.sections,
-              budget: 'complete',
-            },
-          }))
-        }}
-      />
     </div>
   )
 }
@@ -3896,7 +3854,7 @@ function renderAccountRow(
             >
               <Eye className="size-4" />
             </Button>
-            <Button
+            <Button data-tutorial="budget-add-line-item"
               type="button"
               variant="ghost"
               size="icon"

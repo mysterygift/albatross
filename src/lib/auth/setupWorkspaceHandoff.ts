@@ -5,12 +5,19 @@ export type SetupWorkspaceHandoffPhase =
   | 'revealingApp'
   | 'complete'
 
+/**
+ * `setup` is the one-time handoff after first-run setup (the wizard stays mounted until the
+ * session is persisted). `login` is the intro played after every ordinary sign-in.
+ */
+export type SetupWorkspaceHandoffKind = 'setup' | 'login'
+
 export type SetupWorkspaceHandoffSnapshot = {
   armed: boolean
   phase: SetupWorkspaceHandoffPhase
+  kind: SetupWorkspaceHandoffKind
 }
 
-let snapshot: SetupWorkspaceHandoffSnapshot = { armed: false, phase: 'idle' }
+let snapshot: SetupWorkspaceHandoffSnapshot = { armed: false, phase: 'idle', kind: 'setup' }
 const listeners = new Set<() => void>()
 
 function emit(): void {
@@ -26,9 +33,9 @@ export function subscribeSetupWorkspaceHandoff(listener: () => void): () => void
   return () => listeners.delete(listener)
 }
 
-/** Call only after successful first-time setup commit. */
-export function armSetupWorkspaceHandoff(): void {
-  snapshot = { armed: true, phase: 'idle' }
+/** Call after a successful first-time setup commit (`setup`) or a successful credential check (`login`). */
+export function armSetupWorkspaceHandoff(kind: SetupWorkspaceHandoffKind = 'setup'): void {
+  snapshot = { armed: true, phase: 'idle', kind }
   emit()
 }
 
@@ -56,7 +63,7 @@ export function resetSetupWorkspaceHandoffTransition(): void {
 }
 
 export function disarmSetupWorkspaceHandoff(): void {
-  snapshot = { armed: false, phase: 'idle' }
+  snapshot = { armed: false, phase: 'idle', kind: 'setup' }
   emit()
 }
 
@@ -70,6 +77,6 @@ export function isSetupWorkspaceTransitionActive(): boolean {
 
 /** @internal Vitest only */
 export function resetSetupWorkspaceHandoffForTests(): void {
-  snapshot = { armed: false, phase: 'idle' }
+  snapshot = { armed: false, phase: 'idle', kind: 'setup' }
   emit()
 }

@@ -1392,6 +1392,7 @@ export function ShotListPage() {
               setCreateSceneOpen(true)
             }}
             disabled={!currentProductionId}
+          data-tutorial="scene-new"
           >
             <Plus className="mr-1.5 size-4" />
             New scene
@@ -1473,7 +1474,7 @@ export function ShotListPage() {
                   Reset cast
                 </Button>
               )}
-              <Button
+              <Button data-tutorial="shot-add"
                 type="button"
                 variant="outline"
                 size="sm"
@@ -2821,7 +2822,7 @@ function ShotRow({
               </span>
             )
           })}
-          <Button
+          <Button data-tutorial="shot-add-cast"
             variant="ghost"
             size="sm"
             className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"

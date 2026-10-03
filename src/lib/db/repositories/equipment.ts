@@ -1,4 +1,5 @@
 import { getDb, now, uuid } from '../client'
+import { tutorialEmitted } from '@/features/tutorial/engine/events'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { Equipment, EquipmentCategory, EquipmentStatus } from '../types'
 import { EQUIPMENT_CATEGORY_LEGACY_MAP, EQUIPMENT_CATEGORY_VALUES } from '../types'
@@ -126,7 +127,7 @@ export async function createEquipment(data: {
     ]
   )
   await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, id }))
-  return (await listEquipmentByProduction(data.production_id)).find((e) => e.id === id)!
+  return tutorialEmitted('equipment.created', data.production_id, (await listEquipmentByProduction(data.production_id)).find((e) => e.id === id)!)
 }
 
 export async function updateEquipment(

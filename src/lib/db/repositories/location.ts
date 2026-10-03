@@ -1,4 +1,5 @@
 import { getDb, now, uuid } from '../client'
+import { tutorialEmitted } from '@/features/tutorial/engine/events'
 import { outboxPush } from '../outbox'
 import type { Location } from '../types'
 import { isClientEncryptionEnabled } from '@/lib/security/dataEncryptionContext'
@@ -89,7 +90,7 @@ export async function createLocation(data: LocationInsert): Promise<Location> {
     ]
   )
   await outboxPush(TABLE, id, 'create', JSON.stringify({ ...stored, id }))
-  return (await getLocationById(id))!
+  return tutorialEmitted('location.created', data.production_id, (await getLocationById(id))!)
 }
 
 export async function updateLocation(

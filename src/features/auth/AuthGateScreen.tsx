@@ -19,6 +19,14 @@ import { AUTH_SESSION_TOKEN_SETTING_KEY } from '@/lib/auth/useAuthSession'
 import { setSetting } from '@/lib/db/repositories/settings'
 import { recoveryPasswordResetAvailable } from '@/lib/security/recoveryKey'
 import { useSetupWorkspaceHandoff } from '@/hooks/useSetupWorkspaceHandoff'
+import { getPrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
+import { runSetupWorkspaceTransition } from '@/features/auth/setup/setupWorkspaceTransitionController'
+import {
+  armSetupWorkspaceHandoff,
+  disarmSetupWorkspaceHandoff,
+  resetSetupWorkspaceHandoffTransition,
+  startSetupWorkspaceTransition,
+} from '@/lib/auth/setupWorkspaceHandoff'
 
 type AuthGateScreenProps = {
   loadingAuthState: boolean
@@ -79,10 +87,27 @@ export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }:
       if (!result.sessionToken) {
         throw new Error('Login succeeded but no session token was issued')
       }
-      await persistSessionAndRefresh(result.sessionToken)
-      if (repairedPeople > 0) {
-        await queryClient.invalidateQueries({ queryKey: ['crew'] })
-        await queryClient.invalidateQueries({ queryKey: ['people'] })
+      const { sessionToken } = result
+      // Arm the workspace intro before the session flips so the shell never flashes in unwrapped.
+      armSetupWorkspaceHandoff('login')
+      startSetupWorkspaceTransition()
+      try {
+        await runSetupWorkspaceTransition({
+          reducedMotion: getPrefersReducedMotion(),
+          leadInMs: 0,
+          onPersistSession: async () => {
+            await persistSessionAndRefresh(sessionToken)
+            if (repairedPeople > 0) {
+              await queryClient.invalidateQueries({ queryKey: ['crew'] })
+              await queryClient.invalidateQueries({ queryKey: ['people'] })
+            }
+          },
+        })
+        disarmSetupWorkspaceHandoff()
+      } catch (handoffError) {
+        resetSetupWorkspaceHandoffTransition()
+        disarmSetupWorkspaceHandoff()
+        throw handoffError
       }
     } catch (authError) {
       await closeDb()
@@ -115,7 +140,8 @@ export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }:
     )
   }
 
-  const showSetupWizard = authGateModeQuery.data === 'setup' || handoff.armed
+  const showSetupWizard =
+    authGateModeQuery.data === 'setup' || (handoff.armed && handoff.kind === 'setup')
 
   if (showSetupWizard) {
     return (

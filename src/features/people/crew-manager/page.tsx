@@ -8,9 +8,6 @@ import { Link } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
-import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
-import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
-import { crewTutorialSteps } from '@/features/tutorial/sections/crewTutorial'
 import { listCrew, createPerson, updatePerson, deletePerson } from '@/lib/db/repositories/person'
 import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import {
@@ -122,7 +119,6 @@ export function CrewManagerPage() {
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
   const queryClient = useQueryClient()
-  const { progress, updateProgress } = useFirstLaunchTutorial()
   const [search, setSearch] = useState('')
   const [departmentFilter, setDepartmentFilter] = useState<DepartmentFilter>('all')
   const [hodFilter, setHodFilter] = useState<HodFilter>('all')
@@ -133,13 +129,7 @@ export function CrewManagerPage() {
   const [unavailabilityPerson, setUnavailabilityPerson] = useState<Person | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const hasAutoOpenedWizardRef = useRef(false)
-  const [tutorialOpen, setTutorialOpen] = useState(false)
 
-  useEffect(() => {
-    if (progress?.currentSection === 'crew') {
-      queueMicrotask(() => setTutorialOpen(true))
-    }
-  }, [progress?.currentSection])
 
   const { data: hierarchyData } = useQuery({
     queryKey: ['crew-hierarchy', currentProductionId],
@@ -434,7 +424,7 @@ export function CrewManagerPage() {
         description="View and manage crew for this production. Department and role are aligned with the canonical crew hierarchy for task and call-sheet integration."
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+            <Button data-tutorial="crew-add" variant="outline" size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="mr-2 size-4" />
               Add crew
             </Button>
@@ -806,38 +796,6 @@ export function CrewManagerPage() {
         }}
       />
 
-      <SectionTutorialPanel
-        open={tutorialOpen}
-        onOpenChange={(open) => {
-          setTutorialOpen(open)
-          if (!open) {
-            updateProgress((prev) => ({
-              ...prev,
-              currentSection: prev.currentSection === 'crew' ? null : prev.currentSection,
-              sections: {
-                ...prev.sections,
-                crew: prev.sections.crew === 'not_started' ? 'in_progress' : prev.sections.crew,
-              },
-            }))
-          }
-        }}
-        sectionId="crew"
-        sectionTitle="Crew Management"
-        steps={crewTutorialSteps}
-        progress={progress}
-        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
-        onCompleteSection={() => {
-          setTutorialOpen(false)
-          updateProgress((prev) => ({
-            ...prev,
-            currentSection: prev.currentSection === 'crew' ? null : prev.currentSection,
-            sections: {
-              ...prev.sections,
-              crew: 'complete',
-            },
-          }))
-        }}
-      />
     </div>
   )
 }

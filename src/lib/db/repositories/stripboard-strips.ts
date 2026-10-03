@@ -1,4 +1,5 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { tutorialEmitted } from '@/features/tutorial/engine/events'
 import { OptimisticConcurrencyConflictError } from '../concurrency'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { Scene, Shot, StripboardStrip, StripStatus, StripType } from '../types'
@@ -343,7 +344,7 @@ export async function createStrip(data: CreateStripData): Promise<StripboardStri
     await outboxPush(TABLE, id, 'create', JSON.stringify(payload))
   }
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [id])
-  return rowToStrip(rows[0]!)
+  return tutorialEmitted('stripboard.strip_added', data.production_id, rowToStrip(rows[0]!))
 }
 
 /** Create a SHOT strip for the given shot at the end of the day/unit. */

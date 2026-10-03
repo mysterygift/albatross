@@ -24,9 +24,6 @@ import {
 import { useCurrentProduction } from '@/features/productions/context'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
-import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
-import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
-import { scheduleTutorialSteps } from '@/features/tutorial/sections/scheduleTutorial'
 import { listCalendarShootDayEvents } from '@/lib/db/repositories/calendar'
 import {
   moveShootDayToDate,
@@ -1063,14 +1060,6 @@ export function ScheduleCalendarPage() {
     existingShootDayId: string
   } | null>(null)
 
-  const { progress, updateProgress } = useFirstLaunchTutorial()
-  const [tutorialOpen, setTutorialOpen] = useState(false)
-
-  useEffect(() => {
-    if (progress?.currentSection === 'schedule') {
-      setTutorialOpen(true)
-    }
-  }, [progress?.currentSection])
 
   const invalidateScheduleQueries = () => {
     void invalidateStripboardCaches(queryClient, currentProductionId)
@@ -1731,38 +1720,6 @@ export function ScheduleCalendarPage() {
         }}
       />
 
-      <SectionTutorialPanel
-        open={tutorialOpen}
-        onOpenChange={(open) => {
-          setTutorialOpen(open)
-          if (!open) {
-            updateProgress((prev) => ({
-              ...prev,
-              currentSection: prev.currentSection === 'schedule' ? null : prev.currentSection,
-              sections: {
-                ...prev.sections,
-                schedule: prev.sections.schedule === 'not_started' ? 'in_progress' : prev.sections.schedule,
-              },
-            }))
-          }
-        }}
-        sectionId="schedule"
-        sectionTitle="Schedule"
-        steps={scheduleTutorialSteps}
-        progress={progress}
-        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
-        onCompleteSection={() => {
-          setTutorialOpen(false)
-          updateProgress((prev) => ({
-            ...prev,
-            currentSection: prev.currentSection === 'schedule' ? null : prev.currentSection,
-            sections: {
-              ...prev.sections,
-              schedule: 'complete',
-            },
-          }))
-        }}
-      />
     </div>
       )}
 

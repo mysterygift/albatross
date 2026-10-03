@@ -504,7 +504,7 @@ export function BookingsPage() {
             >
               <Settings className="size-4" />
             </Button>
-            <Button
+            <Button data-tutorial="bookings-add"
               className="bg-mint-600 text-white hover:bg-mint-700 focus-visible:ring-mint-500/50"
               onClick={() => {
                 setEditingBooking(null)

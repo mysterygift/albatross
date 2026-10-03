@@ -1,0 +1,195 @@
+/*
+ * Workspace intro (played after every sign-in, including first-run setup).
+ *
+ * The base style of each element is its FINAL visible state. Play animations only declare `from`
+ * keyframes with `backwards` fill, so nothing flashes when an animation ends or is swapped for the
+ * exit animation. Colours come from theme tokens only, so every UI theme works unchanged.
+ */
+
+/* Registered so the exit mask can interpolate. Engines without @property cut instead of tween. */
+@property --wsi-r {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+@property --wsi-f {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+.wsi {
+  --wsi-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --wsi-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: hidden;
+  color: var(--foreground);
+  pointer-events: none;
+}
+
+.wsi__bg {
+  position: absolute;
+  inset: 0;
+  background: var(--background);
+  -webkit-mask-image: radial-gradient(
+    circle at 50% 50%,
+    transparent var(--wsi-r),
+    #000 calc(var(--wsi-r) + var(--wsi-f))
+  );
+  mask-image: radial-gradient(
+    circle at 50% 50%,
+    transparent var(--wsi-r),
+    #000 calc(var(--wsi-r) + var(--wsi-f))
+  );
+}
+
+.wsi__glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 50% 46%,
+    color-mix(in oklch, var(--primary) 22%, transparent) 0%,
+    transparent 48%
+  );
+  animation: wsi-fade-in 1.4s ease-out backwards;
+}
+
+.wsi__stack {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+}
+
+.wsi__tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 0.75rem;
+}
+
+.wsi__logo {
+  filter: drop-shadow(0 12px 32px color-mix(in oklch, var(--primary) 30%, transparent));
+  animation: wsi-logo 1s var(--wsi-out) 0.35s backwards;
+}
+
+.wsi__outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 1.5px;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  opacity: 0.35;
+  animation:
+    wsi-trace 1.4s var(--wsi-inout) 0.1s backwards,
+    wsi-outline-fade 0.6s ease-out 1.2s backwards;
+}
+
+.wsi__word {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  animation: wsi-word 0.9s var(--wsi-out) 0.9s backwards;
+}
+
+.wsi__sub {
+  margin: 0;
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+  animation: wsi-fade-up 0.8s var(--wsi-out) 1.4s backwards;
+}
+
+.wsi[data-exiting='true'] .wsi__bg {
+  animation: wsi-open 0.8s var(--wsi-inout) forwards;
+}
+.wsi[data-exiting='true'] .wsi__stack {
+  animation: wsi-content-out 0.4s ease-in forwards;
+}
+.wsi[data-exiting='true'] .wsi__glow {
+  animation: wsi-fade-out 0.4s ease-in forwards;
+}
+
+@keyframes wsi-logo {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+    filter: blur(14px);
+  }
+}
+@keyframes wsi-trace {
+  from {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+}
+@keyframes wsi-outline-fade {
+  from {
+    opacity: 1;
+  }
+}
+@keyframes wsi-word {
+  from {
+    opacity: 0;
+    letter-spacing: 0.14em;
+    transform: translateY(8px);
+    filter: blur(6px);
+  }
+}
+@keyframes wsi-open {
+  from {
+    --wsi-r: 0%;
+    --wsi-f: 0%;
+  }
+  to {
+    --wsi-r: 100%;
+    --wsi-f: 14%;
+  }
+}
+@keyframes wsi-content-out {
+  to {
+    opacity: 0;
+    transform: scale(1.05);
+    filter: blur(6px);
+  }
+}
+@keyframes wsi-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes wsi-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes wsi-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wsi,
+  .wsi *,
+  .wsi *::before,
+  .wsi *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+  }
+}

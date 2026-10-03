@@ -1,4 +1,5 @@
 import { getDb, now, uuid } from '../client'
+import { tutorialEmitted } from '@/features/tutorial/engine/events'
 import { outboxPush } from '../outbox'
 import type { SceneCast } from '../types'
 
@@ -53,7 +54,7 @@ export async function addSceneCast(data: {
     [id, data.production_id, data.scene_id, data.person_id, ts, ts]
   )
   await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, id }))
-  return (await listSceneCastByScene(data.scene_id)).find((c) => c.id === id)!
+  return tutorialEmitted('cast.assigned', data.production_id, (await listSceneCastByScene(data.scene_id)).find((c) => c.id === id)!)
 }
 
 export async function removeSceneCast(id: string): Promise<void> {

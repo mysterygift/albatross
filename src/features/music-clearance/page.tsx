@@ -3,9 +3,6 @@ import { PageHeader } from '@/components/page-header'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
-import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
-import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
-import { musicArchiveTutorialSteps } from '@/features/tutorial/sections/musicArchiveTutorial'
 import {
   listMusicTracksByProduction,
   createMusicTrack,
@@ -66,7 +63,6 @@ function listOptsFromFilterValue(v: string): ListMusicTracksOptions | undefined 
 export function MusicClearancePage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const isEpisodic = currentProduction?.is_episodic === true
-  const { progress, updateProgress } = useFirstLaunchTutorial()
   const [addTrackOpen, setAddTrackOpen] = useState(false)
   const [editTrackOpen, setEditTrackOpen] = useState(false)
   const [editingTrack, setEditingTrack] = useState<MusicTrack | null>(null)
@@ -76,14 +72,8 @@ export function MusicClearancePage() {
   const [scopeForAdd, setScopeForAdd] = useState(SCOPE_PROJECT)
   const [scopeForEdit, setScopeForEdit] = useState(SCOPE_PROJECT)
   const [listFilter, setListFilter] = useState(FILTER_ALL)
-  const [tutorialOpen, setTutorialOpen] = useState(false)
   const queryClient = useQueryClient()
 
-  useEffect(() => {
-    if (progress?.currentSection === 'music_archive') {
-      setTutorialOpen(true)
-    }
-  }, [progress?.currentSection])
 
   useEffect(() => {
     if (!isEpisodic) {
@@ -311,7 +301,7 @@ export function MusicClearancePage() {
               }}
             >
               <DialogTrigger asChild>
-                <Button>
+                <Button data-tutorial="music-add-track">
                   <Plus className="mr-2 size-4" />
                   Add track
                 </Button>
@@ -476,41 +466,6 @@ export function MusicClearancePage() {
             : 'Add music tracks to build a cue sheet.'}
         </p>
       )}
-      <SectionTutorialPanel
-        open={tutorialOpen}
-        onOpenChange={(open) => {
-          setTutorialOpen(open)
-          if (!open) {
-            updateProgress((prev) => ({
-              ...prev,
-              currentSection: prev.currentSection === 'music_archive' ? null : prev.currentSection,
-              sections: {
-                ...prev.sections,
-                music_archive:
-                  prev.sections.music_archive === 'not_started'
-                    ? 'in_progress'
-                    : prev.sections.music_archive,
-              },
-            }))
-          }
-        }}
-        sectionId="music_archive"
-        sectionTitle="Music & Archive"
-        steps={musicArchiveTutorialSteps}
-        progress={progress}
-        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
-        onCompleteSection={() => {
-          setTutorialOpen(false)
-          updateProgress((prev) => ({
-            ...prev,
-            currentSection: prev.currentSection === 'music_archive' ? null : prev.currentSection,
-            sections: {
-              ...prev.sections,
-              music_archive: 'complete',
-            },
-          }))
-        }}
-      />
     </div>
   )
 }

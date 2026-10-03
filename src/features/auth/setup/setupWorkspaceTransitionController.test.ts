@@ -51,4 +51,20 @@ describe('runSetupWorkspaceTransition', () => {
     expect(getTransitionPhaseSequence(true)).toEqual(['fadingWelcome', 'revealingApp', 'complete'])
     expect(getSetupWorkspaceHandoffSnapshot().phase).toBe('complete')
   })
+
+  it('persists immediately when sign-in passes no lead-in', async () => {
+    const onPersistSession = vi.fn(async () => undefined)
+    const promise = runSetupWorkspaceTransition({
+      reducedMotion: false,
+      onPersistSession,
+      leadInMs: 0,
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onPersistSession).toHaveBeenCalledTimes(1)
+
+    await vi.runAllTimersAsync()
+    await promise
+    expect(getSetupWorkspaceHandoffSnapshot().phase).toBe('complete')
+  })
 })

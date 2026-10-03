@@ -1,9 +1,6 @@
-import { useCallback, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { CheckCircle2, Circle, PauseCircle, ArrowRight } from 'lucide-react'
+import { CheckCircle2, Circle, PauseCircle } from 'lucide-react'
 import { TUTORIAL_SECTIONS, type TutorialSectionId } from './tutorialSections'
 import type { FirstLaunchTutorialProgress, TutorialSectionState } from './progress'
 
@@ -11,279 +8,69 @@ type TutorialHomeProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   progress: FirstLaunchTutorialProgress | null
-  onProgressChange: (updater: (prev: FirstLaunchTutorialProgress) => FirstLaunchTutorialProgress) => void
-  /** When false, show a notice that the tutorial is designed for the demo production and offer to open it. */
-  isDemoProductionCurrent?: boolean
-  onOpenDemoProduction?: () => void | Promise<void>
-  /** Shown while demo is being ensured after reset (or Settings reset navigation). */
-  isPreparingDemo?: boolean
-  tutorialHubError?: string | null
-  onDismissTutorialHubError?: () => void
-  /** Return false to stay on the hub (e.g. demo prepare failed). */
-  onBeforeSectionNavigate?: () => Promise<boolean>
+  busy: boolean
+  error: string | null
+  onSelect: (id: TutorialSectionId) => void
 }
 
-function getSectionLabel(state: TutorialSectionState): string {
+function statusLabel(state: TutorialSectionState): string {
   if (state === 'complete') return 'Complete'
   if (state === 'in_progress') return 'In progress'
   return 'Not started'
 }
 
-function getSectionActionLabel(state: TutorialSectionState): string {
-  if (state === 'complete') return 'Review'
-  if (state === 'in_progress') return 'Resume'
-  return 'Start'
+function StatusIcon({ state }: { state: TutorialSectionState }) {
+  if (state === 'complete') return <CheckCircle2 className="size-4 text-mint-300" aria-hidden />
+  if (state === 'in_progress') return <PauseCircle className="size-4 text-amber-300" aria-hidden />
+  return <Circle className="size-4 text-muted-foreground" aria-hidden />
 }
 
-function getSectionStatusIcon(state: TutorialSectionState) {
-  if (state === 'complete') return CheckCircle2
-  if (state === 'in_progress') return PauseCircle
-  return Circle
-}
-
-export function TutorialHome({
-  open,
-  onOpenChange,
-  progress,
-  onProgressChange,
-  isDemoProductionCurrent = true,
-  onOpenDemoProduction,
-  isPreparingDemo = false,
-  tutorialHubError = null,
-  onDismissTutorialHubError,
-  onBeforeSectionNavigate,
-}: TutorialHomeProps) {
-  const navigate = useNavigate()
-  const [isSectionNavBusy, setIsSectionNavBusy] = useState(false)
-  const [currentPage, setCurrentPage] = useState<1 | 2>(1)
-  const sectionInteractDisabled = isPreparingDemo || isSectionNavBusy
-  const sectionsForPage = useMemo(
-    () => TUTORIAL_SECTIONS.filter((section) => section.page === currentPage),
-    [currentPage]
-  )
-
-  const allComplete = useMemo(() => {
-    if (!progress) return false
-    return Object.values(progress.sections).every((s) => s === 'complete')
-  }, [progress])
-
-  const handleSectionClick = useCallback(
-    async (id: TutorialSectionId) => {
-      if (!progress || sectionInteractDisabled) return
-
-      if (onBeforeSectionNavigate) {
-        setIsSectionNavBusy(true)
-        try {
-          const ok = await onBeforeSectionNavigate()
-          if (!ok) return
-        } finally {
-          setIsSectionNavBusy(false)
-        }
-      }
-
-      const current = progress.sections[id]
-      const nextState: TutorialSectionState = current === 'not_started' ? 'in_progress' : current
-
-      onProgressChange((prev) => ({
-        ...prev,
-        currentSection: id,
-        seenIntro: true,
-        sections: {
-          ...prev.sections,
-          [id]: nextState,
-        },
-        sectionSteps: {
-          ...(prev.sectionSteps ?? {}),
-          [id]: prev.sectionSteps?.[id] ?? 0,
-        },
-      }))
-
-      const target = TUTORIAL_SECTIONS.find((s) => s.id === id)
-      if (target) {
-        onOpenChange(false)
-        navigate(target.route)
-      }
-    },
-    [navigate, onBeforeSectionNavigate, onOpenChange, onProgressChange, progress, sectionInteractDisabled],
-  )
-
-  const handleContinueLater = () => {
-    onOpenChange(false)
-  }
-
+/** Section picker. Choosing a section runs just that section, in the tutorial project. */
+export function TutorialHome({ open, onOpenChange, progress, busy, error, onSelect }: TutorialHomeProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl shadow-2xl">
-        <div className="relative">
-          <DialogHeader className="space-y-2">
-            <DialogTitle className="text-xl font-semibold">
-              {allComplete ? 'Core workflows explored' : 'Welcome to Albatross'}
-            </DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
-              {allComplete
-                ? `You’ve now seen the main operational areas. Keep using the demo production to experiment safely, or continue into normal day-to-day work.`
-                : `We’ve loaded a demo production so you can explore schedules, budgets (including floats and revisions), crew, cast, and equipment safely without touching real projects. Use this hub to dip into key areas at your own pace.`}
-            </DialogDescription>
-          </DialogHeader>
+      <DialogContent className="max-w-2xl border-zinc-700 bg-zinc-900 text-foreground shadow-2xl">
+        <DialogHeader className="space-y-2">
+          <DialogTitle className="text-xl font-semibold">Choose a section</DialogTitle>
+          <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+            Each section opens in your tutorial project and walks you through it step by step. Your work stays in the
+            project afterwards.
+          </DialogDescription>
+        </DialogHeader>
 
-          <div className="mt-4 flex items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">Page {currentPage} of 2</span>
-            <div className="flex items-center gap-2">
+        {error && (
+          <p role="alert" className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            {error}
+          </p>
+        )}
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          {TUTORIAL_SECTIONS.map((section) => {
+            const state = progress?.sections[section.id] ?? 'not_started'
+            const Icon = section.icon
+            return (
               <Button
+                key={section.id}
                 type="button"
-                size="sm"
                 variant="outline"
-                className="text-xs"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(1)}
+                disabled={busy}
+                onClick={() => onSelect(section.id)}
+                className="h-auto justify-start gap-3 border-zinc-700 px-3 py-2.5 text-left whitespace-normal"
               >
-                Page 1
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="text-xs"
-                disabled={currentPage === 2}
-                onClick={() => setCurrentPage(2)}
-              >
-                Page 2
-              </Button>
-            </div>
-          </div>
-
-          {tutorialHubError && (
-            <div
-              role="alert"
-              className="mt-4 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive-foreground"
-            >
-              <p>{tutorialHubError}</p>
-              {onDismissTutorialHubError && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="mt-2 border-destructive/40"
-                  onClick={onDismissTutorialHubError}
-                >
-                  Dismiss
-                </Button>
-              )}
-            </div>
-          )}
-
-          {isPreparingDemo && (
-            <div
-              className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-background/80 text-sm text-foreground"
-              aria-live="polite"
-              aria-busy="true"
-            >
-              <span>Preparing demo production…</span>
-            </div>
-          )}
-
-          {!isDemoProductionCurrent && (
-            <div className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
-              <p className="text-sm text-amber-200">
-                This tutorial is designed for the demo production.
-              </p>
-              {onOpenDemoProduction && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-2 border-amber-500/50 text-amber-200 hover:bg-amber-500/20"
-                  onClick={() => void onOpenDemoProduction()}
-                >
-                  Open demo production
-                </Button>
-              )}
-            </div>
-          )}
-
-          {allComplete && (
-            <div className="rounded-md border border-border bg-muted/50 p-3">
-              <div className="flex items-start gap-3">
-                <span className="inline-flex size-8 items-center justify-center rounded-full bg-card text-mint-300">
-                  <CheckCircle2 className="size-4" />
+                <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{section.title}</span>
+                  <span className="block text-xs text-muted-foreground">{section.description}</span>
                 </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">All core areas completed</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    You can revisit any section below in <span className="text-foreground">Review</span> mode.
-                  </p>
-                  <div className="mt-3">
-                    <Button
-                      size="sm"
-                      className="text-xs"
-                      onClick={() => {
-                        onOpenChange(false)
-                        navigate('/')
-                      }}
-                    >
-                      Go to Dashboard
-                      <ArrowRight className="ml-2 size-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {sectionsForPage.map((section) => {
-              const state: TutorialSectionState =
-                progress?.sections[section.id] ?? ('not_started' as TutorialSectionState)
-              const label = getSectionLabel(state)
-              const actionLabel = getSectionActionLabel(state)
-              const Icon = section.icon
-              const StatusIcon = getSectionStatusIcon(state)
-
-              return (
-                <button
-                  key={section.id}
-                  type="button"
-                  disabled={sectionInteractDisabled}
-                  onClick={() => void handleSectionClick(section.id)}
-                  className="flex w-full flex-col items-stretch gap-3 rounded-md border border-border bg-muted/70 p-4 text-left transition-colors hover:border-mint-500/80 hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-card text-mint-400">
-                      <Icon className="size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <div className="flex flex-col gap-2">
-                        <span className="min-w-0 font-medium leading-snug text-foreground">{section.title}</span>
-                        <Badge
-                          variant={
-                            state === 'complete' ? 'default' : state === 'in_progress' ? 'secondary' : 'outline'
-                          }
-                          className="flex w-fit shrink-0 items-center gap-1 self-start whitespace-nowrap text-xs"
-                        >
-                          <StatusIcon className="size-3.5 shrink-0" />
-                          {label}
-                        </Badge>
-                      </div>
-                      <p className="text-xs leading-relaxed text-muted-foreground">{section.description}</p>
-                      <div>
-                        <Button size="xs" variant="outline" disabled={sectionInteractDisabled}>
-                          {actionLabel}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-
-          <div className="mt-6 flex justify-end">
-            <Button variant="outline" size="sm" onClick={handleContinueLater} className="text-xs border-border">
-              Continue later
-            </Button>
-          </div>
+                <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <StatusIcon state={state} />
+                  {statusLabel(state)}
+                </span>
+              </Button>
+            )
+          })}
         </div>
       </DialogContent>
     </Dialog>
   )
 }
-

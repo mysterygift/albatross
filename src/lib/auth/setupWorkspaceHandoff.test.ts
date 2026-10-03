@@ -59,4 +59,19 @@ describe('setupWorkspaceHandoff', () => {
     expect(startSetupWorkspaceTransition()).toBe(false)
     expect(isSetupWorkspaceHandoffArmed()).toBe(false)
   })
+
+  it('defaults to a setup handoff and can be armed as a login handoff', () => {
+    armSetupWorkspaceHandoff()
+    expect(getSetupWorkspaceHandoffSnapshot().kind).toBe('setup')
+
+    armSetupWorkspaceHandoff('login')
+    expect(getSetupWorkspaceHandoffSnapshot()).toEqual({
+      armed: true,
+      phase: 'idle',
+      kind: 'login',
+    })
+
+    disarmSetupWorkspaceHandoff()
+    expect(getSetupWorkspaceHandoffSnapshot().kind).toBe('setup')
+  })
 })

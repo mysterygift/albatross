@@ -1,4 +1,5 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { tutorialEmitted } from '@/features/tutorial/engine/events'
 import { outboxPush, outboxStatementForRow, outboxStatementForRows } from '../outbox'
 import { coerceBoolean } from '../sqlValueCoercion'
 import type { ProductionTask } from '../types'
@@ -209,7 +210,7 @@ export async function createTask(data: CreateTaskData): Promise<ProductionTask> 
   )
   await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, id }))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [id])
-  return rowToTask(rows[0]!)
+  return tutorialEmitted('task.created', data.production_id, rowToTask(rows[0]!))
 }
 
 /** Returns the active (non-deleted) task linked to this vendor invoice, if any. At most one per invoice. */

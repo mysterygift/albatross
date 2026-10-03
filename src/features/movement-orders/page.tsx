@@ -22,9 +22,6 @@ import {
   listStripsByShootDayForActor,
   listUnitsByProductionForActor,
 } from '@/lib/access/projectDomainService'
-import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
-import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
-import { movementOrdersTutorialSteps } from '@/features/tutorial/sections/movementOrdersTutorial'
 import {
   getShootDayById,
   listScenesByProduction,
@@ -92,7 +89,6 @@ export function MovementOrdersPage() {
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
   const queryClient = useQueryClient()
-  const { progress, updateProgress } = useFirstLaunchTutorial()
   const [shootDayId, setShootDayId] = useState<string | null>(null)
   const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
@@ -107,15 +103,9 @@ export function MovementOrdersPage() {
   const [distributionExportSuccessMessage, setDistributionExportSuccessMessage] = useState<
     string | null
   >(null)
-  const [tutorialOpen, setTutorialOpen] = useState(false)
   const defaultCrewHierarchy = getDefaultCrewHierarchyConfig()
   const canLoadProjectData = !authSession.authSupported || !!authSession.currentUser
 
-  useEffect(() => {
-    if (progress?.currentSection === 'movement_orders') {
-      setTutorialOpen(true)
-    }
-  }, [progress?.currentSection])
 
   const { data: production } = useQuery({
     queryKey: ['production', currentProductionId],
@@ -643,7 +633,7 @@ export function MovementOrdersPage() {
               >
                 {generateMutation.isPending ? 'Generating...' : 'Preview Movement Order'}
               </Button>
-              <Button
+              <Button data-tutorial="movement-generate"
                 variant="outline"
                 onClick={() => handleGenerate(true)}
                 disabled={!movementOrderDataForView || generateMutation.isPending}
@@ -927,41 +917,6 @@ export function MovementOrdersPage() {
                 (e as Error)?.message ?? 'Failed to generate personalised movement orders.',
             })
           }
-        }}
-      />
-      <SectionTutorialPanel
-        open={tutorialOpen}
-        onOpenChange={(open) => {
-          setTutorialOpen(open)
-          if (!open) {
-            updateProgress((prev) => ({
-              ...prev,
-              currentSection: prev.currentSection === 'movement_orders' ? null : prev.currentSection,
-              sections: {
-                ...prev.sections,
-                movement_orders:
-                  prev.sections.movement_orders === 'not_started'
-                    ? 'in_progress'
-                    : prev.sections.movement_orders,
-              },
-            }))
-          }
-        }}
-        sectionId="movement_orders"
-        sectionTitle="Movement Orders"
-        steps={movementOrdersTutorialSteps}
-        progress={progress}
-        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
-        onCompleteSection={() => {
-          setTutorialOpen(false)
-          updateProgress((prev) => ({
-            ...prev,
-            currentSection: prev.currentSection === 'movement_orders' ? null : prev.currentSection,
-            sections: {
-              ...prev.sections,
-              movement_orders: 'complete',
-            },
-          }))
         }}
       />
     </div>

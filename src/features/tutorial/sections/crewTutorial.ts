@@ -1,53 +1,44 @@
-import type { TutorialStep } from '@/features/tutorial/SectionTutorialPanel'
+import type { TutorialFlow } from '../engine/types'
 
-export const crewTutorialSteps: TutorialStep[] = [
-  {
-    id: 'overview',
-    title: 'Crew Management overview',
-    body: [
-      'Crew Management is where you organise production staff by department and role.',
-      '',
-      'This area focuses on crew only – cast is handled separately – and uses the demo production so you can explore structure without touching real data.',
-    ].join('\n'),
-  },
-  {
-    id: 'departments-positions',
-    title: 'Departments and positions',
-    body: [
-      'Crew is structured into departments (such as Camera, Sound, Production) with specific positions in each.',
-      '',
-      'This hierarchy makes it clear who is responsible for what, and which heads of department (HODs) are attached to each area of the production.',
-    ].join('\n'),
-  },
-  {
-    id: 'why-crew-matters',
-    title: 'Why crew data matters elsewhere',
-    body: [
-      'Accurate crew records support other workflows in Albatross:',
-      '',
-      '• Scheduling and bookings for shoot days.',
-      '• Labour planning and staffing coverage.',
-      '• Budget context for crew costs and vendor work.',
-      '• Overall production readiness and daily operations.',
-    ].join('\n'),
-  },
-  {
-    id: 'explore-demo-crew',
-    title: 'Explore the demo crew structure',
-    body: [
-      'Use the demo data to review how departments and roles are laid out.',
-      '',
-      'Scan the department summary, use filters or search to focus on a team, and inspect one or two crew records to see how department, role, and contact details are captured.',
-    ].join('\n'),
-  },
-  {
-    id: 'completion-next-steps',
-    title: 'Completion and next steps',
-    body: [
-      'You have seen how Crew Management organises the production team by department and role.',
-      '',
-      'When you are ready, continue to the Cast Management tutorial next – cast is taught separately so crew and cast stay clearly distinct in your mental model.',
-    ].join('\n'),
-  },
-]
-
+export const crewFlow: TutorialFlow = {
+  sectionId: 'crew',
+  title: 'Crew Management',
+  route: '/people/crew-manager',
+  steps: [
+    {
+      id: 'overview',
+      title: 'Crew',
+      body: 'Crew members hold roles and availability. Bookings connect them to shoot days.',
+      instruction: 'Press Next to add a crew member.',
+      requires: { kind: 'view' },
+    },
+    {
+      id: 'add-crew',
+      title: 'Add a crew member',
+      body: 'Add someone who will work on the shoot.',
+      instruction: 'Click Add crew.',
+      target: 'crew-add',
+      hint: 'Click the highlighted Add button to open the form.',
+      requires: { kind: 'click' },
+    },
+    {
+      id: 'save-crew',
+      title: 'Save the crew member',
+      body: 'Enter a name and role, then save.',
+      instruction: 'Fill in the form in the open dialog and save it.',
+      requires: { kind: 'event', event: 'person.created' },
+      hint: 'Save the crew member in the open dialog to continue.',
+    },
+    {
+      id: 'booking',
+      title: 'Book crew onto a day',
+      body: 'Bookings put crew on a shoot day. The booking is what makes the day show who is working.',
+      instruction: 'Open Bookings, click New booking and book your crew member onto a shoot day.',
+      route: '/people/bookings',
+      target: 'bookings-add',
+      hint: 'Click the highlighted button to start a booking.',
+      needs: ['shootDay'],
+      requires: { kind: 'event', event: 'booking.created' },
+    },
+  ],
+}

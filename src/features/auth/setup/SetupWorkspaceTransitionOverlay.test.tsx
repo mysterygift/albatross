@@ -9,7 +9,7 @@ describe('SetupWorkspaceTransitionOverlay', () => {
     cleanup()
   })
 
-  it('exposes phase and reduced-motion attributes', () => {
+  it('plays the workspace intro over an opaque background while the shell loads', () => {
     render(
       <SetupWorkspaceTransitionOverlay
         phase="brandWash"
@@ -21,29 +21,13 @@ describe('SetupWorkspaceTransitionOverlay', () => {
     const overlay = screen.getByTestId('setup-workspace-transition-overlay')
     expect(overlay.getAttribute('data-phase')).toBe('brandWash')
     expect(overlay.getAttribute('data-reduced-motion')).toBe('false')
-    expect(screen.getByTestId('setup-brand-wash')).toBeTruthy()
-    expect(screen.getByTestId('setup-brand-logo')).toBeTruthy()
+    expect(overlay.className).toContain('bg-background')
+    expect(screen.getByTestId('workspace-intro').getAttribute('data-exiting')).toBe('false')
     expect(screen.getByTestId('albatross-logo')).toBeTruthy()
-    expect(screen.getByText('Welcome to Albatross')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Albatross' })).toBeTruthy()
   })
 
-  it('skips brand wash when reduced motion is enabled', () => {
-    render(
-      <SetupWorkspaceTransitionOverlay
-        phase="brandWash"
-        reducedMotion={true}
-        shellVisible={false}
-      />
-    )
-
-    expect(screen.queryByTestId('setup-brand-wash')).toBeNull()
-    expect(screen.queryByTestId('setup-brand-logo')).toBeNull()
-    expect(screen.getByTestId('setup-workspace-transition-overlay').getAttribute('data-reduced-motion')).toBe(
-      'true'
-    )
-  })
-
-  it('applies reduced-motion classes on app reveal', () => {
+  it('drops its own background on reveal so the iris can open onto the shell', () => {
     render(
       <SetupWorkspaceTransitionOverlay
         phase="revealingApp"
@@ -52,7 +36,39 @@ describe('SetupWorkspaceTransitionOverlay', () => {
       />
     )
 
-    const reveal = screen.getByTestId('setup-app-reveal')
-    expect(reveal.className).toContain('motion-reduce:animate-none')
+    expect(screen.getByTestId('workspace-intro').getAttribute('data-exiting')).toBe('true')
+    expect(screen.getByTestId('setup-workspace-transition-overlay').className).not.toContain(
+      'bg-background'
+    )
+  })
+
+  it('skips the intro when reduced motion is enabled', () => {
+    render(
+      <SetupWorkspaceTransitionOverlay
+        phase="brandWash"
+        reducedMotion={true}
+        shellVisible={false}
+      />
+    )
+
+    expect(screen.queryByTestId('workspace-intro')).toBeNull()
+    expect(
+      screen.getByTestId('setup-workspace-transition-overlay').getAttribute('data-reduced-motion')
+    ).toBe('true')
+  })
+
+  it('crossfades out on reveal when reduced motion is enabled', () => {
+    render(
+      <SetupWorkspaceTransitionOverlay
+        phase="revealingApp"
+        reducedMotion={true}
+        shellVisible={true}
+      />
+    )
+
+    const overlay = screen.getByTestId('setup-workspace-transition-overlay')
+    expect(screen.queryByTestId('workspace-intro')).toBeNull()
+    expect(overlay.className).toContain('fade-out-0')
+    expect(overlay.className).toContain('motion-reduce:animate-none')
   })
 })

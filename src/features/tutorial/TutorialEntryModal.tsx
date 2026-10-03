@@ -24,15 +24,16 @@ export function TutorialEntryModal({
         <DialogHeader className="space-y-2">
           <DialogTitle className="text-xl font-semibold">Welcome to Albatross</DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
-            Albatross includes a demo production so you can safely explore core workflows like scheduling, budgeting,
-            crew and cast management, and equipment.
+            Albatross walks you through scheduling, budgeting, crew and cast management, and equipment, one step at a
+            time. Each step highlights what to click and checks your work.
           </DialogDescription>
         </DialogHeader>
 
         <div className="mt-4 rounded-md border border-border bg-muted/50 p-3 text-sm">
-          <p className="font-medium text-foreground">A guided tour, when you’re ready</p>
+          <p className="font-medium text-foreground">A guided tour in your own project</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            This is just the entry point. You can start now, or skip and explore the app normally.
+            Starting creates a “Tutorial project” for you to practise in. It is an ordinary project afterwards: keep
+            working in it, or rename it. The demo productions stay as they are.
           </p>
         </div>
 

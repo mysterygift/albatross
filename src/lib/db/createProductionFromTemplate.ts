@@ -18,7 +18,7 @@ import { seedChartOfAccountsAndTotalsOnly } from './seed/demoBudgetSeed'
 import { seedDemoStyleContentIntoProduction } from './seed/demoProductionSeed'
 import { ensureStarterTaskTemplate } from './seed/defaultTaskTemplateSeed'
 
-export type ProductionTemplate = 'blank' | 'demo' | 'default'
+export type ProductionTemplate = 'blank' | 'demo' | 'default' | 'tutorial'
 
 export type CreateProductionFromTemplateParams = {
   name: string
@@ -80,6 +80,17 @@ export async function createProductionFromTemplate(
         createOptionsFromParams({ skipBudgetSeed: true }, params)
       )
       await seedDefaultProductionContent(production.id)
+      return production
+    }
+
+    case 'tutorial': {
+      // Default project structure only. The tutorial creates its own scenes, shots and days as it goes.
+      const production = await createProduction(
+        { name, notes },
+        createOptionsFromParams({ skipBudgetSeed: true }, params)
+      )
+      await seedDefaultProductionContent(production.id)
+      await setProductionCreatedFromTemplate(production.id, 'tutorial')
       return production
     }
 

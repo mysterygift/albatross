@@ -28,9 +28,6 @@ import {
   listUnitsByProductionForActor,
   updateShootDayForActor,
 } from '@/lib/access/projectDomainService'
-import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
-import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
-import { callSheetsTutorialSteps } from '@/features/tutorial/sections/callSheetsTutorial'
 import { listShootDaysByProduction, getShootDayById, updateShootDay } from '@/lib/db/repositories/schedule'
 import { listStripsByShootDay, listStripsByProduction } from '@/lib/db/repositories/stripboard-strips'
 import { listShootDayUnitsByShootDay, listShootDayUnitsByProduction } from '@/lib/db/repositories/shoot-day-units'
@@ -118,7 +115,6 @@ export function CallSheetsPage() {
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
   const canLoadProjectData = !authSession.authSupported || !!authSession.currentUser
-  const { progress, updateProgress } = useFirstLaunchTutorial()
   const [shootDayId, setShootDayId] = useState<string | null>(null)
   const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
   const [weatherSummary, setWeatherSummary] = useState('')
@@ -140,13 +136,7 @@ export function CallSheetsPage() {
     string | null
   >(null)
   const [generateError, setGenerateError] = useState<string | null>(null)
-  const [tutorialOpen, setTutorialOpen] = useState(false)
 
-  useEffect(() => {
-    if (progress?.currentSection === 'call_sheets') {
-      setTutorialOpen(true)
-    }
-  }, [progress?.currentSection])
 
   const { data: production } = useQuery({
     queryKey: ['production', currentProductionId],
@@ -1203,7 +1193,7 @@ export function CallSheetsPage() {
               >
                 Preview PDF
               </Button>
-              <Button
+              <Button data-tutorial="callsheet-generate"
                 variant="outline"
                 onClick={() => handleGenerate(true)}
                 disabled={!buildCallSheetData || generateMutation.isPending}
@@ -1307,41 +1297,6 @@ export function CallSheetsPage() {
               error: (e as Error)?.message ?? 'Failed to generate personalised call sheets.',
             })
           }
-        }}
-      />
-      <SectionTutorialPanel
-        open={tutorialOpen}
-        onOpenChange={(open) => {
-          setTutorialOpen(open)
-          if (!open) {
-            updateProgress((prev) => ({
-              ...prev,
-              currentSection: prev.currentSection === 'call_sheets' ? null : prev.currentSection,
-              sections: {
-                ...prev.sections,
-                call_sheets:
-                  prev.sections.call_sheets === 'not_started'
-                    ? 'in_progress'
-                    : prev.sections.call_sheets,
-              },
-            }))
-          }
-        }}
-        sectionId="call_sheets"
-        sectionTitle="Call Sheets"
-        steps={callSheetsTutorialSteps}
-        progress={progress}
-        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
-        onCompleteSection={() => {
-          setTutorialOpen(false)
-          updateProgress((prev) => ({
-            ...prev,
-            currentSection: prev.currentSection === 'call_sheets' ? null : prev.currentSection,
-            sections: {
-              ...prev.sections,
-              call_sheets: 'complete',
-            },
-          }))
         }}
       />
     </div>

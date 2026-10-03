@@ -1,21 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from '@/components/ui/sonner'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
 import { SidebarInset, SidebarProvider, useSidebar } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
+import { TutorialProvider } from '@/features/tutorial/engine/TutorialProvider'
 import { DemoProductionBanner } from '@/features/onboarding/DemoProductionBanner'
 import { TopBar } from '@/components/top-bar'
 import { SectionTabs } from '@/components/section-tabs'
 import { DevPerfHud } from '@/components/dev/DevPerfHud'
 import { getSetting } from '@/lib/db/repositories/settings'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
-import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
 import { useUiTheme } from '@/hooks/useUiTheme'
-import { TutorialHome } from '@/features/tutorial/TutorialHome'
-import { TUTORIAL_SECTION_IDS } from '@/features/tutorial/tutorialSections'
-import { TutorialEntryModal } from '@/features/tutorial/TutorialEntryModal'
-import { ensureAndOpenDemoProductionForTutorial } from '@/features/tutorial/ensureAndOpenDemoProductionForTutorial'
 import { ApfDesktopOpenBridge } from '@/features/productions/ApfDesktopOpenBridge'
 import { ApfMenuEventBridge } from '@/features/productions/ApfMenuEventBridge'
 import { GlobalSearchDialog } from '@/features/search/GlobalSearchDialog'
@@ -148,97 +143,51 @@ function AppLayoutInner() {
     authSession.isAuthenticated &&
     !authSession.dbLocked
 
-  if (showAuthGate && handoff.armed) {
-    return <AuthGateScreen loadingAuthState={false} />
-  }
-
-  if (transitionActive) {
-    const shellReady =
-      sessionReady &&
-      (handoff.phase === 'brandWash' ||
-        handoff.phase === 'revealingApp' ||
-        handoff.phase === 'complete')
-    const shellRevealed = handoff.phase === 'revealingApp' || handoff.phase === 'complete'
-
-    return (
-      <>
-        {shellReady && (
-          <div
-            className={
-              shellRevealed
-                ? 'min-h-screen animate-in fade-in-0 slide-in-from-bottom-2 duration-300 fill-mode-forwards motion-reduce:animate-none motion-reduce:opacity-100'
-                : 'pointer-events-none fixed inset-0 opacity-0'
-            }
-            aria-hidden={!shellRevealed}
-          >
-            <AppLayoutShell />
-          </div>
-        )}
-        <SetupWorkspaceTransitionOverlay
-          phase={handoff.phase}
-          reducedMotion={reducedMotion}
-          shellVisible={shellRevealed}
-        />
-      </>
-    )
-  }
-
+  // While a sign-in handoff is armed the gate stays up until the session is persisted.
   if (showAuthGate) {
     return <AuthGateScreen loadingAuthState={false} />
   }
 
-  return <AppLayoutShell />
+  // The shell is mounted (hidden) while the intro plays so it has loaded by the time the iris
+  // opens. It sits in the same tree position before, during and after the intro, so it is never
+  // remounted when the overlay goes away.
+  const shellMounted =
+    !transitionActive ||
+    (sessionReady &&
+      (handoff.phase === 'brandWash' ||
+        handoff.phase === 'revealingApp' ||
+        handoff.phase === 'complete'))
+  const shellHidden = transitionActive && handoff.phase !== 'revealingApp'
+
+  return (
+    <>
+      {shellMounted && (
+        <div
+          className={shellHidden ? 'pointer-events-none fixed inset-0 opacity-0' : 'contents'}
+          aria-hidden={shellHidden || undefined}
+        >
+          <AppLayoutShell />
+        </div>
+      )}
+      {transitionActive && (
+        <SetupWorkspaceTransitionOverlay
+          phase={handoff.phase}
+          reducedMotion={reducedMotion}
+          shellVisible={!shellHidden}
+        />
+      )}
+    </>
+  )
 }
 
 function AppLayoutShell() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const [tutorialEntryOpen, setTutorialEntryOpen] = useState(false)
-  const [tutorialOpen, setTutorialOpen] = useState(false)
+  const { currentProduction } = useCurrentProduction()
+  const isDemoProductionCurrent = currentProduction?.slug === DEMO_SLUG
   const [searchOpen, setSearchOpen] = useState(false)
   const openSearch = useCallback(() => setSearchOpen(true), [])
   const toggleSearch = useCallback(() => setSearchOpen((prev) => !prev), [])
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const openShortcuts = useCallback(() => setShortcutsOpen(true), [])
-  const [isPreparingTutorial, setIsPreparingTutorial] = useState(false)
-  const [isPreparingTutorialHub, setIsPreparingTutorialHub] = useState(false)
-  const [tutorialStartupError, setTutorialStartupError] = useState<string | null>(null)
-  const [tutorialHubError, setTutorialHubError] = useState<string | null>(null)
-  const {
-    isLoading: tutorialLoading,
-    showFirstLaunchTutorial,
-    resetFirstLaunchTutorial,
-    skipEntryModal,
-    progress,
-    updateProgress,
-  } = useFirstLaunchTutorial()
-  const { setCurrentProductionId, currentProduction, refetchProductions } = useCurrentProduction()
-  const isDemoProductionCurrent = currentProduction?.slug === DEMO_SLUG
-
-  const prepareDemoForTutorialHub = useCallback(async () => {
-    await ensureAndOpenDemoProductionForTutorial({ setCurrentProductionId })
-    await queryClient.invalidateQueries({ queryKey: ['productions'] })
-    await queryClient.invalidateQueries({ queryKey: ['crew'] })
-    await queryClient.invalidateQueries({ queryKey: ['people'] })
-    await queryClient.invalidateQueries({ queryKey: ['deliverables'] })
-    await refetchProductions()
-  }, [queryClient, refetchProductions, setCurrentProductionId])
-
-  const allComplete = useMemo(() => {
-    if (!progress) return false
-    return TUTORIAL_SECTION_IDS.every((id) => progress.sections[id] === 'complete')
-  }, [progress])
-
-  const prevAllCompleteRef = useRef<boolean>(false)
-  useEffect(() => {
-    const prev = prevAllCompleteRef.current
-    prevAllCompleteRef.current = allComplete
-    if (!prev && allComplete) {
-      toast.success('All core tutorial sections completed.')
-    }
-  }, [allComplete])
-
   useEffect(() => {
     if (!import.meta.env.DEV) return
     getSetting(DB_PERF_SETTING_KEY)
@@ -246,168 +195,43 @@ function AppLayoutShell() {
       .catch(() => {})
   }, [])
 
-  // First launch: show entry modal only when eligible and user has not yet skipped/started from it.
-  // Require progress to be loaded so we don't flash entry modal before state is ready.
-  useEffect(() => {
-    if (tutorialLoading || progress == null) return
-    if (!showFirstLaunchTutorial) return
-    if (progress.seenEntryModal) return
-    setTutorialStartupError(null)
-    setIsPreparingTutorial(false)
-    setTutorialOpen(false)
-    setTutorialEntryOpen(true)
-  }, [tutorialLoading, showFirstLaunchTutorial, progress])
-
-  const handleOpenTutorialFromHelp = () => {
-    setTutorialStartupError(null)
-    setTutorialHubError(null)
-    setIsPreparingTutorial(false)
-    setTutorialEntryOpen(false)
-    setTutorialOpen(true)
-  }
-
-  const handleStartTutorial = async () => {
-    if (isPreparingTutorial) return
-    setTutorialStartupError(null)
-    setIsPreparingTutorial(true)
-    try {
-      await prepareDemoForTutorialHub()
-      updateProgress((prev) => ({ ...prev, seenEntryModal: true }))
-      setTutorialEntryOpen(false)
-      setTutorialOpen(true)
-    } catch {
-      setTutorialStartupError('Unable to prepare the demo production. Please try again.')
-      // Keep the entry modal open so the user can retry.
-    } finally {
-      setIsPreparingTutorial(false)
-    }
-  }
-
-  const handleBeforeTutorialSectionNavigate = useCallback(async () => {
-    setTutorialHubError(null)
-    try {
-      await prepareDemoForTutorialHub()
-      return true
-    } catch {
-      setTutorialHubError('Unable to prepare the demo production. Please try again.')
-      return false
-    }
-  }, [prepareDemoForTutorialHub])
-
-  useEffect(() => {
-    const state = location.state as { openTutorialHome?: boolean; resetTutorial?: boolean } | null
-    if (!state?.openTutorialHome) return
-
-    const shouldReset = !!state.resetTutorial
-    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: {} })
-
-    let cancelled = false
-    setTutorialStartupError(null)
-    setIsPreparingTutorial(false)
-    setTutorialEntryOpen(false)
-
-    ;(async () => {
-      if (shouldReset) {
-        resetFirstLaunchTutorial()
-        setTutorialHubError(null)
-        setIsPreparingTutorialHub(true)
-        try {
-          await prepareDemoForTutorialHub()
-        } catch {
-          if (!cancelled) {
-            setTutorialHubError('Unable to prepare the demo production. Please try again.')
-          }
-        } finally {
-          // Always clear loading: effect cleanup sets cancelled before await finishes (e.g. Strict Mode
-          // or dependency churn). Skipping this left isPreparingTutorialHub stuck true forever.
-          setIsPreparingTutorialHub(false)
-        }
-      }
-      if (!cancelled) {
-        setTutorialOpen(true)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [location.pathname, location.search, location.state, navigate, prepareDemoForTutorialHub, resetFirstLaunchTutorial])
-
   return (
-    <SidebarProvider>
-      <MenuSidebarBridge />
-      <GlobalShortcutBridge
-        searchOpen={searchOpen}
-        onToggleSearch={toggleSearch}
-        onOpenShortcuts={openShortcuts}
-      />
-      <ApfDesktopOpenBridge />
-      <ApfMenuEventBridge />
-      <AppSidebar />
-      <SidebarInset>
-        <TopBar
-          onOpenTutorial={handleOpenTutorialFromHelp}
-          onOpenSearch={openSearch}
+    <TutorialProvider>
+      <SidebarProvider>
+        <MenuSidebarBridge />
+        <GlobalShortcutBridge
+          searchOpen={searchOpen}
+          onToggleSearch={toggleSearch}
           onOpenShortcuts={openShortcuts}
         />
-        <ServerCollabBanner />
-        <SectionTabs />
-        <main className="flex-1 overflow-auto p-4">
-          <DemoProductionBanner
-            isDemo={isDemoProductionCurrent}
-            currentProduction={currentProduction}
+        <ApfDesktopOpenBridge />
+        <ApfMenuEventBridge />
+        <AppSidebar />
+        <SidebarInset>
+          <TopBar
+            onOpenSearch={openSearch}
+            onOpenShortcuts={openShortcuts}
           />
-          <Outlet />
-        </main>
-      </SidebarInset>
-      <DevPerfHud />
-      <GlobalSearchDialog
-        open={searchOpen}
-        onOpenChange={setSearchOpen}
-        productionId={currentProduction?.id ?? null}
-        onOpenShortcuts={openShortcuts}
-      />
-      <ShortcutCheatSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-      <TutorialEntryModal
-        open={tutorialEntryOpen}
-        isPreparing={isPreparingTutorial}
-        error={tutorialStartupError}
-        onOpenChange={(open) => {
-          if (!open) {
-            setTutorialEntryOpen(false)
-          }
-        }}
-        onSkipForNow={() => {
-          skipEntryModal()
-          setTutorialEntryOpen(false)
-        }}
-        onStartTutorial={handleStartTutorial}
-      />
-      <TutorialHome
-        open={tutorialOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setTutorialHubError(null)
-          }
-          setTutorialOpen(open)
-        }}
-        progress={progress}
-        onProgressChange={updateProgress}
-        isPreparingDemo={isPreparingTutorialHub}
-        tutorialHubError={tutorialHubError}
-        onDismissTutorialHubError={() => setTutorialHubError(null)}
-        onBeforeSectionNavigate={handleBeforeTutorialSectionNavigate}
-        isDemoProductionCurrent={isDemoProductionCurrent}
-        onOpenDemoProduction={async () => {
-          setTutorialHubError(null)
-          try {
-            await prepareDemoForTutorialHub()
-          } catch {
-            setTutorialHubError('Unable to prepare the demo production. Please try again.')
-          }
-        }}
-      />
-    </SidebarProvider>
+          <ServerCollabBanner />
+          <SectionTabs />
+          <main className="flex-1 overflow-auto p-4">
+            <DemoProductionBanner
+              isDemo={isDemoProductionCurrent}
+              currentProduction={currentProduction}
+            />
+            <Outlet />
+          </main>
+        </SidebarInset>
+        <DevPerfHud />
+        <GlobalSearchDialog
+          open={searchOpen}
+          onOpenChange={setSearchOpen}
+          productionId={currentProduction?.id ?? null}
+          onOpenShortcuts={openShortcuts}
+        />
+        <ShortcutCheatSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      </SidebarProvider>
+    </TutorialProvider>
   )
 }
 

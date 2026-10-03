@@ -151,6 +151,15 @@ describe('AuthGateScreen', () => {
     expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull()
   })
 
+  it('keeps showing sign-in while a login intro handoff is armed', async () => {
+    gateMocks.resolveAuthGateMode.mockResolvedValue('sign_in')
+    armSetupWorkspaceHandoff('login')
+    renderGate()
+
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeTruthy()
+    expect(screen.queryByTestId('setup-wizard')).toBeNull()
+  })
+
   it('does not show setup completion screen for completed installs on restart', async () => {
     gateMocks.resolveAuthGateMode.mockResolvedValue('sign_in')
     renderGate()

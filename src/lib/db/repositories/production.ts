@@ -222,7 +222,7 @@ export async function findExistingDemoTemplateProduction(): Promise<Production |
 }
 
 /** Set the created_from_template marker (e.g. 'demo' for Demo template). Used after creating a production from a template. */
-export async function setProductionCreatedFromTemplate(id: string, value: 'demo' | null): Promise<void> {
+export async function setProductionCreatedFromTemplate(id: string, value: 'demo' | 'tutorial' | null): Promise<void> {
   const db = await getDb()
   const ts = now()
   await db.execute(

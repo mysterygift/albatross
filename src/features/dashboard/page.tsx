@@ -4,9 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
-import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
-import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
-import { dashboardTutorialSteps } from '@/features/tutorial/sections/dashboardTutorial'
 import { useCurrency } from '@/hooks/useCurrency'
 import { listTasksByProduction } from '@/lib/db/repositories/tasks'
 import { listDeliverablesByProduction } from '@/lib/db/repositories/deliverable'
@@ -374,7 +371,7 @@ function TasksDueSoonCard({
   }
 
   return (
-    <Card
+    <Card data-tutorial="dashboard-tasks"
       className="cursor-pointer transition-colors hover:bg-muted/30 hover:border-muted-foreground/20"
       onClick={onNavigate}
       role="button"
@@ -791,8 +788,6 @@ export function DashboardPage() {
   const { format, ensureRate } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
   const wrapSuccess = (location.state as { wrapSuccess?: boolean } | null)?.wrapSuccess === true
-  const { progress, updateProgress } = useFirstLaunchTutorial()
-  const [tutorialOpen, setTutorialOpen] = useState(false)
   const [hiddenCards, setHiddenCards] = useState<DashboardCardId[]>(() => readHiddenCards())
   const updateHiddenCards = (next: DashboardCardId[]) => {
     setHiddenCards(next)
@@ -800,11 +795,6 @@ export function DashboardPage() {
   }
   const isShown = (id: DashboardCardId) => !hiddenCards.includes(id)
 
-  useEffect(() => {
-    if (progress?.currentSection === 'dashboard') {
-      queueMicrotask(() => setTutorialOpen(true))
-    }
-  }, [progress?.currentSection])
 
   useEffect(() => {
     if (currentProduction?.currency_code) ensureRate(currentProduction.currency_code)
@@ -954,7 +944,11 @@ export function DashboardPage() {
         </Alert>
       )}
 
-      {currentProductionId && !wrapSuccess && <GetStartedChecklist />}
+      {currentProductionId && !wrapSuccess && (
+        <div data-tutorial="dashboard-checklist">
+          <GetStartedChecklist />
+        </div>
+      )}
 
       {!currentProductionId && !wrapSuccess && (
         <EmptyState
@@ -1086,38 +1080,6 @@ export function DashboardPage() {
         </>
       )}
 
-      <SectionTutorialPanel
-        open={tutorialOpen}
-        onOpenChange={(open) => {
-          setTutorialOpen(open)
-          if (!open) {
-            updateProgress((prev) => ({
-              ...prev,
-              currentSection: prev.currentSection === 'dashboard' ? null : prev.currentSection,
-              sections: {
-                ...prev.sections,
-                dashboard: prev.sections.dashboard === 'not_started' ? 'in_progress' : prev.sections.dashboard,
-              },
-            }))
-          }
-        }}
-        sectionId="dashboard"
-        sectionTitle="Dashboard"
-        steps={dashboardTutorialSteps}
-        progress={progress}
-        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
-        onCompleteSection={() => {
-          setTutorialOpen(false)
-          updateProgress((prev) => ({
-            ...prev,
-            currentSection: prev.currentSection === 'dashboard' ? null : prev.currentSection,
-            sections: {
-              ...prev.sections,
-              dashboard: 'complete',
-            },
-          }))
-        }}
-      />
     </div>
   )
 }

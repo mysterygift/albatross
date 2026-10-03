@@ -82,7 +82,7 @@ export function StripboardDayView(props: StripboardDayViewProps) {
 
   if (!day) {
     return (
-      <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+      <div data-tutorial="stripboard-day-view" className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
         No shoot days to show. Add shoot days or clear the bloc filter.
       </div>
     )

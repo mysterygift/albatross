@@ -3,73 +3,92 @@ import { TUTORIAL_SECTION_IDS, type TutorialSectionId } from './tutorialSections
 
 const FIRST_LAUNCH_TUTORIAL_PROGRESS_KEY = 'first_launch_tutorial_progress'
 
-const VALID_SECTION_STATES: TutorialSectionState[] = ['not_started', 'in_progress', 'complete']
-
 export type TutorialSectionState = 'not_started' | 'in_progress' | 'complete'
 
+/** `running` shows the overlay; `paused` keeps the position but hides it; `idle` is not started. */
+export type TutorialRunStatus = 'idle' | 'running' | 'paused'
+
+export type TutorialRun = {
+  status: TutorialRunStatus
+  sectionId: TutorialSectionId | null
+  stepId: string | null
+  /** `all` continues into the next section after each one completes; `section` stops at the end of one. */
+  scope: 'all' | 'section'
+}
+
 export type FirstLaunchTutorialProgress = {
-  /** True once the user has either skipped or started from the entry modal; prevents re-showing entry on next load. */
+  version: 2
+  /** True once the user has either skipped or started from the entry modal. */
   seenEntryModal: boolean
-  seenIntro: boolean
+  /** True once the user has ended the tutorial with "Skip tutorial". */
   dismissed: boolean
-  currentSection: TutorialSectionId | null
+  /** The tutorial project created for this user. It is an ordinary project after the tutorial ends. */
+  tutorialProductionId: string | null
+  run: TutorialRun
   sections: Record<TutorialSectionId, TutorialSectionState>
-  sectionSteps?: Partial<Record<TutorialSectionId, number>>
+  /** Step ids completed per section. Stored as ids, not indices, so reordering steps is safe. */
+  completedStepIds: Partial<Record<TutorialSectionId, string[]>>
 }
 
 export function getDefaultTutorialProgress(): FirstLaunchTutorialProgress {
-  const sections: Record<TutorialSectionId, TutorialSectionState> = {} as Record<
-    TutorialSectionId,
-    TutorialSectionState
-  >
-
-  for (const id of TUTORIAL_SECTION_IDS) {
-    sections[id] = 'not_started'
-  }
-
+  const sections = {} as Record<TutorialSectionId, TutorialSectionState>
+  for (const id of TUTORIAL_SECTION_IDS) sections[id] = 'not_started'
   return {
+    version: 2,
     seenEntryModal: false,
-    seenIntro: false,
     dismissed: false,
-    currentSection: null,
+    tutorialProductionId: null,
+    run: { status: 'idle', sectionId: null, stepId: null, scope: 'all' },
     sections,
-    sectionSteps: {},
+    completedStepIds: {},
   }
 }
 
-/** Sanitize parsed progress so invalid keys/values don't break the app. */
-function sanitizeProgress(parsed: Partial<FirstLaunchTutorialProgress>): FirstLaunchTutorialProgress {
+const VALID_SECTION_STATES: TutorialSectionState[] = ['not_started', 'in_progress', 'complete']
+const VALID_RUN_STATUS: TutorialRunStatus[] = ['idle', 'running', 'paused']
+
+function isSectionId(value: unknown): value is TutorialSectionId {
+  return typeof value === 'string' && (TUTORIAL_SECTION_IDS as readonly string[]).includes(value)
+}
+
+/** Sanitize parsed progress so invalid keys/values never break the app. Older v1 payloads are upgraded in place. */
+export function sanitizeTutorialProgress(parsed: Partial<FirstLaunchTutorialProgress>): FirstLaunchTutorialProgress {
   const base = getDefaultTutorialProgress()
-  const sectionIdsSet = new Set(TUTORIAL_SECTION_IDS)
-  const sections: Record<TutorialSectionId, TutorialSectionState> = { ...base.sections }
+
+  const sections = { ...base.sections }
   if (parsed.sections && typeof parsed.sections === 'object') {
     for (const id of TUTORIAL_SECTION_IDS) {
       const v = parsed.sections[id]
-      if (VALID_SECTION_STATES.includes(v as TutorialSectionState)) {
-        sections[id] = v as TutorialSectionState
-      }
+      if (VALID_SECTION_STATES.includes(v as TutorialSectionState)) sections[id] = v as TutorialSectionState
     }
   }
-  let currentSection: TutorialSectionId | null = base.currentSection
-  if (parsed.currentSection != null && sectionIdsSet.has(parsed.currentSection as TutorialSectionId)) {
-    currentSection = parsed.currentSection as TutorialSectionId
+
+  const rawRun = (parsed.run ?? {}) as Partial<TutorialRun>
+  const run: TutorialRun = {
+    // A run persisted by v1 has no `run`, so it resets to idle and the user starts the section again.
+    status: VALID_RUN_STATUS.includes(rawRun.status as TutorialRunStatus) ? (rawRun.status as TutorialRunStatus) : 'idle',
+    sectionId: isSectionId(rawRun.sectionId) ? rawRun.sectionId : null,
+    stepId: typeof rawRun.stepId === 'string' ? rawRun.stepId : null,
+    scope: rawRun.scope === 'section' ? 'section' : 'all',
   }
-  const sectionSteps: Partial<Record<TutorialSectionId, number>> = { ...base.sectionSteps }
-  if (parsed.sectionSteps && typeof parsed.sectionSteps === 'object') {
+
+  const completedStepIds: Partial<Record<TutorialSectionId, string[]>> = {}
+  if (parsed.completedStepIds && typeof parsed.completedStepIds === 'object') {
     for (const id of TUTORIAL_SECTION_IDS) {
-      const v = parsed.sectionSteps[id]
-      if (typeof v === 'number' && Number.isFinite(v) && v >= 0) {
-        sectionSteps[id] = Math.floor(v)
-      }
+      const v = parsed.completedStepIds[id]
+      if (Array.isArray(v)) completedStepIds[id] = v.filter((s): s is string => typeof s === 'string')
     }
   }
+
   return {
+    version: 2,
     seenEntryModal: typeof parsed.seenEntryModal === 'boolean' ? parsed.seenEntryModal : base.seenEntryModal,
-    seenIntro: typeof parsed.seenIntro === 'boolean' ? parsed.seenIntro : base.seenIntro,
     dismissed: typeof parsed.dismissed === 'boolean' ? parsed.dismissed : base.dismissed,
-    currentSection,
+    tutorialProductionId:
+      typeof parsed.tutorialProductionId === 'string' ? parsed.tutorialProductionId : base.tutorialProductionId,
+    run,
     sections,
-    sectionSteps,
+    completedStepIds,
   }
 }
 
@@ -78,33 +97,25 @@ export async function getFirstLaunchTutorialProgress(): Promise<FirstLaunchTutor
     const raw = await getSetting(FIRST_LAUNCH_TUTORIAL_PROGRESS_KEY)
 
     if (!raw) {
-      // No structured progress yet – fall back to legacy boolean.
+      // No structured progress yet – fall back to the legacy boolean used before progress was stored.
       const legacySeen = await (async () => {
         try {
-          const legacyValue = await getSetting(FIRST_LAUNCH_TUTORIAL_SEEN_KEY)
-          return legacyValue === 'true'
+          return (await getSetting(FIRST_LAUNCH_TUTORIAL_SEEN_KEY)) === 'true'
         } catch {
           return false
         }
       })()
-
+      const progress = getDefaultTutorialProgress()
       if (legacySeen) {
-        const progress = getDefaultTutorialProgress()
-        for (const id of TUTORIAL_SECTION_IDS) {
-          progress.sections[id] = 'complete'
-        }
+        for (const id of TUTORIAL_SECTION_IDS) progress.sections[id] = 'complete'
         progress.seenEntryModal = true
-        progress.seenIntro = true
         progress.dismissed = true
-        return progress
       }
-
-      return getDefaultTutorialProgress()
+      return progress
     }
 
     try {
-      const parsed = JSON.parse(raw) as Partial<FirstLaunchTutorialProgress>
-      return sanitizeProgress(parsed)
+      return sanitizeTutorialProgress(JSON.parse(raw) as Partial<FirstLaunchTutorialProgress>)
     } catch {
       return getDefaultTutorialProgress()
     }
@@ -113,24 +124,13 @@ export async function getFirstLaunchTutorialProgress(): Promise<FirstLaunchTutor
   }
 }
 
-export async function setFirstLaunchTutorialProgress(
-  progress: FirstLaunchTutorialProgress,
-): Promise<void> {
+export async function setFirstLaunchTutorialProgress(progress: FirstLaunchTutorialProgress): Promise<void> {
   try {
     await setSetting(FIRST_LAUNCH_TUTORIAL_PROGRESS_KEY, JSON.stringify(progress))
-
-    // Keep legacy boolean roughly in sync for callers that still read it.
-    const allComplete = TUTORIAL_SECTION_IDS.every(
-      (id) => progress.sections[id] === 'complete',
-    )
-
-    if (progress.dismissed || allComplete) {
-      await setSetting(FIRST_LAUNCH_TUTORIAL_SEEN_KEY, 'true')
-    } else {
-      await setSetting(FIRST_LAUNCH_TUTORIAL_SEEN_KEY, 'false')
-    }
+    // Keep the legacy boolean in sync for callers that still read it.
+    const allComplete = TUTORIAL_SECTION_IDS.every((id) => progress.sections[id] === 'complete')
+    await setSetting(FIRST_LAUNCH_TUTORIAL_SEEN_KEY, progress.dismissed || allComplete ? 'true' : 'false')
   } catch {
-    // Best-effort only – failures should not break app shell.
+    // Best-effort only – failures should not break the app shell.
   }
 }
-

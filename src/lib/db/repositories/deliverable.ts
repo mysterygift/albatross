@@ -1,4 +1,5 @@
 import { getDb, now, uuid } from '../client'
+import { tutorialEmitted } from '@/features/tutorial/engine/events'
 import { outboxPush } from '../outbox'
 import type { Deliverable, TechnicalSpec } from '../types'
 import { getProductionById } from './production'
@@ -156,7 +157,7 @@ export async function createDeliverable(data: {
   )
   await outboxPush(DEL_TABLE, id, 'create', JSON.stringify({ ...data, id, episode_id: episodeId }))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${DEL_TABLE} WHERE id = $1`, [id])
-  return rowToDeliverable(rows[0]!)
+  return tutorialEmitted('deliverable.created', data.production_id, rowToDeliverable(rows[0]!))
 }
 
 const DELIVERABLE_UPDATE_KEYS = [

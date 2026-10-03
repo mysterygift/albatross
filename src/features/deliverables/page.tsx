@@ -3,9 +3,6 @@ import { PageHeader } from '@/components/page-header'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
-import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
-import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
-import { deliverablesTutorialSteps } from '@/features/tutorial/sections/deliverablesTutorial'
 import {
   listDeliverablesByProduction,
   createDeliverable,
@@ -115,7 +112,6 @@ type ScopeMode = 'project_wide' | 'episode'
 export function DeliverablesPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const isEpisodic = Boolean(currentProduction?.is_episodic)
-  const { progress, updateProgress } = useFirstLaunchTutorial()
   const [open, setOpen] = useState(false)
   const [applyTemplateOpen, setApplyTemplateOpen] = useState(false)
   const [applyTemplateId, setApplyTemplateId] = useState<string>('')
@@ -130,7 +126,6 @@ export function DeliverablesPage() {
   const [applyTemplateScopeMode, setApplyTemplateScopeMode] = useState<ScopeMode>('project_wide')
   const [applyTemplateEpisodeId, setApplyTemplateEpisodeId] = useState('')
   const [listFilter, setListFilter] = useState<string>('all')
-  const [tutorialOpen, setTutorialOpen] = useState(false)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -143,11 +138,6 @@ export function DeliverablesPage() {
     setListFilter('all')
   }, [currentProductionId])
 
-  useEffect(() => {
-    if (progress?.currentSection === 'deliverables') {
-      setTutorialOpen(true)
-    }
-  }, [progress?.currentSection])
 
   const { data: deliverableTemplates = [] } = useQuery({
     queryKey: ['deliverable-templates'],
@@ -393,7 +383,7 @@ export function DeliverablesPage() {
                 }}
               >
                 <DialogTrigger asChild>
-                  <Button><Plus className="mr-2 size-4" />Add deliverable</Button>
+                  <Button data-tutorial="deliverables-add"><Plus className="mr-2 size-4" />Add deliverable</Button>
                 </DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>New deliverable</DialogTitle></DialogHeader>
@@ -616,41 +606,6 @@ export function DeliverablesPage() {
           onClose={() => setSpecDeliverableId(null)}
         />
       )}
-      <SectionTutorialPanel
-        open={tutorialOpen}
-        onOpenChange={(open) => {
-          setTutorialOpen(open)
-          if (!open) {
-            updateProgress((prev) => ({
-              ...prev,
-              currentSection: prev.currentSection === 'deliverables' ? null : prev.currentSection,
-              sections: {
-                ...prev.sections,
-                deliverables:
-                  prev.sections.deliverables === 'not_started'
-                    ? 'in_progress'
-                    : prev.sections.deliverables,
-              },
-            }))
-          }
-        }}
-        sectionId="deliverables"
-        sectionTitle="Deliverables"
-        steps={deliverablesTutorialSteps}
-        progress={progress}
-        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
-        onCompleteSection={() => {
-          setTutorialOpen(false)
-          updateProgress((prev) => ({
-            ...prev,
-            currentSection: prev.currentSection === 'deliverables' ? null : prev.currentSection,
-            sections: {
-              ...prev.sections,
-              deliverables: 'complete',
-            },
-          }))
-        }}
-      />
     </div>
   )
 }

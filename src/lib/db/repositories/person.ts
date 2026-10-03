@@ -1,4 +1,5 @@
 import { getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { tutorialEmitted } from '@/features/tutorial/engine/events'
 import type { DatabaseAdapter } from '../databaseAdapter'
 import { backfillPeopleIsCastIntegerIfNeeded } from '../migrations/backfillPeopleIsCastInteger'
 import { outboxPush } from '../outbox'
@@ -141,7 +142,7 @@ export async function createPerson(data: PersonInsert): Promise<Person> {
     ]
   )
   await outboxPush(TABLE, id, 'create', JSON.stringify({ ...stored, id, is_cast: data.is_cast }))
-  return (await getPersonById(id))!
+  return tutorialEmitted('person.created', data.production_id, (await getPersonById(id))!)
 }
 
 export async function updatePerson(

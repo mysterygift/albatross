@@ -1,4 +1,5 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { tutorialEmitted } from '@/features/tutorial/engine/events'
 import { getEffectiveDataSourceForProduction, resolveServerPublishContext } from '@/lib/db/projectDataSource'
 import { remoteListBudgetItems, remoteListExpenses } from '@/lib/server/remote/budgetRemote'
 import { serverRuntimeMutate } from '@/lib/server/serverClient'
@@ -240,7 +241,7 @@ export async function createBudgetItem(data: {
         body,
         null,
       )
-      return rowToItem(row as Record<string, unknown>)
+      return tutorialEmitted('budget.item_created', data.production_id, rowToItem(row as Record<string, unknown>))
     } catch (e) {
         if (e instanceof ServerRequestError && e.kind === 'network') {
           await updateLinkedProjectState(data.production_id, 'offline')
@@ -324,7 +325,7 @@ export async function createBudgetItem(data: {
   })
 
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${ITEM_TABLE} WHERE id = $1`, [id])
-  return rowToItem(rows[0]!)
+  return tutorialEmitted('budget.item_created', data.production_id, rowToItem(rows[0]!))
 }
 
 export async function updateBudgetItem(
@@ -521,7 +522,7 @@ export async function createExpense(data: {
         body,
         null,
       )
-      return rowToExpense(row as Record<string, unknown>)
+      return tutorialEmitted('budget.expense_created', data.production_id, rowToExpense(row as Record<string, unknown>))
     } catch (e) {
         if (e instanceof ServerRequestError && e.kind === 'network') {
           await updateLinkedProjectState(data.production_id, 'offline')
@@ -565,7 +566,7 @@ export async function createExpense(data: {
   )
   await outboxPush(EXP_TABLE, id, 'create', JSON.stringify({ ...data, id }))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${EXP_TABLE} WHERE id = $1`, [id])
-  return rowToExpense(rows[0]!)
+  return tutorialEmitted('budget.expense_created', data.production_id, rowToExpense(rows[0]!))
 }
 
 /**

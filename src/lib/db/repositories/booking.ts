@@ -1,4 +1,5 @@
 import { getDb, now, uuid } from '../client'
+import { tutorialEmitted } from '@/features/tutorial/engine/events'
 import { outboxPush } from '../outbox'
 import type { Booking } from '../types'
 
@@ -77,7 +78,7 @@ export async function createBooking(data: {
   )
   await outboxPush(TABLE, id, 'create', JSON.stringify({ ...data, id }))
   const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [id])
-  return rowToBooking(rows[0]!)
+  return tutorialEmitted('booking.created', data.production_id, rowToBooking(rows[0]!))
 }
 
 export async function updateBooking(

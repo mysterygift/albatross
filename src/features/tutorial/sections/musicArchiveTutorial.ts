@@ -1,40 +1,32 @@
-import type { TutorialStep } from '@/features/tutorial/SectionTutorialPanel'
+import type { TutorialFlow } from '../engine/types'
 
-export const musicArchiveTutorialSteps: TutorialStep[] = [
-  {
-    id: 'overview',
-    title: 'Music & Archive overview',
-    body: [
-      'Music & Archive Clearance tracks music usage details needed for legal and delivery workflows.',
-      '',
-      'It helps production maintain a clean record of tracks used and related rights metadata.',
-    ].join('\n'),
-  },
-  {
-    id: 'track-register',
-    title: 'Build the track register',
-    body: [
-      'Add tracks with title, artist, and publisher/label information as soon as selections are known.',
-      '',
-      'A reliable track register reduces clearance surprises late in post and delivery.',
-    ].join('\n'),
-  },
-  {
-    id: 'cue-sheet-export',
-    title: 'Cue sheet export',
-    body: [
-      'Generate a cue sheet PDF from the tracked music list for handoff and reporting.',
-      '',
-      'Use this export as part of your final archive package and downstream delivery documentation.',
-    ].join('\n'),
-  },
-  {
-    id: 'archive-practice',
-    title: 'Archive-ready practice',
-    body: [
-      'Keep this section updated throughout production instead of waiting until wrap.',
-      '',
-      'That creates a cleaner audit trail when you assemble final archive and distribution materials.',
-    ].join('\n'),
-  },
-]
+export const musicArchiveFlow: TutorialFlow = {
+  sectionId: 'music_archive',
+  title: 'Music & Archive',
+  route: '/music-clearance',
+  steps: [
+    {
+      id: 'overview',
+      title: 'Music clearance',
+      body: 'Every track needs its clearance tracked before delivery. Cue sheets record the music for delivery and royalties.',
+      instruction: 'Press Next to add a track.',
+      requires: { kind: 'view' },
+    },
+    {
+      id: 'add-track',
+      title: 'Add a track',
+      body: 'Each piece of music you use gets a record with its clearance status.',
+      instruction: 'Click Add track.',
+      target: 'music-add-track',
+      hint: 'Click the highlighted Add track button.',
+      requires: { kind: 'click' },
+    },
+    {
+      id: 'finish',
+      title: 'Cue sheets',
+      body: 'Once clearances are in, generate the cue sheet PDF from this page. That is the end of the core tour.',
+      instruction: 'Press Finish to complete the tutorial.',
+      requires: { kind: 'view' },
+    },
+  ],
+}

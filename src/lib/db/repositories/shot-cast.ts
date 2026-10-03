@@ -5,6 +5,7 @@
  */
 
 import { getDb, now, uuid, runInSerializedTransaction, executeBatch } from '../client'
+import { tutorialEmitted } from '@/features/tutorial/engine/events'
 import type { DatabaseAdapter } from '../databaseAdapter'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { ShotCast } from '../types'
@@ -264,7 +265,7 @@ export async function addShotCast(data: {
     `SELECT * FROM ${TABLE} WHERE shot_id = $1 AND person_id = $2 AND deleted_at IS NULL`,
     [data.shot_id, data.person_id]
   )
-  return rowToShotCast(rows[0]!)
+  return tutorialEmitted('cast.assigned', data.production_id, rowToShotCast(rows[0]!))
 }
 
 /**

@@ -1,16 +1,18 @@
+import { WORKSPACE_INTRO_TIMING } from '@/features/auth/intro/WorkspaceIntro'
 import {
   advanceSetupWorkspaceHandoffPhase,
   type SetupWorkspaceHandoffPhase,
 } from '@/lib/auth/setupWorkspaceHandoff'
 
+const WORKSPACE_FADING_WELCOME_MS = 275
+
 export const SETUP_TRANSITION_TIMING = {
   full: {
-    fadingWelcome: 275,
-    /** Radial brand gradient fade-in (ms). */
-    brandWashFadeIn: 400,
-    /** Plateau after fade-in before crossfade to the app shell (ms). */
-    brandWashHold: 3000,
-    revealingApp: 300,
+    fadingWelcome: WORKSPACE_FADING_WELCOME_MS,
+    /** Intro playing over the (hidden) app shell. */
+    intro: WORKSPACE_INTRO_TIMING.playMs,
+    /** Iris opening onto the app shell. */
+    revealingApp: WORKSPACE_INTRO_TIMING.exitMs,
   },
   reduced: {
     crossfade: 150,
@@ -24,15 +26,21 @@ function delay(ms: number): Promise<void> {
 export type RunSetupWorkspaceTransitionOptions = {
   reducedMotion: boolean
   onPersistSession: () => Promise<void>
+  /**
+   * Wait before persisting the session, to let the outgoing screen fade. Defaults to the setup
+   * "done" card fade; sign-in has nothing to fade and passes 0.
+   */
+  leadInMs?: number
 }
 
 /**
- * Runs the FTW6C phase sequence after {@link startSetupWorkspaceTransition}.
+ * Runs the FTW6C phase sequence (setup and sign-in) after {@link startSetupWorkspaceTransition}.
  * Assumes handoff phase is already `fadingWelcome`.
  */
 export async function runSetupWorkspaceTransition({
   reducedMotion,
   onPersistSession,
+  leadInMs = SETUP_TRANSITION_TIMING.full.fadingWelcome,
 }: RunSetupWorkspaceTransitionOptions): Promise<void> {
   if (reducedMotion) {
     const half = SETUP_TRANSITION_TIMING.reduced.crossfade / 2
@@ -44,12 +52,12 @@ export async function runSetupWorkspaceTransition({
     return
   }
 
-  await delay(SETUP_TRANSITION_TIMING.full.fadingWelcome)
+  if (leadInMs > 0) {
+    await delay(leadInMs)
+  }
   await onPersistSession()
   advanceSetupWorkspaceHandoffPhase('brandWash')
-  await delay(
-    SETUP_TRANSITION_TIMING.full.brandWashFadeIn + SETUP_TRANSITION_TIMING.full.brandWashHold
-  )
+  await delay(SETUP_TRANSITION_TIMING.full.intro)
   advanceSetupWorkspaceHandoffPhase('revealingApp')
   await delay(SETUP_TRANSITION_TIMING.full.revealingApp)
   advanceSetupWorkspaceHandoffPhase('complete')

@@ -1,16 +1,15 @@
 import { Fragment } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ChevronRight, GraduationCap, Keyboard, Search } from 'lucide-react'
+import { ChevronRight, Keyboard, Search } from 'lucide-react'
 import { findNavTrail, isNavGroup } from '@/app/navigation'
 import { Button } from '@/components/ui/button'
 import { ProductionSwitcher } from '@/components/production-switcher'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { ShortcutTooltip } from '@/components/shortcut-hint'
-import { PageHelpButton } from '@/features/tutorial/PageHelpButton'
+import { TutorialMenu } from '@/features/tutorial/TutorialMenu'
 import { getCommandAccelerator, isMacPlatform } from '@/app/menuSchema'
 
 type TopBarProps = {
-  onOpenTutorial?: () => void
   onOpenSearch?: () => void
   onOpenShortcuts?: () => void
 }
@@ -58,7 +57,7 @@ function Breadcrumbs() {
   )
 }
 
-export function TopBar({ onOpenTutorial, onOpenSearch, onOpenShortcuts }: TopBarProps) {
+export function TopBar({ onOpenSearch, onOpenShortcuts }: TopBarProps) {
   const isMac = isMacPlatform()
   const searchHint = isMac ? '\u2318K' : 'Ctrl K'
   const sidebarAccelerator = getCommandAccelerator('view_toggle_sidebar')
@@ -82,7 +81,6 @@ export function TopBar({ onOpenTutorial, onOpenSearch, onOpenShortcuts }: TopBar
           <span className="hidden md:inline">Search</span>
           <kbd className="ml-auto hidden font-sans text-xs md:inline">{searchHint}</kbd>
         </button>
-        <PageHelpButton />
         <ShortcutTooltip label="Keyboard shortcuts" keys="?">
           <Button
             variant="ghost"
@@ -96,17 +94,7 @@ export function TopBar({ onOpenTutorial, onOpenSearch, onOpenShortcuts }: TopBar
             <Keyboard className="size-4" />
           </Button>
         </ShortcutTooltip>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={() => {
-            onOpenTutorial?.()
-          }}
-          aria-label="Open tutorial"
-        >
-          <GraduationCap className="size-4" />
-        </Button>
+        <TutorialMenu />
       </div>
     </header>
   )

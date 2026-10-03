@@ -7,9 +7,6 @@ import { Link } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
-import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
-import { SectionTutorialPanel } from '@/features/tutorial/SectionTutorialPanel'
-import { castTutorialSteps } from '@/features/tutorial/sections/castTutorial'
 import { listCast, createPerson, updatePerson, deletePerson } from '@/lib/db/repositories/person'
 import { listAvailabilityByProduction } from '@/lib/db/repositories/cast-availability'
 import {
@@ -89,7 +86,6 @@ export function CastManagerPage() {
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
   const queryClient = useQueryClient()
-  const { progress, updateProgress } = useFirstLaunchTutorial()
   const [search, setSearch] = useState('')
   const [contributorFilter, setContributorFilter] = useState<ContributorFilter>('all')
   const [missingFilter, setMissingFilter] = useState<MissingFilter>('all')
@@ -97,13 +93,7 @@ export function CastManagerPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [personToDelete, setPersonToDelete] = useState<Person | null>(null)
   const [unavailabilityPerson, setUnavailabilityPerson] = useState<Person | null>(null)
-  const [tutorialOpen, setTutorialOpen] = useState(false)
 
-  useEffect(() => {
-    if (progress?.currentSection === 'cast') {
-      queueMicrotask(() => setTutorialOpen(true))
-    }
-  }, [progress?.currentSection])
 
   const { data: cast = [] } = useQuery({
     queryKey: ['cast', currentProductionId],
@@ -297,7 +287,7 @@ export function CastManagerPage() {
         description="Manage cast members and their roles for this production."
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+            <Button data-tutorial="cast-add" variant="outline" size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="mr-2 size-4" />
               Add cast
             </Button>
@@ -535,38 +525,6 @@ export function CastManagerPage() {
         </DialogContent>
       </Dialog>
 
-      <SectionTutorialPanel
-        open={tutorialOpen}
-        onOpenChange={(open) => {
-          setTutorialOpen(open)
-          if (!open) {
-            updateProgress((prev) => ({
-              ...prev,
-              currentSection: prev.currentSection === 'cast' ? null : prev.currentSection,
-              sections: {
-                ...prev.sections,
-                cast: prev.sections.cast === 'not_started' ? 'in_progress' : prev.sections.cast,
-              },
-            }))
-          }
-        }}
-        sectionId="cast"
-        sectionTitle="Cast Management"
-        steps={castTutorialSteps}
-        progress={progress}
-        updateProgress={(updater) => updateProgress((prev) => updater(prev))}
-        onCompleteSection={() => {
-          setTutorialOpen(false)
-          updateProgress((prev) => ({
-            ...prev,
-            currentSection: prev.currentSection === 'cast' ? null : prev.currentSection,
-            sections: {
-              ...prev.sections,
-              cast: 'complete',
-            },
-          }))
-        }}
-      />
     </div>
   )
 }

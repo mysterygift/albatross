@@ -13,14 +13,10 @@ vi.mock('@/features/productions/context', () => ({
   }),
 }))
 vi.mock('@/hooks/useWorkingBudgetRevision', () => ({ useWorkingBudgetRevision: () => ({ data: { id: 'r1' } }) }))
-vi.mock('@/hooks/useFirstLaunchTutorial', () => ({
-  useFirstLaunchTutorial: () => ({ progress: null, updateProgress: vi.fn() }),
-}))
 vi.mock('@/hooks/useCurrency', () => ({
   useCurrency: () => ({ format: (n: number) => ({ formatted: String(n) }), ensureRate: vi.fn() }),
 }))
 vi.mock('@/lib/auth/useAuthSession', () => ({ useAuthSession: () => ({ authSupported: false, currentUser: null }) }))
-vi.mock('@/features/tutorial/SectionTutorialPanel', () => ({ SectionTutorialPanel: () => null }))
 vi.mock('@/features/onboarding/GetStartedChecklist', () => ({
   GetStartedChecklist: () => <div data-testid="get-started-checklist" />,
 }))

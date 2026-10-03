@@ -1,4 +1,5 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { emitTutorialEvent, hasTutorialListeners, tutorialEmitted } from '@/features/tutorial/engine/events'
 import { getEffectiveDataSourceForProduction, resolveServerPublishContext } from '@/lib/db/projectDataSource'
 import {
   remoteGetScene,
@@ -286,7 +287,7 @@ export async function createShootDay(data: {
   }
   const createdDay = await getShootDayById(day.shootDay.id)
   if (!createdDay) throw new Error('Shoot day not found after create')
-  return createdDay
+  return tutorialEmitted('shootday.created', data.production_id, createdDay)
 }
 
 const SHOOT_DAY_UPDATE_KEYS = [
@@ -612,7 +613,7 @@ export async function createShootDayWithDefaultMainUnit(args: CreateShootDayWith
   const shootDay = await getShootDayById(shootDayId)
   if (!shootDay) throw new Error('Shoot day not found after create')
 
-  return { shootDay, mainUnitId: mainUnit.id, shootDayUnitId }
+  return tutorialEmitted('shootday.created', args.productionId, { shootDay, mainUnitId: mainUnit.id, shootDayUnitId })
 }
 
 type AddSecondUnitToShootDaysArgs = {
@@ -1162,7 +1163,7 @@ export async function createScene(data: {
         body,
         null,
       )
-      return rowToScene(row as Record<string, unknown>)
+      return tutorialEmitted('scene.created', data.production_id, rowToScene(row as Record<string, unknown>))
     } catch (e) {
       if (e instanceof ServerRequestError) {
         if (e.kind === 'network') {
@@ -1207,7 +1208,7 @@ export async function createScene(data: {
     ]
   )
   await outboxPush(SCENE_TABLE, id, 'create', JSON.stringify({ ...data, id, episode_id: episodeId }))
-  return (await getSceneById(id))!
+  return tutorialEmitted('scene.created', data.production_id, (await getSceneById(id))!)
 }
 
 const SCENE_UPDATE_KEYS = [
@@ -1565,6 +1566,15 @@ function validateShotFieldEnums(data: Pick<CreateShotInput, 'shot_size' | 'camer
  * serialized transaction (per DATABASE_LAYER.md).
  */
 export async function createShot(data: CreateShotInput): Promise<CreateShotResult> {
+  const result = await createShotCore(data)
+  if (hasTutorialListeners()) {
+    const scene = await getSceneById(data.scene_id)
+    emitTutorialEvent('shot.created', scene?.production_id, { shotId: result.shot.id })
+  }
+  return result
+}
+
+async function createShotCore(data: CreateShotInput): Promise<CreateShotResult> {
   const sceneId = typeof data.scene_id === 'string' ? data.scene_id.trim() : ''
   if (!sceneId) {
     throw new Error('scene_id is required')
@@ -1920,6 +1930,15 @@ export async function setStripboardOrder(
 }
 
 export async function addSceneToStripboard(shootDayId: string, sceneId: string, sortOrder: number): Promise<StripboardItem> {
+  const item = await addSceneToStripboardCore(shootDayId, sceneId, sortOrder)
+  if (hasTutorialListeners()) {
+    const day = await getShootDayById(shootDayId)
+    emitTutorialEvent('stripboard.strip_added', day?.production_id, { shootDayId, sceneId })
+  }
+  return item
+}
+
+async function addSceneToStripboardCore(shootDayId: string, sceneId: string, sortOrder: number): Promise<StripboardItem> {
   const db = await getDb()
   const id = uuid()
   const ts = now()

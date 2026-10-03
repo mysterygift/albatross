@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
@@ -64,16 +64,8 @@ vi.mock('@/components/dev/DevPerfHud', () => ({
   DevPerfHud: () => null,
 }))
 
-vi.mock('@/hooks/useFirstLaunchTutorial', () => ({
-  useFirstLaunchTutorial: () => ({
-    isLoading: false,
-    showFirstLaunchTutorial: false,
-    completeFirstLaunchTutorial: vi.fn(),
-    resetFirstLaunchTutorial: vi.fn(),
-    skipEntryModal: vi.fn(),
-    progress: { sections: {}, dismissed: true, seenEntryModal: true },
-    updateProgress: vi.fn(),
-  }),
+vi.mock('@/features/tutorial/engine/TutorialProvider', () => ({
+  TutorialProvider: ({ children }: { children: unknown }) => children,
 }))
 
 vi.mock('@/features/productions/context', () => ({
@@ -156,6 +148,44 @@ describe('AppLayout setup transition', () => {
 
     expect(screen.getByTestId('setup-workspace-transition-overlay')).toBeTruthy()
     expect(screen.queryByTestId('auth-gate')).toBeNull()
+  })
+
+  it('keeps the shell hidden under the intro, then reveals it without remounting', () => {
+    armSetupWorkspaceHandoff('login')
+    startSetupWorkspaceTransition()
+    advanceSetupWorkspaceHandoffPhase('brandWash')
+
+    renderLayout()
+
+    const sidebar = screen.getByTestId('app-sidebar')
+    const shellWrapper = sidebar.closest('[aria-hidden]')
+    expect(shellWrapper?.getAttribute('aria-hidden')).toBe('true')
+    expect(shellWrapper?.className).toContain('opacity-0')
+    expect(screen.getByTestId('workspace-intro')).toBeTruthy()
+
+    act(() => advanceSetupWorkspaceHandoffPhase('revealingApp'))
+    expect(screen.getByTestId('app-sidebar')).toBe(sidebar)
+    expect(sidebar.closest('[aria-hidden="true"]')).toBeNull()
+    expect(screen.getByTestId('workspace-intro').getAttribute('data-exiting')).toBe('true')
+
+    act(() => {
+      advanceSetupWorkspaceHandoffPhase('complete')
+      disarmSetupWorkspaceHandoff()
+    })
+    expect(screen.getByTestId('app-sidebar')).toBe(sidebar)
+    expect(screen.queryByTestId('setup-workspace-transition-overlay')).toBeNull()
+  })
+
+  it('shows only a blank cover, not the shell, while a login waits for its session', () => {
+    armSetupWorkspaceHandoff('login')
+    startSetupWorkspaceTransition()
+
+    renderLayout()
+
+    expect(screen.getByTestId('setup-workspace-transition-overlay').getAttribute('data-phase')).toBe(
+      'fadingWelcome'
+    )
+    expect(screen.queryByTestId('app-sidebar')).toBeNull()
   })
 
   it('keeps auth gate when armed but not authenticated during done screen', () => {

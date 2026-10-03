@@ -1,40 +1,33 @@
-import type { TutorialStep } from '@/features/tutorial/SectionTutorialPanel'
+import type { TutorialFlow } from '../engine/types'
 
-export const locationsTutorialSteps: TutorialStep[] = [
-  {
-    id: 'overview',
-    title: 'Locations overview',
-    body: [
-      'Locations is your one-stop shop for all locations planning.',
-      '',
-      'Use it to keep each location profile in one place, including status, costs, and practical notes used by scheduling and movement workflows.',
-    ].join('\n'),
-  },
-  {
-    id: 'location-records',
-    title: 'Building complete location records',
-    body: [
-      'Each location can include address, what3words, parking information, availability constraints, and notes.',
-      '', 
-      'Capture these details early so departments work from a single source of truth during prep and shoot.',
-    ].join('\n'),
-  },
-  {
-    id: 'status-and-costs',
-    title: 'Status and fees',
-    body: [
-      'Track booked status from unbooked through hold/booked/wrap so the team sees current readiness.',
-      '',
-      'Permit and location fees give production and finance a quick view of location-related costs.',
-    ].join('\n'),
-  },
-  {
-    id: 'next-actions',
-    title: 'What to explore next',
-    body: [
-      'Open a few seeded location records and review their notes and fee fields.',
-      '',
-      'Then continue into Call Sheets and Movement Orders to see how location data drives daily documents.',
-    ].join('\n'),
-  },
-]
+export const locationsFlow: TutorialFlow = {
+  sectionId: 'locations',
+  title: 'Locations',
+  route: '/locations',
+  steps: [
+    {
+      id: 'overview',
+      title: 'Locations',
+      body: 'Locations track status, fees and access notes. Scenes can point at a location so the schedule knows where to go.',
+      instruction: 'Press Next to add a location.',
+      requires: { kind: 'view' },
+    },
+    {
+      id: 'add-location',
+      title: 'Add a location',
+      body: 'Start with one location you will shoot at.',
+      instruction: 'Click Add location.',
+      target: 'locations-add',
+      hint: 'Click the highlighted Add location button.',
+      requires: { kind: 'click' },
+    },
+    {
+      id: 'save-location',
+      title: 'Save the location',
+      body: 'Enter a name and booked status, then save.',
+      instruction: 'Fill in the form in the open dialog and save it.',
+      requires: { kind: 'event', event: 'location.created' },
+      hint: 'Save the location in the open dialog to continue.',
+    },
+  ],
+}

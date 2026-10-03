@@ -48,6 +48,7 @@ import { UnscheduledShotsPanel } from './unscheduled-scenes-panel'
 import { BoneyardPanel } from './boneyard-panel'
 import { StripboardDayColumn } from './stripboard-day-column'
 import { StripboardDayView, CollapsedPanelRail } from './stripboard-day-view'
+import { measureStripTableRow, StripTableDragPreview, type DayTablePreviewSize } from './stripboard-table-row'
 import type { ColumnFilter } from '@/lib/schedule/stripboardRows'
 import { StripItem } from './strip-item'
 import { toast } from '@/components/ui/sonner'
@@ -82,6 +83,7 @@ import type { ShotWithScene } from '@/lib/db/repositories/stripboard-strips'
 import { SmartSchedulingInsightsPanel } from './smart-scheduling-insights-panel'
 import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
 import { unitNameToKey } from '@/lib/schedule/unitKey'
+import { resolveStripShotAndScene } from '@/lib/schedule/stripboardRows'
 
 const STRIP_TYPES: { type: StripType; label: string }[] = [
   { type: 'MOVE', label: 'Move / Setup' },
@@ -195,7 +197,7 @@ function AddStripPopover({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1">
+        <Button data-tutorial="stripboard-add-strip" variant="outline" size="sm" className="gap-1">
           <Plus className="size-4" />
           Add strip
         </Button>
@@ -346,7 +348,7 @@ export function StripboardPage() {
     [updateUrl]
   )
   const [selectedShotIds, setSelectedShotIds] = useState<Set<string>>(new Set())
-  const [activeData, setActiveData] = useState<{ type: 'strip'; strip: StripboardStrip } | { type: 'unscheduled-shot'; item: ShotWithScene } | null>(null)
+  const [activeData, setActiveData] = useState<{ type: 'strip'; strip: StripboardStrip; preview: DayTablePreviewSize | null } | { type: 'unscheduled-shot'; item: ShotWithScene } | null>(null)
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({})
   const [newDayOpen, setNewDayOpen] = useState(false)
   const [newDayDate, setNewDayDate] = useState('')
@@ -727,9 +729,10 @@ export function StripboardPage() {
 
   const handleDragStart = (event: DragStartEvent) => {
     const d = event.active.data.current
-    if (d?.type === 'strip') setActiveData({ type: 'strip', strip: d.strip })
+    // Day-table rows get a table-shaped preview sized to the row; board cards keep the card preview.
+    if (d?.type === 'strip') setActiveData({ type: 'strip', strip: d.strip, preview: measureStripTableRow(d.strip.id) })
     else if (d?.type === 'unscheduled-shot') setActiveData({ type: 'unscheduled-shot', item: d.item })
-    else if (d?.type === 'boneyard-strip') setActiveData({ type: 'strip', strip: d.strip })
+    else if (d?.type === 'boneyard-strip') setActiveData({ type: 'strip', strip: d.strip, preview: null })
     else setActiveData(null)
   }
 
@@ -914,7 +917,7 @@ export function StripboardPage() {
         title="Stripboard"
         actions={
           <>
-            <div role="group" aria-label="Stripboard view" className="inline-flex rounded-md border border-border p-0.5">
+            <div data-tutorial="stripboard-views" role="group" aria-label="Stripboard view" className="inline-flex rounded-md border border-border p-0.5">
               <Button
                 variant={viewMode === 'board' ? 'default' : 'ghost'}
                 size="sm"
@@ -973,7 +976,7 @@ export function StripboardPage() {
               <Layers2 className="size-4" />
               Add Second Unit
             </Button>
-            <Button
+            <Button data-tutorial="stripboard-new-day"
               variant="outline"
               size="sm"
               className="gap-1"
@@ -1234,7 +1237,27 @@ export function StripboardPage() {
         )}
 
         <DragOverlay>
-          {activeData?.type === 'strip' && (
+          {activeData?.type === 'strip' && activeData.preview && (
+            <StripTableDragPreview
+              preview={activeData.preview}
+              strip={activeData.strip}
+              scene={resolveStripShotAndScene(activeData.strip, shots, scenes).scene}
+              shot={resolveStripShotAndScene(activeData.strip, shots, scenes).shot}
+              locations={locations}
+              estimatedMinutesDefault={
+                activeData.strip.strip_type === 'SHOT' && activeData.strip.shot_id
+                  ? estimatedShootMinutesByShotId.get(activeData.strip.shot_id) ?? 0
+                  : undefined
+              }
+              castCount={
+                activeData.strip.shot_id ? castPersonIdsByShotId.get(activeData.strip.shot_id)?.length : undefined
+              }
+              isEpisodic={isEpisodicProduction}
+              episodeById={isEpisodicProduction ? episodeById : undefined}
+              columnCount={activeData.preview.columnWidths.length}
+            />
+          )}
+          {activeData?.type === 'strip' && !activeData.preview && (
             <div className="rounded-md border-2 border-primary bg-card px-4 py-3 shadow-lg min-w-[200px]">
               <StripItem
                 strip={activeData.strip}
