@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
+import { ProductionSwitcher } from '@/components/production-switcher'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/empty-state'
 import { PageHeader } from '@/components/page-header'
@@ -10,11 +11,15 @@ export type RequireProductionProps = {
   children: ReactNode
 }
 
-const emptyStateAction = (
-  <Button asChild>
-    <Link to="/productions">Manage productions</Link>
-  </Button>
-)
+function EmptyStateAction() {
+  const navigate = useNavigate()
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-2">
+      <ProductionSwitcher />
+      <Button onClick={() => navigate('/productions?new=1')}>New production</Button>
+    </div>
+  )
+}
 
 export function RequireProduction({ title, children }: RequireProductionProps) {
   const { currentProductionId } = useCurrentProduction()
@@ -25,7 +30,7 @@ export function RequireProduction({ title, children }: RequireProductionProps) {
       <EmptyState
         title="No production selected"
         description="Choose a production to continue."
-        action={emptyStateAction}
+        action={<EmptyStateAction />}
       />
     </div>
   )

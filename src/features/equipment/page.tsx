@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -462,10 +463,7 @@ export function EquipmentPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Equipment</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Equipment">{null}</RequireProduction>
     )
   }
 

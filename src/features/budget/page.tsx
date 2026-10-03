@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useState, useMemo, useEffect, useRef, useCallback, Fragment, type ReactNode } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -1408,10 +1409,7 @@ export function BudgetPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Budget</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Budget">{null}</RequireProduction>
     )
   }
 

@@ -4,6 +4,7 @@
  * Drag any event to another date to move the entire shoot day to that date.
  * If the target date already has a shoot, you can swap the two days. Day Summary Drawer on click.
  */
+import { RequireProduction } from '@/components/require-production'
 import { useState, useMemo, useEffect, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -1609,10 +1610,7 @@ export function ScheduleCalendarPage() {
   return (
     <>
       {!currentProductionId ? (
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold">Schedule — Calendar</h1>
-          <p className="text-muted-foreground">Select a production first.</p>
-        </div>
+        <RequireProduction title="Schedule — Calendar">{null}</RequireProduction>
       ) : (
     <div className="space-y-4 relative">
       <div className="flex items-center justify-between gap-3 flex-wrap">

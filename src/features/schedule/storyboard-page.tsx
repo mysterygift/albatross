@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -574,10 +575,7 @@ export function StoryboardPage() {
   return (
     <>
       {!currentProductionId ? (
-        <div>
-          <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>
-          <p className="text-muted-foreground">Select a production first.</p>
-        </div>
+        <RequireProduction title="Schedule — Storyboard">{null}</RequireProduction>
       ) : scenesQuery.isError || shotsQuery.isError || imagesQuery.isError ? (
         <div className="space-y-2">
           <h1 className="text-2xl font-semibold">Schedule — Storyboard</h1>

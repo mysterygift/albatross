@@ -7,6 +7,7 @@
  * Test: DnD strips between columns, drag scene from unscheduled to column, Add dropdown,
  * multi-select Assign to Day, location/search filters, day totals & runtime warning (>10h), lock toggle.
  */
+import { RequireProduction } from '@/components/require-production'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
@@ -883,10 +884,7 @@ export function StripboardPage() {
   return (
     <>
       {!currentProductionId ? (
-        <div>
-          <h1 className="text-2xl font-semibold">Schedule — Stripboard</h1>
-          <p className="text-muted-foreground">Select a production first.</p>
-        </div>
+        <RequireProduction title="Schedule — Stripboard">{null}</RequireProduction>
       ) : (
     <div className="flex h-full flex-col gap-4">
       {unscheduleToast && (

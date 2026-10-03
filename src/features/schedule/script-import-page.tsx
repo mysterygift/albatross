@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -419,10 +420,7 @@ export function ScriptImportPage() {
   return (
     <>
       {!currentProductionId ? (
-        <div>
-          <h1 className="text-2xl font-semibold">Schedule — Script import</h1>
-          <p className="text-muted-foreground">Select a production first.</p>
-        </div>
+        <RequireProduction title="Schedule — Script import">{null}</RequireProduction>
       ) : (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Schedule — Script import</h1>

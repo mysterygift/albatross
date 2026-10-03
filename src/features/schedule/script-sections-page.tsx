@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -511,10 +512,7 @@ export function ScriptSectionsPage() {
   return (
     <>
       {!currentProductionId ? (
-        <div>
-          <h1 className="text-2xl font-semibold">Schedule — Script sections</h1>
-          <p className="text-muted-foreground">Select a production first.</p>
-        </div>
+        <RequireProduction title="Schedule — Script sections">{null}</RequireProduction>
       ) : (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Schedule — Script sections</h1>

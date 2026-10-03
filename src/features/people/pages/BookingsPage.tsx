@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState, useEffect, type SetStateAction } from 'react'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -465,10 +466,7 @@ export function BookingsPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Bookings</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Bookings">{null}</RequireProduction>
     )
   }
 

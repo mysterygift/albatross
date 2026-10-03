@@ -31,6 +31,8 @@ import { listPeopleByProductionForActor } from '@/lib/access/projectDomainServic
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/empty-state'
+import { ProductionSwitcher } from '@/components/production-switcher'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertCircle, AlertTriangle, CheckCircle2, Clapperboard, Film, Truck, Phone, Utensils, Moon, StickyNote, ChevronRight, Package, ChevronDown } from 'lucide-react'
 import type { StripboardStrip, StripType } from '@/lib/db/types'
@@ -1125,13 +1127,16 @@ export function DashboardPage() {
       )}
 
       {!currentProductionId && !wrapSuccess && (
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>No production selected</AlertTitle>
-          <AlertDescription>
-            No production open – please select one from the Productions page.
-          </AlertDescription>
-        </Alert>
+        <EmptyState
+          title="Open a production to see your dashboard"
+          description="Choose an existing production or create a new one."
+          action={
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <ProductionSwitcher />
+              <Button onClick={() => navigate('/productions?new=1')}>New production</Button>
+            </div>
+          }
+        />
       )}
 
       {currentProductionId && (

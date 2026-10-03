@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Document, Page, pdfjs } from 'react-pdf'
@@ -963,10 +964,7 @@ export function CallSheetsPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Call Sheets</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Call Sheets">{null}</RequireProduction>
     )
   }
 

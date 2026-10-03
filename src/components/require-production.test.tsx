@@ -20,16 +20,17 @@ describe('RequireProduction', () => {
   })
 
   it('renders heading and empty state when none selected', () => {
-    mockUseCurrentProduction.mockReturnValue({ currentProductionId: null })
+    mockUseCurrentProduction.mockReturnValue({ currentProductionId: null, productions: [], setCurrentProductionId: vi.fn() })
     render(<MemoryRouter><RequireProduction title="Budget"><div>content</div></RequireProduction></MemoryRouter>)
     expect(screen.queryByText('content')).toBeNull()
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Budget')
     expect(screen.getByText('No production selected')).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Manage productions' }).getAttribute('href')).toBe('/productions')
+    expect(screen.getByRole('button', { name: 'New production' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Current production' })).toBeTruthy()
   })
 
   it('omits heading without title', () => {
-    mockUseCurrentProduction.mockReturnValue({ currentProductionId: null })
+    mockUseCurrentProduction.mockReturnValue({ currentProductionId: null, productions: [], setCurrentProductionId: vi.fn() })
     render(<MemoryRouter><RequireProduction><div>content</div></RequireProduction></MemoryRouter>)
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
   })

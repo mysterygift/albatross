@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -289,10 +290,7 @@ export function DayOutOfDaysPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Day Out of Days</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Day Out of Days">{null}</RequireProduction>
     )
   }
 

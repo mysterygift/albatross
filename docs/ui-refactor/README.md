@@ -7,7 +7,7 @@ Worktree: `/Users/arandavies/Development/albatross-ui-experimental` (branch `ui-
 | # | Step | Doc | Status |
 |---|------|-----|--------|
 | 01 | Foundations (PageHeader, EmptyState, ConfirmDialog, sonner, RequireProduction, DashboardCard) | [01-foundations.md](01-foundations.md) | done |
-| 02 | Production switcher | [02-production-switcher.md](02-production-switcher.md) | pending |
+| 02 | Production switcher | [02-production-switcher.md](02-production-switcher.md) | done |
 | 03 | Feedback and confirm | [03-feedback-confirm.md](03-feedback-confirm.md) | pending |
 | 04 | Page shell and tokens | [04-page-shell-and-tokens.md](04-page-shell-and-tokens.md) | pending |
 | 05 | Navigation | [05-navigation.md](05-navigation.md) | pending |
@@ -35,7 +35,9 @@ Run in the worktree: `npm run build`, `npm test`, `npm run lint:ci`. All must pa
 - Out-of-scope findings go in the Follow-ups section below, not into code.
 
 ## Follow-ups
-_(none yet)_
+- (02) Orphan pages `src/features/bookings/page.tsx:152` and `src/features/day-out-of-days/page.tsx:265` still render "Select a production first." (deleted in step 05).
+- (02) `budget/actualisation/page.tsx` is a sub-tab: its guard now renders an h1 title via RequireProduction (was h2); revisit in step 04.
+- (02) `CastDetailPage` missing-`personId` fallback text changed to "Select a person first."
 
 ## Baseline (recorded on ui-experimental at a81a90e, before any step)
 `dev` is NOT green, so the per-step gate is **no new failures versus this baseline**, not "everything passes":

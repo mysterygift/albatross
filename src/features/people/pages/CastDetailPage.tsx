@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, useParams } from 'react-router-dom'
@@ -630,10 +631,13 @@ export function CastDetailPage() {
     },
   })
 
-  if (!personId || !currentProductionId) {
+  if (!currentProductionId) {
+    return <RequireProduction>{null}</RequireProduction>
+  }
+  if (!personId) {
     return (
       <div className="rounded-lg border border-border bg-card p-6 text-muted-foreground">
-        Select a production first.
+        Select a person first.
       </div>
     )
   }

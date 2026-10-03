@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listProductions,
@@ -453,6 +454,13 @@ export function ProductionsPage() {
   const authSession = useAuthSession()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setOpen(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
   const [productionToHardDelete, setProductionToHardDelete] = useState<Production | null>(null)
   const [duplicateSource, setDuplicateSource] = useState<Production | null>(null)
   const [duplicateName, setDuplicateName] = useState('')

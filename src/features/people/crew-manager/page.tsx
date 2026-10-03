@@ -1,5 +1,6 @@
 'use client'
 
+import { RequireProduction } from '@/components/require-production'
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -421,10 +422,7 @@ export function CrewManagerPage() {
 
   if (!currentProductionId) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Crew Manager</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Crew Manager">{null}</RequireProduction>
     )
   }
 

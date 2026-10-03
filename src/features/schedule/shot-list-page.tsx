@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -1334,10 +1335,7 @@ export function ShotListPage() {
   return (
     <>
       {!currentProductionId ? (
-        <div>
-          <h1 className="text-2xl font-semibold">Schedule — Shot lists</h1>
-          <p className="text-muted-foreground">Select a production first.</p>
-        </div>
+        <RequireProduction title="Schedule — Shot lists">{null}</RequireProduction>
       ) : (
         <div className="space-y-4">
           <h1 className="text-2xl font-semibold">Schedule — Shot lists</h1>

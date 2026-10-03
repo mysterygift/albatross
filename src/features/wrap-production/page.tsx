@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -351,10 +352,7 @@ export function WrapProductionPage() {
 
   if (!currentProductionId || !currentProduction) {
     return (
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">Wrap Production</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Wrap Production"><p className="text-muted-foreground">Loading...</p></RequireProduction>
     )
   }
 

@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
@@ -49,10 +50,7 @@ export function DocumentsCategoryPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Documents</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Documents">{null}</RequireProduction>
     )
   }
 

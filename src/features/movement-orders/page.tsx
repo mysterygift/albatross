@@ -1,3 +1,4 @@
+import { RequireProduction } from '@/components/require-production'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Document, Page, pdfjs } from 'react-pdf'
@@ -555,10 +556,7 @@ export function MovementOrdersPage() {
 
   if (!currentProductionId) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold">Movement Orders</h1>
-        <p className="text-muted-foreground">Select a production first.</p>
-      </div>
+      <RequireProduction title="Movement Orders">{null}</RequireProduction>
     )
   }
 
