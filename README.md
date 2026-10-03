@@ -108,9 +108,9 @@ Double-click a `.apf` file to import on installed builds (see [Troubleshooting](
 
 | Platform | Path                                           |
 | -------- | ---------------------------------------------- |
-| macOS    | `~/Library/Application Support/com.albatross/` |
-| Windows  | `%APPDATA%\com.albatross\`                     |
-| Linux    | `~/.config/com.albatross/`                     |
+| macOS    | `~/Library/Application Support/Albatross/`     |
+| Windows  | `%APPDATA%\Albatross\`                         |
+| Linux    | `~/.config/Albatross/`                         |
 
 
 Contents: `albatross.db` (SQLCipher), `attachments/`, and encryption sidecars. See [docs/DATA_ENCRYPTION.md](docs/DATA_ENCRYPTION.md) for recovery-key details.
@@ -205,7 +205,7 @@ Also run the app manually and use **Settings → Developer tools** for demo data
 | Build            | `npm run tauri:build`                                 |
 | Lint             | `npm run lint`                                        |
 | Path alias       | `@/`* → `./src/*`                                     |
-| DB (macOS)       | `~/Library/Application Support/com.albatross/`        |
+| DB (macOS)       | `~/Library/Application Support/Albatross/`            |
 | Migrations       | `src-tauri/migrations/*.sql` + `src-tauri/src/lib.rs` |
 | Repositories     | `src/lib/db/repositories/`                            |
 | Features / pages | `src/features/<name>/`                                |
@@ -241,7 +241,7 @@ Also run the app manually and use **Settings → Developer tools** for demo data
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | **SmartScreen: "Windows protected your PC"** | Click **More info → Run anyway** for unsigned builds. For downloaded installers: **Properties → General → Unblock** (if shown), then run. |
 | **Installer blocked by antivirus**           | Allow the app if you trust the source. Re-download if the file may be corrupt.                                                            |
-| **App closes immediately**                   | Reinstall. Launch from the Start Menu — do not open `localhost` in a browser. Data lives in `%APPDATA%\com.albatross\`.                   |
+| **App closes immediately**                   | Reinstall. Launch from the Start Menu — do not open `localhost` in a browser. Data lives in `%APPDATA%\Albatross\`.                   |
 | **Dev build fails (SQLCipher/OpenSSL)**      | Install VS build tools and OpenSSL per [docs/SQLCIPHER_SPIKE.md](docs/SQLCIPHER_SPIKE.md).                                                |
 
 
