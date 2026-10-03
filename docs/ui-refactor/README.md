@@ -14,7 +14,7 @@ Worktree: `/Users/arandavies/Development/albatross-ui-experimental` (branch `ui-
 | 06 | Search and shortcuts | [06-search-and-shortcuts.md](06-search-and-shortcuts.md) | done |
 | 07 | Onboarding | [07-onboarding.md](07-onboarding.md) | done |
 | 08 | Settings and URL state | [08-settings-and-url-state.md](08-settings-and-url-state.md) | done |
-| 09 | Dashboard | [09-dashboard.md](09-dashboard.md) | pending |
+| 09 | Dashboard | [09-dashboard.md](09-dashboard.md) | done |
 | 10 | Final QA | [10-final-qa.md](10-final-qa.md) | pending |
 
 ## Dependencies

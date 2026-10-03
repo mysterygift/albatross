@@ -72,4 +72,25 @@ describe('ProductionSwitcher', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /Manage productions/ }))
     expect(screen.getByTestId('where').textContent).toBe('/productions')
   })
+
+  it('Wrap production navigates to /wrap-production', () => {
+    setup()
+    fireEvent.click(screen.getByRole('menuitem', { name: /Wrap production/ }))
+    expect(screen.getByTestId('where').textContent).toBe('/wrap-production')
+  })
+
+  it('hides Wrap production when no production is selected', () => {
+    mockUseCurrentProduction.mockReturnValue({
+      productions: [{ id: 'p1', name: 'Alpha', slug: 'alpha' }],
+      currentProductionId: null,
+      setCurrentProductionId,
+    })
+    render(
+      <MemoryRouter>
+        <ProductionSwitcher />
+      </MemoryRouter>
+    )
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Current production' }), { key: 'Enter' })
+    expect(screen.queryByRole('menuitem', { name: /Wrap production/ })).toBeNull()
+  })
 })

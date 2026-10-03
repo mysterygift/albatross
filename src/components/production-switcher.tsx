@@ -1,4 +1,4 @@
-import { ChevronsUpDown, Plus, Settings2 } from 'lucide-react'
+import { Clapperboard, ChevronsUpDown, Plus, Settings2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -58,6 +58,14 @@ export function ProductionSwitcher() {
         <DropdownMenuItem onSelect={() => navigate('/productions')}>
           <Settings2 /> Manage productions
         </DropdownMenuItem>
+        {current ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => navigate('/wrap-production')}>
+              <Clapperboard /> Wrap production...
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   )
