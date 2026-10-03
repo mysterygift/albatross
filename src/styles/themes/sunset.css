@@ -1,0 +1,103 @@
+/*
+ * Sunset: warm paper with navy, teal and pink, overprinted dot screens, and pill shapes.
+ * Contrast (WCAG AA) was checked for each text/fill pair.
+ */
+
+:root[data-ui-theme="sunset"] {
+  --radius: 1rem;
+
+  --background: #fff1e0;
+  --foreground: #1d2a4a;
+  --card: #ffffff;
+  --card-foreground: #1d2a4a;
+  --popover: #ffffff;
+  --popover-foreground: #1d2a4a;
+
+  --primary: #0f7c75;
+  --primary-foreground: #ffffff;
+  --secondary: #ffc93c;
+  --secondary-foreground: #1d2a4a;
+  --muted: #fbe3cc;
+  --muted-foreground: #4f5870;
+  --accent: #ff6fa3;
+  --accent-foreground: #1d2a4a;
+  --destructive: #b3261e;
+
+  --border: #1d2a4a;
+  --input: #1d2a4a;
+  --ring: #0f7c75;
+
+  --chart-1: #0f7c75;
+  --chart-2: #ff6fa3;
+  --chart-3: #ffc93c;
+  --chart-4: #1d2a4a;
+  --chart-5: #4f5870;
+
+  --sidebar: #1d2a4a;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ffc93c;
+  --sidebar-primary-foreground: #1d2a4a;
+  --sidebar-accent: #2c3a5e;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #2c3a5e;
+  --sidebar-ring: #ffc93c;
+
+  --unit-main: #0f7c75;
+  --unit-main-foreground: #ffffff;
+  --unit-second: #ff6fa3;
+  --unit-second-foreground: #1d2a4a;
+
+  /* Shape and emphasis */
+  --ui-border-w: 2px;
+  --ui-control-radius: 999px;
+  --ui-btn-radius: 999px;
+  --ui-badge-radius: 999px;
+  --ui-check-radius: 7px;
+  --ui-card-radius: 24px;
+  --ui-pop-radius: 22px;
+  --ui-item-radius: 14px;
+  --ui-tab-radius: 999px;
+  --ui-nav-radius: 999px;
+  --ui-tag-radius: 999px;
+  --ui-event-radius: 22px;
+  --ui-nav-border: transparent;
+  --ui-shadow-sm: none;
+  --ui-shadow-lg: none;
+  --ui-sep-h: 2px;
+  --ui-sep-color: #f0d9c0;
+  --ui-highlight-bg: #ff6fa3;
+  --ui-highlight-fg: #1d2a4a;
+  --ui-highlight-shadow: none;
+  --ui-active-bg: #ff6fa3;
+  --ui-active-fg: #1d2a4a;
+  --ui-nav-active-bg: #ffc93c;
+  --ui-nav-active-fg: #1d2a4a;
+  --ui-heading-weight: 800;
+  --ui-heading-tracking: -0.025em;
+  --ui-heading-transform: none;
+
+  /* Episode label pills: darkest text on the lightest fill */
+  --ui-pill-text: #111a30;
+  --ui-pill-bg: #ffc93c;
+
+  /* Status colours used by the app's amber, green and red utilities (see overrides.css) */
+  --ui-warn: #ffc93c;
+  --ui-warn-text: #8a5a00;
+  --ui-on-warn: #1d2a4a;
+  --ui-success: #1f6b44;
+  --ui-success-text: #1f6b44;
+  --ui-danger-text: #b3261e;
+  --ui-on-solid: #ffffff;
+
+  /* Patterns */
+  --ui-page-image: none;
+  --ui-page-size: auto;
+  --ui-topbar-bg: #ff6fa3;
+  --ui-topbar-image: radial-gradient(circle, rgba(29, 42, 74, 0.22) 1.6px, transparent 2px);
+  --ui-topbar-size: 10px 10px;
+  --ui-sidebar-image: none;
+  --ui-sidebar-size: auto;
+  --ui-card-header-bg: #ffc93c;
+  --ui-card-header-image: radial-gradient(circle, rgba(29, 42, 74, 0.28) 1.6px, transparent 2px);
+  --ui-card-header-size: 10px 10px;
+}

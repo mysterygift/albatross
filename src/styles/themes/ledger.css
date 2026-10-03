@@ -1,0 +1,109 @@
+/*
+ * Ledger: paper with serif headings, double rules and an oxblood accent. Square corners,
+ * hairline rules and no shadows. Contrast (WCAG AA) was checked for each text/fill pair.
+ */
+
+:root[data-ui-theme="ledger"] {
+  /* Keep derived radii (radius − 4px etc.) at or above zero; components override via --ui-* */
+  --radius: 0.25rem;
+
+  --background: #f4efe6;
+  --foreground: #1a1a18;
+  --card: #fffdf8;
+  --card-foreground: #1a1a18;
+  --popover: #fffdf8;
+  --popover-foreground: #1a1a18;
+
+  --primary: #1a1a18;
+  --primary-foreground: #f4efe6;
+  --secondary: #e9e2d3;
+  --secondary-foreground: #1a1a18;
+  --muted: #ebe5d8;
+  --muted-foreground: #5e5b52;
+  --accent: #8e1b14;
+  --accent-foreground: #f4efe6;
+  --destructive: #8e1b14;
+
+  --border: #1a1a18;
+  --input: #1a1a18;
+  --ring: #8e1b14;
+
+  --chart-1: #1a1a18;
+  --chart-2: #8e1b14;
+  --chart-3: #c9a227;
+  --chart-4: #3d6b3a;
+  --chart-5: #5e5b52;
+
+  --sidebar: #efe9dd;
+  --sidebar-foreground: #1a1a18;
+  --sidebar-primary: #8e1b14;
+  --sidebar-primary-foreground: #f4efe6;
+  --sidebar-accent: #e6dfd0;
+  --sidebar-accent-foreground: #1a1a18;
+  --sidebar-border: #1a1a18;
+  --sidebar-ring: #8e1b14;
+
+  --unit-main: #1a1a18;
+  --unit-main-foreground: #f4efe6;
+  --unit-second: #8e1b14;
+  --unit-second-foreground: #f4efe6;
+
+  /* Shape and emphasis */
+  --ui-border-w: 1px;
+  --ui-control-radius: 0;
+  --ui-btn-radius: 0;
+  --ui-badge-radius: 0;
+  --ui-check-radius: 0;
+  --ui-card-radius: 0;
+  --ui-pop-radius: 0;
+  --ui-item-radius: 0;
+  --ui-tab-radius: 0;
+  --ui-nav-radius: 0;
+  --ui-tag-radius: 0;
+  --ui-event-radius: 0;
+  --ui-nav-border: #1a1a18;
+  --ui-shadow-sm: none;
+  --ui-shadow-lg: none;
+  --ui-sep-h: 1px;
+  --ui-sep-color: #1a1a18;
+  --ui-highlight-bg: #1a1a18;
+  --ui-highlight-fg: #f4efe6;
+  --ui-highlight-shadow: none;
+  --ui-active-bg: transparent;
+  --ui-active-fg: #1a1a18;
+  --ui-nav-active-bg: #fffdf8;
+  --ui-nav-active-fg: #8e1b14;
+  --ui-heading-weight: 400;
+  --ui-heading-tracking: -0.02em;
+  --ui-heading-transform: none;
+
+  /* Episode label pills: darkest text on the lightest fill */
+  --ui-pill-text: #0f0f0d;
+  --ui-pill-bg: #e9e2d3;
+
+  /* Status colours used by the app's amber, green and red utilities (see overrides.css) */
+  --ui-warn: #c9a227;
+  --ui-warn-text: #7a5c00;
+  --ui-on-warn: #1a1a18;
+  --ui-success: #3d6b3a;
+  --ui-success-text: #2f5a2d;
+  --ui-danger-text: #8e1b14;
+  --ui-on-solid: #f4efe6;
+
+  /* Patterns: a faint baseline grid on the page */
+  --ui-page-image: repeating-linear-gradient(to bottom, transparent 0 23px, rgba(26, 26, 24, 0.08) 23px 24px);
+  --ui-page-size: auto;
+  --ui-topbar-bg: #f4efe6;
+  --ui-topbar-image: none;
+  --ui-topbar-size: auto;
+  --ui-sidebar-image: none;
+  --ui-sidebar-size: auto;
+  --ui-card-header-bg: #fffdf8;
+  --ui-card-header-image: none;
+  --ui-card-header-size: auto;
+}
+
+/* Editorial type: serif headings and card titles, sans body text */
+:root[data-ui-theme="ledger"] :is(h1, h2, h3, [data-slot="card-title"], [data-slot="dialog-title"], [data-slot="sheet-title"]) {
+  font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+}

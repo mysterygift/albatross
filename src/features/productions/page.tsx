@@ -792,7 +792,7 @@ export function ProductionsPage() {
             {row.original.name}
           </span>
           {row.original.is_episodic === true && (
-            <span className="rounded border border-violet-500/30 bg-yellow-500/10 px-1.5 py-0.5 text-xs font-medium text-white-800 dark:border-violet-400/35 dark:bg-yellow-500/15 dark:text-white-300">
+            <span className="rounded border border-violet-500/30 bg-yellow-500/10 px-1.5 py-0.5 text-xs font-medium text-foreground dark:border-violet-400/35 dark:bg-yellow-500/15">
               Episodic
             </span>
           )}

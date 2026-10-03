@@ -78,6 +78,7 @@ import {
 import { getProductionBySlug } from '@/lib/db/repositories/production'
 import { ServerPublishingSettingsSection } from '@/features/server/ServerPublishingSettingsSection'
 import { ServerCollabDevTools } from '@/features/server/ServerCollabDevTools'
+import { AppearanceSettingsSection } from '@/features/settings/AppearanceSettingsSection'
 import { enableEpisodicProduction } from '@/lib/db/episodicProductionService'
 import { getSetting, setSetting, FIRST_LAUNCH_TUTORIAL_SEEN_KEY, setFirstLaunchTutorialSeen } from '@/lib/db/repositories/settings'
 import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
@@ -405,6 +406,8 @@ export function SettingsPage() {
     <TooltipProvider>
     <div className="space-y-5">
       <h1 className="text-2xl font-semibold">Settings</h1>
+
+      <AppearanceSettingsSection />
 
       <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as 'budget' | 'people' | 'apis' | 'developer_tools')} className="w-full">
         <TabsList className="h-9 rounded-md border border-border bg-muted/30 w-fit">

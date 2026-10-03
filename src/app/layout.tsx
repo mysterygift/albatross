@@ -8,6 +8,7 @@ import { DevPerfHud } from '@/components/dev/DevPerfHud'
 import { getSetting } from '@/lib/db/repositories/settings'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { useFirstLaunchTutorial } from '@/hooks/useFirstLaunchTutorial'
+import { useUiTheme } from '@/hooks/useUiTheme'
 import { TutorialHome } from '@/features/tutorial/TutorialHome'
 import { TUTORIAL_SECTION_IDS } from '@/features/tutorial/tutorialSections'
 import { TutorialEntryModal } from '@/features/tutorial/TutorialEntryModal'
@@ -41,6 +42,7 @@ function AppLayoutInner() {
   const handoff = useSetupWorkspaceHandoff()
   const reducedMotion = usePrefersReducedMotion()
   const queryClient = useQueryClient()
+  useUiTheme()
   const setupCompleteQuery = useQuery({
     queryKey: INITIAL_SETUP_STATUS_QUERY_KEY,
     queryFn: isInitialSetupComplete,

@@ -1,0 +1,105 @@
+/*
+ * Signal: a dark ops palette with mono labels, hairline grids and a single signal-yellow
+ * accent. Square corners, 1px lines and no offset shadows. Contrast (WCAG AA) was checked
+ * for each text/fill pair.
+ */
+
+:root[data-ui-theme="signal"] {
+  /* Keep derived radii (radius − 4px etc.) at or above zero; components override via --ui-* */
+  --radius: 0.25rem;
+
+  --background: #0b0c09;
+  --foreground: #f1f1e6;
+  --card: #14160f;
+  --card-foreground: #f1f1e6;
+  --popover: #1d2016;
+  --popover-foreground: #f1f1e6;
+
+  --primary: #ffd400;
+  --primary-foreground: #0b0c09;
+  --secondary: #1d2016;
+  --secondary-foreground: #f1f1e6;
+  --muted: #1d2016;
+  --muted-foreground: #a3a794;
+  --accent: #ffd400;
+  --accent-foreground: #0b0c09;
+  --destructive: #ff7a6b;
+
+  --border: #2e3324;
+  --input: #2e3324;
+  --ring: #ffd400;
+
+  --chart-1: #ffd400;
+  --chart-2: #8fb8ff;
+  --chart-3: #6ee7a0;
+  --chart-4: #ff7a6b;
+  --chart-5: #a3a794;
+
+  --sidebar: #0b0c09;
+  --sidebar-foreground: #f1f1e6;
+  --sidebar-primary: #ffd400;
+  --sidebar-primary-foreground: #0b0c09;
+  --sidebar-accent: #1d2016;
+  --sidebar-accent-foreground: #f1f1e6;
+  --sidebar-border: #2e3324;
+  --sidebar-ring: #ffd400;
+
+  --unit-main: #ffd400;
+  --unit-main-foreground: #0b0c09;
+  --unit-second: #14160f;
+  --unit-second-foreground: #f1f1e6;
+
+  /* Shape and emphasis */
+  --ui-border-w: 1px;
+  --ui-control-radius: 2px;
+  --ui-btn-radius: 2px;
+  --ui-badge-radius: 2px;
+  --ui-check-radius: 2px;
+  --ui-card-radius: 2px;
+  --ui-pop-radius: 2px;
+  --ui-item-radius: 2px;
+  --ui-tab-radius: 2px;
+  --ui-nav-radius: 2px;
+  --ui-tag-radius: 2px;
+  --ui-event-radius: 2px;
+  --ui-nav-border: transparent;
+  --ui-shadow-sm: none;
+  --ui-shadow-lg: none;
+  --ui-sep-h: 1px;
+  --ui-sep-color: #2e3324;
+  --ui-highlight-bg: #ffd400;
+  --ui-highlight-fg: #0b0c09;
+  --ui-highlight-shadow: none;
+  --ui-active-bg: #ffd400;
+  --ui-active-fg: #0b0c09;
+  --ui-nav-active-bg: #ffd400;
+  --ui-nav-active-fg: #0b0c09;
+  --ui-heading-weight: 700;
+  --ui-heading-tracking: -0.035em;
+  --ui-heading-transform: none;
+
+  /* Episode label pills: unchanged from the dark palette */
+  --ui-pill-text: #f1f1e6;
+  --ui-pill-bg: #1d2016;
+
+  /* Status colours used by the app's amber, green and red utilities (see overrides.css) */
+  --ui-warn: #ffd400;
+  --ui-warn-text: #ffd400;
+  --ui-on-warn: #0b0c09;
+  --ui-success: #3ddc84;
+  --ui-success-text: #6ee7a0;
+  --ui-danger-text: #ff7a6b;
+  --ui-on-solid: #0b0c09;
+
+  /* Patterns */
+  --ui-page-image: radial-gradient(circle, #2a2f1f 1px, transparent 1.5px);
+  --ui-page-size: 32px 32px;
+  --ui-topbar-bg: #14160f;
+  --ui-topbar-image: none;
+  --ui-topbar-size: auto;
+  --ui-sidebar-image: none;
+  --ui-sidebar-size: auto;
+  --ui-card-header-bg: #14160f;
+  --ui-card-header-image: none;
+  --ui-card-header-size: auto;
+}

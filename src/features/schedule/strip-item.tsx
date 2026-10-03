@@ -137,7 +137,7 @@ export function StripItem({
                 <Badge
                   variant={episodeStripLabel === NO_EPISODE_ASSIGNMENT_LABEL ? 'outline' : 'secondary'}
                   className="text-[10px] max-w-[6.5rem] truncate"
-                  title={episodeStripLabel}
+                  data-slot="episode-badge" title={episodeStripLabel}
                 >
                   {episodeStripLabel}
                 </Badge>
@@ -161,7 +161,7 @@ export function StripItem({
                   <Badge
                     variant={episodeStripLabel === NO_EPISODE_ASSIGNMENT_LABEL ? 'outline' : 'secondary'}
                     className="text-[10px] max-w-[6.5rem] truncate"
-                    title={episodeStripLabel}
+                    data-slot="episode-badge" title={episodeStripLabel}
                   >
                     {episodeStripLabel}
                   </Badge>
@@ -182,7 +182,7 @@ export function StripItem({
                 <Badge
                   variant={episodeStripLabel === NO_EPISODE_ASSIGNMENT_LABEL ? 'outline' : 'secondary'}
                   className="text-[10px] max-w-[6.5rem] truncate"
-                  title={episodeStripLabel}
+                  data-slot="episode-badge" title={episodeStripLabel}
                 >
                   {episodeStripLabel}
                 </Badge>

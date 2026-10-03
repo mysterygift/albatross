@@ -1,4 +1,5 @@
 import { getDb, runInSerializedTransaction } from '../client'
+import { DEFAULT_UI_THEME } from '@/lib/uiTheme/uiThemes'
 
 const TABLE = 'settings'
 
@@ -8,6 +9,7 @@ const LOCAL_COLLABORATION_SETTING_MIGRATION_KEY = '_migration_local_collaboratio
 
 const DEFAULTS: Record<string, string> = {
   display_currency: 'GBP',
+  ui_theme: DEFAULT_UI_THEME,
   enable_currency_conversion_api: 'true',
   enable_api_call_tracking: 'false',
   /** Enables collaboration traffic and management UI on this device; never starts a local host. */

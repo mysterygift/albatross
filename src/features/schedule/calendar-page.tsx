@@ -368,6 +368,7 @@ export function CalendarEventCardBody({
 
   return (
     <div
+      data-slot="calendar-event"
       role={isOverlay ? undefined : 'button'}
       tabIndex={isOverlay ? undefined : 0}
       onClick={onClick}
@@ -683,10 +684,10 @@ function DaySummaryDrawer({
               {event.unitName}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <span className="rounded-md bg-muted/80 px-2 py-0.5 text-muted-foreground text-xs">
+              <span data-slot="calendar-tag" className="rounded-md bg-muted/80 px-2 py-0.5 text-muted-foreground text-xs">
                 {event.shotCount} shots
               </span>
-              <span className="rounded-md bg-muted/80 px-2 py-0.5 text-muted-foreground text-xs">
+              <span data-slot="calendar-tag" className="rounded-md bg-muted/80 px-2 py-0.5 text-muted-foreground text-xs">
                 {formatRuntime(event.estMinutes)}
               </span>
             </div>

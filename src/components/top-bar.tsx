@@ -32,7 +32,7 @@ export function TopBar({ onOpenTutorial, onOpenSearch }: TopBarProps) {
       : undefined
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+    <header data-slot="top-bar" className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
       <SidebarTrigger />
       {isProductionsPage && (
         <div className="flex flex-1 items-center gap-4">

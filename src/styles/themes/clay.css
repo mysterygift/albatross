@@ -1,0 +1,108 @@
+/*
+ * Clay: soft pastel blocks, rounded shapes and a tactile bottom-edge shadow, with no outlines.
+ * Contrast (WCAG AA) was checked for each text/fill pair.
+ */
+
+:root[data-ui-theme="clay"] {
+  --radius: 1.25rem;
+
+  --background: #f6f2ee;
+  --foreground: #2a2540;
+  --card: #ffffff;
+  --card-foreground: #2a2540;
+  --popover: #ffffff;
+  --popover-foreground: #2a2540;
+
+  --primary: #5b4bd6;
+  --primary-foreground: #ffffff;
+  --secondary: #ffd8c2;
+  --secondary-foreground: #2a2540;
+  --muted: #efe9e3;
+  --muted-foreground: #6b6480;
+  --accent: #d9d2ff;
+  --accent-foreground: #2a2540;
+  --destructive: #b42318;
+
+  --border: #e4ddd6;
+  --input: #e4ddd6;
+  --ring: #5b4bd6;
+
+  --chart-1: #5b4bd6;
+  --chart-2: #ffb38a;
+  --chart-3: #6fc9a0;
+  --chart-4: #ffd96a;
+  --chart-5: #6b6480;
+
+  --sidebar: #efe9e3;
+  --sidebar-foreground: #2a2540;
+  --sidebar-primary: #5b4bd6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e6dfd7;
+  --sidebar-accent-foreground: #2a2540;
+  --sidebar-border: #e4ddd6;
+  --sidebar-ring: #5b4bd6;
+
+  --unit-main: #5b4bd6;
+  --unit-main-foreground: #ffffff;
+  --unit-second: #ffd8c2;
+  --unit-second-foreground: #2a2540;
+
+  /* Shape and emphasis: no outlines, soft bottom-edge shadows */
+  --ui-border-w: 0px;
+  --ui-control-radius: 16px;
+  --ui-btn-radius: 999px;
+  --ui-badge-radius: 999px;
+  --ui-check-radius: 8px;
+  --ui-card-radius: 26px;
+  --ui-pop-radius: 24px;
+  --ui-item-radius: 16px;
+  --ui-tab-radius: 999px;
+  --ui-nav-radius: 999px;
+  --ui-tag-radius: 999px;
+  --ui-event-radius: 24px;
+  --ui-nav-border: transparent;
+  --ui-shadow-sm: 0 4px 0 rgba(42, 37, 64, 0.14);
+  --ui-shadow-lg: 0 8px 0 rgba(42, 37, 64, 0.1);
+  --ui-sep-h: 2px;
+  --ui-sep-color: #f6f2ee;
+  --ui-highlight-bg: #d9d2ff;
+  --ui-highlight-fg: #2a2540;
+  --ui-highlight-shadow: none;
+  --ui-active-bg: #d9d2ff;
+  --ui-active-fg: #2a2540;
+  --ui-nav-active-bg: #5b4bd6;
+  --ui-nav-active-fg: #ffffff;
+  --ui-heading-weight: 800;
+  --ui-heading-tracking: -0.02em;
+  --ui-heading-transform: none;
+
+  /* Episode label pills: darkest text on the lightest fill */
+  --ui-pill-text: #1d1733;
+  --ui-pill-bg: #ffd8c2;
+
+  /* Status colours used by the app's amber, green and red utilities (see overrides.css) */
+  --ui-warn: #ffb38a;
+  --ui-warn-text: #9a4b1e;
+  --ui-on-warn: #2a2540;
+  --ui-success: #1f7a50;
+  --ui-success-text: #1f7a50;
+  --ui-danger-text: #b42318;
+  --ui-on-solid: #ffffff;
+
+  /* Patterns: a soft dot field on the page, and a butter band on card headers */
+  --ui-page-image: radial-gradient(circle, rgba(42, 37, 64, 0.06) 2px, transparent 3px);
+  --ui-page-size: 22px 22px;
+  --ui-topbar-bg: #ffffff;
+  --ui-topbar-image: none;
+  --ui-topbar-size: auto;
+  --ui-sidebar-image: none;
+  --ui-sidebar-size: auto;
+  --ui-card-header-bg: #fff0b3;
+  --ui-card-header-image: none;
+  --ui-card-header-size: auto;
+}
+
+/* Rounded type throughout; falls back to the system face where the rounded face is absent */
+:root[data-ui-theme="clay"] {
+  font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+}

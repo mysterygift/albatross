@@ -1,0 +1,103 @@
+/*
+ * Yuzu: near-white paper with a faint ink grid, acid lime and lilac accents, hairline ink
+ * borders, small radii and no offset shadows. Contrast (WCAG AA) was checked for each pair.
+ */
+
+:root[data-ui-theme="yuzu"] {
+  --radius: 0.25rem;
+
+  --background: #fbfbf7;
+  --foreground: #0c0c0c;
+  --card: #ffffff;
+  --card-foreground: #0c0c0c;
+  --popover: #ffffff;
+  --popover-foreground: #0c0c0c;
+
+  --primary: #0c0c0c;
+  --primary-foreground: #fbfbf7;
+  --secondary: #d4ff3a;
+  --secondary-foreground: #0c0c0c;
+  --muted: #efefe8;
+  --muted-foreground: #5c5c5c;
+  --accent: #b9a6ff;
+  --accent-foreground: #0c0c0c;
+  --destructive: #b3261e;
+
+  --border: #0c0c0c;
+  --input: #0c0c0c;
+  --ring: #6a4cff;
+
+  --chart-1: #0c0c0c;
+  --chart-2: #6a4cff;
+  --chart-3: #b9a6ff;
+  --chart-4: #b3261e;
+  --chart-5: #5c5c5c;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0c0c0c;
+  --sidebar-primary: #0c0c0c;
+  --sidebar-primary-foreground: #d4ff3a;
+  --sidebar-accent: #efefe8;
+  --sidebar-accent-foreground: #0c0c0c;
+  --sidebar-border: #0c0c0c;
+  --sidebar-ring: #6a4cff;
+
+  --unit-main: #0c0c0c;
+  --unit-main-foreground: #d4ff3a;
+  --unit-second: #b9a6ff;
+  --unit-second-foreground: #0c0c0c;
+
+  /* Shape and emphasis */
+  --ui-border-w: 1px;
+  --ui-control-radius: 4px;
+  --ui-btn-radius: 4px;
+  --ui-badge-radius: 3px;
+  --ui-check-radius: 3px;
+  --ui-card-radius: 6px;
+  --ui-pop-radius: 6px;
+  --ui-item-radius: 3px;
+  --ui-tab-radius: 4px;
+  --ui-nav-radius: 3px;
+  --ui-tag-radius: 3px;
+  --ui-event-radius: 4px;
+  --ui-nav-border: transparent;
+  --ui-shadow-sm: none;
+  --ui-shadow-lg: none;
+  --ui-sep-h: 1px;
+  --ui-sep-color: #0c0c0c;
+  --ui-highlight-bg: #d4ff3a;
+  --ui-highlight-fg: #0c0c0c;
+  --ui-highlight-shadow: none;
+  --ui-active-bg: #0c0c0c;
+  --ui-active-fg: #d4ff3a;
+  --ui-nav-active-bg: #0c0c0c;
+  --ui-nav-active-fg: #d4ff3a;
+  --ui-heading-weight: 700;
+  --ui-heading-tracking: -0.035em;
+  --ui-heading-transform: none;
+
+  /* Episode label pills: darkest text on the lightest fill */
+  --ui-pill-text: #0c0c0c;
+  --ui-pill-bg: #d4ff3a;
+
+  /* Status colours used by the app's amber, green and red utilities (see overrides.css) */
+  --ui-warn: #d4ff3a;
+  --ui-warn-text: #3d4d00;
+  --ui-on-warn: #0c0c0c;
+  --ui-success: #2a6f2d;
+  --ui-success-text: #2f7d32;
+  --ui-danger-text: #b3261e;
+  --ui-on-solid: #fbfbf7;
+
+  /* Patterns */
+  --ui-page-image: linear-gradient(rgba(12, 12, 12, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(12, 12, 12, 0.07) 1px, transparent 1px);
+  --ui-page-size: 24px 24px;
+  --ui-topbar-bg: #ffffff;
+  --ui-topbar-image: none;
+  --ui-topbar-size: auto;
+  --ui-sidebar-image: none;
+  --ui-sidebar-size: auto;
+  --ui-card-header-bg: #ffffff;
+  --ui-card-header-image: none;
+  --ui-card-header-size: auto;
+}

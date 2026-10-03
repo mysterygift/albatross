@@ -1,0 +1,248 @@
+/*
+ * Shared component styling for the expressive themes (Bold, Yuzu, Sunset).
+ *
+ * Every rule reads its shape, colour and pattern from --ui-* variables that each theme file
+ * defines on <html data-ui-theme="…">. Albatross Mint is index.css's default and is excluded
+ * here, so the default look is unchanged. Each theme file must define every --ui-* variable below.
+ */
+
+/* Page ground and top bar */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="sidebar-inset"] {
+  background-image: var(--ui-page-image);
+  background-size: var(--ui-page-size);
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="top-bar"] {
+  background-color: var(--ui-topbar-bg);
+  background-image: var(--ui-topbar-image);
+  background-size: var(--ui-topbar-size);
+  border-bottom: var(--ui-border-w) solid var(--foreground);
+  color: var(--foreground);
+}
+
+/* Sidebar: block colour with an optional overlay */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="sidebar-inner"] {
+  background-image: var(--ui-sidebar-image);
+  background-size: var(--ui-sidebar-size);
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="sidebar-menu-button"][data-active="true"] {
+  background-color: var(--ui-nav-active-bg);
+  color: var(--ui-nav-active-fg);
+  font-weight: 700;
+  border: var(--ui-border-w) solid var(--ui-nav-border);
+  border-radius: var(--ui-nav-radius);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+/* Cards: outline, shadow, and an optional header block that runs to the card edge */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="card"] {
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-card-radius);
+  box-shadow: var(--ui-shadow-lg);
+  overflow: hidden;
+}
+/* The header spans the card's full width and insets its text by the same 1.5rem as CardContent,
+   so titles line up with body text. Only the top edge is pulled up to meet the card's padding. */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="card-header"] {
+  margin: calc(-1 * 1.5rem) 0 0;
+  padding: 1.5rem 1.5rem 1rem;
+  background-color: var(--ui-card-header-bg);
+  background-image: var(--ui-card-header-image);
+  background-size: var(--ui-card-header-size);
+  border-bottom: var(--ui-border-w) solid var(--foreground);
+}
+
+/* Buttons */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="button"] {
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-btn-radius);
+  font-weight: 700;
+  box-shadow: var(--ui-shadow-sm);
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="button"]:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="button"]:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="button"][data-variant="ghost"],
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="button"][data-variant="link"] {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Episode label pills in the stripboard: darker, heavier text on a light fill for the light themes */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="episode-badge"] {
+  color: var(--ui-pill-text);
+  background-color: var(--ui-pill-bg);
+  font-weight: 700;
+}
+
+/* Badges, fields, checkboxes, avatars */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="badge"] {
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-badge-radius);
+  font-weight: 700;
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="input"],
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="textarea"] {
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-control-radius);
+  background-color: var(--card);
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="checkbox"] {
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-check-radius);
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="avatar"] {
+  border: var(--ui-border-w) solid var(--foreground);
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="select-trigger"] {
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-control-radius);
+  background-color: var(--card);
+  font-weight: 600;
+  box-shadow: var(--ui-shadow-sm);
+}
+
+/* Floating surfaces: menus, selects, popovers, command palette */
+:root:not([data-ui-theme="albatross-mint"]) :is(
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="select-content"],
+  [data-slot="popover-content"],
+  [data-slot="command"]
+) {
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-pop-radius);
+  box-shadow: var(--ui-shadow-lg);
+  padding: 6px;
+}
+
+/* Menu and select items. Radix marks the highlighted row with data-highlighted; cmdk uses data-selected. */
+:root:not([data-ui-theme="albatross-mint"]) :is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="select-item"],
+  [data-slot="command-item"]
+) {
+  border-radius: var(--ui-item-radius);
+  font-weight: 600;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+:root:not([data-ui-theme="albatross-mint"]) :is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="select-item"],
+  [data-slot="command-item"]
+)[data-highlighted],
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="command-item"][data-selected="true"] {
+  background-color: var(--ui-highlight-bg);
+  color: var(--ui-highlight-fg);
+  box-shadow: var(--ui-highlight-shadow);
+}
+:root:not([data-ui-theme="albatross-mint"]) :is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="select-item"],
+  [data-slot="command-item"]
+)[data-disabled] {
+  opacity: 0.45;
+}
+:root:not([data-ui-theme="albatross-mint"]) :is([data-slot="dropdown-menu-label"], [data-slot="select-label"]) {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+:root:not([data-ui-theme="albatross-mint"]) :is(
+  [data-slot="dropdown-menu-separator"],
+  [data-slot="select-separator"],
+  [data-slot="command-separator"]
+) {
+  height: var(--ui-sep-h);
+  background-color: var(--ui-sep-color);
+  margin: 6px -6px;
+}
+:root:not([data-ui-theme="albatross-mint"]) :is([data-slot="dropdown-menu-shortcut"], [data-slot="command-shortcut"]) {
+  font-weight: 700;
+}
+
+/* Tooltips */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="tooltip-content"] {
+  border-radius: var(--ui-control-radius);
+  font-weight: 600;
+}
+
+/* Dialogs and sheets: outline, shadow, and an ink-tinted scrim */
+:root:not([data-ui-theme="albatross-mint"]) :is([data-slot="dialog-content"], [data-slot="sheet-content"]) {
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-pop-radius);
+  box-shadow: var(--ui-shadow-lg);
+}
+:root:not([data-ui-theme="albatross-mint"]) :is([data-slot="dialog-overlay"], [data-slot="sheet-overlay"]) {
+  background-color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+/* Tabs: an outlined list, with the active tab filled */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="tabs-list"] {
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-tab-radius);
+  padding: 3px;
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="tabs-trigger"] {
+  border-radius: var(--ui-tab-radius);
+  font-weight: 700;
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="tabs-trigger"][data-state="active"] {
+  background-color: var(--ui-active-bg);
+  color: var(--ui-active-fg);
+  border-color: var(--foreground);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+/* Calendar: shoot-day blocks and their tags */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="calendar-event"] {
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-event-radius);
+  box-shadow: var(--ui-shadow-sm);
+  font-weight: 600;
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="calendar-tag"] {
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-tag-radius);
+  background-color: var(--card);
+  color: var(--foreground);
+  font-weight: 700;
+}
+
+/* Arbitrary-value focus ring in the settings page that reads an undefined --mint variable */
+:root:not([data-ui-theme="albatross-mint"]) .focus-visible\:ring-\[hsl\(var\(--mint\)\)\]:focus-visible {
+  --tw-ring-color: var(--ring);
+}
+
+/* Headings */
+:root:not([data-ui-theme="albatross-mint"]) h1 {
+  font-weight: var(--ui-heading-weight);
+  letter-spacing: var(--ui-heading-tracking);
+  text-transform: var(--ui-heading-transform);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-ui-theme="albatross-mint"]) [data-slot="button"] {
+    transition: none;
+  }
+  :root:not([data-ui-theme="albatross-mint"]) [data-slot="button"]:hover:not(:disabled),
+  :root:not([data-ui-theme="albatross-mint"]) [data-slot="button"]:active:not(:disabled) {
+    transform: none;
+  }
+}

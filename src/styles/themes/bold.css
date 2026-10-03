@@ -1,0 +1,105 @@
+/*
+ * Bold: cream paper, tomato, ultramarine and sun-yellow blocks, square corners,
+ * heavy uppercase headings, and hard black offset shadows. Patterns are a halftone
+ * dot screen and 45° stripes. Contrast (WCAG AA) was checked for each text/fill pair.
+ */
+
+:root[data-ui-theme="bold"] {
+  /* Keep derived radii (radius − 4px etc.) at or above zero; components override to 0 via --ui-* */
+  --radius: 0.25rem;
+
+  --background: #fff6e5;
+  --foreground: #111111;
+  --card: #ffffff;
+  --card-foreground: #111111;
+  --popover: #ffffff;
+  --popover-foreground: #111111;
+
+  --primary: #2b2bff;
+  --primary-foreground: #ffffff;
+  --secondary: #ffd60a;
+  --secondary-foreground: #111111;
+  --muted: #efe6d2;
+  --muted-foreground: #4d4438;
+  --accent: #ff4d2e;
+  --accent-foreground: #111111;
+  --destructive: #c4190b;
+
+  --border: #111111;
+  --input: #111111;
+  --ring: #2b2bff;
+
+  --chart-1: #2b2bff;
+  --chart-2: #ff4d2e;
+  --chart-3: #ffd60a;
+  --chart-4: #111111;
+  --chart-5: #8a5cff;
+
+  --sidebar: #111111;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ff4d2e;
+  --sidebar-primary-foreground: #111111;
+  --sidebar-accent: #262626;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #262626;
+  --sidebar-ring: #ff4d2e;
+
+  --unit-main: #2b2bff;
+  --unit-main-foreground: #ffffff;
+  --unit-second: #ffd60a;
+  --unit-second-foreground: #111111;
+
+  /* Shape and emphasis */
+  --ui-border-w: 3px;
+  --ui-control-radius: 0;
+  --ui-btn-radius: 0;
+  --ui-badge-radius: 0;
+  --ui-check-radius: 0;
+  --ui-card-radius: 0;
+  --ui-pop-radius: 0;
+  --ui-item-radius: 0;
+  --ui-tab-radius: 0;
+  --ui-nav-radius: 0;
+  --ui-tag-radius: 0;
+  --ui-event-radius: 0;
+  --ui-nav-border: #ffffff;
+  --ui-shadow-sm: 4px 4px 0 #111111;
+  --ui-shadow-lg: 6px 6px 0 #111111;
+  --ui-sep-h: 3px;
+  --ui-sep-color: #111111;
+  --ui-highlight-bg: #ffd60a;
+  --ui-highlight-fg: #111111;
+  --ui-highlight-shadow: inset 6px 0 0 #111111;
+  --ui-active-bg: #111111;
+  --ui-active-fg: #ffffff;
+  --ui-nav-active-bg: #ff4d2e;
+  --ui-nav-active-fg: #111111;
+  --ui-heading-weight: 900;
+  --ui-heading-tracking: -0.02em;
+  --ui-heading-transform: uppercase;
+
+  /* Episode label pills: darkest text on the lightest fill */
+  --ui-pill-text: #111111;
+  --ui-pill-bg: #ffd60a;
+
+  /* Status colours used by the app's amber, green and red utilities (see overrides.css) */
+  --ui-warn: #ffd60a;
+  --ui-warn-text: #7a4f00;
+  --ui-on-warn: #111111;
+  --ui-success: #13703a;
+  --ui-success-text: #14703b;
+  --ui-danger-text: #c4190b;
+  --ui-on-solid: #ffffff;
+
+  /* Patterns */
+  --ui-page-image: none;
+  --ui-page-size: auto;
+  --ui-topbar-bg: #ffd60a;
+  --ui-topbar-image: radial-gradient(circle, rgba(17, 17, 17, 0.14) 1.2px, transparent 1.6px);
+  --ui-topbar-size: 12px 12px;
+  --ui-sidebar-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 8px, transparent 8px 16px);
+  --ui-sidebar-size: auto;
+  --ui-card-header-bg: #ff4d2e;
+  --ui-card-header-image: repeating-linear-gradient(45deg, rgba(17, 17, 17, 0.18) 0 6px, transparent 6px 14px);
+  --ui-card-header-size: auto;
+}
