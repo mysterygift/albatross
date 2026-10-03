@@ -12,7 +12,7 @@ Worktree: `/Users/arandavies/Development/albatross-ui-experimental` (branch `ui-
 | 04 | Page shell and tokens | [04-page-shell-and-tokens.md](04-page-shell-and-tokens.md) | done |
 | 05 | Navigation | [05-navigation.md](05-navigation.md) | done |
 | 06 | Search and shortcuts | [06-search-and-shortcuts.md](06-search-and-shortcuts.md) | done |
-| 07 | Onboarding | [07-onboarding.md](07-onboarding.md) | pending |
+| 07 | Onboarding | [07-onboarding.md](07-onboarding.md) | done |
 | 08 | Settings and URL state | [08-settings-and-url-state.md](08-settings-and-url-state.md) | pending |
 | 09 | Dashboard | [09-dashboard.md](09-dashboard.md) | pending |
 | 10 | Final QA | [10-final-qa.md](10-final-qa.md) | pending |
@@ -46,6 +46,8 @@ Run in the worktree: `npm run build`, `npm test`, `npm run lint:ci`. All must pa
 - (04) Vendor/Cast/Crew detail pages keep their back-arrow button beside PageHeader; person/vendor metadata now sits in PageHeader `description`.
 - (06) Add-button tooltips (Add Location, New Task) skipped: those buttons live on pages not touched this step. `?` icon added to top bar uses the Keyboard icon. Palette "Create" items for Add crew/booking/strip etc. navigate then dispatch the menu browser event; pages mounting after navigation may miss the event (same as native menu behaviour).
 - (06) Cmd+Alt+1..4 are native accelerators only (Rust View menu); not verified on a running Tauri build.
+- (07) Top-bar global tutorial button icon changed HelpCircle -> GraduationCap so the new per-page `?` (HelpCircle) is distinguishable. Dashboard still has its own page-level SectionTutorialPanel; `?` on `/` opens a second independent panel only when the guided tutorial does not own it.
+- (07) "Get started" checklist has no way to re-show after Hide (doc: out of scope). Banner/checklist not verified in a running Tauri build.
 
 ## Baseline (recorded on ui-experimental at a81a90e, before any step)
 `dev` is NOT green, so the per-step gate is **no new failures versus this baseline**, not "everything passes":

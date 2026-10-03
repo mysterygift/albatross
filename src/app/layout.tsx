@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { SidebarInset, SidebarProvider, useSidebar } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
+import { DemoProductionBanner } from '@/features/onboarding/DemoProductionBanner'
 import { TopBar } from '@/components/top-bar'
 import { SectionTabs } from '@/components/section-tabs'
 import { DevPerfHud } from '@/components/dev/DevPerfHud'
@@ -352,6 +353,11 @@ function AppLayoutShell() {
         <ServerCollabBanner />
         <SectionTabs />
         <main className="flex-1 overflow-auto p-4">
+          <DemoProductionBanner
+            isDemo={isDemoProductionCurrent}
+            currentProduction={currentProduction}
+            setCurrentProductionId={setCurrentProductionId}
+          />
           <Outlet />
         </main>
       </SidebarInset>

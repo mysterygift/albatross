@@ -43,6 +43,7 @@ import type { DashboardBudgetHealthData } from '@/lib/dashboard/budgetHealth'
 import type { DashboardNextShootDayData } from '@/lib/dashboard/nextShootDay'
 import type { FloatExpenseLink, Person, PettyCashFloat, ProductionTask } from '@/lib/db/types'
 import { cn } from '@/lib/utils'
+import { GetStartedChecklist } from '@/features/onboarding/GetStartedChecklist'
 
 const TASK_PRIORITY_LABELS: Record<1 | 2 | 3, string> = {
   1: 'High',
@@ -1125,6 +1126,8 @@ export function DashboardPage() {
           </button>
         </Alert>
       )}
+
+      {currentProductionId && !wrapSuccess && <GetStartedChecklist />}
 
       {!currentProductionId && !wrapSuccess && (
         <EmptyState

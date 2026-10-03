@@ -35,8 +35,6 @@
 :root:not([data-ui-theme="albatross-mint"]) .bg-sky-500\/10 { background-color: color-mix(in srgb, var(--primary) 10%, transparent); }
 :root:not([data-ui-theme="albatross-mint"]) .bg-stone-100\/10 { background-color: color-mix(in srgb, var(--secondary) 10%, transparent); }
 :root:not([data-ui-theme="albatross-mint"]) .bg-yellow-500\/10 { background-color: color-mix(in srgb, var(--ui-warn) 10%, transparent); }
-:root:not([data-ui-theme="albatross-mint"]) .bg-zinc-800\/70 { background-color: color-mix(in srgb, var(--muted) 70%, transparent); }
-:root:not([data-ui-theme="albatross-mint"]) .bg-zinc-900 { background-color: var(--card); }
 :root:not([data-ui-theme="albatross-mint"]) .border-amber-500 { border-color: var(--ui-warn); }
 :root:not([data-ui-theme="albatross-mint"]) .border-amber-500\/25 { border-color: color-mix(in srgb, var(--ui-warn) 25%, transparent); }
 :root:not([data-ui-theme="albatross-mint"]) .border-amber-500\/30 { border-color: color-mix(in srgb, var(--ui-warn) 30%, transparent); }
@@ -62,8 +60,6 @@
 :root:not([data-ui-theme="albatross-mint"]) .border-red-500\/40 { border-color: color-mix(in srgb, var(--destructive) 40%, transparent); }
 :root:not([data-ui-theme="albatross-mint"]) .border-sky-500\/35 { border-color: color-mix(in srgb, var(--primary) 35%, transparent); }
 :root:not([data-ui-theme="albatross-mint"]) .border-violet-500\/30 { border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
-:root:not([data-ui-theme="albatross-mint"]) .border-zinc-600 { border-color: var(--border); }
-:root:not([data-ui-theme="albatross-mint"]) .border-zinc-700 { border-color: var(--border); }
 :root:not([data-ui-theme="albatross-mint"]) .focus-visible\:border-emerald-500:focus-visible { border-color: var(--ui-success); }
 :root:not([data-ui-theme="albatross-mint"]) .focus-visible\:border-mint-500:focus-visible { border-color: var(--primary); }
 :root:not([data-ui-theme="albatross-mint"]) .focus-visible\:ring-emerald-500\/50:focus-visible { --tw-ring-color: color-mix(in srgb, var(--ui-success) 50%, transparent); }

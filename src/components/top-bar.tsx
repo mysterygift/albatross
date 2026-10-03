@@ -1,11 +1,12 @@
 import { Fragment } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ChevronRight, HelpCircle, Keyboard, Search } from 'lucide-react'
+import { ChevronRight, GraduationCap, Keyboard, Search } from 'lucide-react'
 import { findNavTrail, isNavGroup } from '@/app/navigation'
 import { Button } from '@/components/ui/button'
 import { ProductionSwitcher } from '@/components/production-switcher'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { ShortcutTooltip } from '@/components/shortcut-hint'
+import { PageHelpButton } from '@/features/tutorial/PageHelpButton'
 import { getCommandAccelerator, isMacPlatform } from '@/app/menuSchema'
 
 type TopBarProps = {
@@ -81,6 +82,7 @@ export function TopBar({ onOpenTutorial, onOpenSearch, onOpenShortcuts }: TopBar
           <span className="hidden md:inline">Search</span>
           <kbd className="ml-auto hidden font-sans text-xs md:inline">{searchHint}</kbd>
         </button>
+        <PageHelpButton />
         <ShortcutTooltip label="Keyboard shortcuts" keys="?">
           <Button
             variant="ghost"
@@ -103,7 +105,7 @@ export function TopBar({ onOpenTutorial, onOpenSearch, onOpenShortcuts }: TopBar
           }}
           aria-label="Open tutorial"
         >
-          <HelpCircle className="size-4" />
+          <GraduationCap className="size-4" />
         </Button>
       </div>
     </header>
