@@ -67,10 +67,9 @@ describe('ProductionSwitcher', () => {
     expect(screen.getByTestId('where').textContent).toBe('/productions?new=1')
   })
 
-  it('Manage productions navigates to /productions', () => {
+  it('has no Manage productions item', () => {
     setup()
-    fireEvent.click(screen.getByRole('menuitem', { name: /Manage productions/ }))
-    expect(screen.getByTestId('where').textContent).toBe('/productions')
+    expect(screen.queryByRole('menuitem', { name: /Manage productions/ })).toBeNull()
   })
 
   it('Wrap production navigates to /wrap-production', () => {

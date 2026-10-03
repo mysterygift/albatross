@@ -356,7 +356,6 @@ function AppLayoutShell() {
           <DemoProductionBanner
             isDemo={isDemoProductionCurrent}
             currentProduction={currentProduction}
-            setCurrentProductionId={setCurrentProductionId}
           />
           <Outlet />
         </main>
