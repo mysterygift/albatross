@@ -299,7 +299,7 @@ function AppLayoutShell() {
     if (!state?.openTutorialHome) return
 
     const shouldReset = !!state.resetTutorial
-    navigate(location.pathname, { replace: true, state: {} })
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: {} })
 
     let cancelled = false
     setTutorialStartupError(null)
@@ -331,7 +331,7 @@ function AppLayoutShell() {
     return () => {
       cancelled = true
     }
-  }, [location.pathname, location.state, navigate, prepareDemoForTutorialHub, resetFirstLaunchTutorial])
+  }, [location.pathname, location.search, location.state, navigate, prepareDemoForTutorialHub, resetFirstLaunchTutorial])
 
   return (
     <SidebarProvider>

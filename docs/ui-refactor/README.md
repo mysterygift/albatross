@@ -15,7 +15,7 @@ Worktree: `/Users/arandavies/Development/albatross-ui-experimental` (branch `ui-
 | 07 | Onboarding | [07-onboarding.md](07-onboarding.md) | done |
 | 08 | Settings and URL state | [08-settings-and-url-state.md](08-settings-and-url-state.md) | done |
 | 09 | Dashboard | [09-dashboard.md](09-dashboard.md) | done |
-| 10 | Final QA | [10-final-qa.md](10-final-qa.md) | pending |
+| 10 | Final QA | [10-final-qa.md](10-final-qa.md) | done (code-level audit only; see [CHANGELOG.md](CHANGELOG.md)) |
 
 ## Dependencies
 - 01 blocks everything.
@@ -55,5 +55,6 @@ Run in the worktree: `npm run build`, `npm test`, `npm run lint:ci`. All must pa
 - `npm test`: 18 test files / 16 tests fail (mostly `src/test/postgres/*`, which need a database, plus a few integration tests). Exact list: [BASELINE-failing-tests.txt](BASELINE-failing-tests.txt). A step must not add to it.
 - `npm run lint:ci`: exits non-zero (38 errors, 74 warnings). Exact error list: [BASELINE-lint-errors.txt](BASELINE-lint-errors.txt). A step must introduce no new errors, and warnings must not exceed 74.
 - Fixing baseline failures is out of scope unless the file is already being edited by the step. Note them under Follow-ups.
-- (08) Settings: Crew structure lives in `people` (Team & Access) rather than under Production; `Clients` moved from the old Developer Tools tab into Production; developer-mode toggle card sits in the Advanced "Demo & tutorial" section. `layout.tsx` tutorial effect does `navigate(location.pathname, ...)` which drops search params (so `?section=` is lost after "Open Tutorial Home"). `PageHelpButton.test.tsx` is flaky under full-suite load (passes alone).
+- (08) Settings: Crew structure lives in `people` (Team & Access) rather than under Production; `Clients` moved from the old Developer Tools tab into Production; developer-mode toggle card sits in the Advanced "Demo & tutorial" section. (fixed in 10: `layout.tsx` tutorial effect now preserves `location.search`.) `PageHelpButton.test.tsx` flake addressed in 10 with longer async timeouts.
 - (08) Stripboard `view=board` is omitted from the URL; explicit Board choice is preserved via localStorage. Column filters are still not URL-persisted (out of scope).
+- (10) Native menu View > People still targets `/people/bookings`; Add-button shortcut tooltips (Add Location, New Task) still missing; two unused eslint-disable warnings in `stripboard-page.tsx`. Full list of unverified manual checks: [CHANGELOG.md](CHANGELOG.md).

@@ -66,13 +66,13 @@ describe('PageHelpButton', () => {
     const user = userEvent.setup()
     renderAt('/budget')
     await user.click(screen.getByRole('button', { name: 'Page help' }))
-    expect(await screen.findByRole('dialog')).toBeTruthy()
+    expect(await screen.findByRole('dialog', {}, { timeout: 8000 })).toBeTruthy()
     await user.keyboard('{Escape}')
-    await waitFor(() => expect(state.updateProgress).toHaveBeenCalled())
+    await waitFor(() => expect(state.updateProgress).toHaveBeenCalled(), { timeout: 8000 })
     const updater = state.updateProgress.mock.calls[0][0]
     const next = updater(getDefaultTutorialProgress())
     expect(next.sections.budget).toBe('in_progress')
-  })
+  }, 20000)
 
   it('does not mount a second panel when the guided tutorial owns the section', async () => {
     const p = getDefaultTutorialProgress()

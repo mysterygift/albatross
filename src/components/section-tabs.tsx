@@ -22,7 +22,7 @@ export function SectionTabs() {
           end
           className={({ isActive }) =>
             cn(
-              '-mb-px rounded-t-md border-b-2 px-3 py-1.5 text-sm font-medium transition-colors',
+              '-mb-px rounded-t-md border-b-2 outline-none focus-visible:ring-2 focus-visible:ring-ring px-3 py-1.5 text-sm font-medium transition-colors',
               isActive
                 ? 'border-primary text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground'

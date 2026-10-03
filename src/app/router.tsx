@@ -48,7 +48,7 @@ export const router = createBrowserRouter([
       { path: 'schedule/storyboard', element: <StoryboardPage /> },
       { path: 'schedule/script-import', element: <ScriptImportPage /> },
       { path: 'schedule/script-sections', element: <ScriptSectionsPage /> },
-      { path: 'people', element: <Navigate to="/people/bookings" replace /> },
+      { path: 'people', element: <Navigate to="/people/cast-manager" replace /> },
       { path: 'people/bookings', element: <BookingsPage /> },
       { path: 'people/day-out-of-days', element: <DayOutOfDaysPage /> },
       { path: 'people/cast-manager', element: <CastManagerPage /> },
