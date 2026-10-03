@@ -1006,6 +1006,7 @@ export function StripboardPage() {
       />
 
       <SmartSchedulingInsightsPanel
+        storageKey="albatross.stripboard.insightsOpen"
         strips={strips}
         shots={shots}
         scenes={scenes}

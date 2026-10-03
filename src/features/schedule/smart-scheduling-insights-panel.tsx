@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ChevronDown, Lightbulb } from 'lucide-react'
 import type { Location, Scene, ShootDay, Shot, StripboardStrip } from '@/lib/db/types'
@@ -20,6 +21,19 @@ export type SmartSchedulingInsightsPanelProps = {
   castPersonIdsByShotId: Map<string, string[]>
   isLoading?: boolean
   className?: string
+  /** localStorage key for remembering open/closed per viewer. Omit to start collapsed without persisting. */
+  storageKey?: string
+}
+
+/** Per-viewer convenience only. Storage can be unavailable, so the read is guarded. */
+function readStoredOpen(storageKey: string | undefined): boolean {
+  if (!storageKey) return false
+  try {
+    return window.localStorage.getItem(storageKey) === 'true'
+  } catch {
+    /* storage unavailable: start collapsed */
+    return false
+  }
 }
 
 function scopeCaption(shootDayCount: number): string {
@@ -134,8 +148,19 @@ export function SmartSchedulingInsightsPanel({
   castPersonIdsByShotId,
   isLoading,
   className,
+  storageKey,
 }: SmartSchedulingInsightsPanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [open, setOpen] = useState(() => readStoredOpen(storageKey))
+
+  useEffect(() => {
+    if (!storageKey) return
+    try {
+      window.localStorage.setItem(storageKey, String(open))
+    } catch {
+      /* storage unavailable: the choice simply won't persist */
+    }
+  }, [open, storageKey])
 
   const locationNameById = useMemo(() => {
     const m = new Map<string, string>()
@@ -197,30 +222,65 @@ export function SmartSchedulingInsightsPanel({
     )
   }
 
+  const insightCount = result.insights.length
+  const countLabel = isLoading
+    ? 'Analyzing…'
+    : result.state === 'ready'
+      ? `${insightCount} ${insightCount === 1 ? 'opportunity' : 'opportunities'}`
+      : result.state === 'empty_no_patterns'
+        ? 'No setup patterns detected yet'
+        : 'Not enough scheduled shot data yet'
+  const headingId = 'smart-scheduling-insights-heading'
+  const regionId = 'smart-scheduling-insights-content'
+
   return (
     <section
-      className={cn(
-        'rounded-lg border border-border/80 bg-card/40 px-4 py-3 shadow-sm',
-        className
-      )}
-      aria-labelledby="smart-scheduling-insights-heading"
+      className={cn('overflow-hidden rounded-lg border border-border/80 bg-card/40 shadow-sm', className)}
     >
-      <div className="flex items-start gap-2.5">
-        <Lightbulb
-          className="size-4 shrink-0 mt-0.5 text-primary/80"
-          aria-hidden
-        />
-        <div className="min-w-0 flex-1 space-y-2">
-          <div>
-            <h2
-              id="smart-scheduling-insights-heading"
-              className="text-sm font-semibold tracking-tight text-foreground"
-            >
+      <h2 id={headingId} className="m-0">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={regionId}
+          className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <Lightbulb className="size-4 shrink-0 text-primary/80" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold tracking-tight text-foreground">
               Smart Scheduling Insights
-            </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">{scopeCaption(shootDays.length)}</p>
+            </span>
+            <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{countLabel}</span>
+          </span>
+          {!open && !isLoading && result.state === 'ready' && insightCount > 0 && (
+            <Badge variant="secondary" className="shrink-0 tabular-nums">
+              {insightCount}
+            </Badge>
+          )}
+          <ChevronDown
+            className={cn(
+              'size-5 shrink-0 text-muted-foreground transition-transform duration-200',
+              open && 'rotate-180'
+            )}
+            aria-hidden
+          />
+        </button>
+      </h2>
+      <div
+        id={regionId}
+        role="region"
+        aria-labelledby={headingId}
+        inert={!open}
+        className={cn(
+          'grid transition-[grid-template-rows] duration-200 ease-out',
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="space-y-2 border-t border-border px-4 py-3">
+            <p className="text-xs text-muted-foreground">{scopeCaption(shootDays.length)}</p>
+            {body}
           </div>
-          {body}
         </div>
       </div>
     </section>
