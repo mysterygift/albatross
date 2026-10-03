@@ -1,0 +1,34 @@
+src/features/admin/ProjectAccessPage.tsx: error    React Hook "useEffect" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?                     react-hooks/rules-of-hooks
+src/features/admin/ProjectAccessPage.tsx: error    React Hook "useMemo" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?                       react-hooks/rules-of-hooks
+src/features/admin/ProjectAccessPage.tsx: error    React Hook "useMutation" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?                   react-hooks/rules-of-hooks
+src/features/admin/ProjectAccessPage.tsx: error    React Hook "useQuery" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?                      react-hooks/rules-of-hooks
+src/features/admin/UserManagementPage.tsx: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/admin/UserManagementPage.tsx:549:7: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/admin/UserManagementPage.tsx:559:62: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/budget/DeleteLineItemDialog.tsx: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/budget/ExpenseTaxFields.tsx: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/budget/LineItemDetailPanel.tsx: error  'typedDetails' is never reassigned. Use 'const' instead  prefer-const
+src/features/budget/LogSpendPanel.tsx: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/budget/LogSpendPanel.tsx:139:7: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/budget/page.tsx: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/budget/page.tsx:659:5: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/budget/page.tsx:685:7: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/deliverables/page.tsx: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/deliverables/page.tsx:136:7: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/deliverables/page.tsx:141:5: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/documents/UploadCategoryDialog.tsx: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/equipment/ImportEquipmentRegistryCsvDialog.tsx: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/music-clearance/page.tsx: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/music-clearance/page.tsx:82:7: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/music-clearance/page.tsx:88:7: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/music-clearance/page.tsx:94:5: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/people/components/PersonUnavailabilityDialog.tsx: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/readiness/page.tsx: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/schedule/script-import-page.tsx: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/schedule/script-import-scene-editor-dialog.tsx: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/schedule/shot-script-section-link-dialog.tsx: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/schedule/sides-builder-sheet.tsx: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/schedule/stripboard-page.tsx: error    Error: Calling setState synchronously within an effect can trigger cascading renders
+src/features/settings/TaxCreditsSettingsSection.tsx: error  Error: Calling setState synchronously within an effect can trigger cascading renders
+src/lib/auth/useAuthSession.ts: error  Unnecessary try/catch wrapper  no-useless-catch
+src/test/postgres/postgresPerformanceConcurrency.test.ts: error  'error' is defined but never used  @typescript-eslint/no-unused-vars
