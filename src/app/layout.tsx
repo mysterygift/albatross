@@ -18,6 +18,8 @@ import { ensureAndOpenDemoProductionForTutorial } from '@/features/tutorial/ensu
 import { ApfDesktopOpenBridge } from '@/features/productions/ApfDesktopOpenBridge'
 import { ApfMenuEventBridge } from '@/features/productions/ApfMenuEventBridge'
 import { GlobalSearchDialog } from '@/features/search/GlobalSearchDialog'
+import { GlobalShortcutBridge } from '@/app/GlobalShortcutBridge'
+import { ShortcutCheatSheet } from '@/components/shortcut-cheat-sheet'
 import { ServerCollabBanner } from '@/features/server/ServerCollabBanner'
 import { useCurrentProduction } from '@/features/productions/context'
 import { DEMO_SLUG } from '@/lib/db/seed/constants'
@@ -195,6 +197,9 @@ function AppLayoutShell() {
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const openSearch = useCallback(() => setSearchOpen(true), [])
+  const toggleSearch = useCallback(() => setSearchOpen((prev) => !prev), [])
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const openShortcuts = useCallback(() => setShortcutsOpen(true), [])
   const [isPreparingTutorial, setIsPreparingTutorial] = useState(false)
   const [isPreparingTutorialHub, setIsPreparingTutorialHub] = useState(false)
   const [tutorialStartupError, setTutorialStartupError] = useState<string | null>(null)
@@ -330,7 +335,11 @@ function AppLayoutShell() {
   return (
     <SidebarProvider>
       <MenuSidebarBridge />
-      <GlobalSearchShortcutBridge onOpen={openSearch} />
+      <GlobalShortcutBridge
+        searchOpen={searchOpen}
+        onToggleSearch={toggleSearch}
+        onOpenShortcuts={openShortcuts}
+      />
       <ApfDesktopOpenBridge />
       <ApfMenuEventBridge />
       <AppSidebar />
@@ -338,6 +347,7 @@ function AppLayoutShell() {
         <TopBar
           onOpenTutorial={handleOpenTutorialFromHelp}
           onOpenSearch={openSearch}
+          onOpenShortcuts={openShortcuts}
         />
         <ServerCollabBanner />
         <SectionTabs />
@@ -350,7 +360,9 @@ function AppLayoutShell() {
         open={searchOpen}
         onOpenChange={setSearchOpen}
         productionId={currentProduction?.id ?? null}
+        onOpenShortcuts={openShortcuts}
       />
+      <ShortcutCheatSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <TutorialEntryModal
         open={tutorialEntryOpen}
         isPreparing={isPreparingTutorial}
@@ -402,36 +414,6 @@ function MenuSidebarBridge() {
     window.addEventListener('albatross-menu-view-toggle-sidebar', onToggleSidebar)
     return () => window.removeEventListener('albatross-menu-view-toggle-sidebar', onToggleSidebar)
   }, [toggleSidebar])
-
-  return null
-}
-
-/**
- * Opens Spotlight Search on Cmd+Option+Space (mac) / Ctrl+Alt+Space
- * (Windows/Linux). Suppressed while any dialog or sheet ("card") is open so it
- * never interrupts form data entry. Kept as a JS window listener rather than a
- * native Tauri accelerator to avoid the OS window-menu conflict with Alt+Space.
- */
-function GlobalSearchShortcutBridge({ onOpen }: { onOpen: () => void }) {
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== 'Space' || !event.altKey) return
-      const comboPressed =
-        (event.metaKey || event.ctrlKey) && event.altKey
-      if (!comboPressed) return
-
-      // Suppress while a dialog/sheet ("card") is open to avoid interrupting forms.
-      const overlayOpen = document.querySelector(
-        '[data-slot="dialog-content"][data-state="open"], [data-slot="sheet-content"][data-state="open"]'
-      )
-      if (overlayOpen) return
-
-      event.preventDefault()
-      onOpen()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onOpen])
 
   return null
 }

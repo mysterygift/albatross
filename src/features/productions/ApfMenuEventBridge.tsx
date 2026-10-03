@@ -14,7 +14,7 @@ import {
   runDuplicateLiveAsDraftFromMenu,
 } from '@/features/productions/budgetMenuActions'
 import { listBudgetRevisionsByProduction } from '@/lib/db/repositories/budgetRevisions'
-import { getAcceleratorConflicts, resolveMenuSectionForPath } from '@/app/menuSchema'
+import { getAcceleratorConflicts, menuCommandTargets, resolveMenuSectionForPath } from '@/app/menuSchema'
 import { clearPersistedAuthSession } from '@/lib/auth/authService'
 import { getDb } from '@/lib/db/client'
 
@@ -151,85 +151,16 @@ export function ApfMenuEventBridge() {
           }, unlistenCommands)
         }
 
-        await bindNavigateCommand('albatross-menu-view-go-dashboard', '/')
-        await bindNavigateCommand('albatross-menu-view-go-productions', '/productions')
-        await bindNavigateCommand('albatross-menu-view-go-budget', '/budget')
-        await bindNavigateCommand('albatross-menu-view-go-schedule', '/schedule/calendar')
-        await bindNavigateCommand('albatross-menu-view-go-people', '/people/bookings')
-        await bindNavigateCommand('albatross-menu-view-go-locations', '/locations')
-        await bindNavigateCommand('albatross-menu-view-go-documents', '/documents')
-        await bindNavigateCommand('albatross-menu-view-go-deliverables', '/deliverables')
-        await bindNavigateCommand('albatross-menu-view-go-tasks', '/tasks')
+        for (const [id, target] of Object.entries(menuCommandTargets)) {
+          // new_project is handled above (identical behaviour via the same table entry).
+          if (id === 'new_project') continue
+          if (target.browserEvent) {
+            await bindDispatchCommand(target.eventName, target.browserEvent, target.to)
+          } else if (target.to) {
+            await bindNavigateCommand(target.eventName, target.to)
+          }
+        }
         await bindDispatchCommand('albatross-menu-view-toggle-sidebar', 'albatross-menu-view-toggle-sidebar')
-
-        await bindDispatchCommand(
-          'albatross-menu-people-add-cast',
-          'albatross-menu-people-add-cast',
-          '/people/cast-manager',
-        )
-        await bindDispatchCommand(
-          'albatross-menu-people-add-crew',
-          'albatross-menu-people-add-crew',
-          '/people/crew-manager',
-        )
-        await bindDispatchCommand(
-          'albatross-menu-people-add-booking',
-          'albatross-menu-people-add-booking',
-          '/people/bookings',
-        )
-        await bindNavigateCommand('albatross-menu-people-open-cast-manager', '/people/cast-manager')
-        await bindNavigateCommand('albatross-menu-people-open-crew-manager', '/people/crew-manager')
-
-        await bindDispatchCommand('albatross-menu-budget-log-spend', 'albatross-menu-budget-log-spend', '/budget')
-        await bindDispatchCommand('albatross-menu-budget-add-line-item', 'albatross-menu-budget-add-line-item', '/budget')
-        await bindDispatchCommand(
-          'albatross-menu-budget-manage-revisions',
-          'albatross-menu-budget-manage-revisions',
-          '/budget',
-        )
-        await bindDispatchCommand('albatross-menu-budget-export-csv', 'albatross-menu-budget-export-csv', '/budget')
-
-        await bindDispatchCommand(
-          'albatross-menu-schedule-new-shoot-day',
-          'albatross-menu-schedule-new-shoot-day',
-          '/schedule/stripboard',
-        )
-        await bindDispatchCommand(
-          'albatross-menu-schedule-add-strip',
-          'albatross-menu-schedule-add-strip',
-          '/schedule/stripboard',
-        )
-        await bindNavigateCommand('albatross-menu-schedule-open-stripboard', '/schedule/stripboard')
-        await bindNavigateCommand('albatross-menu-schedule-open-shot-list', '/schedule/shots')
-        await bindNavigateCommand('albatross-menu-schedule-parse-script-scenes', '/schedule/script-import')
-        await bindDispatchCommand(
-          'albatross-menu-tasks-new-task',
-          'albatross-menu-tasks-new-task',
-          '/tasks',
-        )
-
-        await bindDispatchCommand(
-          'albatross-menu-locations-add-location',
-          'albatross-menu-locations-add-location',
-          '/locations',
-        )
-
-        await bindDispatchCommand(
-          'albatross-menu-documents-upload-file',
-          'albatross-menu-documents-upload-file',
-          '/documents',
-        )
-
-        await bindDispatchCommand(
-          'albatross-menu-deliverables-add-deliverable',
-          'albatross-menu-deliverables-add-deliverable',
-          '/deliverables',
-        )
-        await bindDispatchCommand(
-          'albatross-menu-deliverables-apply-template',
-          'albatross-menu-deliverables-apply-template',
-          '/deliverables',
-        )
       } catch {
         /* not running in tauri */
       }

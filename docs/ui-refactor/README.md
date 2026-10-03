@@ -11,7 +11,7 @@ Worktree: `/Users/arandavies/Development/albatross-ui-experimental` (branch `ui-
 | 03 | Feedback and confirm | [03-feedback-confirm.md](03-feedback-confirm.md) | done |
 | 04 | Page shell and tokens | [04-page-shell-and-tokens.md](04-page-shell-and-tokens.md) | done |
 | 05 | Navigation | [05-navigation.md](05-navigation.md) | done |
-| 06 | Search and shortcuts | [06-search-and-shortcuts.md](06-search-and-shortcuts.md) | pending |
+| 06 | Search and shortcuts | [06-search-and-shortcuts.md](06-search-and-shortcuts.md) | done |
 | 07 | Onboarding | [07-onboarding.md](07-onboarding.md) | pending |
 | 08 | Settings and URL state | [08-settings-and-url-state.md](08-settings-and-url-state.md) | pending |
 | 09 | Dashboard | [09-dashboard.md](09-dashboard.md) | pending |
@@ -44,6 +44,8 @@ Run in the worktree: `npm run build`, `npm test`, `npm run lint:ci`. All must pa
 - (04) Huge pages (budget, calendar, equipment, shot-list, settings, stripboard excluded) only had the `<h1>` swapped for `<PageHeader title=... />` in place; their header rows keep their old flex wrappers. Dashboard still has 5 other `animate-pulse` divs (lines ~433, 544, 637, 759, 887) for step 09.
 - (04) `DocumentsCategoryPage` lost the category icon box beside the title (PageHeader title is a string). `actualisation/page.tsx` embedded guard now has no title (parent Budget owns the h1). `script-section-script-panel` `renderPageContentHighlights` param renamed `_variant` (unused, API kept).
 - (04) Vendor/Cast/Crew detail pages keep their back-arrow button beside PageHeader; person/vendor metadata now sits in PageHeader `description`.
+- (06) Add-button tooltips (Add Location, New Task) skipped: those buttons live on pages not touched this step. `?` icon added to top bar uses the Keyboard icon. Palette "Create" items for Add crew/booking/strip etc. navigate then dispatch the menu browser event; pages mounting after navigation may miss the event (same as native menu behaviour).
+- (06) Cmd+Alt+1..4 are native accelerators only (Rust View menu); not verified on a running Tauri build.
 
 ## Baseline (recorded on ui-experimental at a81a90e, before any step)
 `dev` is NOT green, so the per-step gate is **no new failures versus this baseline**, not "everything passes":

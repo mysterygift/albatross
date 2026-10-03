@@ -9,26 +9,33 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandShortcut,
 } from '@/components/ui/command'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { filterGlobalSearch } from '@/features/search/filterGlobalSearch'
+import { filterGlobalSearch, type GlobalSearchGroup } from '@/features/search/filterGlobalSearch'
+import { filterCommands, type FilteredCommand } from '@/features/search/filterCommands'
+import { buildGlobalSearchCommands } from '@/features/search/commands'
+import { formatAccelerator, isMacPlatform } from '@/app/menuSchema'
 import { useGlobalSearchIndex } from '@/features/search/useGlobalSearchIndex'
 import { GlobalSearchResultPreview } from '@/features/search/GlobalSearchResultPreview'
 import { SECTION_BADGE, SECTION_ICON } from '@/features/search/sectionMeta'
 import { GLOBAL_SEARCH_SECTIONS } from '@/features/search/types'
-import type { GlobalSearchResult } from '@/features/search/types'
+import type { GlobalSearchResult, GlobalSearchResultType } from '@/features/search/types'
 
 type GlobalSearchDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   productionId: string | null | undefined
+  /** Opens the keyboard shortcut cheat sheet (palette "Keyboard shortcuts" command). */
+  onOpenShortcuts?: () => void
 }
 
 export function GlobalSearchDialog({
   open,
   onOpenChange,
   productionId,
+  onOpenShortcuts,
 }: GlobalSearchDialogProps) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
@@ -36,9 +43,16 @@ export function GlobalSearchDialog({
   const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null)
   const { results } = useGlobalSearchIndex(productionId, { enabled: open })
 
+  const allCommands = useMemo(() => buildGlobalSearchCommands(), [])
+  const { commands: commandResults, commandsOnly } = useMemo(
+    () => filterCommands(allCommands, query, { hasProduction: Boolean(productionId) }),
+    [allCommands, query, productionId]
+  )
+  const isMac = isMacPlatform()
+
   const grouped = useMemo(
-    () => filterGlobalSearch(results, query),
-    [results, query]
+    () => (commandsOnly ? new Map<GlobalSearchResultType, GlobalSearchGroup>() : filterGlobalSearch(results, query)),
+    [results, query, commandsOnly]
   )
 
   const resultById = useMemo(() => {
@@ -65,6 +79,12 @@ export function GlobalSearchDialog({
   const handleSelect = (to: string) => {
     close()
     navigate(to)
+  }
+
+  const handleRunCommand = (command: FilteredCommand) => {
+    if (command.disabled) return
+    close()
+    command.run({ navigate, openShortcuts: onOpenShortcuts })
   }
 
   const openPreviewFor = (result: GlobalSearchResult, anchor: HTMLElement) => {
@@ -123,7 +143,7 @@ export function GlobalSearchDialog({
           }
         }}
         title="Search"
-        description="Search people, scenes, locations, documents, and purchase orders"
+        description="Search people, scenes, locations, documents and purchase orders, or run a command. Type > for commands only."
         shouldFilter={false}
         onInteractOutside={(event) => {
           if (
@@ -143,7 +163,7 @@ export function GlobalSearchDialog({
         }}
       >
         <CommandInput
-          placeholder="Search people, scenes, locations, documents, purchase orders…"
+          placeholder="Search or type > for commands…"
           value={query}
           onValueChange={(next) => {
             setQuery(next)
@@ -201,6 +221,40 @@ export function GlobalSearchDialog({
                     {group.hiddenCount} more — refine your search
                   </div>
                 )}
+              </CommandGroup>
+            )
+          })}
+          {([
+            ['go', 'Go to'],
+            ['create', 'Create'],
+            ['general', 'General'],
+          ] as const).map(([group, heading]) => {
+            const items = commandResults.filter((c) => c.group === group)
+            if (items.length === 0) return null
+            return (
+              <CommandGroup key={`cmd-${group}`} heading={heading}>
+                {items.map((command) => (
+                  <CommandItem
+                    key={command.id}
+                    value={`command:${command.id}`}
+                    disabled={command.disabled}
+                    onSelect={() => handleRunCommand(command)}
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate">{command.label}</span>
+                      {(command.hint ?? command.subtitle) && (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {command.hint ?? command.subtitle}
+                        </span>
+                      )}
+                    </div>
+                    {command.accelerator && (
+                      <CommandShortcut>
+                        {formatAccelerator(command.accelerator, isMac)}
+                      </CommandShortcut>
+                    )}
+                  </CommandItem>
+                ))}
               </CommandGroup>
             )
           })}

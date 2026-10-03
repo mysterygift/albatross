@@ -48,3 +48,25 @@ export const GLOBAL_SEARCH_SECTIONS: Array<{
   { type: 'vendor', label: 'Vendors' },
   { type: 'purchase_order', label: 'Purchase Orders' },
 ]
+
+export type GlobalSearchCommandGroup = 'go' | 'create' | 'general'
+
+export type GlobalSearchCommandContext = {
+  navigate: (to: string) => void
+  openShortcuts?: () => void
+}
+
+/** A palette command (navigate or create), as opposed to an entity search result. */
+export type GlobalSearchCommand = {
+  id: string
+  label: string
+  group: GlobalSearchCommandGroup
+  /** Secondary muted text (e.g. the navigation group label). */
+  subtitle?: string
+  keywords: string[]
+  /** Menu accelerator (e.g. `CmdOrCtrl+B`), shown as a shortcut hint. */
+  accelerator?: string
+  /** Disabled (with a hint) while no production is selected. */
+  requiresProduction?: boolean
+  run: (ctx: GlobalSearchCommandContext) => void
+}

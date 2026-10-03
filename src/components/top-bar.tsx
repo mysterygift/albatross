@@ -1,14 +1,17 @@
 import { Fragment } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ChevronRight, HelpCircle, Search } from 'lucide-react'
+import { ChevronRight, HelpCircle, Keyboard, Search } from 'lucide-react'
 import { findNavTrail, isNavGroup } from '@/app/navigation'
 import { Button } from '@/components/ui/button'
 import { ProductionSwitcher } from '@/components/production-switcher'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { ShortcutTooltip } from '@/components/shortcut-hint'
+import { getCommandAccelerator, isMacPlatform } from '@/app/menuSchema'
 
 type TopBarProps = {
   onOpenTutorial?: () => void
   onOpenSearch?: () => void
+  onOpenShortcuts?: () => void
 }
 
 type Crumb = { label: string; to?: string }
@@ -54,24 +57,43 @@ function Breadcrumbs() {
   )
 }
 
-export function TopBar({ onOpenTutorial, onOpenSearch }: TopBarProps) {
+export function TopBar({ onOpenTutorial, onOpenSearch, onOpenShortcuts }: TopBarProps) {
+  const isMac = isMacPlatform()
+  const searchHint = isMac ? '\u2318K' : 'Ctrl K'
+  const sidebarAccelerator = getCommandAccelerator('view_toggle_sidebar')
   return (
     <header data-slot="top-bar" className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-      <SidebarTrigger />
+      <ShortcutTooltip label="Toggle sidebar" accelerator={sidebarAccelerator} side="bottom">
+        <SidebarTrigger />
+      </ShortcutTooltip>
       <Breadcrumbs />
       <div className="ml-auto flex items-center gap-2">
         <ProductionSwitcher />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-muted-foreground hover:text-foreground"
+        <button
+          type="button"
           onClick={() => {
             onOpenSearch?.()
           }}
-          aria-label="Search"
+          aria-label={`Search (${searchHint})`}
+          className="inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-md border border-border bg-muted/40 px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:w-56 md:justify-start"
         >
-          <Search className="size-4" />
-        </Button>
+          <Search className="size-4 shrink-0" aria-hidden />
+          <span className="hidden md:inline">Search</span>
+          <kbd className="ml-auto hidden font-sans text-xs md:inline">{searchHint}</kbd>
+        </button>
+        <ShortcutTooltip label="Keyboard shortcuts" keys="?">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              onOpenShortcuts?.()
+            }}
+            aria-label="Keyboard shortcuts"
+          >
+            <Keyboard className="size-4" />
+          </Button>
+        </ShortcutTooltip>
         <Button
           variant="ghost"
           size="icon"

@@ -20,6 +20,12 @@ import { ChevronRight } from 'lucide-react'
 import { AlbatrossLogo } from '@/components/AlbatrossLogo'
 import { cn } from '@/lib/utils'
 import { navGroups, isNavGroup, findNavTrail } from '@/app/navigation'
+import { getCommandAccelerator, labelWithShortcut, navCommandIdByPath } from '@/app/menuSchema'
+
+function navTooltip(label: string, path: string): string {
+  const id = navCommandIdByPath[path]
+  return labelWithShortcut(label, id ? getCommandAccelerator(id) : undefined)
+}
 
 const STORAGE_KEY = 'albatross.sidebar.groups'
 
@@ -93,7 +99,7 @@ export function AppSidebar() {
                     const submenuId = `sidebar-sub-${group.id}-${item.label.toLowerCase().replace(/\s+/g, '-')}`
                     return (
                       <SidebarMenuItem key={item.to}>
-                        <SidebarMenuButton asChild isActive={isParentActive}>
+                        <SidebarMenuButton asChild isActive={isParentActive} tooltip={navTooltip(item.label, item.to)}>
                           <NavLink to={item.defaultChild} className="flex items-center gap-2 pr-7">
                             <item.icon className="size-4 shrink-0" />
                             <span className="min-w-0 flex-1 truncate">{item.label}</span>
@@ -144,7 +150,11 @@ export function AppSidebar() {
                   }
                   return (
                     <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton asChild isActive={activeItemTo === item.to}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={activeItemTo === item.to}
+                        tooltip={navTooltip(item.label, item.to)}
+                      >
                         <NavLink to={item.to} end={item.to === '/'} className="flex items-center gap-2">
                           <item.icon className="size-4" />
                           <span>{item.label}</span>
