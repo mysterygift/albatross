@@ -28,6 +28,7 @@ vi.mock('@/lib/db/createProductionFromTemplate', () => ({
 
 vi.mock('@/lib/db/repositories/clients', () => ({
   listClients: vi.fn(async () => []),
+  listClientsWithProjectCounts: vi.fn(async () => []),
 }))
 
 vi.mock('@/lib/db/episodicProductionService', () => ({
@@ -114,6 +115,7 @@ vi.mock('@/lib/db/repositories/settings', () => ({
   FIRST_LAUNCH_TUTORIAL_SEEN_KEY: 'first_launch',
   setFirstLaunchTutorialSeen: vi.fn(async () => {}),
   API_CALL_TRACKING_SETTING_KEY: 'api_track',
+  DEVELOPER_MODE_SETTING_KEY: 'developer_mode',
   OPENROUTESERVICE_API_KEY_SETTING: 'ors',
 }))
 

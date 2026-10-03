@@ -87,6 +87,7 @@ vi.mock('@/lib/db/repositories/settings', () => ({
   getSetting: vi.fn(async () => null),
   setSetting: vi.fn(async () => {}),
   FIRST_LAUNCH_TUTORIAL_SEEN_KEY: 'first_launch',
+  DEVELOPER_MODE_SETTING_KEY: 'developer_mode',
   setFirstLaunchTutorialSeen: vi.fn(async () => {}),
 }))
 

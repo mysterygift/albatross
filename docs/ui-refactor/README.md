@@ -13,7 +13,7 @@ Worktree: `/Users/arandavies/Development/albatross-ui-experimental` (branch `ui-
 | 05 | Navigation | [05-navigation.md](05-navigation.md) | done |
 | 06 | Search and shortcuts | [06-search-and-shortcuts.md](06-search-and-shortcuts.md) | done |
 | 07 | Onboarding | [07-onboarding.md](07-onboarding.md) | done |
-| 08 | Settings and URL state | [08-settings-and-url-state.md](08-settings-and-url-state.md) | pending |
+| 08 | Settings and URL state | [08-settings-and-url-state.md](08-settings-and-url-state.md) | done |
 | 09 | Dashboard | [09-dashboard.md](09-dashboard.md) | pending |
 | 10 | Final QA | [10-final-qa.md](10-final-qa.md) | pending |
 
@@ -55,3 +55,5 @@ Run in the worktree: `npm run build`, `npm test`, `npm run lint:ci`. All must pa
 - `npm test`: 18 test files / 16 tests fail (mostly `src/test/postgres/*`, which need a database, plus a few integration tests). Exact list: [BASELINE-failing-tests.txt](BASELINE-failing-tests.txt). A step must not add to it.
 - `npm run lint:ci`: exits non-zero (38 errors, 74 warnings). Exact error list: [BASELINE-lint-errors.txt](BASELINE-lint-errors.txt). A step must introduce no new errors, and warnings must not exceed 74.
 - Fixing baseline failures is out of scope unless the file is already being edited by the step. Note them under Follow-ups.
+- (08) Settings: Crew structure lives in `people` (Team & Access) rather than under Production; `Clients` moved from the old Developer Tools tab into Production; developer-mode toggle card sits in the Advanced "Demo & tutorial" section. `layout.tsx` tutorial effect does `navigate(location.pathname, ...)` which drops search params (so `?section=` is lost after "Open Tutorial Home"). `PageHelpButton.test.tsx` is flaky under full-suite load (passes alone).
+- (08) Stripboard `view=board` is omitted from the URL; explicit Board choice is preserved via localStorage. Column filters are still not URL-persisted (out of scope).

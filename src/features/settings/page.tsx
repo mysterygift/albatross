@@ -64,10 +64,12 @@ import {
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown, Users } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { SettingsNav } from '@/features/settings/SettingsNav'
+import { sectionFromSearchParams, type SettingsSectionId } from '@/features/settings/settingsSections'
+import { useDeveloperMode } from '@/hooks/useDeveloperMode'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/sonner'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
@@ -162,7 +164,23 @@ export function SettingsPage() {
   const [editAccount, setEditAccount] = useState<BudgetAccount | null>(null)
   const [accountToDelete, setAccountToDelete] = useState<BudgetAccount | null>(null)
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
-  const [settingsTab, setSettingsTab] = useState<'budget' | 'people' | 'apis' | 'developer_tools'>('budget')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { developerMode, setDeveloperMode } = useDeveloperMode()
+  const section = sectionFromSearchParams(searchParams, developerMode)
+  const selectSection = useCallback(
+    (id: SettingsSectionId) => {
+      setSearchParams(
+        (prev) => {
+          const n = new URLSearchParams(prev)
+          n.delete('tab')
+          n.set('section', id)
+          return n
+        },
+        { replace: false }
+      )
+    },
+    [setSearchParams]
+  )
   const queryClient = useQueryClient()
   const [orsApiKeyDraft, setOrsApiKeyDraft] = useState('')
   const [episodicEnableOpen, setEpisodicEnableOpen] = useState(false)
@@ -396,17 +414,12 @@ export function SettingsPage() {
       <PageHeader title="Settings" />
       {confirmDialog}
 
-      <AppearanceSettingsSection />
+      <div className="flex flex-col gap-5 md:flex-row md:items-start">
+        <SettingsNav active={section} developerMode={developerMode} onSelect={selectSection} />
+        <div className="min-w-0 flex-1">
 
-      <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as 'budget' | 'people' | 'apis' | 'developer_tools')} className="w-full">
-        <TabsList className="h-9 rounded-md border border-border bg-muted/30 w-fit">
-          <TabsTrigger value="budget" className="px-4 text-sm data-[state=active]:bg-background">Budget</TabsTrigger>
-          <TabsTrigger value="people" className="px-4 text-sm data-[state=active]:bg-background">People</TabsTrigger>
-          <TabsTrigger value="apis" className="px-4 text-sm data-[state=active]:bg-background">APIs</TabsTrigger>
-          <TabsTrigger value="developer_tools" className="px-4 text-sm data-[state=active]:bg-background">Developer Tools</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="budget" className="space-y-5 mt-5 outline-none">
+      {section === 'production' && (
+        <div className="space-y-5">
       <Card className="bg-[hsl(var(--card))] border-border">
         <CardHeader>
           <CardTitle>Currency</CardTitle>
@@ -536,6 +549,12 @@ export function SettingsPage() {
         <TaxCreditsSettingsSection productionId={currentProductionId} />
       )}
 
+      <ClientsSettingsSection />
+        </div>
+      )}
+
+      {section === 'budget-accounts' && (
+        <div className="space-y-5">
       {currentProductionId && (
         <Card>
           <CardHeader>
@@ -651,9 +670,17 @@ export function SettingsPage() {
               <p className="text-sm text-muted-foreground">Select a production to configure cost report groups and chart of accounts.</p>
             </div>
           )}
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="people" className="space-y-5 mt-5 outline-none">
+      {section === 'appearance' && (
+        <div className="space-y-5">
+      <AppearanceSettingsSection />
+        </div>
+      )}
+
+      {section === 'people' && (
+        <div className="space-y-5">
       {currentProductionId && (
         <Card className="border-border bg-card text-foreground">
           <CardHeader>
@@ -677,9 +704,59 @@ export function SettingsPage() {
               <p className="text-sm text-muted-foreground">Select a production to configure crew structure.</p>
             </div>
       )}
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="apis" className="space-y-5 mt-5 outline-none">
+      {section === 'users' && (
+        <div className="space-y-5">
+      {authSession.authSupported && authSession.isAuthenticated && authSession.isInstanceAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>User Management</CardTitle>
+            <CardDescription>
+              Manage server users (create, disable, reset password, and role changes).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex items-center gap-2">
+            <Button type="button" onClick={() => navigate('/settings/users')}>
+              Open User Management
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {!(authSession.authSupported && authSession.isAuthenticated && authSession.isInstanceAdmin) && (
+        <p className="text-sm text-muted-foreground">User management is available to signed-in instance administrators.</p>
+      )}
+        </div>
+      )}
+
+      {section === 'project-access' && (
+        <div className="space-y-5">
+      {authSession.authSupported && authSession.isAuthenticated && currentProductionId && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Project Access</CardTitle>
+            <CardDescription>
+              Manage which users can access the selected project and set viewer/editor/administrator levels.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex items-center gap-2">
+            <Button type="button" variant="outline" onClick={() => navigate('/settings/project-access')}>
+              Open Project Access
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {!(authSession.authSupported && authSession.isAuthenticated && currentProductionId) && (
+        <p className="text-sm text-muted-foreground">Sign in and select a production to manage project access.</p>
+      )}
+        </div>
+      )}
+
+      {section === 'integrations' && (
+        <div className="space-y-5">
           <Card>
             <CardHeader>
               <CardTitle>OpenRouteService API key</CardTitle>
@@ -730,41 +807,11 @@ export function SettingsPage() {
           </Card>
 
           <ServerPublishingSettingsSection />
-        </TabsContent>
-
-        <TabsContent value="developer_tools" className="space-y-5 mt-5 outline-none">
-      {authSession.authSupported && authSession.isAuthenticated && authSession.isInstanceAdmin && (
-        <Card>
-          <CardHeader>
-            <CardTitle>User Management</CardTitle>
-            <CardDescription>
-              Manage server users (create, disable, reset password, and role changes).
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex items-center gap-2">
-            <Button type="button" onClick={() => navigate('/settings/users')}>
-              Open User Management
-            </Button>
-          </CardContent>
-        </Card>
+        </div>
       )}
 
-      {authSession.authSupported && authSession.isAuthenticated && currentProductionId && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Project Access</CardTitle>
-            <CardDescription>
-              Manage which users can access the selected project and set viewer/editor/administrator levels.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => navigate('/settings/project-access')}>
-              Open Project Access
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
+      {section === 'demo-tutorial' && (
+        <div className="space-y-5">
       <Card>
         <CardHeader>
           <CardTitle>Onboarding tutorial</CardTitle>
@@ -795,7 +842,6 @@ export function SettingsPage() {
           </Button>
         </CardContent>
       </Card>
-      <ClientsSettingsSection />
 
       <Card className="mt-2">
         <CardHeader>
@@ -864,6 +910,32 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Developer mode</CardTitle>
+          <CardDescription>
+            Shows diagnostics and developer tools in Settings. Leave off unless you are troubleshooting.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="developer-mode-toggle"
+            checked={developerMode}
+            onChange={(e) => setDeveloperMode(e.target.checked)}
+            className="rounded border-border"
+          />
+          <Label htmlFor="developer-mode-toggle" className="font-medium">
+            Developer mode - shows diagnostics
+          </Label>
+        </CardContent>
+      </Card>
+
+        </div>
+      )}
+
+      {section === 'developer' && (
+        <div className="space-y-5">
       {import.meta.env.DEV && (
         <Card className="mt-2">
           <CardHeader>
@@ -985,8 +1057,15 @@ export function SettingsPage() {
           </CardContent>
         </Card>
       )}
-        </TabsContent>
-      </Tabs>
+
+      {!import.meta.env.DEV && (
+        <p className="text-sm text-muted-foreground">Developer tools are only available in development builds.</p>
+      )}
+        </div>
+      )}
+
+        </div>
+      </div>
 
       <Dialog open={addGroupOpen} onOpenChange={setAddGroupOpen}>
         <DialogContent className="max-w-lg">

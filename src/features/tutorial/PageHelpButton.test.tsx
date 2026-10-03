@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -37,6 +37,18 @@ describe('resolveTutorialSection', () => {
 })
 
 describe('PageHelpButton', () => {
+  beforeAll(() => {
+    // jsdom lacks ResizeObserver, which Radix Popper (tooltip) needs when a click also hovers the button.
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+  })
+
   afterEach(() => {
     cleanup()
     vi.clearAllMocks()
@@ -56,7 +68,7 @@ describe('PageHelpButton', () => {
     await user.click(screen.getByRole('button', { name: 'Page help' }))
     expect(await screen.findByRole('dialog')).toBeTruthy()
     await user.keyboard('{Escape}')
-    expect(state.updateProgress).toHaveBeenCalled()
+    await waitFor(() => expect(state.updateProgress).toHaveBeenCalled())
     const updater = state.updateProgress.mock.calls[0][0]
     const next = updater(getDefaultTutorialProgress())
     expect(next.sections.budget).toBe('in_progress')

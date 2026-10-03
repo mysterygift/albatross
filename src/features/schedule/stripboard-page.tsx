@@ -9,6 +9,8 @@
  */
 import { PageHeader } from '@/components/page-header'
 import { RequireProduction } from '@/components/require-production'
+import { useSearchParams } from 'react-router-dom'
+import { applyStripboardParams, parseStripboardParams, type StripboardUrlPatch } from './stripboardUrlState'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
@@ -328,8 +330,21 @@ export function StripboardPage() {
   const queryClient = useQueryClient()
   const isEpisodicProduction = currentProduction?.is_episodic === true
 
-  const [search, setSearch] = useState('')
-  const [locationId, setLocationId] = useState<string | null | undefined>(undefined)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlState = useMemo(() => parseStripboardParams(searchParams), [searchParams])
+  const updateUrl = useCallback(
+    (patch: StripboardUrlPatch, replace: boolean) => {
+      setSearchParams((prev) => applyStripboardParams(prev, patch), { replace })
+    },
+    [setSearchParams]
+  )
+  const search = urlState.q
+  const locationId = urlState.locationId
+  const setSearch = useCallback((q: string) => updateUrl({ q }, true), [updateUrl])
+  const setLocationId = useCallback(
+    (id: string | null | undefined) => updateUrl({ locationId: id }, true),
+    [updateUrl]
+  )
   const [selectedShotIds, setSelectedShotIds] = useState<Set<string>>(new Set())
   const [activeData, setActiveData] = useState<{ type: 'strip'; strip: StripboardStrip } | { type: 'unscheduled-shot'; item: ShotWithScene } | null>(null)
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({})
@@ -359,9 +374,22 @@ export function StripboardPage() {
   const columnsScrollRef = useRef<HTMLDivElement | null>(null)
   const [showColumnsLeftFeather, setShowColumnsLeftFeather] = useState(false)
   const [addStripOpen, setAddStripOpen] = useState(false)
-  const [blocViewFilter, setBlocViewFilter] = useState<ShootingBlocViewFilter>('all')
-  const [viewMode, setViewMode] = useState<StripboardViewMode>(readStoredViewMode)
-  const [activeDayId, setActiveDayId] = useState<string | null>(null)
+  const blocViewFilter: ShootingBlocViewFilter = urlState.bloc
+  const setBlocViewFilter = useCallback(
+    (bloc: ShootingBlocViewFilter) => updateUrl({ bloc }, true),
+    [updateUrl]
+  )
+  // Precedence: URL `view` > localStorage > default (board).
+  const viewMode: StripboardViewMode = urlState.view ?? readStoredViewMode()
+  const setViewMode = useCallback(
+    (view: StripboardViewMode) => updateUrl({ view }, false),
+    [updateUrl]
+  )
+  const activeDayId = urlState.day
+  const setActiveDayId = useCallback(
+    (day: string | null) => updateUrl({ day }, true),
+    [updateUrl]
+  )
   const [unscheduledOpen, setUnscheduledOpen] = useState(true)
   const [boneyardOpen, setBoneyardOpen] = useState(false)
 
@@ -373,9 +401,16 @@ export function StripboardPage() {
     }
   }, [viewMode])
 
+  // Reset the bloc filter when the user switches production (not on first load, which would
+  // discard a deep-linked `bloc` param).
+  const previousProductionIdRef = useRef(currentProductionId)
   useEffect(() => {
-    setBlocViewFilter('all')
-  }, [currentProductionId])
+    const previous = previousProductionIdRef.current
+    previousProductionIdRef.current = currentProductionId
+    if (previous && currentProductionId && previous !== currentProductionId) {
+      setBlocViewFilter('all')
+    }
+  }, [currentProductionId, setBlocViewFilter])
 
   const stripboard = useStripboard(currentProductionId ?? null)
   const filters = { search: search || undefined, locationId }
