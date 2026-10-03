@@ -504,7 +504,7 @@ function TasksDueSoonCard({
           </>
         )}
         <Link
-          to="/readiness"
+          to="/tasks"
           onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-2"
         >
@@ -1186,7 +1186,7 @@ export function DashboardPage() {
             tasks={tasks}
             isLoading={tasksLoading}
             isError={tasksError}
-            onNavigate={() => navigate('/readiness')}
+            onNavigate={() => navigate('/tasks')}
           />
 
           <DeliverablesCard

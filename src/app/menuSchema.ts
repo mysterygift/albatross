@@ -102,7 +102,7 @@ export function resolveMenuSectionForPath(pathname: string): MenuSection {
   if (pathname.startsWith('/people')) return 'people'
   if (pathname.startsWith('/budget')) return 'budget'
   if (pathname.startsWith('/schedule')) return 'schedule'
-  if (pathname.startsWith('/readiness')) return 'tasks'
+  if (pathname.startsWith('/tasks')) return 'tasks'
   if (pathname.startsWith('/locations')) return 'locations'
   if (pathname.startsWith('/documents')) return 'documents'
   if (pathname.startsWith('/deliverables')) return 'deliverables'

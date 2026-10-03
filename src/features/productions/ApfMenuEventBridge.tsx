@@ -159,7 +159,7 @@ export function ApfMenuEventBridge() {
         await bindNavigateCommand('albatross-menu-view-go-locations', '/locations')
         await bindNavigateCommand('albatross-menu-view-go-documents', '/documents')
         await bindNavigateCommand('albatross-menu-view-go-deliverables', '/deliverables')
-        await bindNavigateCommand('albatross-menu-view-go-tasks', '/readiness')
+        await bindNavigateCommand('albatross-menu-view-go-tasks', '/tasks')
         await bindDispatchCommand('albatross-menu-view-toggle-sidebar', 'albatross-menu-view-toggle-sidebar')
 
         await bindDispatchCommand(
@@ -205,7 +205,7 @@ export function ApfMenuEventBridge() {
         await bindDispatchCommand(
           'albatross-menu-tasks-new-task',
           'albatross-menu-tasks-new-task',
-          '/readiness',
+          '/tasks',
         )
 
         await bindDispatchCommand(

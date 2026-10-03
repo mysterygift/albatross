@@ -116,7 +116,7 @@ export const TUTORIAL_SECTIONS: TutorialSectionConfig[] = [
     id: 'tasks',
     title: 'Tasks',
     description: 'Organise production tasks with sections, subtasks, and filters.',
-    route: '/readiness',
+    route: '/tasks',
     page: 2,
     icon: CheckSquare,
   },

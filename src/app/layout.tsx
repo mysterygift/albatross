@@ -5,6 +5,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { SidebarInset, SidebarProvider, useSidebar } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
 import { TopBar } from '@/components/top-bar'
+import { SectionTabs } from '@/components/section-tabs'
 import { DevPerfHud } from '@/components/dev/DevPerfHud'
 import { getSetting } from '@/lib/db/repositories/settings'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
@@ -339,6 +340,7 @@ function AppLayoutShell() {
           onOpenSearch={openSearch}
         />
         <ServerCollabBanner />
+        <SectionTabs />
         <main className="flex-1 overflow-auto p-4">
           <Outlet />
         </main>

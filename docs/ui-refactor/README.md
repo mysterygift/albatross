@@ -10,7 +10,7 @@ Worktree: `/Users/arandavies/Development/albatross-ui-experimental` (branch `ui-
 | 02 | Production switcher | [02-production-switcher.md](02-production-switcher.md) | done |
 | 03 | Feedback and confirm | [03-feedback-confirm.md](03-feedback-confirm.md) | done |
 | 04 | Page shell and tokens | [04-page-shell-and-tokens.md](04-page-shell-and-tokens.md) | done |
-| 05 | Navigation | [05-navigation.md](05-navigation.md) | pending |
+| 05 | Navigation | [05-navigation.md](05-navigation.md) | done |
 | 06 | Search and shortcuts | [06-search-and-shortcuts.md](06-search-and-shortcuts.md) | pending |
 | 07 | Onboarding | [07-onboarding.md](07-onboarding.md) | pending |
 | 08 | Settings and URL state | [08-settings-and-url-state.md](08-settings-and-url-state.md) | pending |
