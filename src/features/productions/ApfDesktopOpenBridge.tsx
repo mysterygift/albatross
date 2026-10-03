@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listen } from '@tauri-apps/api/event'
+import { toast } from '@/components/ui/sonner'
 import { invoke } from '@tauri-apps/api/core'
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -18,7 +19,6 @@ export function ApfDesktopOpenBridge() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { setCurrentProductionId, refetchProductions } = useCurrentProduction()
-  const [banner, setBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [phase, setPhase] = useState<'idle' | 'importing'>('idle')
   const lastHandledRef = useRef<{ path: string; t: number } | null>(null)
   const inFlightRef = useRef(false)
@@ -47,7 +47,6 @@ export function ApfDesktopOpenBridge() {
       if (inFlightRef.current) return
       inFlightRef.current = true
       setPhase('importing')
-      setBanner(null)
       navigate('/productions')
 
       try {
@@ -59,16 +58,16 @@ export function ApfDesktopOpenBridge() {
         })
         if (cancelled) return
         if (outcome.kind === 'error') {
-          setBanner({ type: 'error', message: outcome.message })
+          toast.error(outcome.message, { duration: 8000 })
         } else {
           if (outcome.revealArchivedInList) {
             window.dispatchEvent(new Event('albatross-reveal-archived-productions'))
           }
-          setBanner({ type: 'success', message: outcome.message })
+          toast.success(outcome.message, { duration: 9000 })
         }
       } catch (e) {
         if (!cancelled) {
-          setBanner({ type: 'error', message: userMessageForImportFailure(e) })
+          toast.error(userMessageForImportFailure(e), { duration: 8000 })
         }
       } finally {
         inFlightRef.current = false
@@ -103,31 +102,14 @@ export function ApfDesktopOpenBridge() {
     }
   }, [navigate, queryClient, refetchProductions, setCurrentProductionId])
 
-  useEffect(() => {
-    if (!banner) return
-    const ms = banner.type === 'error' ? 8000 : 9000
-    const t = setTimeout(() => setBanner(null), ms)
-    return () => clearTimeout(t)
-  }, [banner])
-
-  if (!banner && phase === 'idle') return null
+  if (phase !== 'importing') return null
 
   return (
     <div
       role="status"
-      className={
-        phase === 'importing'
-          ? 'fixed top-4 left-1/2 z-[100] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-3 text-sm text-foreground shadow-lg'
-          : banner?.type === 'success'
-            ? 'fixed top-4 left-1/2 z-[100] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-mint-500/30 bg-mint-500/10 px-4 py-3 text-sm text-mint-700 shadow-lg dark:text-mint-400'
-            : 'fixed top-4 left-1/2 z-[100] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 shadow-lg dark:text-red-400'
-      }
+      className="fixed top-4 left-1/2 z-[100] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-3 text-sm text-foreground shadow-lg"
     >
-      {phase === 'importing' ? (
-        <span>Importing project file…</span>
-      ) : banner ? (
-        banner.message
-      ) : null}
+      <span>Importing project file…</span>
     </div>
   )
 }

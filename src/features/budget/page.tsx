@@ -106,6 +106,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { toast } from '@/components/ui/sonner'
 import { Plus, Download, ChevronRight, ChevronDown, Settings2, Pencil, Trash2, SlidersHorizontal, Eye, Receipt } from 'lucide-react'
 import { saveFileWithDialog } from '@/lib/files'
 import { persistProductionDocument, documentsQueryKey } from '@/lib/documents/persistDocument'
@@ -265,7 +267,6 @@ export function BudgetPage() {
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
   const [uncodedExpanded, setUncodedExpanded] = useState(false)
   const [addItemForAccountId, setAddItemForAccountId] = useState<string | null>(null)
-  const [recodeToast, setRecodeToast] = useState<string | null>(null)
   const [manageDerivedOpen, setManageDerivedOpen] = useState(false)
   const [examinedExpenseId, setExaminedExpenseId] = useState<string | null>(null)
   const [examinedAccountId, setExaminedAccountId] = useState<string | null>(null)
@@ -976,8 +977,7 @@ export function BudgetPage() {
       queryClient.invalidateQueries({ queryKey: ['expenses', currentProductionId!] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', currentProductionId!, revisionId] })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
-      setRecodeToast('Expense recoded.')
-      setTimeout(() => setRecodeToast(null), 3000)
+      toast.success('Expense recoded.')
     },
   })
 
@@ -2118,12 +2118,6 @@ export function BudgetPage() {
               format={format}
               productionCurrency={productionCurrency}
             />
-          )}
-
-          {recodeToast && (
-            <p className="text-muted-foreground rounded-md border border-border bg-muted/50 px-3 py-2 text-sm">
-              {recodeToast}
-            </p>
           )}
 
           <div className="rounded-md border">
@@ -3531,6 +3525,7 @@ function ProductionTotalsModal({
   updatePending: boolean
   deletePending: boolean
 }) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const showForm = createOpen || editTotal != null
   const [formName, setFormName] = useState('')
   const [formAccountIds, setFormAccountIds] = useState<string[]>([])
@@ -3574,6 +3569,7 @@ function ProductionTotalsModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
+      {confirmDialog}
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Subtotals</DialogTitle>
@@ -3615,8 +3611,16 @@ function ProductionTotalsModal({
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-destructive"
-                          onClick={() => {
-                            if (window.confirm(`Delete "${t.name}"?`)) onDelete(t.id)
+                          onClick={async () => {
+                            if (
+                              await confirm({
+                                title: `Delete "${t.name}"?`,
+                                confirmLabel: 'Delete',
+                                destructive: true,
+                              })
+                            ) {
+                              onDelete(t.id)
+                            }
                           }}
                           disabled={deletePending}
                           aria-label="Delete"

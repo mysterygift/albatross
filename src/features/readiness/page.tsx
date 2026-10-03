@@ -80,6 +80,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Plus, Trash2, Pencil, ListTree, Search, X, ChevronDown, FolderInput, LayoutList, FileStack, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -875,6 +876,7 @@ function ManageSectionsSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [newSectionName, setNewSectionName] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
@@ -908,10 +910,16 @@ function ManageSectionsSheet({
     setEditingName('')
   }
 
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = async (id: string, name: string) => {
     const count = taskCountBySection.get(id) ?? 0
-    if (count > 0 && !window.confirm(`Delete "${name}"? ${count} task${count !== 1 ? 's' : ''} will be moved to Unsectioned.`)) return
-    if (count === 0 && !window.confirm(`Delete "${name}"?`)) return
+    const ok = await confirm({
+      title: `Delete "${name}"?`,
+      description:
+        count > 0 ? `${count} task${count !== 1 ? 's' : ''} will be moved to Unsectioned.` : undefined,
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
     onDeleteSection(id)
   }
 
@@ -997,6 +1005,7 @@ function ManageSectionsSheet({
           )}
         </div>
       </SheetContent>
+      {confirmDialog}
     </Sheet>
   )
 }

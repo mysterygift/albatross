@@ -42,6 +42,7 @@ import {
   type ColumnDef,
 } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/components/ui/sonner'
 import {
   Table,
   TableBody,
@@ -466,7 +467,6 @@ export function ProductionsPage() {
   const [duplicateName, setDuplicateName] = useState('')
   const [duplicateSuccessResult, setDuplicateSuccessResult] = useState<{ name: string; slug: string } | null>(null)
   const [duplicateError, setDuplicateError] = useState<string | null>(null)
-  const [actionToast, setActionToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [verifyDeleteResult, setVerifyDeleteResult] = useState<string | null>(null)
   const [verifyDeletePending, setVerifyDeletePending] = useState(false)
   const [demoOverrideTarget, setDemoOverrideTarget] = useState<{
@@ -487,8 +487,7 @@ export function ProductionsPage() {
     useCurrentProduction()
   const { apfBusy, handleImportApf, handleExportApf } = useApfActions({
     onMessage: (msg) => {
-      setActionToast({ type: msg.type, message: msg.message })
-      setTimeout(() => setActionToast(null), msg.timeoutMs)
+      toast[msg.type](msg.message, { duration: msg.timeoutMs })
     },
   })
   const featureServer = useLegacyServerPublishEnabled()
@@ -598,19 +597,11 @@ export function ProductionsPage() {
   useEffect(() => {
     const onPublishMenu = () => {
       if (featureServer.data !== true) {
-        setActionToast({
-          type: 'error',
-          message: 'Legacy server publishing is not enabled.',
-        })
-        setTimeout(() => setActionToast(null), 5000)
+        toast.error('Legacy server publishing is not enabled.')
         return
       }
       if (!currentProduction) {
-        setActionToast({
-          type: 'error',
-          message: 'Choose a current production from the app header before publishing.',
-        })
-        setTimeout(() => setActionToast(null), 5000)
+        toast.error('Choose a current production from the app header before publishing.')
         return
       }
       void publishActions.beginPublish(currentProduction.id, currentProduction.name)
@@ -682,12 +673,10 @@ export function ProductionsPage() {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
       setProductionToHardDelete(null)
-      setActionToast({ type: 'success', message: 'Production permanently deleted.' })
-      setTimeout(() => setActionToast(null), 4000)
+      toast.success('Production permanently deleted.')
     },
     onError: (err) => {
-      setActionToast({ type: 'error', message: err instanceof Error ? err.message : 'Delete failed' })
-      setTimeout(() => setActionToast(null), 5000)
+      toast.error(err instanceof Error ? err.message : 'Delete failed')
     },
   })
 
@@ -704,12 +693,10 @@ export function ProductionsPage() {
       if (currentProductionId === id) setCurrentProductionId(null)
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
-      setActionToast({ type: 'success', message: 'Project archived.' })
-      setTimeout(() => setActionToast(null), 4000)
+      toast.success('Project archived.')
     },
     onError: (err) => {
-      setActionToast({ type: 'error', message: err instanceof Error ? err.message : 'Archive failed' })
-      setTimeout(() => setActionToast(null), 5000)
+      toast.error(err instanceof Error ? err.message : 'Archive failed')
     },
   })
 
@@ -725,12 +712,10 @@ export function ProductionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
-      setActionToast({ type: 'success', message: 'Project restored.' })
-      setTimeout(() => setActionToast(null), 4000)
+      toast.success('Project restored.')
     },
     onError: (err) => {
-      setActionToast({ type: 'error', message: err instanceof Error ? err.message : 'Unarchive failed' })
-      setTimeout(() => setActionToast(null), 5000)
+      toast.error(err instanceof Error ? err.message : 'Unarchive failed')
     },
   })
 
@@ -1121,17 +1106,6 @@ export function ProductionsPage() {
           {duplicateError}
         </p>
       )}
-      {actionToast && (
-        <p
-          className={
-            actionToast.type === 'success'
-              ? 'rounded-lg border border-mint-500/30 bg-mint-500/10 px-4 py-3 text-mint-700 dark:text-mint-400 text-sm'
-              : 'rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-400 text-sm'
-          }
-        >
-          {actionToast.message}
-        </p>
-      )}
 
       <div className="rounded-md border">
         <Table>
@@ -1322,14 +1296,9 @@ export function ProductionsPage() {
                   setUnlinkTarget(null)
                   await queryClient.invalidateQueries({ queryKey: ['linked-projects-map'] })
                   await queryClient.invalidateQueries({ queryKey: ['productions'] })
-                  setActionToast({ type: 'success', message: 'Unlinked from server.' })
-                  setTimeout(() => setActionToast(null), 4000)
+                  toast.success('Unlinked from server.')
                 } catch (e) {
-                  setActionToast({
-                    type: 'error',
-                    message: e instanceof Error ? e.message : 'Unlink failed',
-                  })
-                  setTimeout(() => setActionToast(null), 5000)
+                  toast.error(e instanceof Error ? e.message : 'Unlink failed')
                 } finally {
                   setUnlinkBusy(false)
                 }

@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 
 type ProjectAccessLevel = 'viewer' | 'editor' | 'administrator'
 
@@ -29,6 +30,7 @@ function formatDate(value: string): string {
 }
 
 export function ProjectAccessRoute() {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const auth = useAuthSession()
   const { currentProductionId } = useCurrentProduction()
   const queryClient = useQueryClient()
@@ -167,6 +169,7 @@ export function ProjectAccessRoute() {
 
   return (
     <div className="space-y-5">
+      {confirmDialog}
       <div>
         <h1 className="text-2xl font-semibold">Project Access</h1>
         <p className="text-sm text-muted-foreground">
@@ -309,8 +312,15 @@ export function ProjectAccessRoute() {
                             variant="destructive"
                             size="sm"
                             disabled={revokeMutation.isPending}
-                            onClick={() => {
-                              if (!window.confirm(`Remove project access for "${member.username}"?`)) return
+                            onClick={async () => {
+                              if (
+                                !(await confirm({
+                                  title: `Remove project access for "${member.username}"?`,
+                                  confirmLabel: 'Revoke',
+                                  destructive: true,
+                                }))
+                              )
+                                return
                               revokeMutation.mutate(member.user_id)
                             }}
                           >

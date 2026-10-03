@@ -129,7 +129,6 @@ describe('ProjectAccessRoute', () => {
     service.addProjectMemberForActor.mockResolvedValue(undefined)
     service.updateProjectMemberAccessForActor.mockResolvedValue(undefined)
     service.removeProjectMemberForActor.mockResolvedValue(undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
   it('authorized admin sees project access UI; unauthorized users are redirected', async () => {
@@ -173,6 +172,7 @@ describe('ProjectAccessRoute', () => {
     await waitFor(() => expect(service.updateProjectMemberAccessForActor).toHaveBeenCalled())
 
     await user.click(within(aliceRow!).getByRole('button', { name: 'Revoke' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Revoke' }))
     await waitFor(() => expect(service.removeProjectMemberForActor).toHaveBeenCalled())
   })
 

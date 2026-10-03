@@ -67,6 +67,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown, Users } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { toast } from '@/components/ui/sonner'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import {
   ensureDemoData,
@@ -138,6 +140,7 @@ function ApiCallTrackerPanel({ trackingOn }: { trackingOn: boolean }) {
 
 export function SettingsPage() {
   const navigate = useNavigate()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const { currentProductionId, currentProduction, setCurrentProductionId, refetchProductions } =
     useCurrentProduction()
   const { data: workingBudgetRevision } = useWorkingBudgetRevision(currentProductionId)
@@ -158,12 +161,9 @@ export function SettingsPage() {
   const [editAccount, setEditAccount] = useState<BudgetAccount | null>(null)
   const [accountToDelete, setAccountToDelete] = useState<BudgetAccount | null>(null)
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
-  const [colorToast, setColorToast] = useState<string | null>(null)
   const [settingsTab, setSettingsTab] = useState<'budget' | 'people' | 'apis' | 'developer_tools'>('budget')
   const queryClient = useQueryClient()
-  const [tutorialToast, setTutorialToast] = useState<string | null>(null)
   const [orsApiKeyDraft, setOrsApiKeyDraft] = useState('')
-  const [orsApiKeyToast, setOrsApiKeyToast] = useState<string | null>(null)
   const [episodicEnableOpen, setEpisodicEnableOpen] = useState(false)
   const [episodicInitialEpisode, setEpisodicInitialEpisode] = useState('')
   const [episodicEnableError, setEpisodicEnableError] = useState<string | null>(null)
@@ -265,8 +265,7 @@ export function SettingsPage() {
     onSuccess: (savedValue) => {
       queryClient.setQueryData(['settings', OPENROUTESERVICE_API_KEY_SETTING], savedValue)
       setOrsApiKeyDraft(savedValue)
-      setOrsApiKeyToast(savedValue ? 'OpenRouteService API key saved.' : 'OpenRouteService API key cleared.')
-      setTimeout(() => setOrsApiKeyToast(null), 3000)
+      toast.success(savedValue ? 'OpenRouteService API key saved.' : 'OpenRouteService API key cleared.')
     },
   })
   const { data: costReportGroups = [] } = useQuery({
@@ -384,21 +383,9 @@ export function SettingsPage() {
       updateAccountColor(accountId, colorHex),
     onSuccess: () => {
       invalidateAccountKeys()
-      setColorToast('Account colour updated.')
+      toast.success('Account colour updated.')
     },
   })
-
-  useEffect(() => {
-    if (!colorToast) return
-    const t = setTimeout(() => setColorToast(null), 3000)
-    return () => clearTimeout(t)
-  }, [colorToast])
-
-  useEffect(() => {
-    if (!tutorialToast) return
-    const t = setTimeout(() => setTutorialToast(null), 3200)
-    return () => clearTimeout(t)
-  }, [tutorialToast])
 
   const accountTree = buildAccountTree(accounts)
 
@@ -406,6 +393,7 @@ export function SettingsPage() {
     <TooltipProvider>
     <div className="space-y-5">
       <h1 className="text-2xl font-semibold">Settings</h1>
+      {confirmDialog}
 
       <AppearanceSettingsSection />
 
@@ -597,8 +585,14 @@ export function SettingsPage() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-destructive"
-                            onClick={() => {
-                              if (window.confirm(`Delete group "${g.name}"?`)) {
+                            onClick={async () => {
+                              if (
+                                await confirm({
+                                  title: `Delete group "${g.name}"?`,
+                                  confirmLabel: 'Delete',
+                                  destructive: true,
+                                })
+                              ) {
                                 deleteGroupMutation.mutate(g.id)
                               }
                             }}
@@ -647,11 +641,6 @@ export function SettingsPage() {
               deletePending={hardDeleteAccountMutation.isPending}
               colorPending={updateAccountColorMutation.isPending}
             />
-            {colorToast && (
-              <p className="text-sm text-muted-foreground rounded-md border border-border bg-card px-3 py-2">
-                {colorToast}
-              </p>
-            )}
           </CardContent>
         </Card>
       )}
@@ -736,11 +725,6 @@ export function SettingsPage() {
               {setOrsApiKeyMutation.error instanceof Error && (
                 <p className="text-sm text-destructive">{setOrsApiKeyMutation.error.message}</p>
               )}
-              {orsApiKeyToast && (
-                <p className="text-sm text-muted-foreground rounded-md border border-border bg-card px-3 py-2">
-                  {orsApiKeyToast}
-                </p>
-              )}
             </CardContent>
           </Card>
 
@@ -801,18 +785,13 @@ export function SettingsPage() {
             variant="outline"
             size="sm"
             onClick={async () => {
-              if (!window.confirm('Reset tutorial progress?')) return
+              if (!(await confirm({ title: 'Reset tutorial progress?', confirmLabel: 'Reset', destructive: true }))) return
               navigate('/settings', { state: { openTutorialHome: true, resetTutorial: true } })
-              setTutorialToast('Tutorial progress reset.')
+              toast.success('Tutorial progress reset.')
             }}
           >
             Reset tutorial progress
           </Button>
-          {tutorialToast && (
-            <p className="w-full text-sm text-muted-foreground rounded-md border border-border bg-card px-3 py-2">
-              {tutorialToast}
-            </p>
-          )}
         </CardContent>
       </Card>
       <ClientsSettingsSection />

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { toast } from '@/components/ui/sonner'
+import { useMemo, useState, type ReactNode } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -130,7 +131,6 @@ export function BookingsCalendarView({
   onEditBooking: (booking: Booking) => void
 }) {
   const [month, setMonth] = useState(() => new Date())
-  const [toast, setToast] = useState<string | null>(null)
   const [activeLabel, setActiveLabel] = useState<{ label: string; color: string; text: string } | null>(null)
   const [pending, setPending] = useState(false)
 
@@ -207,13 +207,7 @@ export function BookingsCalendarView({
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(null), 4000)
-    return () => clearTimeout(t)
-  }, [toast])
-
-  const notify = (message: string) => setToast(message)
+  const notify = (message: string) => toast.error(message)
 
   const handleDragStart = (ev: DragStartEvent) => {
     const data = ev.active.data.current as { kind?: SpanDragKind; spanKey?: string } | undefined
@@ -565,14 +559,6 @@ export function BookingsCalendarView({
         </Card>
       )}
 
-      {toast && (
-        <div
-          role="alert"
-          className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground shadow-lg"
-        >
-          {toast}
-        </div>
-      )}
     </>
   )
 }

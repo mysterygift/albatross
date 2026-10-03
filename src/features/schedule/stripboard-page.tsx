@@ -47,6 +47,7 @@ import { StripboardDayColumn } from './stripboard-day-column'
 import { StripboardDayView, CollapsedPanelRail } from './stripboard-day-view'
 import type { ColumnFilter } from '@/lib/schedule/stripboardRows'
 import { StripItem } from './strip-item'
+import { toast } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Plus, Layers2, LayoutGrid, CalendarDays, PanelLeftClose, PanelRightClose } from 'lucide-react'
@@ -331,17 +332,13 @@ export function StripboardPage() {
   const [selectedShotIds, setSelectedShotIds] = useState<Set<string>>(new Set())
   const [activeData, setActiveData] = useState<{ type: 'strip'; strip: StripboardStrip } | { type: 'unscheduled-shot'; item: ShotWithScene } | null>(null)
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({})
-  const [unscheduleToast, setUnscheduleToast] = useState(false)
-  const [boneyardToast, setBoneyardToast] = useState(false)
   const [newDayOpen, setNewDayOpen] = useState(false)
   const [newDayDate, setNewDayDate] = useState('')
   const [newDayError, setNewDayError] = useState<string | null>(null)
   const [newlyCreatedShootDayId, setNewlyCreatedShootDayId] = useState<string | null>(null)
-  const [newDaySuccessToast, setNewDaySuccessToast] = useState(false)
   const [addSecondUnitOpen, setAddSecondUnitOpen] = useState(false)
   const [selectedSecondUnitDayIds, setSelectedSecondUnitDayIds] = useState<Set<string>>(new Set())
   const [addSecondUnitError, setAddSecondUnitError] = useState<string | null>(null)
-  const [addSecondUnitSuccessToast, setAddSecondUnitSuccessToast] = useState<string | null>(null)
   const [deleteShootDayTarget, setDeleteShootDayTarget] = useState<{
     id: string
     shoot_date: string
@@ -357,7 +354,6 @@ export function StripboardPage() {
   } | null>(null)
   const [removeSecondUnitDialogOpen, setRemoveSecondUnitDialogOpen] = useState(false)
   const [removeSecondUnitError, setRemoveSecondUnitError] = useState<string | null>(null)
-  const [removeSecondUnitSuccessToast, setRemoveSecondUnitSuccessToast] = useState(false)
   const newDayColumnRef = useRef<HTMLDivElement | null>(null)
   const columnsScrollRef = useRef<HTMLDivElement | null>(null)
   const [showColumnsLeftFeather, setShowColumnsLeftFeather] = useState(false)
@@ -512,7 +508,7 @@ export function StripboardPage() {
       setNewDayError(null)
       setNewlyCreatedShootDayId(result.shootDay.id)
       setActiveDayId(result.shootDay.id)
-      setNewDaySuccessToast(true)
+      toast.success('Shoot day created.')
       void invalidateStripboardCaches(queryClient, currentProductionId)
     },
     onError: (error) => {
@@ -558,7 +554,7 @@ export function StripboardPage() {
       setSelectedSecondUnitDayIds(new Set())
       setAddSecondUnitError(null)
       const linkedCount = result.linkedShootDayUnitIds.length
-      setAddSecondUnitSuccessToast(
+      toast.success(
         linkedCount === 1
           ? 'Second Unit added to 1 shoot day.'
           : `Second Unit added to ${linkedCount} shoot day(s).`
@@ -702,36 +698,6 @@ export function StripboardPage() {
   }
 
   useEffect(() => {
-    if (!unscheduleToast) return
-    const t = setTimeout(() => setUnscheduleToast(false), 3000)
-    return () => clearTimeout(t)
-  }, [unscheduleToast])
-
-  useEffect(() => {
-    if (!boneyardToast) return
-    const t = setTimeout(() => setBoneyardToast(false), 3000)
-    return () => clearTimeout(t)
-  }, [boneyardToast])
-
-  useEffect(() => {
-    if (!newDaySuccessToast) return
-    const t = setTimeout(() => setNewDaySuccessToast(false), 3000)
-    return () => clearTimeout(t)
-  }, [newDaySuccessToast])
-
-  useEffect(() => {
-    if (!addSecondUnitSuccessToast) return
-    const t = setTimeout(() => setAddSecondUnitSuccessToast(null), 3000)
-    return () => clearTimeout(t)
-  }, [addSecondUnitSuccessToast])
-
-  useEffect(() => {
-    if (!removeSecondUnitSuccessToast) return
-    const t = setTimeout(() => setRemoveSecondUnitSuccessToast(false), 3000)
-    return () => clearTimeout(t)
-  }, [removeSecondUnitSuccessToast])
-
-  useEffect(() => {
     const onMenuNewShootDay = () => {
       setNewDayError(null)
       setNewDayOpen(true)
@@ -757,6 +723,25 @@ export function StripboardPage() {
     }
   }, [newlyCreatedShootDayId, shootDays])
 
+  /** Sonner action that moves a strip back to its prior shoot day slot (single repository call). */
+  const undoMoveAction = (prior: StripboardStrip) =>
+    prior.shoot_day_id && prior.shoot_day_unit_id
+      ? {
+          label: 'Undo',
+          onClick: () => {
+            moveStripMutation.mutate(
+              {
+                stripId: prior.id,
+                toShootDayId: prior.shoot_day_id!,
+                toShootDayUnitId: prior.shoot_day_unit_id!,
+                toSortIndex: prior.sort_index,
+              },
+              { onError: () => toast.error('Could not undo the move.') }
+            )
+          },
+        }
+      : undefined
+
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveData(null)
     const { active, over } = event
@@ -767,8 +752,9 @@ export function StripboardPage() {
 
     if (overStr === 'unscheduled-panel') {
       if (data?.type === 'strip') {
-        await moveToUnscheduledMutation.mutateAsync(data.strip.id)
-        setUnscheduleToast(true)
+        const prior = data.strip
+        await moveToUnscheduledMutation.mutateAsync(prior.id)
+        toast.success('Shot moved to Unscheduled.', { action: undoMoveAction(prior) })
         return
       }
       if (data?.type === 'boneyard-strip') {
@@ -778,8 +764,9 @@ export function StripboardPage() {
     }
 
     if (overStr === 'boneyard-panel' && (data?.type === 'strip' || data?.type === 'boneyard-strip')) {
-      await moveToBoneyardMutation.mutateAsync(data.strip.id)
-      setBoneyardToast(true)
+      const prior = data.strip
+      await moveToBoneyardMutation.mutateAsync(prior.id)
+      toast.success('Moved to Boneyard.', { action: undoMoveAction(prior) })
       return
     }
 
@@ -887,31 +874,6 @@ export function StripboardPage() {
         <RequireProduction title="Schedule — Stripboard">{null}</RequireProduction>
       ) : (
     <div className="flex h-full flex-col gap-4">
-      {unscheduleToast && (
-        <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">
-          Shot moved to Unscheduled.
-        </div>
-      )}
-      {boneyardToast && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-700 dark:text-amber-400">
-          Moved to Boneyard.
-        </div>
-      )}
-      {newDaySuccessToast && (
-        <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">
-          Shoot day created.
-        </div>
-      )}
-      {addSecondUnitSuccessToast && (
-        <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">
-          {addSecondUnitSuccessToast}
-        </div>
-      )}
-      {removeSecondUnitSuccessToast && (
-        <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm text-primary">
-          Second Unit removed. Shots moved to Unscheduled.
-        </div>
-      )}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold">Schedule — Stripboard</h1>
         <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -1086,8 +1048,9 @@ export function StripboardPage() {
                       isLocked={false}
                       pageEighthsTarget={PAGE_EIGHTHS_TARGET}
                       onSendToBoneyard={(strip) => {
-                        moveToBoneyardMutation.mutate(strip.id)
-                        setBoneyardToast(true)
+                        moveToBoneyardMutation.mutate(strip.id, {
+                          onSuccess: () => toast.success('Moved to Boneyard.', { action: undoMoveAction(strip) }),
+                        })
                       }}
                       onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
                       onToggleLock={(shootDayUnitId, isLocked) =>
@@ -1190,8 +1153,9 @@ export function StripboardPage() {
               onUpdateCallWrapTime={(stripId, time) => updateCallWrapTimeMutation.mutate({ stripId, time })}
               onUpdateMoveStrip={(stripId, data) => updateStripMutation.mutate({ stripId, data })}
               onSendToBoneyard={(strip) => {
-                moveToBoneyardMutation.mutate(strip.id)
-                setBoneyardToast(true)
+                moveToBoneyardMutation.mutate(strip.id, {
+                  onSuccess: () => toast.success('Moved to Boneyard.', { action: undoMoveAction(strip) }),
+                })
               }}
               onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
             />
@@ -1473,7 +1437,7 @@ export function StripboardPage() {
                   onSuccess: () => {
                     setRemoveSecondUnitDialogOpen(false)
                     setRemoveSecondUnitTarget(null)
-                    setRemoveSecondUnitSuccessToast(true)
+                    toast.success('Second Unit removed. Shots moved to Unscheduled.')
                   },
                   onError: (error) => {
                     const message =

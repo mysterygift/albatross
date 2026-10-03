@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from '@/components/ui/sonner'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { SidebarInset, SidebarProvider, useSidebar } from '@/components/ui/sidebar'
@@ -197,7 +198,6 @@ function AppLayoutShell() {
   const [isPreparingTutorialHub, setIsPreparingTutorialHub] = useState(false)
   const [tutorialStartupError, setTutorialStartupError] = useState<string | null>(null)
   const [tutorialHubError, setTutorialHubError] = useState<string | null>(null)
-  const [completionToast, setCompletionToast] = useState<string | null>(null)
   const {
     isLoading: tutorialLoading,
     showFirstLaunchTutorial,
@@ -228,15 +228,9 @@ function AppLayoutShell() {
     const prev = prevAllCompleteRef.current
     prevAllCompleteRef.current = allComplete
     if (!prev && allComplete) {
-      setCompletionToast('All core tutorial sections completed.')
+      toast.success('All core tutorial sections completed.')
     }
   }, [allComplete])
-
-  useEffect(() => {
-    if (!completionToast) return
-    const t = setTimeout(() => setCompletionToast(null), 3200)
-    return () => clearTimeout(t)
-  }, [completionToast])
 
   useEffect(() => {
     if (!import.meta.env.DEV) return
@@ -394,14 +388,6 @@ function AppLayoutShell() {
           }
         }}
       />
-      {completionToast && (
-        <div
-          role="status"
-          className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground shadow-lg"
-        >
-          {completionToast}
-        </div>
-      )}
     </SidebarProvider>
   )
 }

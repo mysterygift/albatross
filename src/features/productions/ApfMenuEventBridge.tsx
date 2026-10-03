@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
+import { toast } from '@/components/ui/sonner'
 import { invoke } from '@tauri-apps/api/core'
 import { useQueryClient } from '@tanstack/react-query'
 import { useQuery } from '@tanstack/react-query'
@@ -22,7 +23,6 @@ export function ApfMenuEventBridge() {
   const location = useLocation()
   const queryClient = useQueryClient()
   const { currentProductionId, setSelectedBudgetRevisionId } = useCurrentProduction()
-  const [banner, setBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [duplicateBusy, setDuplicateBusy] = useState(false)
   const { data: revisions = [] } = useQuery({
     queryKey: ['budget-revisions', currentProductionId],
@@ -38,8 +38,7 @@ export function ApfMenuEventBridge() {
 
   const { handleImportApf, handleExportApf } = useApfActions({
     onMessage: (msg: ApfActionMessage) => {
-      setBanner({ type: msg.type, message: msg.message })
-      window.setTimeout(() => setBanner(null), msg.timeoutMs)
+      toast[msg.type](msg.message, { duration: msg.timeoutMs })
     },
   })
 
@@ -88,8 +87,7 @@ export function ApfMenuEventBridge() {
           invalidateQueries: (queryKey) => queryClient.invalidateQueries({ queryKey }),
         })
         if (result) {
-          setBanner({ type: result.type, message: result.message })
-          window.setTimeout(() => setBanner(null), result.timeoutMs)
+          toast[result.type](result.message, { duration: result.timeoutMs })
         }
       } finally {
         setDuplicateBusy(false)
@@ -270,18 +268,5 @@ export function ApfMenuEventBridge() {
     setSelectedBudgetRevisionId,
   ])
 
-  if (!banner) return null
-
-  return (
-    <div
-      role="status"
-      className={
-        banner.type === 'success'
-          ? 'fixed top-4 left-1/2 z-[100] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-mint-500/30 bg-mint-500/10 px-4 py-3 text-sm text-mint-700 shadow-lg dark:text-mint-400'
-          : 'fixed top-4 left-1/2 z-[100] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 shadow-lg dark:text-red-400'
-      }
-    >
-      {banner.message}
-    </div>
-  )
+  return null
 }

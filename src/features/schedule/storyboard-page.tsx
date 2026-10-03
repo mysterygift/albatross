@@ -46,6 +46,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -99,6 +100,7 @@ async function cleanupImportCandidates(candidates: AthenaPanelCandidate[]): Prom
 }
 
 export function StoryboardPage() {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
   const queryClient = useQueryClient()
@@ -574,6 +576,7 @@ export function StoryboardPage() {
 
   return (
     <>
+      {confirmDialog}
       {!currentProductionId ? (
         <RequireProduction title="Schedule — Storyboard">{null}</RequireProduction>
       ) : scenesQuery.isError || shotsQuery.isError || imagesQuery.isError ? (
@@ -799,10 +802,12 @@ export function StoryboardPage() {
                                           size="sm"
                                           variant="ghost"
                                           className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                                          onClick={() => {
-                                            const accepted = window.confirm(
-                                              `Remove "${image.original_filename}" from this shot?`
-                                            )
+                                          onClick={async () => {
+                                            const accepted = await confirm({
+                                              title: `Remove "${image.original_filename}" from this shot?`,
+                                              confirmLabel: 'Remove',
+                                              destructive: true,
+                                            })
                                             if (!accepted) return
                                             setActionError(null)
                                             removeImageMutation.mutate(image)
@@ -894,10 +899,12 @@ export function StoryboardPage() {
                                                 size="sm"
                                                 variant="ghost"
                                                 className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                                                onClick={() => {
-                                                  const accepted = window.confirm(
-                                                    `Remove "${image.original_filename}" from this shot?`
-                                                  )
+                                                onClick={async () => {
+                                                  const accepted = await confirm({
+                                                    title: `Remove "${image.original_filename}" from this shot?`,
+                                                    confirmLabel: 'Remove',
+                                                    destructive: true,
+                                                  })
                                                   if (!accepted) return
                                                   setActionError(null)
                                                   removeImageMutation.mutate(image)

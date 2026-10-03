@@ -5,6 +5,7 @@
  * If the target date already has a shoot, you can swap the two days. Day Summary Drawer on click.
  */
 import { RequireProduction } from '@/components/require-production'
+import { toast } from '@/components/ui/sonner'
 import { useState, useMemo, useEffect, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -1056,7 +1057,6 @@ export function ScheduleCalendarPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   const [activeEvent, setActiveEvent] = useState<CalendarShootDayEvent | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
   const [conflictModal, setConflictModal] = useState<{
     sourceShootDayId: string
     existingShootDayId: string
@@ -1070,12 +1070,6 @@ export function ScheduleCalendarPage() {
       setTutorialOpen(true)
     }
   }, [progress?.currentSection])
-
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(null), 4000)
-    return () => clearTimeout(t)
-  }, [toast])
 
   const invalidateScheduleQueries = () => {
     void invalidateStripboardCaches(queryClient, currentProductionId)
@@ -1112,7 +1106,7 @@ export function ScheduleCalendarPage() {
       invalidateScheduleQueries()
     },
     onError: () => {
-      setToast('Could not complete schedule migration check.')
+      toast.error('Could not complete schedule migration check.')
     },
   })
   const updateDaySummaryMutation = useMutation({
@@ -1170,9 +1164,9 @@ export function ScheduleCalendarPage() {
           existingShootDayId: result.existingShootDayId,
         })
       } else {
-        setToast('A shoot already exists on that date.')
+        toast.error('A shoot already exists on that date.')
       }
-    }).catch(() => setToast('Move failed.'))
+    }).catch(() => toast.error('Move failed.'))
   }
 
   const year = viewDate.getFullYear()
@@ -1700,15 +1694,6 @@ export function ScheduleCalendarPage() {
         </DragOverlay>
       </DndContext>
 
-      {toast && (
-        <div
-          role="alert"
-          className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground shadow-lg"
-        >
-          {toast}
-        </div>
-      )}
-
       <DaySummaryDrawer
         event={selectedEvent}
         open={drawerOpen}
@@ -1808,7 +1793,7 @@ export function ScheduleCalendarPage() {
                     invalidateScheduleQueries()
                     setConflictModal(null)
                   })
-                  .catch(() => setToast('Swap failed.'))
+                  .catch(() => toast.error('Swap failed.'))
               }}
             >
               Swap
