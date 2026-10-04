@@ -5,7 +5,7 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, State};
 use tauri_plugin_fs::FsExt;
 
 #[derive(Clone, Serialize)]
@@ -79,7 +79,10 @@ pub fn grant_read_access_for_apf(app: AppHandle, path: String) -> Result<(), Str
         .map_err(|e| e.to_string())
 }
 
+#[cfg(desktop)]
 pub fn on_second_instance(app: &AppHandle, argv: &[String]) {
+    use tauri::{Emitter, Manager};
+
     let paths = collect_apf_paths_from_argv_strings(argv);
     if paths.is_empty() {
         return;

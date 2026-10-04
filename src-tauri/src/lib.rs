@@ -626,6 +626,7 @@ pub fn run() {
         },
     ];
 
+    #[cfg_attr(mobile, allow(unused_mut))]
     let mut builder = tauri::Builder::default();
 
     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
