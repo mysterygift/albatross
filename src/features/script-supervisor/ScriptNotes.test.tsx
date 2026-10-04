@@ -47,7 +47,7 @@ describe('script notes (SS8)', () => {
         />
       </MemoryRouter>
     )
-    const chip = screen.getByRole('button', { name: 'Edit note: T3 · 217 · Ad-lib: + “Nobody ever does.”' })
+    const chip = screen.getByRole('button', { name: 'Edit note: T3 | 217 | Ad-lib: + “Nobody ever does.”' })
     await user.click(chip)
     expect(onEdit).toHaveBeenCalledWith(adLib, expect.objectContaining({ element: expect.objectContaining({ id: 'e1' }) }))
 

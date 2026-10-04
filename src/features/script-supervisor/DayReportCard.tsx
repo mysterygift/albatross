@@ -37,12 +37,7 @@ export function DayReportCard(props: DayReportCardProps) {
   return (
     <section aria-label="Daily progress report" className="rounded-xl border border-border bg-card p-4 space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="space-y-0.5">
-          <h2 className="font-medium">Daily progress report · {props.dayLabel}</h2>
-          <p className="text-xs text-muted-foreground">
-            Actual times for the report. Planned times stay on the schedule and call sheet.
-          </p>
-        </div>
+        <h2 className="font-medium">Daily progress report | {props.dayLabel}</h2>
         <span className="flex-1" />
         <Button type="button" size={touch ? 'lg' : 'default'} onClick={props.onExport} disabled={props.exporting}>
           <FileDown aria-hidden />

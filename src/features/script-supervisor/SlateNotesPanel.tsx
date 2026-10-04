@@ -33,7 +33,7 @@ function Thumb({ photo, touch, onRemove }: { photo: ContinuityMediaView; touch: 
   }, [photo.filePath, photo.mimeType])
 
   const tags = parseContinuityTags(photo.tags).map((t) => CONTINUITY_TAG_LABEL[t])
-  const caption = [photo.takeNumber != null ? `T${photo.takeNumber}` : null, ...tags].filter(Boolean).join(' · ')
+  const caption = [photo.takeNumber != null ? `T${photo.takeNumber}` : null, ...tags].filter(Boolean).join(' | ')
   return (
     <li className="relative">
       <figure className={cn('overflow-hidden rounded-lg border border-border bg-muted/30', touch ? 'w-28' : 'w-24')}>

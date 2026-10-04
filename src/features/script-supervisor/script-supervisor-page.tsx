@@ -175,7 +175,7 @@ export function ScriptSupervisorPage() {
             s.description,
           ]
             .filter(Boolean)
-            .join(' · ')
+            .join(' | ')
         )
       const data = buildDailyProgressReport({
         productionName: currentProduction?.name ?? 'Production',
@@ -551,7 +551,7 @@ export function ScriptSupervisorPage() {
                 .sort((a, b) => a.shoot_date.localeCompare(b.shoot_date))
                 .map((d) => (
                   <SelectItem key={d.id} value={d.id}>
-                    {d.day_number != null ? `Day ${d.day_number} · ` : ''}
+                    {d.day_number != null ? `Day ${d.day_number} | ` : ''}
                     {d.shoot_date}
                   </SelectItem>
                 ))}
@@ -657,7 +657,7 @@ export function ScriptSupervisorPage() {
             className={cn('shrink-0 space-y-2', touch ? 'w-[88px]' : 'w-[220px]')}
           >
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {chosenDay?.day_number != null ? `Day ${chosenDay.day_number}` : 'Today'} · scenes
+              {chosenDay?.day_number != null ? `Day ${chosenDay.day_number}` : 'Today'} | scenes
             </p>
             {dayScenes.length === 0 && (
               <p className="text-sm text-muted-foreground">Nothing on the stripboard for this day.</p>
@@ -698,7 +698,7 @@ export function ScriptSupervisorPage() {
                   {otherScenes.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.scene_number}
-                      {s.title ? ` · ${s.title}` : ''}
+                      {s.title ? ` | ${s.title}` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -742,7 +742,7 @@ export function ScriptSupervisorPage() {
             onValueChange={setMiddleView}
             options={[
               { value: 'slates', label: `Slates (${slates.length})` },
-              { value: 'script', label: sceneId ? `Script · Sc ${sceneNumberById.get(sceneId) ?? ''}` : 'Script' },
+              { value: 'script', label: sceneId ? `Script | Sc ${sceneNumberById.get(sceneId) ?? ''}` : 'Script' },
             ]}
           />
           {middleView === 'script' ? (

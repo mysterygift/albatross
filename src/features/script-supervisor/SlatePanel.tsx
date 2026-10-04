@@ -261,7 +261,7 @@ export function SlatePanel(props: SlatePanelProps) {
 
       {target?.status === 'ng' && (
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">NG reason · take {target.take_number}</p>
+          <p className="text-xs text-muted-foreground">NG reason | take {target.take_number}</p>
           <div className="flex flex-wrap gap-2">
             {(Object.keys(NG_REASON_LABEL) as TakeNgReason[]).map((r) => (
               <Button

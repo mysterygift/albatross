@@ -39,7 +39,7 @@ async function savePdf(productionId: string, fileName: string, bytes: Uint8Array
 }
 
 function dayLabel(ctx: DayExportContext): string {
-  return ctx.dayNumber != null ? `Day ${ctx.dayNumber} · ${ctx.shootDate}` : ctx.shootDate
+  return ctx.dayNumber != null ? `Day ${ctx.dayNumber} | ${ctx.shootDate}` : ctx.shootDate
 }
 
 async function dayInput(ctx: DayExportContext) {

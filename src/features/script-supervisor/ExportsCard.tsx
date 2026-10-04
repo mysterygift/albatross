@@ -53,12 +53,7 @@ export function ExportsCard(props: ExportsCardProps) {
 
   return (
     <section aria-label="Exports" className="rounded-xl border border-border bg-card p-4 space-y-4">
-      <div className="space-y-0.5">
-        <h2 className="font-medium">Exports · {props.dayLabel}</h2>
-        <p className="text-xs text-muted-foreground">
-          For the editor and production office. Each export also saves a copy to Documents → Set paperwork.
-        </p>
-      </div>
+      <h2 className="font-medium">Exports | {props.dayLabel}</h2>
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" size={size} disabled={busy} onClick={() => props.onExport('continuity')}>
           <FileDown aria-hidden />

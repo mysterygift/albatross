@@ -273,6 +273,6 @@ describe('Script Supervisor page (SS3)', () => {
 
     await user.click(within(card).getByRole('button', { name: /scene 23: 2 blocks/i }))
     expect((await screen.findByRole('tab', { name: 'Line & log' })).getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByRole('tab', { name: /script · sc 23/i }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: /script \| sc 23/i }).getAttribute('aria-selected')).toBe('true')
   })
 })

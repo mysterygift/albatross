@@ -160,7 +160,7 @@ function SegmentMenu({
       style={{ left: Math.min(menu.x, window.innerWidth - 272), top: Math.min(menu.y, window.innerHeight - 280) }}
     >
       <p className="px-3 pb-1 pt-1.5 text-xs text-muted-foreground">
-        {label} · {excerpt(menu.row)}
+        {label} | {excerpt(menu.row)}
       </p>
       {(['on', 'off', 'not_covered'] as CellState[]).map((s) => (
         <button key={s} type="button" role="menuitemradio" aria-checked={current === s} className={cn(item, current === s && 'bg-muted/40')} onClick={() => onChoose(s)}>
@@ -300,7 +300,7 @@ export function LinedScript({
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         <span>
           {layout.columns.length} {layout.columns.length === 1 ? 'tramline' : 'tramlines'}
-          {layout.columns.length > 0 && under > 0 ? ` · ${under} ${under === 1 ? 'block has' : 'blocks have'} fewer than two` : ''}
+          {layout.columns.length > 0 && under > 0 ? ` | ${under} ${under === 1 ? 'block has' : 'blocks have'} fewer than two` : ''}
         </span>
         <span className="flex-1" />
         {LEGEND.map((l) => (
@@ -399,7 +399,7 @@ export function LinedScript({
                     {(annotations?.get(row.element.id) ?? []).length > 0 && (
                       <ul className="mt-1.5 flex flex-wrap gap-1.5 font-sans" aria-label="Notes on this line">
                         {annotations!.get(row.element.id)!.map((a) => {
-                          const chip = formatAnnotationChip(a)
+                          const chip = formatAnnotationChip(a).replaceAll(' · ', ' | ')
                           return (
                             <li key={a.id}>
                               {onEditAnnotation ? (

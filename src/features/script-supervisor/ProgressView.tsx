@@ -50,12 +50,12 @@ function dayLabel(d: { dayNumber: number | null; shootDate: string }): string {
   return d.dayNumber != null ? `Day ${d.dayNumber}` : d.shootDate
 }
 
-function StatTile({ label, value, sub }: { label: string; value: string; sub: string }) {
+function StatTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-1">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="font-mono text-xl">{value}</p>
-      <p className="text-xs text-muted-foreground">{sub}</p>
+      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </div>
   )
 }
@@ -101,7 +101,7 @@ function DayBars({ days }: { days: DayProgress[] }) {
         <div className="flex gap-1.5 min-w-[480px] pt-1" aria-hidden>
           {days.map((d) => (
             <span key={d.shootDayId} className="flex-1 text-center font-mono text-xs text-muted-foreground">
-              {d.dayNumber ?? '·'}
+              {d.dayNumber ?? '–'}
             </span>
           ))}
         </div>
@@ -164,7 +164,6 @@ export function ProgressView({ progress, isLoading, fallbackDayId, onSetProgress
   const { totals, rows, days } = progress
   const visible = rows.filter((r) => filter === 'all' || r.status === filter)
   const pct = totals.totalEighths > 0 ? Math.round((totals.shotEighths / totals.totalEighths) * 100) : 0
-  const lastLoggedDay = [...days].reverse().find((d) => d.slates > 0)
   const dayIdByDate = new Map(days.map((d) => [d.shootDate, d.shootDayId]))
 
   const markValue = (r: SceneProgressRow) =>
@@ -188,17 +187,16 @@ export function ProgressView({ progress, isLoading, fallbackDayId, onSetProgress
         <StatTile
           label="Pages shot"
           value={`${formatPageEighths(totals.shotEighths)} / ${formatPageEighths(totals.totalEighths)}`}
-          sub={`${pct}% · part-shot scenes count their credited pages`}
+          sub={`${pct}%`}
         />
         <StatTile
           label="Scenes"
           value={`${totals.complete} / ${totals.scenes}`}
-          sub={`${totals.partShot} part shot · ${totals.notShot} not shot${totals.omitted ? ` · ${totals.omitted} omitted` : ''}`}
+          sub={`${totals.partShot} part shot | ${totals.notShot} not shot${totals.omitted ? ` | ${totals.omitted} omitted` : ''}`}
         />
         <StatTile
-          label="Setups · takes"
-          value={`${totals.slates} · ${totals.takes}`}
-          sub={lastLoggedDay ? `Last logged ${dayLabel(lastLoggedDay)}` : 'Nothing logged yet'}
+          label="Setups | takes"
+          value={`${totals.slates} | ${totals.takes}`}
         />
       </div>
 
