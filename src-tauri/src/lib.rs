@@ -990,6 +990,12 @@ pub fn run() {
             sql: include_str!("../migrations/0091_locations_contact_drop_permit_fee.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 92,
+            description: "risk_assessments",
+            sql: include_str!("../migrations/0092_risk_assessments.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

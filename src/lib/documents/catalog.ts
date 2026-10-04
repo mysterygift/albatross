@@ -9,6 +9,7 @@ import {
   Music,
   Package,
   Route,
+  ShieldAlert,
   Users,
 } from 'lucide-react'
 
@@ -44,6 +45,8 @@ export const DOCUMENT_ENTITY_TYPES = {
   vendorPurchaseOrder: 'vendor_purchase_order',
   /** Receipt proof attached directly to an expense (entity_id = expense id); no vendor needed. */
   expenseReceipt: 'expense_receipt',
+  /** Exported risk assessment (RAMS) PDF (entity_id = shoot day id). */
+  riskAssessment: 'risk_assessment',
 } as const
 
 export type DocumentEntityType =
@@ -96,15 +99,17 @@ export const DOCUMENT_CATEGORIES: DocumentCategoryConfig[] = [
   {
     id: 'set-paperwork',
     label: 'Set paperwork',
-    description: 'Call sheets and movement orders',
+    description: 'Call sheets, movement orders and risk assessments',
     icon: Megaphone,
     sourceRoute: '/call-sheets',
-    emptyMessage: 'No call sheets or movement orders yet. Generate them from Call Sheets or Movement Orders.',
+    emptyMessage:
+      'No call sheets, movement orders or risk assessments yet. Generate them from Call Sheets, Movement Orders or Risk Assessments.',
     entityTypes: [
       DOCUMENT_ENTITY_TYPES.callSheet,
       DOCUMENT_ENTITY_TYPES.callSheetPersonalized,
       DOCUMENT_ENTITY_TYPES.movementOrder,
       DOCUMENT_ENTITY_TYPES.movementOrderPersonalized,
+      DOCUMENT_ENTITY_TYPES.riskAssessment,
       DOCUMENT_ENTITY_TYPES.manualUploadSetPaperwork,
     ],
   },
@@ -218,6 +223,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   [DOCUMENT_ENTITY_TYPES.vendorInvoice]: 'Vendor invoice',
   [DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder]: 'Vendor purchase order',
   [DOCUMENT_ENTITY_TYPES.expenseReceipt]: 'Expense receipt',
+  [DOCUMENT_ENTITY_TYPES.riskAssessment]: 'Risk assessment',
 }
 
 export function getDocumentTypeLabel(entityType: string | null): string {
@@ -229,6 +235,7 @@ export function getDocumentSourceRoute(entityType: string | null): string {
   if (entityType === DOCUMENT_ENTITY_TYPES.locationRelease || entityType === DOCUMENT_ENTITY_TYPES.permit) {
     return '/locations'
   }
+  if (entityType === DOCUMENT_ENTITY_TYPES.riskAssessment) return '/risk-assessments'
   const categoryId = getDocumentCategoryId(entityType)
   return getDocumentCategory(categoryId).sourceRoute
 }
@@ -253,6 +260,7 @@ export function getSetPaperworkIcon(entityType: string | null): LucideIcon {
   ) {
     return Route
   }
+  if (entityType === DOCUMENT_ENTITY_TYPES.riskAssessment) return ShieldAlert
   return Megaphone
 }
 

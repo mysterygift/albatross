@@ -105,7 +105,8 @@ function enrichSingleDocument(doc: Document, maps: LookupMaps): EnrichedDocument
     groupSortKey = deliverable?.due_date ?? deliverable?.name ?? doc.created_at
   } else if (
     (entityType === DOCUMENT_ENTITY_TYPES.callSheet ||
-      entityType === DOCUMENT_ENTITY_TYPES.movementOrder) &&
+      entityType === DOCUMENT_ENTITY_TYPES.movementOrder ||
+      entityType === DOCUMENT_ENTITY_TYPES.riskAssessment) &&
     doc.entity_id
   ) {
     const day = maps.shootDayById.get(doc.entity_id)

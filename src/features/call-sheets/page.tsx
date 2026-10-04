@@ -98,6 +98,10 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { RamsSignOffAlert } from '@/features/risk-assessments/RamsSignOffAlert'
+import { useRamsSignOff } from '@/features/risk-assessments/useRamsSignOff'
+import { describeRamsSignOff } from '@/lib/risk-assessments/ramsSignOff'
 import { CallSheetDistributionDialog, type CallSheetRecipient } from '@/features/call-sheets/CallSheetDistributionDialog'
 import { exportDistributedCallSheets } from '@/features/call-sheets/exportDistributedCallSheets'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -930,9 +934,24 @@ export function CallSheetsPage() {
     },
   })
 
-  const handleGenerate = (save: boolean, openAfter?: boolean) => {
+  const ramsStatus = useRamsSignOff(shootDayId, shootDayUnitId)
+  const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirm()
+
+  /** A missing / unsigned RAMS is a warning, not a block: resolves true when the user exports anyway. */
+  const confirmRamsOverride = async (): Promise<boolean> => {
+    const copy = ramsStatus ? describeRamsSignOff(ramsStatus, buildCallSheetData?.unitName ?? 'this unit') : null
+    if (!copy) return true
+    return confirmDialog({
+      title: 'Export anyway?',
+      description: `${copy.title}. ${copy.detail} The call sheet will be exported without a signed-off risk assessment.`,
+      confirmLabel: 'Export anyway',
+    })
+  }
+
+  const handleGenerate = async (save: boolean, openAfter?: boolean) => {
     const baseData = buildCallSheetData
     if (!baseData || !shootDay) return
+    if (!(await confirmRamsOverride())) return
     setDistributionExportSuccessMessage(null)
     setGenerateError(null)
     setWeatherFallbackMessage(null)
@@ -1110,6 +1129,7 @@ export function CallSheetsPage() {
                     <p className="text-muted-foreground text-sm">No cast called for this day/unit.</p>
                   )}
                 </div>
+                <RamsSignOffAlert status={ramsStatus} unitName={buildCallSheetData?.unitName ?? 'this unit'} />
                 {(castResult.requiredButNotBooked.length > 0 || castResult.bookedButNotRequired.length > 0) && (
               <div className="space-y-2">
                 {castResult.requiredButNotBooked.length > 0 && (
@@ -1262,6 +1282,7 @@ export function CallSheetsPage() {
         error={distributionStatus.error}
         onGenerateSelected={async (selected) => {
           if (!buildCallSheetData) return
+          if (!(await confirmRamsOverride())) return
           setDistributionExportSuccessMessage(null)
           setDistributionStatus({ loading: true, message: null, error: null })
           try {
@@ -1299,6 +1320,7 @@ export function CallSheetsPage() {
           }
         }}
       />
+      {confirmDialogNode}
     </div>
   )
 }

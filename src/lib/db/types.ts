@@ -1104,3 +1104,75 @@ export type CalendarEventFilters = {
    */
   shootingBlocFilter?: 'all' | 'unassigned' | string
 }
+
+// ---------------------------------------------------------------------------
+// Risk assessments (RAMS)
+// ---------------------------------------------------------------------------
+
+export type RiskAssessmentStatus = 'draft' | 'approved'
+
+/** One entry of `risk_assessments.first_aiders_json`. */
+export type FirstAider = {
+  name: string
+  phone: string
+  email: string
+}
+
+export type RiskAssessment = {
+  id: string
+  production_id: string
+  shoot_day_id: string
+  location_id: string | null
+  location_name: string
+  activities: string
+  responsible_person_id: string | null
+  responsible_person_name: string
+  first_aiders_json: string | null
+  hospital_name: string | null
+  hospital_address: string | null
+  hospital_phone: string | null
+  police_name: string | null
+  police_address: string | null
+  police_phone: string | null
+  status: RiskAssessmentStatus
+  approved_by: string | null
+  approved_at: string | null
+  generated_document_id: string | null
+} & SoftDeletable
+
+/** Risk ratings; the factor (severity x probability) is computed, never stored. */
+export type HazardRatings = {
+  severity_before: number
+  probability_before: number
+  severity_after: number
+  probability_after: number
+}
+
+/** Content shared by a saved hazard and a hazard template. */
+export type HazardContent = HazardRatings & {
+  name: string
+  description: string
+  risks: string
+  outcomes: string
+  control_measures: string
+  at_risk_crew: number
+  at_risk_cast: number
+  at_risk_public: number
+}
+
+export type RiskAssessmentHazard = HazardContent & {
+  id: string
+  risk_assessment_id: string
+  sort_order: number
+} & SoftDeletable
+
+export type RiskAssessmentUnit = {
+  id: string
+  risk_assessment_id: string
+  shoot_day_unit_id: string
+} & SoftDeletable
+
+export type HazardTemplate = HazardContent & {
+  id: string
+  production_id: string
+} & SoftDeletable

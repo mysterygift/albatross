@@ -15,6 +15,7 @@ import {
   FolderOpen,
   Megaphone,
   Route,
+  ShieldAlert,
 } from 'lucide-react'
 
 export type NavSubItem = { to: string; label: string }
@@ -69,6 +70,7 @@ export const navGroups: NavGroup[] = [
       },
       { to: '/locations', label: 'Locations', icon: MapPin },
       { to: '/equipment', label: 'Equipment', icon: Film },
+      { to: '/risk-assessments', label: 'Risk Assessments', icon: ShieldAlert },
     ],
   },
   {

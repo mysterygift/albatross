@@ -68,6 +68,10 @@ export const APF_V1_TABLE_KEYS = [
   'cue_sheets',
   'call_sheets',
   'script_documents',
+  'hazard_templates',
+  'risk_assessments',
+  'risk_assessment_units',
+  'risk_assessment_hazards',
 ] as const
 
 export type ApfV1TableKey = (typeof APF_V1_TABLE_KEYS)[number]

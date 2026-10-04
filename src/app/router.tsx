@@ -17,6 +17,8 @@ import { CastManagerPage } from '@/features/people/pages/CastManagerPage'
 import { CrewManagerPage } from '@/features/people/crew-manager/page'
 import { LocationsPage } from '@/features/locations/page'
 import { EquipmentPage } from '@/features/equipment/page'
+import { RiskAssessmentsPage } from '@/features/risk-assessments/page'
+import { RiskAssessmentEditorPage } from '@/features/risk-assessments/editor-page'
 import { DocumentsPage, DocumentsCategoryPage } from '@/features/documents/page'
 import { CallSheetsPage } from '@/features/call-sheets/page'
 import { MovementOrdersPage } from '@/features/movement-orders/page'
@@ -58,6 +60,8 @@ export const router = createBrowserRouter([
       { path: 'people/:personId', element: <CastDetailPage /> },
       { path: 'locations', element: <LocationsPage /> },
       { path: 'equipment', element: <EquipmentPage /> },
+      { path: 'risk-assessments', element: <RiskAssessmentsPage /> },
+      { path: 'risk-assessments/:id', element: <RiskAssessmentEditorPage /> },
       { path: 'documents', element: <DocumentsPage /> },
       { path: 'documents/:category', element: <DocumentsCategoryPage /> },
       { path: 'call-sheets', element: <CallSheetsPage /> },

@@ -46,6 +46,15 @@ describe('navigation config', () => {
   })
 })
 
+describe('Risk Assessments nav', () => {
+  it('sits in the Plan group with the list and editor routes registered', () => {
+    const plan = navGroups.find((g) => g.id === 'plan')
+    expect(plan?.items.map((i) => i.to)).toContain('/risk-assessments')
+    expect(routeExists('/risk-assessments')).toBe(true)
+    expect(routeExists('/risk-assessments/some-id')).toBe(true)
+  })
+})
+
 describe('findNavTrail', () => {
   it('matches top-level and sub routes', () => {
     expect(findNavTrail('/')?.item.label).toBe('Dashboard')
@@ -73,6 +82,10 @@ describe('findNavTrail', () => {
     expect(vendor?.sub?.label).toBe('Vendors')
     expect(vendor?.isDetail).toBe(true)
     expect(findNavTrail('/documents/contracts')?.item.label).toBe('Documents')
+    const rams = findNavTrail('/risk-assessments/abc')
+    expect(rams?.group.label).toBe('Plan')
+    expect(rams?.item.label).toBe('Risk Assessments')
+    expect(rams?.isDetail).toBe(true)
   })
 
   it('returns null for unknown paths', () => {
