@@ -1,25 +1,30 @@
 'use client'
 
 import { Skeleton } from '@/components/ui/skeleton'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { toast } from '@/components/ui/sonner'
+import { cn } from '@/lib/utils'
 import { getEffectiveCrewHierarchyOrDefault } from '@/lib/people/crewHierarchyResolver'
 import {
   upsertCrewHierarchyConfig,
@@ -32,16 +37,16 @@ import type {
   CrewRoleConfig,
 } from '@/lib/people/crewHierarchyTypes'
 import {
-  ChevronUp,
-  ChevronDown,
+  AlertCircle,
+  Check,
+  Crown,
+  GripVertical,
   Plus,
-  Trash2,
   RotateCcw,
   Save,
+  Trash2,
+  X,
 } from 'lucide-react'
-
-/** Sentinel for "no HOD" in Select; Radix forbids SelectItem value="". */
-const HOD_NONE_VALUE = '__crew_hod_none__'
 
 function deepClone(config: CrewHierarchyConfig): CrewHierarchyConfig {
   return JSON.parse(JSON.stringify(config))
@@ -51,34 +56,46 @@ function configEqual(a: CrewHierarchyConfig, b: CrewHierarchyConfig): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
+type CrewConfigIssue = {
+  departmentId: string
+  /** Set when the issue belongs to a single role row rather than the department. */
+  roleId?: string
+  message: string
+}
+
 export type ValidationResult = { valid: boolean; errors: string[] }
 
-export function validateCrewHierarchyConfig(
-  config: CrewHierarchyConfig
-): ValidationResult {
-  const errors: string[] = []
+function getCrewConfigIssues(config: CrewHierarchyConfig): CrewConfigIssue[] {
+  const issues: CrewConfigIssue[] = []
   const deptNamesLower = new Set<string>()
   for (const dept of config.departments) {
     const name = dept.name?.trim()
     if (!name) {
-      errors.push(`Department at position ${dept.sort_order + 1} has no name.`)
-      continue
+      issues.push({ departmentId: dept.id, message: 'Name this department.' })
+    } else {
+      const key = name.toLowerCase()
+      if (deptNamesLower.has(key)) {
+        issues.push({
+          departmentId: dept.id,
+          message: `Another department is already named "${name}".`,
+        })
+      }
+      deptNamesLower.add(key)
     }
-    const key = name.toLowerCase()
-    if (deptNamesLower.has(key)) {
-      errors.push(`Duplicate department name: "${name}".`)
-    }
-    deptNamesLower.add(key)
 
     const roleNames = new Set<string>()
     for (const role of dept.roles) {
       const rn = role.name?.trim()
       if (!rn) {
-        errors.push(`"${name}": a role has no name.`)
+        issues.push({ departmentId: dept.id, roleId: role.id, message: 'Name this role.' })
         continue
       }
       if (roleNames.has(rn)) {
-        errors.push(`"${name}": duplicate role "${rn}".`)
+        issues.push({
+          departmentId: dept.id,
+          roleId: role.id,
+          message: `This department already has a role named "${rn}".`,
+        })
       }
       roleNames.add(rn)
     }
@@ -86,16 +103,26 @@ export function validateCrewHierarchyConfig(
     if (dept.hod_role_name != null && dept.hod_role_name.trim() !== '') {
       const hod = dept.hod_role_name.trim()
       if (!roleNames.has(hod)) {
-        errors.push(
-          `"${name}": HOD role "${hod}" is not in the department's role list.`
-        )
+        issues.push({
+          departmentId: dept.id,
+          message: `The HOD role "${hod}" is not one of this department's roles. Pick a new HOD below.`,
+        })
       }
     }
   }
-  return {
-    valid: errors.length === 0,
-    errors,
-  }
+  return issues
+}
+
+export function validateCrewHierarchyConfig(
+  config: CrewHierarchyConfig
+): ValidationResult {
+  const departmentLabels = new Map(
+    config.departments.map((d) => [d.id, d.name?.trim() || `Department ${d.sort_order + 1}`])
+  )
+  const errors = getCrewConfigIssues(config).map(
+    (i) => `"${departmentLabels.get(i.departmentId)}": ${i.message}`
+  )
+  return { valid: errors.length === 0, errors }
 }
 
 function trimNamesInConfig(config: CrewHierarchyConfig): CrewHierarchyConfig {
@@ -125,18 +152,33 @@ function renumberSortOrders(config: CrewHierarchyConfig): CrewHierarchyConfig {
   return { ...config, departments }
 }
 
+function withRoleOrder(roles: CrewRoleConfig[]): CrewRoleConfig[] {
+  return roles.map((r, i) => ({ ...r, sort_order: i }))
+}
+
+function isHodRole(dept: CrewDepartmentConfig, role: CrewRoleConfig): boolean {
+  const hod = dept.hod_role_name?.trim()
+  return !!hod && role.name.trim() === hod
+}
+
+function splitList(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 type Props = {
   productionId: string
 }
 
 export function CrewStructureEditor({ productionId }: Props) {
   const queryClient = useQueryClient()
-  const [editedConfig, setEditedConfig] = useState<CrewHierarchyConfig | null>(
-    null
-  )
-  const [initialConfig, setInitialConfig] = useState<CrewHierarchyConfig | null>(
-    null
-  )
+  const [editedConfig, setEditedConfig] = useState<CrewHierarchyConfig | null>(null)
+  const [initialConfig, setInitialConfig] = useState<CrewHierarchyConfig | null>(null)
+  const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null)
+  const [justAddedDeptId, setJustAddedDeptId] = useState<string | null>(null)
+  const [deleteDeptId, setDeleteDeptId] = useState<string | null>(null)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
 
   const { data: loadedConfig, isLoading } = useQuery({
@@ -147,38 +189,34 @@ export function CrewStructureEditor({ productionId }: Props) {
 
   useEffect(() => {
     if (loadedConfig) {
-      const copy = deepClone(loadedConfig)
+      const copy = renumberSortOrders(deepClone(loadedConfig))
       queueMicrotask(() => {
         setInitialConfig(copy)
-        setEditedConfig(copy)
+        setEditedConfig(deepClone(copy))
       })
     }
   }, [loadedConfig])
 
   const hasChanges =
-    editedConfig != null &&
-    initialConfig != null &&
-    !configEqual(editedConfig, initialConfig)
-  const validation =
-    editedConfig != null ? validateCrewHierarchyConfig(editedConfig) : null
-  const canSave =
-    hasChanges && validation?.valid === true && editedConfig != null
+    editedConfig != null && initialConfig != null && !configEqual(editedConfig, initialConfig)
+  const issues = useMemo(
+    () => (editedConfig ? getCrewConfigIssues(editedConfig) : []),
+    [editedConfig]
+  )
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!editedConfig || !validation?.valid) return
-      const trimmed = trimNamesInConfig(editedConfig)
-      const normalized = renumberSortOrders(trimmed)
+      if (!editedConfig || issues.length > 0) return null
+      const normalized = renumberSortOrders(trimNamesInConfig(editedConfig))
       await upsertCrewHierarchyConfig(productionId, normalized)
+      return normalized
     },
-    onSuccess: () => {
+    onSuccess: (normalized) => {
+      if (!normalized) return
       queryClient.invalidateQueries({ queryKey: ['crew-hierarchy', productionId] })
-      if (loadedConfig && editedConfig) {
-        const trimmed = trimNamesInConfig(editedConfig)
-        const normalized = renumberSortOrders(trimmed)
-        setInitialConfig(deepClone(normalized))
-        setEditedConfig(deepClone(normalized))
-      }
+      setInitialConfig(deepClone(normalized))
+      setEditedConfig(deepClone(normalized))
+      toast.success('Crew structure saved.')
     },
   })
 
@@ -186,183 +224,24 @@ export function CrewStructureEditor({ productionId }: Props) {
     mutationFn: () => resetCrewHierarchyConfigToDefault(productionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['crew-hierarchy', productionId] })
-      setResetConfirmOpen(false)
     },
   })
 
   const revertToInitial = useCallback(() => {
     if (initialConfig) setEditedConfig(deepClone(initialConfig))
+    setDeleteDeptId(null)
   }, [initialConfig])
 
-  const updateDepartments = useCallback(
-    (fn: (depts: CrewDepartmentConfig[]) => CrewDepartmentConfig[]) => {
-      setEditedConfig((prev) => {
-        if (!prev) return prev
-        return { ...prev, departments: fn(prev.departments) }
-      })
+  const updateDepartment = useCallback(
+    (deptId: string, fn: (dept: CrewDepartmentConfig) => CrewDepartmentConfig) => {
+      setEditedConfig((prev) =>
+        prev
+          ? { ...prev, departments: prev.departments.map((d) => (d.id === deptId ? fn(d) : d)) }
+          : prev
+      )
     },
     []
   )
-
-  const moveDepartment = (index: number, dir: -1 | 1) => {
-    if (!editedConfig) return
-    const depts = [...editedConfig.departments].sort(
-      (a, b) => a.sort_order - b.sort_order
-    )
-    const j = index + dir
-    if (j < 0 || j >= depts.length) return
-    const reordered = [...depts]
-    ;[reordered[index], reordered[j]] = [reordered[j], reordered[index]]
-    const withNewOrder = reordered.map((d, i) => ({ ...d, sort_order: i }))
-    setEditedConfig({ ...editedConfig, departments: withNewOrder })
-  }
-
-  const setDepartmentName = (deptIndex: number, name: string) => {
-    updateDepartments((depts) => {
-      const sorted = [...depts].sort((a, b) => a.sort_order - b.sort_order)
-      const d = sorted[deptIndex]
-      if (!d) return depts
-      return depts.map((x) =>
-        x.id === d.id ? { ...x, name: name.trim() || x.name } : x
-      )
-    })
-  }
-
-  const setHodRole = (deptIndex: number, hodRoleName: string | null) => {
-    updateDepartments((depts) => {
-      const sorted = [...depts].sort((a, b) => a.sort_order - b.sort_order)
-      const d = sorted[deptIndex]
-      if (!d) return depts
-      return depts.map((x) =>
-        x.id === d.id ? { ...x, hod_role_name: hodRoleName } : x
-      )
-    })
-  }
-
-  const addRole = (deptIndex: number) => {
-    updateDepartments((depts) => {
-      const sorted = [...depts].sort((a, b) => a.sort_order - b.sort_order)
-      const d = sorted[deptIndex]
-      if (!d) return depts
-      const newRole: CrewRoleConfig = {
-        id: uuid(),
-        name: 'New role',
-        sort_order: d.roles.length,
-      }
-      return depts.map((x) =>
-        x.id === d.id
-          ? { ...x, roles: [...x.roles, newRole] }
-          : x
-      )
-    })
-  }
-
-  const removeRole = (deptIndex: number, roleId: string) => {
-    updateDepartments((depts) => {
-      const sorted = [...depts].sort((a, b) => a.sort_order - b.sort_order)
-      const d = sorted[deptIndex]
-      if (!d) return depts
-      const roles = d.roles.filter((r) => r.id !== roleId)
-      const newHod =
-        d.hod_role_name &&
-        roles.some((r) => r.name === d.hod_role_name)
-          ? d.hod_role_name
-          : null
-      return depts.map((x) =>
-        x.id === d.id ? { ...x, roles, hod_role_name: newHod } : x
-      )
-    })
-  }
-
-  const setRoleName = (
-    deptIndex: number,
-    roleId: string,
-    name: string
-  ) => {
-    updateDepartments((depts) => {
-      const sorted = [...depts].sort((a, b) => a.sort_order - b.sort_order)
-      const d = sorted[deptIndex]
-      if (!d) return depts
-      return depts.map((x) =>
-        x.id === d.id
-          ? {
-              ...x,
-              roles: x.roles.map((r) =>
-                r.id === roleId ? { ...r, name: name === '' ? r.name : name } : r
-              ),
-            }
-          : x
-      )
-    })
-  }
-
-  const moveRole = (deptIndex: number, roleIndex: number, dir: -1 | 1) => {
-    updateDepartments((depts) => {
-      const sorted = [...depts].sort((a, b) => a.sort_order - b.sort_order)
-      const d = sorted[deptIndex]
-      if (!d) return depts
-      const roles = [...d.roles].sort((a, b) => a.sort_order - b.sort_order)
-      const j = roleIndex + dir
-      if (j < 0 || j >= roles.length) return depts
-      const reordered = [...roles]
-      ;[reordered[roleIndex], reordered[j]] = [reordered[j], reordered[roleIndex]]
-      const rolesWithNewOrder = reordered.map((r, i) => ({ ...r, sort_order: i }))
-      return depts.map((x) =>
-        x.id === d.id ? { ...x, roles: rolesWithNewOrder } : x
-      )
-    })
-  }
-
-  const setTaskLabels = (deptIndex: number, labels: string[]) => {
-    updateDepartments((depts) => {
-      const sorted = [...depts].sort((a, b) => a.sort_order - b.sort_order)
-      const d = sorted[deptIndex]
-      if (!d) return depts
-      return depts.map((x) =>
-        x.id === d.id
-          ? { ...x, task_department_labels: labels.filter(Boolean) }
-          : x
-      )
-    })
-  }
-
-  const addTaskLabel = (deptIndex: number, label: string) => {
-    if (!editedConfig) return
-    const sorted = [...editedConfig.departments].sort(
-      (a, b) => a.sort_order - b.sort_order
-    )
-    const d = sorted[deptIndex]
-    if (!d) return
-    const current = d.task_department_labels ?? []
-    if (label.trim() && !current.includes(label.trim())) {
-      setTaskLabels(deptIndex, [...current, label.trim()])
-    }
-  }
-
-  const removeTaskLabel = (deptIndex: number, label: string) => {
-    const sorted = [...editedConfig!.departments].sort(
-      (a, b) => a.sort_order - b.sort_order
-    )
-    const d = sorted[deptIndex]
-    if (!d) return
-    const current = d.task_department_labels ?? []
-    setTaskLabels(
-      deptIndex,
-      current.filter((l) => l !== label)
-    )
-  }
-
-  const deleteDepartment = (deptIndex: number) => {
-    updateDepartments((depts) => {
-      const sorted = [...depts].sort((a, b) => a.sort_order - b.sort_order)
-      const toRemove = sorted[deptIndex]
-      if (!toRemove) return depts
-      const next = depts
-        .filter((x) => x.id !== toRemove.id)
-        .map((d, i) => ({ ...d, sort_order: i }))
-      return next
-    })
-  }
 
   const addDepartment = () => {
     const newDept: CrewDepartmentConfig = {
@@ -371,20 +250,41 @@ export function CrewStructureEditor({ productionId }: Props) {
       sort_order: editedConfig?.departments.length ?? 0,
       hod_role_name: null,
       task_department_labels: [],
-      roles: [{ id: uuid(), name: 'New role', sort_order: 0 }],
+      roles: [],
     }
-    setEditedConfig((prev) => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        departments: [...prev.departments, newDept],
-      }
-    })
+    setEditedConfig((prev) =>
+      prev ? { ...prev, departments: [...prev.departments, newDept] } : prev
+    )
+    setSelectedDeptId(newDept.id)
+    setJustAddedDeptId(newDept.id)
+  }
+
+  const deleteDepartment = (deptId: string) => {
+    if (!editedConfig) return
+    const index = editedConfig.departments.findIndex((d) => d.id === deptId)
+    const remaining = editedConfig.departments
+      .filter((d) => d.id !== deptId)
+      .map((d, i) => ({ ...d, sort_order: i }))
+    setEditedConfig({ ...editedConfig, departments: remaining })
+    setSelectedDeptId((remaining[index] ?? remaining[index - 1] ?? null)?.id ?? null)
+  }
+
+  const handleSave = () => {
+    const firstIssue = issues[0]
+    if (firstIssue) {
+      setSelectedDeptId(firstIssue.departmentId)
+      return
+    }
+    saveMutation.mutate()
   }
 
   if (isLoading || !loadedConfig) {
     return (
-      <div role="status" aria-label="Loading crew structure" className="space-y-3 rounded-lg border border-border bg-card/80 p-6">
+      <div
+        role="status"
+        aria-label="Loading crew structure"
+        className="space-y-3 rounded-lg border border-border bg-card/80 p-6"
+      >
         <Skeleton className="h-6 w-1/3" />
         <Skeleton className="h-10 w-full" />
         <Skeleton className="h-10 w-full" />
@@ -396,319 +296,515 @@ export function CrewStructureEditor({ productionId }: Props) {
     return null
   }
 
-  const sortedDepts = [...editedConfig.departments].sort(
-    (a, b) => a.sort_order - b.sort_order
-  )
+  const departments = editedConfig.departments
+  const selectedDept = departments.find((d) => d.id === selectedDeptId) ?? departments[0] ?? null
+  const deptToDelete = departments.find((d) => d.id === deleteDeptId) ?? null
+  const deptIdsWithIssues = new Set(issues.map((i) => i.departmentId))
 
   return (
-    <div className="space-y-4">
-      {validation && !validation.valid && (
-        <div className="rounded-lg border border-amber-600/50 bg-amber-500/10 p-3 text-sm text-amber-200">
-          <p className="font-medium mb-1">Fix before saving:</p>
-          <ul className="list-disc list-inside space-y-0.5">
-            {validation.errors.map((e, i) => (
-              <li key={i}>{e}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          disabled={!canSave || saveMutation.isPending}
-          onClick={() => saveMutation.mutate()}
-          className="bg-mint-600 hover:bg-mint-500 text-white"
-        >
-          <Save className="mr-2 size-4" />
-          Save changes
-        </Button>
-        {hasChanges && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-border text-foreground hover:bg-muted"
-            onClick={revertToInitial}
-          >
-            Cancel
-          </Button>
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="grid md:grid-cols-[220px_minmax(0,1fr)]">
+        <DepartmentRail
+          departments={departments}
+          selectedId={selectedDept?.id ?? null}
+          idsWithIssues={deptIdsWithIssues}
+          onSelect={setSelectedDeptId}
+          onAdd={addDepartment}
+        />
+        {selectedDept ? (
+          <DepartmentDetail
+            key={selectedDept.id}
+            dept={selectedDept}
+            issues={issues.filter((i) => i.departmentId === selectedDept.id)}
+            autoFocusName={justAddedDeptId === selectedDept.id}
+            onNameFocused={() => setJustAddedDeptId(null)}
+            onUpdate={(fn) => updateDepartment(selectedDept.id, fn)}
+            onRequestDelete={() => setDeleteDeptId(selectedDept.id)}
+          />
+        ) : (
+          <div className="px-6 py-12 text-center">
+            <p className="font-medium">Start your first department</p>
+            <p className="mb-3 mt-1 text-sm text-muted-foreground">
+              Departments group roles on call sheets and in the Crew Manager.
+            </p>
+            <Button type="button" variant="outline" size="sm" onClick={addDepartment}>
+              Add department
+            </Button>
+          </div>
         )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2.5">
         <Button
+          type="button"
+          variant="ghost"
           size="sm"
-          variant="outline"
-          className="border-border text-foreground hover:bg-muted"
+          className="text-muted-foreground"
           onClick={() => setResetConfirmOpen(true)}
-          disabled={resetMutation.isPending}
         >
-          <RotateCcw className="mr-2 size-4" />
+          <RotateCcw className="mr-1.5 size-4" />
           Reset to default
         </Button>
+        <div className="ml-auto flex items-center gap-2">
+          {issues.length > 0 ? (
+            <span className="flex items-center gap-1 text-sm text-destructive">
+              <AlertCircle className="size-4" />
+              {issues.length} issue{issues.length === 1 ? '' : 's'} to fix
+            </span>
+          ) : hasChanges ? (
+            <span className="text-sm text-muted-foreground">Unsaved changes</span>
+          ) : (
+            <span className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Check className="size-4" />
+              All changes saved
+            </span>
+          )}
+          {hasChanges && (
+            <Button type="button" size="sm" variant="outline" onClick={revertToInitial}>
+              Discard
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            disabled={!hasChanges || saveMutation.isPending}
+            onClick={handleSave}
+            className="bg-mint-600 text-white hover:bg-mint-500"
+          >
+            <Save className="mr-2 size-4" />
+            Save changes
+          </Button>
+        </div>
       </div>
 
-      <div className="space-y-3">
-        {sortedDepts.map((dept, deptIndex) => {
-          const roles = [...dept.roles].sort((a, b) => a.sort_order - b.sort_order)
-          const taskLabels = dept.task_department_labels ?? []
-          return (
-            <div
-              key={dept.id}
-              className="rounded-lg border border-border bg-muted/90 p-4 space-y-3"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    onClick={() => moveDepartment(deptIndex, -1)}
-                    disabled={deptIndex === 0}
-                    aria-label="Move up"
-                  >
-                    <ChevronUp className="size-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    onClick={() => moveDepartment(deptIndex, 1)}
-                    disabled={deptIndex === sortedDepts.length - 1}
-                    aria-label="Move down"
-                  >
-                    <ChevronDown className="size-4" />
-                  </Button>
-                </div>
-                <Input
-                  value={dept.name}
-                  onChange={(e) => setDepartmentName(deptIndex, e.target.value)}
-                  className="max-w-[220px] bg-card border-border text-foreground font-medium"
-                  placeholder="Department name"
-                />
-                <span className="text-muted-foreground text-xs">
-                  {roles.length} role{roles.length !== 1 ? 's' : ''}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 ml-auto"
-                  onClick={() => deleteDepartment(deptIndex)}
-                  aria-label="Delete department"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
+      <ConfirmDialog
+        open={deptToDelete != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteDeptId(null)
+        }}
+        title={`Delete ${deptToDelete?.name.trim() || 'this department'}?`}
+        description={
+          deptToDelete
+            ? `This will remove the department${
+                deptToDelete.roles.length > 0
+                  ? `, its ${deptToDelete.roles.length} role${deptToDelete.roles.length === 1 ? '' : 's'},`
+                  : ''
+              } and its task labels. This cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Confirm"
+        destructive
+        onConfirm={() => {
+          if (deptToDelete) deleteDepartment(deptToDelete.id)
+        }}
+      />
 
-              <div className="pl-10 space-y-3">
-                <div className="rounded-md border-l-2 border-mint-500/60 bg-mint-500/5 pl-3 pr-3 py-2">
-                  <Label className="text-xs font-medium text-mint-400">
-                    Head of Department (HOD)
-                  </Label>
-                  <Select
-                    value={
-                      dept.hod_role_name == null || dept.hod_role_name === ''
-                        ? HOD_NONE_VALUE
-                        : dept.hod_role_name
-                    }
-                    onValueChange={(v) =>
-                      setHodRole(
-                        deptIndex,
-                        v === HOD_NONE_VALUE ? null : v
-                      )
-                    }
-                  >
-                    <SelectTrigger className="mt-1.5 bg-card border-border text-foreground">
-                      <SelectValue placeholder="Select HOD" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={HOD_NONE_VALUE}>None</SelectItem>
-                      {roles
-                        .filter((r) => (r.name ?? '').trim() !== '')
-                        .map((r) => (
-                          <SelectItem key={r.id} value={(r.name ?? '').trim()}>
-                            {r.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label className="text-xs text-muted-foreground">
-                    Task department labels
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-0.5 mb-1.5 max-w-md">
-                    Link this crew department to task assignments elsewhere. Use when the crew department name differs from the task department name used on tasks.
-                  </p>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {taskLabels.map((l) => (
-                      <span
-                        key={l}
-                        className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-xs text-foreground"
-                      >
-                        {l}
-                        <button
-                          type="button"
-                          className="text-muted-foreground hover:text-foreground"
-                          onClick={() => removeTaskLabel(deptIndex, l)}
-                          aria-label={`Remove ${l}`}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                    <AddTaskLabelControl
-                      onAdd={(label) => addTaskLabel(deptIndex, label)}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Roles</Label>
-                  <ul className="space-y-1.5">
-                    {roles.map((role, roleIndex) => (
-                      <li
-                        key={role.id}
-                        className="flex flex-wrap items-center gap-2"
-                      >
-                        <div className="inline-flex flex-col gap-0 rounded border border-border bg-card/50 p-0.5">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                            onClick={() => moveRole(deptIndex, roleIndex, -1)}
-                            disabled={roleIndex === 0}
-                            aria-label="Move role up"
-                          >
-                            <ChevronUp className="size-3" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                            onClick={() => moveRole(deptIndex, roleIndex, 1)}
-                            disabled={roleIndex === roles.length - 1}
-                            aria-label="Move role down"
-                          >
-                            <ChevronDown className="size-3" />
-                          </Button>
-                        </div>
-                        <Input
-                          value={role.name}
-                          onChange={(e) =>
-                            setRoleName(deptIndex, role.id, e.target.value)
-                          }
-                          className="h-8 w-48 bg-card border-border text-sm text-foreground"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => removeRole(deptIndex, role.id)}
-                          aria-label="Remove role"
-                        >
-                          <Trash2 className="size-3" />
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="border-border text-foreground hover:bg-secondary"
-                    onClick={() => addRole(deptIndex)}
-                  >
-                    <Plus className="mr-1 size-3" />
-                    Add role
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="border-border text-foreground hover:bg-muted"
-        onClick={addDepartment}
-      >
-        <Plus className="mr-2 size-4" />
-        Add department
-      </Button>
-
-      <Dialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Reset to default</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Replace this production&apos;s crew structure with the built-in
-            default? This restores the standard departments, roles, HODs, and
-            task mappings. Your current custom structure will be overwritten.
-          </p>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="border-border"
-              onClick={() => setResetConfirmOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={resetMutation.isPending}
-              onClick={() => resetMutation.mutate()}
-            >
-              {resetMutation.isPending ? 'Resetting…' : 'Reset to default'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        onOpenChange={setResetConfirmOpen}
+        title="Reset to default"
+        description="Replace this production's crew structure with the built-in default? This restores the standard departments, roles, HODs, and task mappings. Your current custom structure will be overwritten."
+        confirmLabel="Reset to default"
+        destructive
+        onConfirm={() => resetMutation.mutateAsync()}
+      />
     </div>
   )
 }
 
-function AddTaskLabelControl({ onAdd }: { onAdd: (label: string) => void }) {
-  const [value, setValue] = useState('')
+function DepartmentRail({
+  departments,
+  selectedId,
+  idsWithIssues,
+  onSelect,
+  onAdd,
+}: {
+  departments: CrewDepartmentConfig[]
+  selectedId: string | null
+  idsWithIssues: Set<string>
+  onSelect: (id: string) => void
+  onAdd: () => void
+}) {
   return (
-    <span className="inline-flex items-center gap-1">
+    <div className="flex flex-col border-b border-border bg-muted/40 p-2 md:border-b-0 md:border-r">
+      <div className="flex items-center justify-between px-2.5 pb-1.5 pt-1 text-xs font-medium text-muted-foreground">
+        <span>Departments</span>
+        <span>{departments.length}</span>
+      </div>
+      <ul className="flex-1 space-y-0.5">
+        {departments.map((d) => {
+          const selected = d.id === selectedId
+          return (
+            <li key={d.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(d.id)}
+                aria-current={selected ? 'true' : undefined}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors',
+                  selected ? 'bg-mint-500/15 text-mint-400' : 'hover:bg-muted'
+                )}
+              >
+                <span className="min-w-0 flex-1">
+                  <span
+                    className={cn(
+                      'block truncate text-sm font-medium',
+                      !selected && 'text-foreground'
+                    )}
+                  >
+                    {d.name.trim() || 'Untitled'}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {d.roles.length} role{d.roles.length === 1 ? '' : 's'}
+                  </span>
+                </span>
+                {idsWithIssues.has(d.id) && (
+                  <AlertCircle className="size-4 shrink-0 text-destructive" aria-label="Needs attention" />
+                )}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      <Button type="button" variant="outline" size="sm" className="mt-2" onClick={onAdd}>
+        <Plus className="mr-1.5 size-4" />
+        Add department
+      </Button>
+    </div>
+  )
+}
+
+function DepartmentDetail({
+  dept,
+  issues,
+  autoFocusName,
+  onNameFocused,
+  onUpdate,
+  onRequestDelete,
+}: {
+  dept: CrewDepartmentConfig
+  issues: CrewConfigIssue[]
+  autoFocusName: boolean
+  onNameFocused: () => void
+  onUpdate: (fn: (dept: CrewDepartmentConfig) => CrewDepartmentConfig) => void
+  onRequestDelete: () => void
+}) {
+  const nameRef = useRef<HTMLInputElement>(null)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  useEffect(() => {
+    if (!autoFocusName) return
+    nameRef.current?.focus()
+    nameRef.current?.select()
+    onNameFocused()
+  }, [autoFocusName, onNameFocused])
+
+  const roles = dept.roles
+  const labels = dept.task_department_labels ?? []
+  const hodRole = roles.find((r) => isHodRole(dept, r))
+  const deptIssue = issues.find((i) => i.roleId == null)
+  const roleIssues = new Map(
+    issues.filter((i) => i.roleId != null).map((i) => [i.roleId as string, i.message])
+  )
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    onUpdate((d) => {
+      const from = d.roles.findIndex((r) => r.id === active.id)
+      const to = d.roles.findIndex((r) => r.id === over.id)
+      if (from < 0 || to < 0) return d
+      return { ...d, roles: withRoleOrder(arrayMove(d.roles, from, to)) }
+    })
+  }
+
+  const renameRole = (roleId: string, name: string) =>
+    onUpdate((d) => {
+      const old = d.roles.find((r) => r.id === roleId)
+      if (!old) return d
+      // The HOD is stored by role name, so keep it attached when the HOD role is renamed.
+      const wasHod = d.hod_role_name != null && d.hod_role_name === old.name
+      return {
+        ...d,
+        roles: d.roles.map((r) => (r.id === roleId ? { ...r, name } : r)),
+        hod_role_name: wasHod ? name : d.hod_role_name,
+      }
+    })
+
+  const toggleHod = (roleId: string) =>
+    onUpdate((d) => {
+      const role = d.roles.find((r) => r.id === roleId)
+      if (!role) return d
+      return { ...d, hod_role_name: isHodRole(d, role) ? null : role.name }
+    })
+
+  const removeRole = (roleId: string) =>
+    onUpdate((d) => {
+      const role = d.roles.find((r) => r.id === roleId)
+      if (!role) return d
+      return {
+        ...d,
+        roles: withRoleOrder(d.roles.filter((r) => r.id !== roleId)),
+        hod_role_name: isHodRole(d, role) ? null : d.hod_role_name,
+      }
+    })
+
+  const addRoles = (names: string[]) =>
+    onUpdate((d) => ({
+      ...d,
+      roles: withRoleOrder([...d.roles, ...names.map((name) => ({ id: uuid(), name, sort_order: 0 }))]),
+    }))
+
+  const addLabels = (names: string[]) =>
+    onUpdate((d) => {
+      const current = d.task_department_labels ?? []
+      const next = [...current]
+      for (const n of names) {
+        if (!next.some((l) => l.toLowerCase() === n.toLowerCase())) next.push(n)
+      }
+      return { ...d, task_department_labels: next }
+    })
+
+  const removeLabel = (label: string) =>
+    onUpdate((d) => ({
+      ...d,
+      task_department_labels: (d.task_department_labels ?? []).filter((l) => l !== label),
+    }))
+
+  return (
+    <div className="min-w-0 px-5 pb-5 pt-3">
+      <div className="flex items-center gap-2">
+        <Input
+          ref={nameRef}
+          value={dept.name}
+          onChange={(e) => onUpdate((d) => ({ ...d, name: e.target.value }))}
+          placeholder="Department name"
+          aria-label="Department name"
+          aria-invalid={deptIssue != null}
+          className="-ml-2 h-10 border-transparent bg-transparent px-2 text-lg font-medium shadow-none hover:border-border"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          onClick={onRequestDelete}
+          aria-label="Delete department"
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
+      {deptIssue && <p className="text-xs text-destructive">{deptIssue.message}</p>}
+      <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+        {hodRole ? (
+          <>
+            <Crown className="size-3.5" />
+            Head of department:
+            <span className="font-medium text-foreground">{hodRole.name.trim()}</span>
+          </>
+        ) : (
+          'No head of department. Mark one of the roles below.'
+        )}
+      </p>
+
+      <section className="mt-5" aria-label="Roles">
+        <div className="mb-1 flex items-baseline justify-between gap-2">
+          <h4 className="text-xs font-medium text-muted-foreground">Roles</h4>
+          <span className="text-xs text-muted-foreground/80">Top to bottom is call sheet order</span>
+        </div>
+        {roles.length === 0 ? (
+          <p className="py-2 text-sm text-muted-foreground">No roles yet. Add the first one below.</p>
+        ) : (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={roles.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+              <ul>
+                {roles.map((role) => (
+                  <SortableRoleRow
+                    key={role.id}
+                    role={role}
+                    isHod={isHodRole(dept, role)}
+                    error={roleIssues.get(role.id)}
+                    onRename={(name) => renameRole(role.id, name)}
+                    onToggleHod={() => toggleHod(role.id)}
+                    onRemove={() => removeRole(role.id)}
+                  />
+                ))}
+              </ul>
+            </SortableContext>
+          </DndContext>
+        )}
+        <AddListForm
+          className="ml-6 mt-2"
+          label="New role"
+          placeholder="Add a role, or several separated by commas"
+          buttonLabel="Add"
+          onAdd={addRoles}
+        />
+      </section>
+
+      <section className="mt-6" aria-label="Task labels">
+        <div className="mb-1.5 flex items-baseline justify-between gap-2">
+          <h4 className="text-xs font-medium text-muted-foreground">Task labels</h4>
+          <span className="text-right text-xs text-muted-foreground/80">
+            Only needed when task names differ from this department
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {labels.map((l) => (
+            <span
+              key={l}
+              className="inline-flex items-center gap-0.5 rounded-md border border-border bg-secondary py-0.5 pl-2.5 pr-0.5 text-sm text-foreground"
+            >
+              {l}
+              <button
+                type="button"
+                className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-destructive"
+                onClick={() => removeLabel(l)}
+                aria-label={`Remove label ${l}`}
+              >
+                <X className="size-3.5" />
+              </button>
+            </span>
+          ))}
+          <AddListForm
+            label="New task label"
+            placeholder="Add label"
+            onAdd={addLabels}
+            compact
+          />
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function SortableRoleRow({
+  role,
+  isHod,
+  error,
+  onRename,
+  onToggleHod,
+  onRemove,
+}: {
+  role: CrewRoleConfig
+  isHod: boolean
+  error?: string
+  onRename: (name: string) => void
+  onToggleHod: () => void
+  onRemove: () => void
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: role.id })
+  const label = role.name.trim() || 'role'
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Translate.toString(transform ? { ...transform, x: 0 } : null),
+        transition,
+      }}
+      className={cn(isDragging && 'relative z-10 rounded-md bg-card shadow-md')}
+    >
+      <div className="group flex items-center gap-1 rounded-md pr-1 hover:bg-muted/60">
+        <button
+          ref={setActivatorNodeRef}
+          type="button"
+          className="flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground hover:text-foreground"
+          aria-label={`Reorder ${label}. Press space, then use the arrow keys to move it.`}
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-4" />
+        </button>
+        <Input
+          value={role.name}
+          onChange={(e) => onRename(e.target.value)}
+          aria-label="Role name"
+          aria-invalid={error != null}
+          className="h-8 flex-1 border-transparent bg-transparent text-sm shadow-none hover:border-border focus-visible:bg-card"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-pressed={isHod}
+          aria-label={`${isHod ? 'Unset' : 'Set'} ${label} as head of department`}
+          disabled={!isHod && role.name.trim() === ''}
+          onClick={onToggleHod}
+          className={cn(
+            'h-7 shrink-0 gap-1 px-2 text-xs',
+            isHod
+              ? 'border border-amber-500/40 bg-amber-500/15 text-amber-600 hover:bg-amber-500/25 dark:text-amber-300'
+              : 'text-muted-foreground'
+          )}
+        >
+          <Crown className="size-3.5" />
+          <span className={cn(!isHod && 'hidden group-focus-within:inline group-hover:inline')}>
+            {isHod ? 'HOD' : 'Set as HOD'}
+          </span>
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+          onClick={onRemove}
+          aria-label={`Remove ${label}`}
+        >
+          <X className="size-4" />
+        </Button>
+      </div>
+      {error && <p className="ml-7 pb-1 text-xs text-destructive">{error}</p>}
+    </li>
+  )
+}
+
+function AddListForm({
+  label,
+  placeholder,
+  buttonLabel,
+  onAdd,
+  className,
+  compact,
+}: {
+  label: string
+  placeholder: string
+  buttonLabel?: string
+  onAdd: (values: string[]) => void
+  className?: string
+  compact?: boolean
+}) {
+  const [value, setValue] = useState('')
+  const submit = () => {
+    const values = splitList(value)
+    if (values.length === 0) return
+    onAdd(values)
+    setValue('')
+  }
+  return (
+    <form
+      className={cn('flex gap-2', className)}
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+    >
       <Input
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            if (value.trim()) {
-              onAdd(value.trim())
-              setValue('')
-            }
-          }
-        }}
-        placeholder="Add task label"
-        className="h-7 w-28 bg-card border-border text-xs text-foreground"
+        placeholder={placeholder}
+        aria-label={label}
+        className={cn(compact ? 'h-7 w-32 text-xs' : 'h-9 flex-1')}
       />
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className="h-7 px-2 text-muted-foreground"
-        onClick={() => {
-          if (value.trim()) {
-            onAdd(value.trim())
-            setValue('')
-          }
-        }}
-      >
-        <Plus className="size-3" />
-      </Button>
-    </span>
+      {buttonLabel && (
+        <Button type="submit" variant="outline" size="sm" className="h-9">
+          {buttonLabel}
+        </Button>
+      )}
+    </form>
   )
 }

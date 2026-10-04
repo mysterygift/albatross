@@ -3,10 +3,8 @@ import { afterEach, describe, it, expect } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 
 afterEach(() => cleanup())
-import { DndContext } from '@dnd-kit/core'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { StripboardDayColumn } from '@/features/schedule/stripboard-day-column'
 import { StripItem } from '@/features/schedule/strip-item'
+import { renderStripboardDayView } from '@/test/stripboardDayViewHarness'
 import { CalendarEventCardBody } from '@/features/schedule/calendar-page'
 import { OUTSIDE_BLOCS_LABEL } from '@/lib/schedule/episodicScheduleDisplay'
 import type {
@@ -15,12 +13,19 @@ import type {
   Scene,
   ShootDay,
   ShootDayUnit,
+  ShootingBloc,
   Shot,
   StripboardStrip,
   Unit,
 } from '@/lib/db/types'
 
 const soft = { created_at: 't', updated_at: 't', deleted_at: null as string | null }
+
+function blocsById(entries: [string, string][]) {
+  return new Map(
+    entries.map(([id, name]) => [id, { id, production_id: 'p-1', name, ...soft } as ShootingBloc])
+  )
+}
 
 function shootDay(over: Partial<ShootDay> = {}): ShootDay {
   return {
@@ -47,7 +52,7 @@ function shootDay(over: Partial<ShootDay> = {}): ShootDay {
 }
 
 describe('episodic schedule UI', () => {
-  it('stripboard day column shows shooting bloc label when episodic', () => {
+  it('day view header shows the shooting bloc label when episodic', () => {
     const unit: Unit = { id: 'u-1', production_id: 'p-1', name: 'Main Unit', ...soft }
     const sdu: ShootDayUnit = {
       id: 'sdu-1',
@@ -57,29 +62,17 @@ describe('episodic schedule UI', () => {
       is_locked: 0,
       ...soft,
     }
-    render(
-      <DndContext onDragEnd={() => {}}>
-        <StripboardDayColumn
-          day={shootDay()}
-          units={[unit]}
-          dayUnits={[sdu]}
-          stripsByUnit={[{ shootDayUnit: sdu, strips: [] }]}
-          scenes={[]}
-          shots={[]}
-          estimatedShootMinutesByShotId={new Map()}
-          columnId={(dayId, uid) => `col:${dayId}:${uid}`}
-          isLocked={false}
-          pageEighthsTarget={48}
-          onSendToBoneyard={() => {}}
-          isEpisodic
-          shootingBlocLabel="Production Block A"
-        />
-      </DndContext>
-    )
+    renderStripboardDayView({
+      day: shootDay(),
+      unit,
+      shootDayUnit: sdu,
+      isEpisodic: true,
+      blocById: blocsById([['bloc-1', 'Production Block A']]),
+    })
     expect(screen.getByText('Production Block A')).toBeTruthy()
   })
 
-  it('stripboard day column has no bloc selector (non-editable bloc)', () => {
+  it('day view has no bloc selector (bloc is not editable from the day)', () => {
     const unit: Unit = { id: 'u-1', production_id: 'p-1', name: 'Main Unit', ...soft }
     const sdu: ShootDayUnit = {
       id: 'sdu-1',
@@ -89,29 +82,17 @@ describe('episodic schedule UI', () => {
       is_locked: 0,
       ...soft,
     }
-    render(
-      <DndContext onDragEnd={() => {}}>
-        <StripboardDayColumn
-          day={shootDay()}
-          units={[unit]}
-          dayUnits={[sdu]}
-          stripsByUnit={[{ shootDayUnit: sdu, strips: [] }]}
-          scenes={[]}
-          shots={[]}
-          estimatedShootMinutesByShotId={new Map()}
-          columnId={(dayId, uid) => `col:${dayId}:${uid}`}
-          isLocked={false}
-          pageEighthsTarget={48}
-          onSendToBoneyard={() => {}}
-          isEpisodic
-          shootingBlocLabel="B"
-        />
-      </DndContext>
-    )
-    expect(screen.queryByRole('combobox')).toBeNull()
+    renderStripboardDayView({
+      day: shootDay(),
+      unit,
+      shootDayUnit: sdu,
+      isEpisodic: true,
+      blocById: blocsById([['bloc-1', 'B']]),
+    })
+    expect(screen.queryByRole('combobox', { name: /bloc/i })).toBeNull()
   })
 
-  it('stripboard day column omits bloc label when not episodic', () => {
+  it('day view omits the bloc label when not episodic', () => {
     const uniqueBloc = 'Only If Episodic Would Show'
     const unit: Unit = { id: 'u-1', production_id: 'p-1', name: 'Main Unit', ...soft }
     const sdu: ShootDayUnit = {
@@ -122,25 +103,13 @@ describe('episodic schedule UI', () => {
       is_locked: 0,
       ...soft,
     }
-    render(
-      <DndContext onDragEnd={() => {}}>
-        <StripboardDayColumn
-          day={shootDay()}
-          units={[unit]}
-          dayUnits={[sdu]}
-          stripsByUnit={[{ shootDayUnit: sdu, strips: [] }]}
-          scenes={[]}
-          shots={[]}
-          estimatedShootMinutesByShotId={new Map()}
-          columnId={(dayId, uid) => `col:${dayId}:${uid}`}
-          isLocked={false}
-          pageEighthsTarget={48}
-          onSendToBoneyard={() => {}}
-          isEpisodic={false}
-          shootingBlocLabel={uniqueBloc}
-        />
-      </DndContext>
-    )
+    renderStripboardDayView({
+      day: shootDay(),
+      unit,
+      shootDayUnit: sdu,
+      isEpisodic: false,
+      blocById: blocsById([['bloc-1', uniqueBloc]]),
+    })
     expect(screen.queryByText(uniqueBloc)).toBeNull()
   })
 
@@ -259,7 +228,7 @@ describe('episodic schedule UI', () => {
     expect(screen.queryByText(blocName)).toBeNull()
   })
 
-  it('same day column shows one bloc label and distinct episode labels on strips (mixed episodes)', () => {
+  it('day view shows one bloc label and distinct episode labels on strips (mixed episodes)', () => {
     const unit: Unit = { id: 'u-1', production_id: 'p-1', name: 'Main Unit', ...soft }
     const sdu: ShootDayUnit = {
       id: 'sdu-1',
@@ -342,28 +311,16 @@ describe('episodic schedule UI', () => {
       ['ep-b', { id: 'ep-b', production_id: 'p-1', name: 'Ep B', sort_order: 1, ...soft }],
     ])
     const bloc = 'Unified Bloc For Day'
-    render(
-      <TooltipProvider>
-        <DndContext onDragEnd={() => {}}>
-          <StripboardDayColumn
-            day={shootDay()}
-            units={[unit]}
-            dayUnits={[sdu]}
-            stripsByUnit={[{ shootDayUnit: sdu, strips }]}
-            scenes={scenes}
-            shots={[]}
-            estimatedShootMinutesByShotId={new Map()}
-            columnId={(dayId, uid) => `col:${dayId}:${uid}`}
-            isLocked={false}
-            pageEighthsTarget={48}
-            onSendToBoneyard={() => {}}
-            isEpisodic
-            shootingBlocLabel={bloc}
-            episodeById={episodeById}
-          />
-        </DndContext>
-      </TooltipProvider>
-    )
+    renderStripboardDayView({
+      day: shootDay(),
+      unit,
+      shootDayUnit: sdu,
+      strips,
+      scenes,
+      isEpisodic: true,
+      blocById: blocsById([['bloc-1', bloc]]),
+      episodeById,
+    })
     expect(screen.getAllByText(bloc).length).toBe(1)
     expect(screen.getByText('Ep A')).toBeTruthy()
     expect(screen.getByText('Ep B')).toBeTruthy()

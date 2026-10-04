@@ -8,17 +8,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
-import { DndContext } from '@dnd-kit/core'
-import { TooltipProvider } from '@/components/ui/tooltip'
 
 import { SettingsPage } from '@/features/settings/page'
 import { MusicClearancePage } from '@/features/music-clearance/page'
 import { DeliverablesPage } from '@/features/deliverables/page'
 import { CallSheetsPage } from '@/features/call-sheets/page'
-import { StripboardDayColumn } from '@/features/schedule/stripboard-day-column'
+import { renderStripboardDayView } from '@/test/stripboardDayViewHarness'
 import { CalendarEventCardBody } from '@/features/schedule/calendar-page'
 
-import type { ShootDay, ShootDayUnit, Unit, StripboardStrip } from '@/lib/db/types'
+import type { ShootDay, ShootDayUnit, ShootingBloc, Unit } from '@/lib/db/types'
 
 const soft = { created_at: 't', updated_at: 't', deleted_at: null as string | null }
 
@@ -423,27 +421,13 @@ describe('Non-episodic regression shield', () => {
       ...soft,
     }
     const blocLabel = 'HiddenBlocLabelNonEpisodic'
-    const { unmount } = render(
-      <TooltipProvider>
-        <DndContext onDragEnd={() => {}}>
-          <StripboardDayColumn
-            day={day}
-            units={[unit]}
-            dayUnits={[sdu]}
-            stripsByUnit={[{ shootDayUnit: sdu, strips: [] as StripboardStrip[] }]}
-            scenes={[]}
-            shots={[]}
-            estimatedShootMinutesByShotId={new Map()}
-            columnId={(d, u) => `${d}:${u}`}
-            isLocked={false}
-            pageEighthsTarget={48}
-            onSendToBoneyard={() => {}}
-            isEpisodic={false}
-            shootingBlocLabel={blocLabel}
-          />
-        </DndContext>
-      </TooltipProvider>
-    )
+    const { unmount } = renderStripboardDayView({
+      day,
+      unit,
+      shootDayUnit: sdu,
+      isEpisodic: false,
+      blocById: new Map([['b1', { id: 'b1', production_id: 'prod-1', name: blocLabel, ...soft } as ShootingBloc]]),
+    })
     expect(screen.queryByText(blocLabel)).toBeNull()
     unmount()
 

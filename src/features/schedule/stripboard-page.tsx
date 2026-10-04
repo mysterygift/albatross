@@ -1,17 +1,15 @@
 /**
- * Stripboard page: Unscheduled Scenes panel + day/unit columns with DnD.
- * Reconstructed to match: graphite + mint, dnd-kit with DragOverlay, lock, totals, warnings.
+ * Stripboard page: one shoot day at a time as a table, with Unscheduled and Boneyard drawers and DnD.
+ * Lock, totals, runtime warnings and the INT/EXT and DAY/NIGHT filters live in the day view.
  *
  * Files: stripboard-page.tsx, unscheduled-scenes-panel.tsx, stripboard-hooks.ts,
- * stripboard-day-column.tsx, strip-item.tsx, stripboard-strips repo, schedule listUnscheduledShots.
- * Test: DnD strips between columns, drag scene from unscheduled to column, Add dropdown,
- * multi-select Assign to Day, location/search filters, day totals & runtime warning (>10h), lock toggle.
+ * stripboard-day-view.tsx, stripboard-table-row.tsx, strip-item.tsx, stripboard-strips repo.
  */
 import { PageHeader } from '@/components/page-header'
 import { RequireProduction } from '@/components/require-production'
 import { useSearchParams } from 'react-router-dom'
 import { applyStripboardParams, parseStripboardParams, type StripboardUrlPatch } from './stripboardUrlState'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -46,7 +44,6 @@ import { SORT_GAP, type CreateStripData } from '@/lib/db/repositories/stripboard
 import { useQueryClient } from '@tanstack/react-query'
 import { UnscheduledShotsPanel } from './unscheduled-scenes-panel'
 import { BoneyardPanel } from './boneyard-panel'
-import { StripboardDayColumn } from './stripboard-day-column'
 import { StripboardDayView, CollapsedPanelRail } from './stripboard-day-view'
 import { measureStripTableRow, StripTableDragPreview, type DayTablePreviewSize } from './stripboard-table-row'
 import type { ColumnFilter } from '@/lib/schedule/stripboardRows'
@@ -54,7 +51,7 @@ import { StripItem } from './strip-item'
 import { toast } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Plus, Layers2, LayoutGrid, CalendarDays, PanelLeftClose, PanelRightClose } from 'lucide-react'
+import { Plus, Layers2, PanelLeftClose, PanelRightClose } from 'lucide-react'
 import {
   Popover,
   PopoverContent,
@@ -74,7 +71,6 @@ import { createShootDayWithDefaultMainUnit, addSecondUnitToShootDays } from '@/l
 import { listShootingBlocsByProduction } from '@/lib/db/repositories/shootingBlocs'
 import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
 import {
-  shootingBlocLabelFromAssociation,
   shootDayMatchesBlocFilter,
   type ShootingBlocViewFilter,
 } from '@/lib/schedule/episodicScheduleDisplay'
@@ -95,19 +91,6 @@ const STRIP_TYPES: { type: StripType; label: string }[] = [
 
 const PAGE_EIGHTHS_TARGET = 48
 const SELECT_NONE = '__none__'
-
-type StripboardViewMode = 'board' | 'day'
-const VIEW_MODE_STORAGE_KEY = 'albatross.stripboard.viewMode'
-
-/** Per-viewer convenience only. Storage can be unavailable, so every access is guarded. */
-function readStoredViewMode(): StripboardViewMode {
-  try {
-    return window.localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'day' ? 'day' : 'board'
-  } catch {
-    /* storage unavailable: fall back to the default board view */
-    return 'board'
-  }
-}
 
 function AddStripPopover({
   productionId,
@@ -353,7 +336,6 @@ export function StripboardPage() {
   const [newDayOpen, setNewDayOpen] = useState(false)
   const [newDayDate, setNewDayDate] = useState('')
   const [newDayError, setNewDayError] = useState<string | null>(null)
-  const [newlyCreatedShootDayId, setNewlyCreatedShootDayId] = useState<string | null>(null)
   const [addSecondUnitOpen, setAddSecondUnitOpen] = useState(false)
   const [selectedSecondUnitDayIds, setSelectedSecondUnitDayIds] = useState<Set<string>>(new Set())
   const [addSecondUnitError, setAddSecondUnitError] = useState<string | null>(null)
@@ -372,19 +354,10 @@ export function StripboardPage() {
   } | null>(null)
   const [removeSecondUnitDialogOpen, setRemoveSecondUnitDialogOpen] = useState(false)
   const [removeSecondUnitError, setRemoveSecondUnitError] = useState<string | null>(null)
-  const newDayColumnRef = useRef<HTMLDivElement | null>(null)
-  const columnsScrollRef = useRef<HTMLDivElement | null>(null)
-  const [showColumnsLeftFeather, setShowColumnsLeftFeather] = useState(false)
   const [addStripOpen, setAddStripOpen] = useState(false)
   const blocViewFilter: ShootingBlocViewFilter = urlState.bloc
   const setBlocViewFilter = useCallback(
     (bloc: ShootingBlocViewFilter) => updateUrl({ bloc }, true),
-    [updateUrl]
-  )
-  // Precedence: URL `view` > localStorage > default (board).
-  const viewMode: StripboardViewMode = urlState.view ?? readStoredViewMode()
-  const setViewMode = useCallback(
-    (view: StripboardViewMode) => updateUrl({ view }, false),
     [updateUrl]
   )
   const activeDayId = urlState.day
@@ -393,15 +366,16 @@ export function StripboardPage() {
     [updateUrl]
   )
   const [unscheduledOpen, setUnscheduledOpen] = useState(true)
-  const [boneyardOpen, setBoneyardOpen] = useState(false)
 
+  // The Board/Day choice used to be stored per viewer. Day is now the only view, so drop the stale key.
   useEffect(() => {
     try {
-      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode)
+      window.localStorage.removeItem('albatross.stripboard.viewMode')
     } catch {
-      /* storage unavailable: the choice simply won't persist */
+      /* storage unavailable: nothing to clean up */
     }
-  }, [viewMode])
+  }, [])
+  const [boneyardOpen, setBoneyardOpen] = useState(false)
 
   // Reset the bloc filter when the user switches production (not on first load, which would
   // discard a deep-linked `bloc` param).
@@ -544,7 +518,6 @@ export function StripboardPage() {
       setNewDayOpen(false)
       setNewDayDate('')
       setNewDayError(null)
-      setNewlyCreatedShootDayId(result.shootDay.id)
       setActiveDayId(result.shootDay.id)
       toast.success('Shoot day created.')
       void invalidateStripboardCaches(queryClient, currentProductionId)
@@ -598,7 +571,7 @@ export function StripboardPage() {
           : `Second Unit added to ${linkedCount} shoot day(s).`
       )
       if (shootDayIds.length > 0) {
-        setNewlyCreatedShootDayId(shootDayIds[0]!)
+        setActiveDayId(shootDayIds[0]!)
       }
       void invalidateStripboardCaches(queryClient, currentProductionId)
     },
@@ -640,30 +613,6 @@ export function StripboardPage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor)
   )
-
-  const updateColumnsLeftFeather = useCallback(() => {
-    const el = columnsScrollRef.current
-    if (!el) {
-      setShowColumnsLeftFeather(false)
-      return
-    }
-    setShowColumnsLeftFeather(el.scrollLeft > 1)
-  }, [])
-
-  useLayoutEffect(() => {
-    const el = columnsScrollRef.current
-    const tick = () => updateColumnsLeftFeather()
-    const rafId = requestAnimationFrame(tick)
-    if (!el) {
-      return () => cancelAnimationFrame(rafId)
-    }
-    const ro = new ResizeObserver(tick)
-    ro.observe(el)
-    return () => {
-      cancelAnimationFrame(rafId)
-      ro.disconnect()
-    }
-  }, [shootDays.length, updateColumnsLeftFeather])
 
   const columnId = (shootDayId: string, shootDayUnitId: string) => `col:${shootDayId}:${shootDayUnitId}`
   const parseColumnId = (id: string): { shootDayId: string; shootDayUnitId: string } | null => {
@@ -729,7 +678,7 @@ export function StripboardPage() {
 
   const handleDragStart = (event: DragStartEvent) => {
     const d = event.active.data.current
-    // Day-table rows get a table-shaped preview sized to the row; board cards keep the card preview.
+    // Day-table rows get a table-shaped preview sized to the row; boneyard cards keep the card preview.
     if (d?.type === 'strip') setActiveData({ type: 'strip', strip: d.strip, preview: measureStripTableRow(d.strip.id) })
     else if (d?.type === 'unscheduled-shot') setActiveData({ type: 'unscheduled-shot', item: d.item })
     else if (d?.type === 'boneyard-strip') setActiveData({ type: 'strip', strip: d.strip, preview: null })
@@ -751,16 +700,6 @@ export function StripboardPage() {
       window.removeEventListener('albatross-menu-schedule-add-strip', onMenuAddStrip)
     }
   }, [])
-
-  useEffect(() => {
-    if (!newlyCreatedShootDayId || !shootDays.some((d) => d.id === newlyCreatedShootDayId)) return
-    const el = newDayColumnRef.current
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
-      const t = setTimeout(() => setNewlyCreatedShootDayId(null), 800)
-      return () => clearTimeout(t)
-    }
-  }, [newlyCreatedShootDayId, shootDays])
 
   /** Sonner action that moves a strip back to its prior shoot day slot (single repository call). */
   const undoMoveAction = (prior: StripboardStrip) =>
@@ -917,28 +856,6 @@ export function StripboardPage() {
         title="Stripboard"
         actions={
           <>
-            <div data-tutorial="stripboard-views" role="group" aria-label="Stripboard view" className="inline-flex rounded-md border border-border p-0.5">
-              <Button
-                variant={viewMode === 'board' ? 'default' : 'ghost'}
-                size="sm"
-                className="h-7 gap-1"
-                aria-pressed={viewMode === 'board'}
-                onClick={() => setViewMode('board')}
-              >
-                <LayoutGrid className="size-4" />
-                Board
-              </Button>
-              <Button
-                variant={viewMode === 'day' ? 'default' : 'ghost'}
-                size="sm"
-                className="h-7 gap-1"
-                aria-pressed={viewMode === 'day'}
-                onClick={() => setViewMode('day')}
-              >
-                <CalendarDays className="size-4" />
-                Day
-              </Button>
-            </div>
             {isEpisodicProduction && (
               <Select
                 value={blocViewFilter}
@@ -1023,125 +940,6 @@ export function StripboardPage() {
       )}
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        {viewMode === 'board' ? (
-        <div className="flex flex-1 gap-4 min-h-0 overflow-hidden">
-          {unscheduledPanel}
-
-          {/* Scroll area: day columns + Boneyard column fixed at far right (you can chuck strips here whenever you want). */}
-          <div className="relative flex-1 min-w-0">
-            <div
-              ref={columnsScrollRef}
-              onScroll={updateColumnsLeftFeather}
-              className="h-full overflow-auto"
-            >
-              <div className="flex gap-4 pb-4 min-h-full">
-              {visibleShootDays.map((day) => {
-                const dayUnitsList = dayUnitsByDayId.get(day.id) ?? []
-                const stripsByUnit = dayUnitsList.map((shootDayUnit) => ({
-                  shootDayUnit,
-                  strips: (stripsByDayUnit.get(`${day.id}:${shootDayUnit.id}`) ?? []).sort(
-                    (a, b) => a.sort_index - b.sort_index
-                  ),
-                }))
-                return (
-                  <div
-                    key={day.id}
-                    ref={day.id === newlyCreatedShootDayId ? newDayColumnRef : undefined}
-                    className="shrink-0"
-                  >
-                    <StripboardDayColumn
-                      day={day}
-                      units={units}
-                      dayUnits={dayUnitsList}
-                      stripsByUnit={stripsByUnit}
-                      scenes={scenes}
-                      shots={shots}
-                      onDeleteShootDay={(d) => {
-                        setDeleteShootDayTarget({
-                          id: d.id,
-                          shoot_date: d.shoot_date,
-                          day_number: d.day_number,
-                        })
-                        setDeleteShootDayError(null)
-                        setDeleteShootDayDialogOpen(true)
-                      }}
-                      onRemoveSecondUnit={({ shootDay, shootDayUnit, unit }) => {
-                        setRemoveSecondUnitTarget({
-                          shootDayUnitId: shootDayUnit.id,
-                          shootDate: shootDay.shoot_date,
-                          dayNumber: shootDay.day_number,
-                          unitName: unit.name,
-                        })
-                        setRemoveSecondUnitError(null)
-                        setRemoveSecondUnitDialogOpen(true)
-                      }}
-                      estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
-                      onUpdateStripEstimatedMinutes={(stripId, minutes) =>
-                        updateEstimatedMutation.mutate({ stripId, minutes })
-                      }
-                      onUpdateCallWrapTime={(stripId, time) =>
-                        updateCallWrapTimeMutation.mutate({ stripId, time })
-                      }
-                      onUpdateMoveStrip={(stripId, data) =>
-                        updateStripMutation.mutate({ stripId, data })
-                      }
-                      locations={locations}
-                      columnId={columnId}
-                      isLocked={false}
-                      pageEighthsTarget={PAGE_EIGHTHS_TARGET}
-                      onSendToBoneyard={(strip) => {
-                        moveToBoneyardMutation.mutate(strip.id, {
-                          onSuccess: () => toast.success('Moved to Boneyard.', { action: undoMoveAction(strip) }),
-                        })
-                      }}
-                      onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
-                      onToggleLock={(shootDayUnitId, isLocked) =>
-                        setLockedMutation.mutate({ shootDayUnitId, isLocked })
-                      }
-                      columnFilters={columnFilters}
-                      onColumnFilterChange={(colId, key, value) =>
-                        setColumnFilters((prev) => ({
-                          ...prev,
-                          [colId]: { ...(prev[colId] ?? { int: false, ext: false, day: false, night: false }), [key]: value },
-                        }))
-                      }
-                      isEpisodic={isEpisodicProduction}
-                      shootingBlocLabel={
-                        isEpisodicProduction
-                          ? shootingBlocLabelFromAssociation(day.shooting_bloc_id, blocById)
-                          : undefined
-                      }
-                      episodeById={isEpisodicProduction ? episodeById : undefined}
-                    />
-                  </div>
-                )
-              })}
-              {shootDays.length === 0 && (
-                <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground text-sm shrink-0">
-                  No shoot days. Add shoot days from the Schedule calendar or settings.
-                </div>
-              )}
-              <BoneyardPanel
-                droppableId="boneyard-panel"
-                strips={boneyard.boneyardStrips}
-                scenes={scenes}
-                shots={shots}
-                estimatedShootMinutesByShotId={estimatedShootMinutesByShotId}
-                onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
-                isEpisodic={isEpisodicProduction}
-                episodeById={isEpisodicProduction ? episodeById : undefined}
-              />
-              </div>
-            </div>
-            <div
-              aria-hidden
-              className={`pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-linear-to-r from-background to-transparent transition-opacity duration-200 ${
-                showColumnsLeftFeather ? 'opacity-100' : 'opacity-0'
-              }`}
-            />
-          </div>
-        </div>
-        ) : (
         <div className="flex flex-1 gap-4 min-h-0 overflow-hidden">
           {unscheduledOpen ? (
             <div className="relative flex shrink-0 min-h-0">
@@ -1235,7 +1033,6 @@ export function StripboardPage() {
             />
           )}
         </div>
-        )}
 
         <DragOverlay>
           {activeData?.type === 'strip' && activeData.preview && (
