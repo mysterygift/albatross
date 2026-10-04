@@ -5,6 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SlatingSystem } from '@/lib/db/types'
 import { loadShootProgress } from '@/lib/db/scriptSupervisorProgressService'
+import { loadLinedScene } from '@/lib/db/repositories/scriptLining'
 import {
   countLiveSlates,
   createSlate,
@@ -178,4 +179,13 @@ export function useSaveDayLog() {
     ({ productionId, shootDayId, patch }: { productionId: string; shootDayId: string; patch: DayLogPatch }) =>
       saveDayLog(productionId, shootDayId, patch)
   )
+}
+
+/** One scene's marked-up script: elements (generated on first view) and overlapping tramlines (SS6). */
+export function useLinedScene(productionId: string | null | undefined, sceneId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['script-supervisor', 'lined-scene', productionId ?? null, sceneId ?? null],
+    queryFn: () => loadLinedScene(productionId!, sceneId!),
+    enabled: !!productionId && !!sceneId,
+  })
 }

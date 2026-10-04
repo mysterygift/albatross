@@ -109,6 +109,7 @@ vi.mock('@/lib/documents/persistDocument', () => ({
   documentsQueryKey: (id: string) => ['documents', id],
 }))
 vi.mock('@/lib/files', () => ({ saveFileWithDialog: vi.fn() }))
+vi.mock('@/lib/db/repositories/scriptLining', () => ({ loadLinedScene: async () => null }))
 vi.mock('@/lib/pdf/dailyProgressReport', () => ({ generateDailyProgressReportPdf: vi.fn(async () => new Uint8Array()) }))
 
 vi.mock('@/lib/db/repositories/schedule', () => ({

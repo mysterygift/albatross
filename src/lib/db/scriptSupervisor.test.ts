@@ -71,6 +71,14 @@ import {
 } from '@/lib/db/repositories/scriptSupervisor'
 import { getDayLog, saveDayLog, setSceneProgress } from '@/lib/db/repositories/scriptSupervisor'
 import { loadShootProgress } from '@/lib/db/scriptSupervisorProgressService'
+import {
+  createTramline,
+  ensureScriptElements,
+  listScriptElementsForScene,
+  loadLinedScene,
+  setTramlineSegment,
+} from '@/lib/db/repositories/scriptLining'
+import { layoutLinedScript } from '@/lib/script-supervisor/lining'
 
 function applyAllMigrations(db: Database): void {
   const dir = join(process.cwd(), 'src-tauri/migrations')
@@ -274,5 +282,62 @@ describe('day log and scene timing (SS5)', () => {
     await setSceneProgress(production.id, scene.id, { notes: 'Good' })
     const row = (await loadShootProgress(production.id)).rows.find((r) => r.scene.id === scene.id)!
     expect(row).toMatchObject({ status: 'complete', completedShootDayId: day1.id, timedSeconds: 95, notes: 'Good' })
+  })
+})
+
+describe('lining (SS6)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    dataSourceOverride = null
+  })
+
+  async function seedScript(productionId: string, sceneId: string) {
+    const ts = '2026-10-01T00:00:00Z'
+    await dbAdapter.execute(
+      `INSERT INTO script_versions (id, production_id, is_locked, created_at, updated_at) VALUES ('v1', $1, 0, $2, $2)`,
+      [productionId, ts]
+    )
+    const pages: Array<[string, string, number, string]> = [
+      ['pg31', '31', 0, 'INT. EDIT SUITE - NIGHT\n\nMonitors glow.\n\nMARCUS\nSince lunch.'],
+      ['pg32', '32', 1, 'ELENA\nEvery take but one.\n\nBeat. Marcus pulls up a chair.'],
+    ]
+    for (const [id, page, index, content] of pages) {
+      await dbAdapter.execute(
+        `INSERT INTO script_pages (id, script_version_id, scene_id, page_number, page_index, content, created_at, updated_at)
+         VALUES ($1, 'v1', $2, $3, $4, $5, $6, $6)`,
+        [id, sceneId, page, index, content, ts]
+      )
+    }
+  }
+
+  it('generates elements once and draws tramlines across a page break with labels', async () => {
+    const { production, scene, day1 } = await setup()
+    await seedScript(production.id, scene.id)
+    expect(await ensureScriptElements('v1')).toBe(5)
+    expect(await ensureScriptElements('v1')).toBe(5)
+    const els = await listScriptElementsForScene('v1', scene.id)
+
+    const master = await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id, shot_type: 'master', shot_code: 'WS' })
+    await createTake(master.id, { status: 'print' })
+    const single = await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id, shot_type: 'single', shot_code: 'MS', description: 'Elena' })
+    await createTramline({ slateId: master.id, scriptVersionId: 'v1', startElementId: els[4]!.id, endElementId: els[1]!.id })
+    const t2 = await createTramline({ slateId: single.id, scriptVersionId: 'v1', startElementId: els[2]!.id, endElementId: els[3]!.id })
+    await setTramlineSegment(t2, els[2]!.id, 'off')
+    await expect(
+      createTramline({ slateId: single.id, scriptVersionId: 'v1', startElementId: els[2]!.id, endElementId: els[3]!.id })
+    ).rejects.toThrow('already has a tramline')
+
+    const lined = await loadLinedScene(production.id, scene.id)
+    const layout = layoutLinedScript(lined!.elements, lined!.tramlines)
+    expect(layout.columns.map((c) => c.label)).toEqual(['1/1 WS', '2 MS Elena'])
+    const pageBreak = layout.rows.find((r) => r.pageBreakBefore)!
+    expect(pageBreak.element.page_number).toBe('32')
+    expect(pageBreak.cells.map((c) => c.state)).toEqual(['on', 'on'])
+    expect(layout.rows[2]!.cells.map((c) => c.state)).toEqual(['on', 'off'])
+  })
+
+  it('returns null for a scene that is not in any imported script', async () => {
+    const { production, scene } = await setup()
+    expect(await loadLinedScene(production.id, scene.id)).toBeNull()
   })
 })

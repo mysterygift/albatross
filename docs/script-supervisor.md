@@ -54,7 +54,7 @@ Migration [`0087_script_supervisor_slating_system.sql`](../src-tauri/migrations/
   preference in local storage (`useTouchLayout`), not production data.
 - Remote-server productions see a notice instead of the workspace.
 
-Not yet: tramlines (SS6–SS7), demo seed data.
+Not yet: drawing tramlines (SS7), demo seed data.
 
 ## SS4 — scene status and progress
 
@@ -105,6 +105,30 @@ Also: times, the day's scenes (strip order, plus scenes completed but not schedu
 today, wild tracks, remarks. **Review → Daily progress report** holds the actual-time fields and **Export PDF**, which
 saves a copy to Documents → Set paperwork (`daily_progress_report`) and opens a save dialog. Review's scene table
 gains a **Timed** column (m:ss) for completed scenes.
+
+## SS6 — script elements and tramlines (read-only view)
+
+Migration [`0090_script_supervisor_lining.sql`](../src-tauri/migrations/0090_script_supervisor_lining.sql):
+
+| Table | Notes |
+| --- | --- |
+| `script_elements` | Lining anchors per script version: scene heading, action paragraph, dialogue speech (cue + lines, parentheticals inline), transition, with page number and order. Generated **lazily** from `script_pages` by `ensureScriptElements` the first time a version is lined (one serialized transaction; idempotent). Derived data, so no outbox rows. |
+| `tramlines` | One per slate per camera per script version: a contiguous run from `start_element_id` to `end_element_id`. |
+| `tramline_segments` | Overrides only: `off` (off camera, dashed) or `not_covered` (gap). No row = on camera. |
+
+- Why page text, not parser types: the parser's typed lines are in-memory only, but stored page text already
+  separates blocks with blank lines for PDF (`joinScriptElements`) and TXT imports, so
+  [`blocksFromPageText`](../src/lib/script-supervisor/scriptElements.ts) gives the same result for new and old scripts.
+  `(MORE)` / `CONTINUED:` lines are skipped; a transition run on after action is split off.
+- Elements belong to one script version; a new draft gets new elements. Carrying tramlines across drafts is SS10.
+- [`loadLinedScene`](../src/lib/db/repositories/scriptLining.ts) returns a scene's elements (latest version containing
+  the scene) and every live tramline overlapping them, with slate label, shot type and printed takes.
+  [`layoutLinedScript`](../src/lib/script-supervisor/lining.ts) turns that into lanes (shot order) and rows (cells with
+  start/end caps, coverage count, page breaks).
+- **Line & log → Script** shows the marked-up scene read-only ([`LinedScript.tsx`](../src/features/script-supervisor/LinedScript.tsx)):
+  tramline labels (`212/4 WS`), colours by shot type, dashed off-camera, a coverage strip flagging blocks with fewer
+  than two tramlines, and page-break markers. Repository writes for drawing (`createTramline`, `updateTramlineRange`,
+  `setTramlineSegment`, `softDeleteTramline`) are in place for SS7.
 
 ## Rules
 

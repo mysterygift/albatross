@@ -102,6 +102,11 @@ function rowToTake(r: Record<string, unknown>): Take {
 
 // ─── Validation ─────────────────────────────────────────────────────────────
 
+/** Throws the local-only error for server-published productions (shared with the lining repository). */
+export async function assertScriptSupervisorLocal(productionId: string): Promise<void> {
+  return assertLocalProduction(productionId)
+}
+
 async function assertLocalProduction(productionId: string): Promise<void> {
   if ((await getEffectiveDataSourceForProduction(productionId)) === 'remote_server') {
     throw new Error(SCRIPT_SUPERVISOR_REMOTE_ERROR)

@@ -245,6 +245,8 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'production_script_supervisor_settings',
     'script_supervisor_scene_progress',
     'script_supervisor_day_logs',
+    'script_elements',
+    'tramlines',
   ]
   try {
     const result = await runInSerializedTransaction(async () => {

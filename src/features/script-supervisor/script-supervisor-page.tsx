@@ -24,6 +24,7 @@ import { SCRIPT_SUPERVISOR_REMOTE_ERROR } from '@/lib/db/repositories/scriptSupe
 import type { UpdateSlateInput } from '@/lib/db/repositories/scriptSupervisor'
 import type { Slate, TakeNgReason, TakeStatus } from '@/lib/db/types'
 import { slateDisplayLabel } from '@/lib/script-supervisor/slateNumbering'
+import { layoutLinedScript } from '@/lib/script-supervisor/lining'
 import { SCENE_STATUS_LABEL, type SceneProgressStatus } from '@/lib/script-supervisor/progress'
 import {
   carryOverFields,
@@ -39,6 +40,7 @@ import {
   useCreateSlate,
   useCreateTake,
   useDayLog,
+  useLinedScene,
   useSaveDayLog,
   useNextSlatePreview,
   useScenesForShootDay,
@@ -51,6 +53,7 @@ import {
   useUpdateTake,
 } from './hooks'
 import { DayReportCard } from './DayReportCard'
+import { LinedScript } from './LinedScript'
 import { ProgressView } from './ProgressView'
 import { SceneStatusPip } from './SceneStatusPip'
 import { SlatePanel } from './SlatePanel'
@@ -117,6 +120,16 @@ export function ScriptSupervisorPage() {
     [progress]
   )
   const sceneStatus = (id: string): SceneProgressStatus => statusBySceneId.get(id) ?? 'not_shot'
+
+  const [middleView, setMiddleView] = useState<'slates' | 'script'>('slates')
+  const { data: linedScene, isLoading: linedLoading } = useLinedScene(
+    middleView === 'script' ? currentProductionId : null,
+    sceneId
+  )
+  const linedLayout = useMemo(
+    () => (linedScene ? layoutLinedScript(linedScene.elements, linedScene.tramlines) : null),
+    [linedScene]
+  )
 
   const { data: dayLog } = useDayLog(dayId)
   const saveDayLog = useSaveDayLog()
@@ -496,10 +509,29 @@ export function ScriptSupervisorPage() {
             )}
           </nav>
 
-          <section aria-label="Slates on this day" className="flex-1 min-w-[240px] space-y-2">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {slates.length} {slates.length === 1 ? 'slate' : 'slates'}
-            </p>
+          <div className="flex-1 min-w-[240px] space-y-2">
+          <SegmentedControl<'slates' | 'script'>
+            ariaLabel="Show"
+            size={touch ? 'md' : 'sm'}
+            className="w-auto"
+            value={middleView}
+            onValueChange={setMiddleView}
+            options={[
+              { value: 'slates', label: `Slates (${slates.length})` },
+              { value: 'script', label: sceneId ? `Script · Sc ${sceneNumberById.get(sceneId) ?? ''}` : 'Script' },
+            ]}
+          />
+          {middleView === 'script' ? (
+            <LinedScript
+              layout={linedLayout}
+              isLoading={linedLoading && !!sceneId}
+              hasScript={!!linedScene}
+              sceneNumber={sceneId ? sceneNumberById.get(sceneId) ?? null : null}
+              currentSlateId={currentSlate?.id ?? null}
+              touch={touch}
+            />
+          ) : (
+          <section aria-label="Slates on this day" className="space-y-2">
             <ul className="space-y-1">
               {[...slates].reverse().map((s) => {
                 const active = currentSlate?.id === s.id
@@ -538,6 +570,8 @@ export function ScriptSupervisorPage() {
               })}
             </ul>
           </section>
+          )}
+          </div>
 
           <div className={cn('w-full', touch ? 'lg:w-[420px]' : 'lg:w-[380px]')}>
             <SlatePanel
