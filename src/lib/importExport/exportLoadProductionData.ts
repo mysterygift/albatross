@@ -6,6 +6,7 @@ import { getDb } from '@/lib/db/client'
 import type { ApfTableRow, ApfV1Tables } from '@/lib/importExport/payload'
 import type { ApfV1TableKey } from '@/lib/importExport/tableKeys'
 import { APF_V1_TABLE_KEYS } from '@/lib/importExport/tableKeys'
+import { pruneOrphanedApfRows } from '@/lib/importExport/pruneOrphanedRows'
 import { resolveVendorsForExport } from '@/lib/importExport/resolveVendorsForExport'
 import { isClientEncryptionEnabled } from '@/lib/security/dataEncryptionContext'
 import { requireSensitiveDataAccess } from '@/lib/security/sensitiveDataAccess'
@@ -92,6 +93,25 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     riskAssessments,
     riskAssessmentUnits,
     riskAssessmentHazards,
+    scriptVersions,
+    scriptPages,
+    scriptSections,
+    scriptSectionRanges,
+    scriptSectionCharacters,
+    shotScriptSections,
+    shootDaySidesExports,
+    scriptSupervisorSettings,
+    slates,
+    takes,
+    scriptSupervisorSceneProgress,
+    scriptSupervisorDayLogs,
+    scriptElements,
+    tramlines,
+    tramlineSegments,
+    scriptAnnotations,
+    scriptAnnotationTakes,
+    continuityMedia,
+    scriptRevisionItems,
   ] = await Promise.all([
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM productions WHERE id = $1 AND deleted_at IS NULL`,
@@ -420,6 +440,98 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
        WHERE h.deleted_at IS NULL`,
       [$1]
     ),
+    // v9: script sections / sides builder.
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM script_versions WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT sp.* FROM script_pages sp
+       INNER JOIN script_versions sv ON sv.id = sp.script_version_id AND sv.production_id = $1 AND sv.deleted_at IS NULL
+       WHERE sp.deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM script_sections WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT r.* FROM script_section_ranges r
+       INNER JOIN script_sections ss ON ss.id = r.section_id AND ss.production_id = $1 AND ss.deleted_at IS NULL
+       WHERE r.deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT c.* FROM script_section_characters c
+       INNER JOIN script_sections ss ON ss.id = c.section_id AND ss.production_id = $1 AND ss.deleted_at IS NULL
+       WHERE c.deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT l.* FROM shot_script_sections l
+       INNER JOIN shots sh ON sh.id = l.shot_id AND sh.deleted_at IS NULL
+       INNER JOIN scenes sc ON sc.id = sh.scene_id AND sc.production_id = $1 AND sc.deleted_at IS NULL
+       WHERE l.deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM shoot_day_sides_exports WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    // v9: script supervisor. Rows without `deleted_at` are keyed 1:1 to a live parent (see pruneOrphanedApfRows).
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM production_script_supervisor_settings WHERE production_id = $1`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM slates WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT t.* FROM takes t
+       INNER JOIN slates sl ON sl.id = t.slate_id AND sl.production_id = $1 AND sl.deleted_at IS NULL
+       WHERE t.deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM script_supervisor_scene_progress WHERE production_id = $1 ORDER BY scene_id ASC`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM script_supervisor_day_logs WHERE production_id = $1 ORDER BY shoot_day_id ASC`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM script_elements WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM tramlines WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT seg.* FROM tramline_segments seg
+       INNER JOIN tramlines tl ON tl.id = seg.tramline_id AND tl.production_id = $1 AND tl.deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM script_annotations WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT sat.* FROM script_annotation_takes sat
+       INNER JOIN script_annotations sa ON sa.id = sat.annotation_id AND sa.production_id = $1 AND sa.deleted_at IS NULL
+       ORDER BY sat.annotation_id ASC, sat.take_id ASC`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM continuity_media WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM script_revision_items WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
   ])
 
   const exportedDocumentIds = new Set(documents.map((d) => d.id as string))
@@ -504,6 +616,25 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     risk_assessments: asRows(exportedRiskAssessments),
     risk_assessment_units: asRows(riskAssessmentUnits),
     risk_assessment_hazards: asRows(riskAssessmentHazards),
+    script_versions: asRows(scriptVersions),
+    script_pages: asRows(scriptPages),
+    script_sections: asRows(scriptSections),
+    script_section_ranges: asRows(scriptSectionRanges),
+    script_section_characters: asRows(scriptSectionCharacters),
+    shot_script_sections: asRows(shotScriptSections),
+    shoot_day_sides_exports: asRows(shootDaySidesExports),
+    production_script_supervisor_settings: asRows(scriptSupervisorSettings),
+    slates: asRows(slates),
+    takes: asRows(takes),
+    script_supervisor_scene_progress: asRows(scriptSupervisorSceneProgress),
+    script_supervisor_day_logs: asRows(scriptSupervisorDayLogs),
+    script_elements: asRows(scriptElements),
+    tramlines: asRows(tramlines),
+    tramline_segments: asRows(tramlineSegments),
+    script_annotations: asRows(scriptAnnotations),
+    script_annotation_takes: asRows(scriptAnnotationTakes),
+    continuity_media: asRows(continuityMedia),
+    script_revision_items: asRows(scriptRevisionItems),
   }
 
   for (const key of APF_V1_TABLE_KEYS) {
@@ -512,5 +643,5 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     }
   }
 
-  return raw
+  return pruneOrphanedApfRows(raw)
 }

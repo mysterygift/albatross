@@ -189,7 +189,7 @@ describe('apf E2E (sql.js + real FS)', () => {
     const exportedBytes = new Uint8Array(await readFile(apfPath))
     const parsedExport = parseApfArchiveBytes(exportedBytes)
     expect(parsedExport.normalized.data.tables.budget_revisions).toHaveLength(1)
-    expect(parsedExport.normalized.data.formatVersion).toBe(8)
+    expect(parsedExport.normalized.data.formatVersion).toBe(9)
 
     clearUserData()
     const imp = await importProductionFromApf(apfPath)
@@ -293,6 +293,227 @@ describe('apf E2E (sql.js + real FS)', () => {
     expect(links).toEqual([{ shoot_day_unit_id: SDU }])
     const tpl = await adapter.select<Record<string, unknown>[]>(`SELECT name FROM hazard_templates WHERE production_id = $1`, [PROD_ID])
     expect(tpl).toEqual([{ name: 'Saved' }])
+  })
+
+  it('round-trips script sections, script supervisor data and movement order columns', async () => {
+    clearUserData()
+    const adapter = sqlJsApfE2eContext.adapter!
+    const id = (n: number) => `aaaaaaaa-e2e9-4e29-8f${String(n).padStart(2, '0')}-a1e2e2e2e2a1`
+    const DAY = id(1)
+    const DAY_GONE = id(2)
+    const SDU = id(3)
+    const SCENE = id(4)
+    const SHOT = id(5)
+    // Parents get higher ids than the rows that point at them: export sorts by id, so import must reorder.
+    const V1 = id(31)
+    const V2 = id(7)
+    const PAGE = id(8)
+    const SECTION = id(9)
+    const SLATE = id(10)
+    const SLATE_GONE = id(11)
+    const TAKE = id(12)
+    const TAKE_GONE = id(13)
+    const EL1 = id(14)
+    const EL2 = id(15)
+    const TL1 = id(32)
+    const TL2 = id(17)
+    const TL_GONE = id(18)
+    const ANN1 = id(33)
+    const ANN2 = id(20)
+    const PHOTO_DOC = id(21)
+    const SIDES_DOC = id(22)
+    const PERSON = id(23)
+    const photoRel = `attachments/${PROD_ID}/${PHOTO_DOC}-photo.jpg`
+    await mkdir(join(apfNodeFsTestContext.appDataRoot, 'attachments', PROD_ID), { recursive: true })
+    await writeFile(join(apfNodeFsTestContext.appDataRoot, photoRel), Buffer.from('jpeg-bytes'))
+
+    const run = (sql: string, params: unknown[] = []) => adapter.execute(sql, params)
+    await run(
+      `INSERT INTO productions (id, name, notes, created_at, updated_at, deleted_at, slug, currency_code, archived_at, wrapped_at, created_from_template)
+       VALUES ($1, 'Script E2E', NULL, $2, $2, NULL, 'script-e2e', 'GBP', NULL, NULL, NULL)`,
+      [PROD_ID, TS]
+    )
+    await run(`INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, 'Main Unit', $3, $3)`, [UNIT_ID, PROD_ID, TS])
+    await run(`INSERT INTO people (id, production_id, name, created_at, updated_at) VALUES ($1, $2, 'Actor', $3, $3)`, [PERSON, PROD_ID, TS])
+    await run(
+      `INSERT INTO shoot_days (id, production_id, shoot_date, movement_pins_json, created_at, updated_at) VALUES ($1, $2, '2025-02-01', '[{"kind":"base"}]', $3, $3)`,
+      [DAY, PROD_ID, TS]
+    )
+    await run(`INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at, deleted_at) VALUES ($1, $2, '2025-02-02', $3, $3, $3)`, [DAY_GONE, PROD_ID, TS])
+    await run(
+      `INSERT INTO shoot_day_units (id, shoot_day_id, unit_id, is_locked, movement_order_json, created_at, updated_at) VALUES ($1, $2, $3, 0, '{"revision":"B"}', $4, $4)`,
+      [SDU, DAY, UNIT_ID, TS]
+    )
+    await run(
+      `INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, '1', $3, $3)`,
+      [SCENE, PROD_ID, TS]
+    )
+    await run(`INSERT INTO shots (id, scene_id, shot_number, created_at, updated_at) VALUES ($1, $2, '1A', $3, $3)`, [SHOT, SCENE, TS])
+    await run(
+      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
+       VALUES ($1, $2, 'continuity_photo', $3, 'photo.jpg', $4, 'image/jpeg', $5, $5)`,
+      [PHOTO_DOC, PROD_ID, SCENE, photoRel, TS]
+    )
+    await run(
+      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
+       VALUES ($1, $2, 'sides', $3, 'sides.pdf', 'attachments/missing/sides.pdf', 'application/pdf', $4, $4)`,
+      [SIDES_DOC, PROD_ID, DAY, TS]
+    )
+
+    // Script sections / sides builder.
+    await run(`INSERT INTO script_versions (id, production_id, title, created_at, updated_at) VALUES ($1, $2, 'Draft 1', $3, $3)`, [V1, PROD_ID, TS])
+    await run(
+      `INSERT INTO script_versions (id, production_id, title, previous_script_version_id, created_at, updated_at) VALUES ($1, $2, 'Draft 2', $3, $4, $4)`,
+      [V2, PROD_ID, V1, TS]
+    )
+    await run(
+      `INSERT INTO script_pages (id, script_version_id, scene_id, page_number, page_index, content, created_at, updated_at) VALUES ($1, $2, $3, '1', 0, 'INT. KITCHEN', $4, $4)`,
+      [PAGE, V2, SCENE, TS]
+    )
+    await run(
+      `INSERT INTO script_sections (id, production_id, script_version_id, scene_id, label, section_type, created_at, updated_at) VALUES ($1, $2, $3, $4, 'Stunt', 'stunt', $5, $5)`,
+      [SECTION, PROD_ID, V2, SCENE, TS]
+    )
+    await run(`INSERT INTO script_section_ranges (id, section_id, start_page, end_page, created_at, updated_at) VALUES ('rng-1', $1, '1', '2', $2, $2)`, [SECTION, TS])
+    await run(
+      `INSERT INTO script_section_characters (id, section_id, person_id, character_name, created_at, updated_at) VALUES ('chr-1', $1, $2, 'Ann', $3, $3)`,
+      [SECTION, PERSON, TS]
+    )
+    await run(
+      `INSERT INTO shot_script_sections (id, shot_id, script_section_id, sort_index, created_at, updated_at) VALUES ('sss-1', $1, $2, 0, $3, $3)`,
+      [SHOT, SECTION, TS]
+    )
+    await run(
+      `INSERT INTO shoot_day_sides_exports (id, production_id, shoot_day_id, unit_id, document_id, script_version_id, export_label, created_at, updated_at)
+       VALUES ('sde-1', $1, $2, $3, $4, $5, 'Day 1 sides', $6, $6)`,
+      [PROD_ID, DAY, UNIT_ID, SIDES_DOC, V2, TS]
+    )
+
+    // Script supervisor.
+    await run(`INSERT INTO production_script_supervisor_settings (production_id, slating_system, created_at, updated_at) VALUES ($1, 'us', $2, $2)`, [PROD_ID, TS])
+    await run(
+      `INSERT INTO slates (id, production_id, shoot_day_id, unit_id, scene_id, shot_id, slate_prefix, slate_number, slating_system, shot_code, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, '', 1, 'uk', 'MS', $7, $7)`,
+      [SLATE, PROD_ID, DAY, UNIT_ID, SCENE, SHOT, TS]
+    )
+    // A slate on a soft-deleted shoot day (and its takes / tramline / note) is not exported.
+    await run(
+      `INSERT INTO slates (id, production_id, shoot_day_id, slate_prefix, slate_number, created_at, updated_at) VALUES ($1, $2, $3, '', 2, $4, $4)`,
+      [SLATE_GONE, PROD_ID, DAY_GONE, TS]
+    )
+    await run(`INSERT INTO takes (id, slate_id, take_number, status, end_board, created_at, updated_at) VALUES ($1, $2, 1, 'print', 0, $3, $3)`, [TAKE, SLATE, TS])
+    await run(`INSERT INTO takes (id, slate_id, take_number, status, end_board, created_at, updated_at) VALUES ($1, $2, 1, 'ng', 0, $3, $3)`, [TAKE_GONE, SLATE_GONE, TS])
+    await run(
+      `INSERT INTO script_supervisor_scene_progress (scene_id, production_id, marked_status, completed_shoot_day_id, timed_seconds, created_at, updated_at)
+       VALUES ($1, $2, 'complete', $3, 95, $4, $4)`,
+      [SCENE, PROD_ID, DAY, TS]
+    )
+    await run(
+      `INSERT INTO script_supervisor_day_logs (shoot_day_id, production_id, call_time, wrap_time, remarks, created_at, updated_at) VALUES ($1, $2, '07:00', '19:30', 'Rain', $3, $3)`,
+      [DAY, PROD_ID, TS]
+    )
+    for (const [el, idx] of [[EL1, 0], [EL2, 1]] as const) {
+      await run(
+        `INSERT INTO script_elements (id, production_id, script_version_id, scene_id, script_page_id, sort_index, element_type, text, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'action', 'Line', $7, $7)`,
+        [el, PROD_ID, V2, SCENE, PAGE, idx, TS]
+      )
+    }
+    await run(
+      `INSERT INTO tramlines (id, production_id, slate_id, script_version_id, camera, start_element_id, end_element_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, '', $5, $6, $7, $7)`,
+      [TL1, PROD_ID, SLATE, V2, EL1, EL2, TS]
+    )
+    await run(
+      `INSERT INTO tramlines (id, production_id, slate_id, script_version_id, camera, start_element_id, end_element_id, carried_from_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'B', $5, $6, $7, $8, $8)`,
+      [TL2, PROD_ID, SLATE, V2, EL1, EL2, TL1, TS]
+    )
+    await run(
+      `INSERT INTO tramlines (id, production_id, slate_id, script_version_id, camera, start_element_id, end_element_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, '', $5, $6, $7, $7)`,
+      [TL_GONE, PROD_ID, SLATE_GONE, V2, EL1, EL2, TS]
+    )
+    await run(`INSERT INTO tramline_segments (id, tramline_id, element_id, state, created_at, updated_at) VALUES ('seg-1', $1, $2, 'off', $3, $3)`, [TL1, EL2, TS])
+    await run(`INSERT INTO tramline_segments (id, tramline_id, element_id, state, created_at, updated_at) VALUES ('seg-gone', $1, $2, 'off', $3, $3)`, [TL_GONE, EL2, TS])
+    await run(
+      `INSERT INTO script_annotations (id, production_id, script_version_id, element_id, slate_id, kind, text, carried_from_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, 'note', 'Carried', NULL, $6, $6)`,
+      [ANN1, PROD_ID, V1, EL1, SLATE, TS]
+    )
+    await run(
+      `INSERT INTO script_annotations (id, production_id, script_version_id, element_id, slate_id, kind, text, carried_from_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, NULL, 'line_change', 'New line', $5, $6, $6)`,
+      [ANN2, PROD_ID, V2, EL2, ANN1, TS]
+    )
+    await run(`INSERT INTO script_annotation_takes (annotation_id, take_id) VALUES ($1, $2)`, [ANN1, TAKE])
+    await run(
+      `INSERT INTO continuity_media (id, production_id, document_id, slate_id, take_id, scene_id, tags, caption, created_at, updated_at)
+       VALUES ('cm-1', $1, $2, $3, $4, $5, 'wardrobe', 'Jacket', $6, $6)`,
+      [PROD_ID, PHOTO_DOC, SLATE, TAKE, SCENE, TS]
+    )
+    await run(
+      `INSERT INTO script_revision_items (id, production_id, scene_id, from_script_version_id, to_script_version_id, item_type, item_id, outcome, new_item_id, created_at, updated_at)
+       VALUES ('sri-1', $1, $2, $3, $4, 'tramline', $5, 'carried', $6, $7, $7)`,
+      [PROD_ID, SCENE, V1, V2, TL1, TL2, TS]
+    )
+
+    await exportProductionAsApf(PROD_ID, apfPath)
+    const exported = parseApfArchiveBytes(new Uint8Array(await readFile(apfPath))).normalized.data.tables
+    expect(exported.script_versions).toHaveLength(2)
+    expect(exported.slates.map((r) => r.id)).toEqual([SLATE])
+    expect(exported.takes.map((r) => r.id)).toEqual([TAKE])
+    expect(exported.tramlines.map((r) => r.id).sort()).toEqual([TL1, TL2].sort())
+    expect(exported.tramline_segments.map((r) => r.id)).toEqual(['seg-1'])
+
+    clearUserData()
+    const imp = await importProductionFromApf(apfPath)
+    expect(imp.ok).toBe(true)
+    if (!imp.ok) throw imp.error
+
+    const rows = (sql: string, params: unknown[] = [PROD_ID]) => adapter.select<Record<string, unknown>[]>(sql, params)
+    expect(await rows(`SELECT id, previous_script_version_id FROM script_versions WHERE production_id = $1 ORDER BY title`)).toEqual([
+      { id: V1, previous_script_version_id: null },
+      { id: V2, previous_script_version_id: V1 },
+    ])
+    expect(await rows(`SELECT content FROM script_pages`, [])).toEqual([{ content: 'INT. KITCHEN' }])
+    expect(await rows(`SELECT section_type FROM script_sections WHERE production_id = $1`)).toEqual([{ section_type: 'stunt' }])
+    expect(await rows(`SELECT start_page, end_page FROM script_section_ranges`, [])).toEqual([{ start_page: '1', end_page: '2' }])
+    expect(await rows(`SELECT person_id FROM script_section_characters`, [])).toEqual([{ person_id: PERSON }])
+    expect(await rows(`SELECT shot_id FROM shot_script_sections`, [])).toEqual([{ shot_id: SHOT }])
+    expect(await rows(`SELECT document_id, script_version_id FROM shoot_day_sides_exports`, [])).toEqual([
+      { document_id: SIDES_DOC, script_version_id: V2 },
+    ])
+    expect(await rows(`SELECT slating_system FROM production_script_supervisor_settings WHERE production_id = $1`)).toEqual([{ slating_system: 'us' }])
+    expect(await rows(`SELECT id, shot_code, shot_id FROM slates WHERE production_id = $1`)).toEqual([{ id: SLATE, shot_code: 'MS', shot_id: SHOT }])
+    expect(await rows(`SELECT id, status FROM takes`, [])).toEqual([{ id: TAKE, status: 'print' }])
+    expect(await rows(`SELECT marked_status, timed_seconds FROM script_supervisor_scene_progress WHERE production_id = $1`)).toEqual([
+      { marked_status: 'complete', timed_seconds: 95 },
+    ])
+    expect(await rows(`SELECT call_time, wrap_time, remarks FROM script_supervisor_day_logs WHERE production_id = $1`)).toEqual([
+      { call_time: '07:00', wrap_time: '19:30', remarks: 'Rain' },
+    ])
+    expect(await rows(`SELECT id FROM script_elements WHERE production_id = $1 ORDER BY sort_index`)).toEqual([{ id: EL1 }, { id: EL2 }])
+    expect(await rows(`SELECT id, carried_from_id FROM tramlines WHERE production_id = $1 ORDER BY camera`)).toEqual([
+      { id: TL1, carried_from_id: null },
+      { id: TL2, carried_from_id: TL1 },
+    ])
+    expect(await rows(`SELECT state FROM tramline_segments`, [])).toEqual([{ state: 'off' }])
+    expect(await rows(`SELECT id, carried_from_id FROM script_annotations WHERE production_id = $1 ORDER BY kind DESC`)).toEqual([
+      { id: ANN1, carried_from_id: null },
+      { id: ANN2, carried_from_id: ANN1 },
+    ])
+    expect(await rows(`SELECT take_id FROM script_annotation_takes`, [])).toEqual([{ take_id: TAKE }])
+    expect(await rows(`SELECT document_id, tags FROM continuity_media WHERE production_id = $1`)).toEqual([
+      { document_id: PHOTO_DOC, tags: 'wardrobe' },
+    ])
+    expect(await rows(`SELECT outcome, new_item_id FROM script_revision_items WHERE production_id = $1`)).toEqual([
+      { outcome: 'carried', new_item_id: TL2 },
+    ])
+    expect(await rows(`SELECT movement_pins_json FROM shoot_days WHERE id = $1`, [DAY])).toEqual([{ movement_pins_json: '[{"kind":"base"}]' }])
+    expect(await rows(`SELECT movement_order_json FROM shoot_day_units WHERE id = $1`, [SDU])).toEqual([{ movement_order_json: '{"revision":"B"}' }])
+    // The continuity photo's bytes travel with the package.
+    expect(existsSync(join(apfNodeFsTestContext.appDataRoot, photoRel))).toBe(true)
   })
 
   it('imports legacy v3 scenes.heading via file migration into title', async () => {
