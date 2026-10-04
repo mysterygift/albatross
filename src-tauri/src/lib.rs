@@ -996,6 +996,48 @@ pub fn run() {
             sql: include_str!("../migrations/0092_risk_assessments.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 93,
+            description: "script_supervisor_slates_takes",
+            sql: include_str!("../migrations/0093_script_supervisor_slates_takes.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 94,
+            description: "script_supervisor_slating_system",
+            sql: include_str!("../migrations/0094_script_supervisor_slating_system.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 95,
+            description: "script_supervisor_scene_progress",
+            sql: include_str!("../migrations/0095_script_supervisor_scene_progress.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 96,
+            description: "script_supervisor_day_log",
+            sql: include_str!("../migrations/0096_script_supervisor_day_log.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 97,
+            description: "script_supervisor_lining",
+            sql: include_str!("../migrations/0097_script_supervisor_lining.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 98,
+            description: "script_supervisor_annotations_media",
+            sql: include_str!("../migrations/0098_script_supervisor_annotations_media.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 99,
+            description: "script_supervisor_revisions",
+            sql: include_str!("../migrations/0099_script_supervisor_revisions.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

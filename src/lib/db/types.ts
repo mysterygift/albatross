@@ -1065,6 +1065,78 @@ export type ShootDaySidesExport = {
   metadata_json: string | null
 } & SoftDeletable
 
+// ─── Script Supervisor (SS1) ────────────────────────────────────────────────
+
+/**
+ * UK slate series prefix: '' = main unit, 'X' = second unit, 'Y' = unsupervised / pick-up unit.
+ * Stored as free text so productions can add their own series later.
+ */
+export type SlatePrefix = string
+
+/** Tramline category; drives the coverage-line colour on the marked-up script. */
+export type SlateShotType = 'master' | 'single' | 'multiple' | 'insert' | 'other'
+
+export type SlateSoundMode = 'sync' | 'mute' | 'wild_track'
+
+/** Per-production slating convention (SS2). UK consecutive is the default. */
+export type SlatingSystem = 'uk' | 'us'
+
+export type ProductionScriptSupervisorSettings = {
+  production_id: string
+  slating_system: SlatingSystem
+  created_at: string
+  updated_at: string
+}
+
+/** One camera setup on the day (UK: a slate number; US: scene + setup letter). Local SQLite only. */
+export type Slate = {
+  id: string
+  production_id: string
+  /** System the slate was created under; labels never change if the production setting changes later. */
+  slating_system: SlatingSystem
+  /** Stripboard shoot day this setup was shot on. */
+  shoot_day_id: string
+  unit_id: string | null
+  scene_id: string | null
+  /** Planned shot from the shot list this setup realises, when known. */
+  shot_id: string | null
+  /** UK series prefix; always '' for US slates. */
+  slate_prefix: SlatePrefix
+  /** UK: consecutive slate number. US: setup ordinal within the scene (1 = scene alone, 2 = A, 3 = B…). */
+  slate_number: number
+  shot_type: SlateShotType | null
+  /** Short description written beside the tramline, e.g. 'MS', '2S', 'CU'. */
+  shot_code: string | null
+  description: string | null
+  camera: string | null
+  lens: string | null
+  stop: string | null
+  filter: string | null
+  sound_mode: SlateSoundMode
+  int_ext: string | null
+  day_night: string | null
+  camera_roll: string | null
+  sound_roll: string | null
+  notes: string | null
+} & SoftDeletable
+
+export type TakeStatus = 'pending' | 'print' | 'hold' | 'ng' | 'incomplete'
+
+export type TakeNgReason = 'performance' | 'camera' | 'sound' | 'focus' | 'continuity' | 'other'
+
+/** One recorded take of a slate. Local SQLite only. */
+export type Take = {
+  id: string
+  slate_id: string
+  take_number: number
+  status: TakeStatus
+  ng_reason: TakeNgReason | null
+  duration_ms: number | null
+  /** Slated at the tail (end board); stored as 0/1. */
+  end_board: number
+  remarks: string | null
+} & SoftDeletable
+
 // ─── Calendar (Schedule view) ───────────────────────────────────────────────
 
 /** Unit key for calendar display; derived from unit name. */

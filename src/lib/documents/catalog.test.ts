@@ -21,6 +21,11 @@ describe('document catalog', () => {
       'set-paperwork'
     )
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.riskAssessment)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.dailyProgressReport)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.continuityPhoto)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.continuitySheets)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.editorsLog)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.markedUpScript)).toBe('set-paperwork')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.contributorForm)).toBe('people-locations')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.permit)).toBe('people-locations')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.locationRelease)).toBe('people-locations')
@@ -37,6 +42,7 @@ describe('document catalog', () => {
     expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.expenseReceipt)).toBe('Expense receipt')
     expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.permit)).toBe('Permit')
     expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.riskAssessment)).toBe('Risk assessment')
+    expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.markedUpScript)).toBe('Marked-up script')
     expect(getDocumentTypeLabel(null)).toBe('General upload')
   })
 

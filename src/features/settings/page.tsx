@@ -68,6 +68,7 @@ import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, C
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { SettingsNav } from '@/features/settings/SettingsNav'
+import { ScriptSupervisorSettingsSection } from '@/features/settings/ScriptSupervisorSettingsSection'
 import { sectionFromSearchParams, type SettingsSectionId } from '@/features/settings/settingsSections'
 import { useDeveloperMode } from '@/hooks/useDeveloperMode'
 import { useConfirm } from '@/components/ui/confirm-dialog'
@@ -704,6 +705,18 @@ export function SettingsPage() {
               <p className="text-sm text-muted-foreground">Select a production to configure crew structure.</p>
             </div>
       )}
+        </div>
+      )}
+
+      {section === 'script-supervisor' && (
+        <div className="space-y-5">
+          {currentProductionId ? (
+            <ScriptSupervisorSettingsSection productionId={currentProductionId} />
+          ) : (
+            <div className="rounded-lg border border-border bg-muted/20 py-6 px-4 text-center">
+              <p className="text-sm text-muted-foreground">Select a production to set its slating system.</p>
+            </div>
+          )}
         </div>
       )}
 

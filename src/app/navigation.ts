@@ -66,6 +66,7 @@ export const navGroups: NavGroup[] = [
         sub: [
           { to: '/schedule/script-import', label: 'Script Import' },
           { to: '/schedule/script-sections', label: 'Script Sections' },
+          { to: '/schedule/script-supervisor', label: 'Script Supervisor' },
         ],
       },
       { to: '/locations', label: 'Locations', icon: MapPin },
