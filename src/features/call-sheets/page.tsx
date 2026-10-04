@@ -60,7 +60,7 @@ import {
   shootingBlocMastheadLabelForCallSheet,
 } from '@/lib/call-sheets/callSheetEpisodic'
 import { generateCallSheetPdf, parseCallSheetWeatherJson } from '@/lib/pdf/callSheet'
-import type { CallSheetData } from '@/lib/pdf/callSheet'
+import type { CallSheetData, CallSheetPaperSize } from '@/lib/pdf/callSheet'
 import { selectPrimaryCallSheetContacts } from '@/lib/call-sheets/primaryContacts'
 import {
   buildCallSheetStripFromStripboard,
@@ -98,6 +98,10 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { RamsSignOffAlert } from '@/features/risk-assessments/RamsSignOffAlert'
+import { useRamsSignOff } from '@/features/risk-assessments/useRamsSignOff'
+import { describeRamsSignOff } from '@/lib/risk-assessments/ramsSignOff'
 import { CallSheetDistributionDialog, type CallSheetRecipient } from '@/features/call-sheets/CallSheetDistributionDialog'
 import { exportDistributedCallSheets } from '@/features/call-sheets/exportDistributedCallSheets'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -117,6 +121,7 @@ export function CallSheetsPage() {
   const canLoadProjectData = !authSession.authSupported || !!authSession.currentUser
   const [shootDayId, setShootDayId] = useState<string | null>(null)
   const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
+  const [paperSize, setPaperSize] = useState<CallSheetPaperSize>('A4')
   const [weatherSummary, setWeatherSummary] = useState('')
   const [sunriseManual, setSunriseManual] = useState('')
   const [sunsetManual, setSunsetManual] = useState('')
@@ -726,6 +731,8 @@ export function CallSheetsPage() {
       shootDate: shootDay.shoot_date,
       unitName,
       dayNumber: shootDay.day_number ?? null,
+      totalDays: shootDays.length || null,
+      paperSize,
       callTime: shootDay.call_time ?? null,
       wrapTime: shootDay.wrap_time ?? null,
       dayNotes: shootDay.notes ?? null,
@@ -804,6 +811,7 @@ export function CallSheetsPage() {
     sunsetManual,
     weatherSummary,
     weatherFromDay,
+    paperSize,
   ])
 
   const distributionContext = useMemo(() => {
@@ -930,9 +938,24 @@ export function CallSheetsPage() {
     },
   })
 
-  const handleGenerate = (save: boolean, openAfter?: boolean) => {
+  const ramsStatus = useRamsSignOff(shootDayId, shootDayUnitId)
+  const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirm()
+
+  /** A missing / unsigned RAMS is a warning, not a block: resolves true when the user exports anyway. */
+  const confirmRamsOverride = async (): Promise<boolean> => {
+    const copy = ramsStatus ? describeRamsSignOff(ramsStatus, buildCallSheetData?.unitName ?? 'this unit') : null
+    if (!copy) return true
+    return confirmDialog({
+      title: 'Export anyway?',
+      description: `${copy.title}. ${copy.detail} The call sheet will be exported without a signed-off risk assessment.`,
+      confirmLabel: 'Export anyway',
+    })
+  }
+
+  const handleGenerate = async (save: boolean, openAfter?: boolean) => {
     const baseData = buildCallSheetData
     if (!baseData || !shootDay) return
+    if (!(await confirmRamsOverride())) return
     setDistributionExportSuccessMessage(null)
     setGenerateError(null)
     setWeatherFallbackMessage(null)
@@ -1003,6 +1026,18 @@ export function CallSheetsPage() {
                       </SelectItem>
                     )
                   })}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Paper size</Label>
+              <Select value={paperSize} onValueChange={(v) => setPaperSize(v as CallSheetPaperSize)}>
+                <SelectTrigger className="w-full bg-input border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="A4">A4</SelectItem>
+                  <SelectItem value="Letter">US Letter</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1110,6 +1145,7 @@ export function CallSheetsPage() {
                     <p className="text-muted-foreground text-sm">No cast called for this day/unit.</p>
                   )}
                 </div>
+                <RamsSignOffAlert status={ramsStatus} unitName={buildCallSheetData?.unitName ?? 'this unit'} />
                 {(castResult.requiredButNotBooked.length > 0 || castResult.bookedButNotRequired.length > 0) && (
               <div className="space-y-2">
                 {castResult.requiredButNotBooked.length > 0 && (
@@ -1262,6 +1298,7 @@ export function CallSheetsPage() {
         error={distributionStatus.error}
         onGenerateSelected={async (selected) => {
           if (!buildCallSheetData) return
+          if (!(await confirmRamsOverride())) return
           setDistributionExportSuccessMessage(null)
           setDistributionStatus({ loading: true, message: null, error: null })
           try {
@@ -1299,6 +1336,7 @@ export function CallSheetsPage() {
           }
         }}
       />
+      {confirmDialogNode}
     </div>
   )
 }

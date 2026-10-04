@@ -1067,6 +1067,78 @@ export type ShootDaySidesExport = {
   metadata_json: string | null
 } & SoftDeletable
 
+// ─── Script Supervisor (SS1) ────────────────────────────────────────────────
+
+/**
+ * UK slate series prefix: '' = main unit, 'X' = second unit, 'Y' = unsupervised / pick-up unit.
+ * Stored as free text so productions can add their own series later.
+ */
+export type SlatePrefix = string
+
+/** Tramline category; drives the coverage-line colour on the marked-up script. */
+export type SlateShotType = 'master' | 'single' | 'multiple' | 'insert' | 'other'
+
+export type SlateSoundMode = 'sync' | 'mute' | 'wild_track'
+
+/** Per-production slating convention (SS2). UK consecutive is the default. */
+export type SlatingSystem = 'uk' | 'us'
+
+export type ProductionScriptSupervisorSettings = {
+  production_id: string
+  slating_system: SlatingSystem
+  created_at: string
+  updated_at: string
+}
+
+/** One camera setup on the day (UK: a slate number; US: scene + setup letter). Local SQLite only. */
+export type Slate = {
+  id: string
+  production_id: string
+  /** System the slate was created under; labels never change if the production setting changes later. */
+  slating_system: SlatingSystem
+  /** Stripboard shoot day this setup was shot on. */
+  shoot_day_id: string
+  unit_id: string | null
+  scene_id: string | null
+  /** Planned shot from the shot list this setup realises, when known. */
+  shot_id: string | null
+  /** UK series prefix; always '' for US slates. */
+  slate_prefix: SlatePrefix
+  /** UK: consecutive slate number. US: setup ordinal within the scene (1 = scene alone, 2 = A, 3 = B…). */
+  slate_number: number
+  shot_type: SlateShotType | null
+  /** Short description written beside the tramline, e.g. 'MS', '2S', 'CU'. */
+  shot_code: string | null
+  description: string | null
+  camera: string | null
+  lens: string | null
+  stop: string | null
+  filter: string | null
+  sound_mode: SlateSoundMode
+  int_ext: string | null
+  day_night: string | null
+  camera_roll: string | null
+  sound_roll: string | null
+  notes: string | null
+} & SoftDeletable
+
+export type TakeStatus = 'pending' | 'print' | 'hold' | 'ng' | 'incomplete'
+
+export type TakeNgReason = 'performance' | 'camera' | 'sound' | 'focus' | 'continuity' | 'other'
+
+/** One recorded take of a slate. Local SQLite only. */
+export type Take = {
+  id: string
+  slate_id: string
+  take_number: number
+  status: TakeStatus
+  ng_reason: TakeNgReason | null
+  duration_ms: number | null
+  /** Slated at the tail (end board); stored as 0/1. */
+  end_board: number
+  remarks: string | null
+} & SoftDeletable
+
 // ─── Calendar (Schedule view) ───────────────────────────────────────────────
 
 /** Unit key for calendar display; derived from unit name. */
@@ -1106,3 +1178,75 @@ export type CalendarEventFilters = {
    */
   shootingBlocFilter?: 'all' | 'unassigned' | string
 }
+
+// ---------------------------------------------------------------------------
+// Risk assessments (RAMS)
+// ---------------------------------------------------------------------------
+
+export type RiskAssessmentStatus = 'draft' | 'approved'
+
+/** One entry of `risk_assessments.first_aiders_json`. */
+export type FirstAider = {
+  name: string
+  phone: string
+  email: string
+}
+
+export type RiskAssessment = {
+  id: string
+  production_id: string
+  shoot_day_id: string
+  location_id: string | null
+  location_name: string
+  activities: string
+  responsible_person_id: string | null
+  responsible_person_name: string
+  first_aiders_json: string | null
+  hospital_name: string | null
+  hospital_address: string | null
+  hospital_phone: string | null
+  police_name: string | null
+  police_address: string | null
+  police_phone: string | null
+  status: RiskAssessmentStatus
+  approved_by: string | null
+  approved_at: string | null
+  generated_document_id: string | null
+} & SoftDeletable
+
+/** Risk ratings; the factor (severity x probability) is computed, never stored. */
+export type HazardRatings = {
+  severity_before: number
+  probability_before: number
+  severity_after: number
+  probability_after: number
+}
+
+/** Content shared by a saved hazard and a hazard template. */
+export type HazardContent = HazardRatings & {
+  name: string
+  description: string
+  risks: string
+  outcomes: string
+  control_measures: string
+  at_risk_crew: number
+  at_risk_cast: number
+  at_risk_public: number
+}
+
+export type RiskAssessmentHazard = HazardContent & {
+  id: string
+  risk_assessment_id: string
+  sort_order: number
+} & SoftDeletable
+
+export type RiskAssessmentUnit = {
+  id: string
+  risk_assessment_id: string
+  shoot_day_unit_id: string
+} & SoftDeletable
+
+export type HazardTemplate = HazardContent & {
+  id: string
+  production_id: string
+} & SoftDeletable

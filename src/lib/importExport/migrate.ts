@@ -197,6 +197,29 @@ const migrateV6ToV7: ApfFileMigrator = {
   },
 }
 
+/**
+ * v8 adds risk assessments (`risk_assessments`, `risk_assessment_units`, `risk_assessment_hazards`)
+ * and project hazard templates (`hazard_templates`). Older payloads get empty tables.
+ */
+const migrateV7ToV8: ApfFileMigrator = {
+  fromVersion: 7,
+  toVersion: 8,
+  migrate: (ctx) => {
+    const next = cloneCtx(ctx)
+    next.manifest.formatVersion = 8
+    next.data.formatVersion = 8
+    for (const key of [
+      'hazard_templates',
+      'risk_assessments',
+      'risk_assessment_units',
+      'risk_assessment_hazards',
+    ] as const) {
+      if (!Array.isArray(next.data.tables[key])) next.data.tables[key] = []
+    }
+    return next
+  },
+}
+
 /** Registered migrators for older `.apf` payloads (sequential v → v+1). */
 export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [
   migrateV1ToV2,
@@ -205,6 +228,7 @@ export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [
   migrateV4ToV5,
   migrateV5ToV6,
   migrateV6ToV7,
+  migrateV7ToV8,
 ]
 
 /**

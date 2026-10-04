@@ -9,6 +9,7 @@ import {
   Music,
   Package,
   Route,
+  ShieldAlert,
   Users,
 } from 'lucide-react'
 
@@ -21,6 +22,11 @@ export const DOCUMENT_ENTITY_TYPES = {
   callSheetPersonalized: 'call_sheet_personalized',
   movementOrder: 'movement_order',
   movementOrderPersonalized: 'movement_order_personalized',
+  dailyProgressReport: 'daily_progress_report',
+  continuityPhoto: 'continuity_photo',
+  continuitySheets: 'continuity_sheets',
+  editorsLog: 'editors_log',
+  markedUpScript: 'marked_up_script',
   locationRelease: 'location_release',
   /** Location permit (entity_id = location id). */
   permit: 'permit',
@@ -44,6 +50,8 @@ export const DOCUMENT_ENTITY_TYPES = {
   vendorPurchaseOrder: 'vendor_purchase_order',
   /** Receipt proof attached directly to an expense (entity_id = expense id); no vendor needed. */
   expenseReceipt: 'expense_receipt',
+  /** Exported risk assessment (RAMS) PDF (entity_id = shoot day id). */
+  riskAssessment: 'risk_assessment',
 } as const
 
 export type DocumentEntityType =
@@ -96,15 +104,22 @@ export const DOCUMENT_CATEGORIES: DocumentCategoryConfig[] = [
   {
     id: 'set-paperwork',
     label: 'Set paperwork',
-    description: 'Call sheets and movement orders',
+    description: 'Call sheets, movement orders, risk assessments and script supervisor paperwork',
     icon: Megaphone,
     sourceRoute: '/call-sheets',
-    emptyMessage: 'No call sheets or movement orders yet. Generate them from Call Sheets or Movement Orders.',
+    emptyMessage:
+      'No call sheets, movement orders or risk assessments yet. Generate them from Call Sheets, Movement Orders or Risk Assessments.',
     entityTypes: [
       DOCUMENT_ENTITY_TYPES.callSheet,
       DOCUMENT_ENTITY_TYPES.callSheetPersonalized,
       DOCUMENT_ENTITY_TYPES.movementOrder,
       DOCUMENT_ENTITY_TYPES.movementOrderPersonalized,
+      DOCUMENT_ENTITY_TYPES.riskAssessment,
+      DOCUMENT_ENTITY_TYPES.dailyProgressReport,
+      DOCUMENT_ENTITY_TYPES.continuityPhoto,
+      DOCUMENT_ENTITY_TYPES.continuitySheets,
+      DOCUMENT_ENTITY_TYPES.editorsLog,
+      DOCUMENT_ENTITY_TYPES.markedUpScript,
       DOCUMENT_ENTITY_TYPES.manualUploadSetPaperwork,
     ],
   },
@@ -198,6 +213,11 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   [DOCUMENT_ENTITY_TYPES.callSheetPersonalized]: 'Personalised call sheet',
   [DOCUMENT_ENTITY_TYPES.movementOrder]: 'Movement order',
   [DOCUMENT_ENTITY_TYPES.movementOrderPersonalized]: 'Personalised movement order',
+  [DOCUMENT_ENTITY_TYPES.dailyProgressReport]: 'Daily progress report',
+  [DOCUMENT_ENTITY_TYPES.continuityPhoto]: 'Continuity photo',
+  [DOCUMENT_ENTITY_TYPES.continuitySheets]: 'Continuity sheets',
+  [DOCUMENT_ENTITY_TYPES.editorsLog]: "Editor's log",
+  [DOCUMENT_ENTITY_TYPES.markedUpScript]: 'Marked-up script',
   [DOCUMENT_ENTITY_TYPES.locationRelease]: 'Location release',
   [DOCUMENT_ENTITY_TYPES.permit]: 'Permit',
   [DOCUMENT_ENTITY_TYPES.contributorForm]: 'Contributor form',
@@ -218,6 +238,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   [DOCUMENT_ENTITY_TYPES.vendorInvoice]: 'Vendor invoice',
   [DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder]: 'Vendor purchase order',
   [DOCUMENT_ENTITY_TYPES.expenseReceipt]: 'Expense receipt',
+  [DOCUMENT_ENTITY_TYPES.riskAssessment]: 'Risk assessment',
 }
 
 export function getDocumentTypeLabel(entityType: string | null): string {
@@ -229,6 +250,7 @@ export function getDocumentSourceRoute(entityType: string | null): string {
   if (entityType === DOCUMENT_ENTITY_TYPES.locationRelease || entityType === DOCUMENT_ENTITY_TYPES.permit) {
     return '/locations'
   }
+  if (entityType === DOCUMENT_ENTITY_TYPES.riskAssessment) return '/risk-assessments'
   const categoryId = getDocumentCategoryId(entityType)
   return getDocumentCategory(categoryId).sourceRoute
 }
@@ -253,6 +275,7 @@ export function getSetPaperworkIcon(entityType: string | null): LucideIcon {
   ) {
     return Route
   }
+  if (entityType === DOCUMENT_ENTITY_TYPES.riskAssessment) return ShieldAlert
   return Megaphone
 }
 

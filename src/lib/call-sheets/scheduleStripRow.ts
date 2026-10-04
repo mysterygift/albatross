@@ -242,7 +242,7 @@ export function buildCallSheetStripFromStripboard(
       : [strip.description, shot?.notes, shot?.shot_description].filter(
           (x): x is string => typeof x === 'string' && x.trim().length > 0,
         )
-  const rowNotes = noteParts.length ? noteParts.join(' · ').slice(0, 200) : null
+  const rowNotes = noteParts.length ? noteParts.join(' | ').slice(0, 200) : null
 
   return {
     strip_type: st === 'SHOT' ? 'SHOT' : 'SCENE',
@@ -276,15 +276,15 @@ export function formatCallSheetSynopsis(s: CallSheetStrip): string {
     const fallback = [s.title, s.description].filter(
       (x): x is string => typeof x === 'string' && x.trim().length > 0,
     )
-    return fallback.length ? fallback.join(' · ') : '—'
+    return fallback.length ? fallback.join(' | ') : '—'
   }
 
   const parts = [s.scene_heading, s.scene_title, s.scene_description].filter(
     (x): x is string => typeof x === 'string' && x.trim().length > 0,
   )
-  if (parts.length) return parts.join(' · ')
+  if (parts.length) return parts.join(' | ')
   const fallback = [s.title, s.description].filter(
     (x): x is string => typeof x === 'string' && x.trim().length > 0,
   )
-  return fallback.length ? fallback.join(' · ') : '—'
+  return fallback.length ? fallback.join(' | ') : '—'
 }

@@ -189,7 +189,7 @@ describe('apf E2E (sql.js + real FS)', () => {
     const exportedBytes = new Uint8Array(await readFile(apfPath))
     const parsedExport = parseApfArchiveBytes(exportedBytes)
     expect(parsedExport.normalized.data.tables.budget_revisions).toHaveLength(1)
-    expect(parsedExport.normalized.data.formatVersion).toBe(7)
+    expect(parsedExport.normalized.data.formatVersion).toBe(8)
 
     clearUserData()
     const imp = await importProductionFromApf(apfPath)
@@ -202,6 +202,97 @@ describe('apf E2E (sql.js + real FS)', () => {
     )
     expect(revRows).toHaveLength(1)
     expect(String(revRows[0]!.id)).toBe(REV_ID)
+  })
+
+  it('round-trips risk assessments, units, hazards and hazard templates', async () => {
+    clearUserData()
+    const adapter = sqlJsApfE2eContext.adapter!
+    const DAY = 'aaaaaaaa-e2e1-4e21-8f06-a1e2e2e2e2a1'
+    const SDU = 'aaaaaaaa-e2e1-4e21-8f07-a1e2e2e2e2a1'
+    const RA = 'aaaaaaaa-e2e1-4e21-8f08-a1e2e2e2e2a1'
+    const RA_NODOC = 'aaaaaaaa-e2e1-4e21-8f08-a1e2e2e2e2a2'
+    const HZ = 'aaaaaaaa-e2e1-4e21-8f09-a1e2e2e2e2a1'
+    const TPL = 'aaaaaaaa-e2e1-4e21-8f0a-a1e2e2e2e2a1'
+    const PDF = 'aaaaaaaa-e2e1-4e21-8f0b-a1e2e2e2e2a1'
+    const GONE_PDF = 'aaaaaaaa-e2e1-4e21-8f0b-a1e2e2e2e2a2'
+    const docRel = `attachments/${PROD_ID}/${PDF}-rams.pdf`
+    await mkdir(join(apfNodeFsTestContext.appDataRoot, 'attachments', PROD_ID), { recursive: true })
+    await writeFile(join(apfNodeFsTestContext.appDataRoot, docRel), Buffer.from('%PDF-1.4 rams'))
+
+    await adapter.execute(
+      `INSERT INTO productions (id, name, notes, created_at, updated_at, deleted_at, slug, currency_code, archived_at, wrapped_at, created_from_template)
+       VALUES ($1, 'RAMS E2E', NULL, $2, $2, NULL, 'rams-e2e', 'GBP', NULL, NULL, NULL)`,
+      [PROD_ID, TS]
+    )
+    await adapter.execute(`INSERT INTO units (id, production_id, name, created_at, updated_at) VALUES ($1, $2, 'Main Unit', $3, $3)`, [UNIT_ID, PROD_ID, TS])
+    await adapter.execute(
+      `INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at) VALUES ($1, $2, '2025-02-01', $3, $3)`,
+      [DAY, PROD_ID, TS]
+    )
+    await adapter.execute(
+      `INSERT INTO shoot_day_units (id, shoot_day_id, unit_id, is_locked, created_at, updated_at) VALUES ($1, $2, $3, 0, $4, $4)`,
+      [SDU, DAY, UNIT_ID, TS]
+    )
+    await adapter.execute(
+      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, 'risk_assessment', $3, 'rams.pdf', $4, 'application/pdf', $5, $5, NULL)`,
+      [PDF, PROD_ID, DAY, docRel, TS]
+    )
+    await adapter.execute(
+      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, 'risk_assessment', $3, 'gone.pdf', 'attachments/gone.pdf', 'application/pdf', $4, $4, $4)`,
+      [GONE_PDF, PROD_ID, DAY, TS]
+    )
+    for (const [id, doc] of [[RA, PDF], [RA_NODOC, GONE_PDF]] as const) {
+      await adapter.execute(
+        `INSERT INTO risk_assessments (id, production_id, shoot_day_id, location_name, activities, responsible_person_name, first_aiders_json, status, approved_by, approved_at, generated_document_id, created_at, updated_at)
+         VALUES ($1, $2, $3, 'Quarry', 'Rigging', 'Sam', '[{"name":"Ann","phone":"1","email":""}]', 'approved', 'Boss', $4, $5, $4, $4)`,
+        [id, PROD_ID, DAY, TS, doc]
+      )
+    }
+    await adapter.execute(
+      `INSERT INTO risk_assessment_units (id, risk_assessment_id, shoot_day_unit_id, created_at, updated_at) VALUES ('ru-1', $1, $2, $3, $3)`,
+      [RA, SDU, TS]
+    )
+    await adapter.execute(
+      `INSERT INTO risk_assessment_hazards (id, risk_assessment_id, sort_order, name, severity_before, probability_before, severity_after, probability_after, created_at, updated_at)
+       VALUES ($1, $2, 0, 'Manual Handling', 4, 3, 2, 2, $3, $3)`,
+      [HZ, RA, TS]
+    )
+    await adapter.execute(
+      `INSERT INTO hazard_templates (id, production_id, name, created_at, updated_at) VALUES ($1, $2, 'Saved', $3, $3)`,
+      [TPL, PROD_ID, TS]
+    )
+
+    await exportProductionAsApf(PROD_ID, apfPath)
+    const exported = parseApfArchiveBytes(new Uint8Array(await readFile(apfPath))).normalized.data.tables
+    expect(exported.risk_assessments).toHaveLength(2)
+    expect(exported.risk_assessment_units).toHaveLength(1)
+    expect(exported.risk_assessment_hazards).toHaveLength(1)
+    expect(exported.hazard_templates).toHaveLength(1)
+    // A link to a document that is not part of the export is cleared so import FKs hold.
+    const byId = new Map(exported.risk_assessments.map((r) => [String(r.id), r]))
+    expect(byId.get(RA)!.generated_document_id).toBe(PDF)
+    expect(byId.get(RA_NODOC)!.generated_document_id).toBeNull()
+
+    clearUserData()
+    const imp = await importProductionFromApf(apfPath)
+    expect(imp.ok).toBe(true)
+    if (!imp.ok) throw imp.error
+
+    const ras = await adapter.select<Record<string, unknown>[]>(
+      `SELECT id, status, approved_by, generated_document_id FROM risk_assessments WHERE production_id = $1 ORDER BY id`,
+      [PROD_ID]
+    )
+    expect(ras.map((r) => String(r.id))).toEqual([RA, RA_NODOC])
+    expect(ras[0]).toMatchObject({ status: 'approved', approved_by: 'Boss', generated_document_id: PDF })
+    expect(ras[1]!.generated_document_id).toBeNull()
+    const hz = await adapter.select<Record<string, unknown>[]>(`SELECT name, severity_before, probability_after FROM risk_assessment_hazards WHERE risk_assessment_id = $1`, [RA])
+    expect(hz).toEqual([{ name: 'Manual Handling', severity_before: 4, probability_after: 2 }])
+    const links = await adapter.select<Record<string, unknown>[]>(`SELECT shoot_day_unit_id FROM risk_assessment_units WHERE risk_assessment_id = $1`, [RA])
+    expect(links).toEqual([{ shoot_day_unit_id: SDU }])
+    const tpl = await adapter.select<Record<string, unknown>[]>(`SELECT name FROM hazard_templates WHERE production_id = $1`, [PROD_ID])
+    expect(tpl).toEqual([{ name: 'Saved' }])
   })
 
   it('imports legacy v3 scenes.heading via file migration into title', async () => {

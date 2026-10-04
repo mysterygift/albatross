@@ -31,6 +31,7 @@ describe('sectionFromSearchParams', () => {
     expect(sectionFromSearchParams(new URLSearchParams('tab=budget'))).toBe('production')
     expect(sectionFromSearchParams(new URLSearchParams('tab=people'))).toBe('people')
     expect(sectionFromSearchParams(new URLSearchParams('tab=apis'))).toBe('integrations')
+    expect(sectionFromSearchParams(new URLSearchParams('tab=script_supervisor'))).toBe('script-supervisor')
     expect(sectionFromSearchParams(new URLSearchParams('tab=developer_tools'))).toBe('production')
     expect(sectionFromSearchParams(new URLSearchParams('tab=developer_tools'), true)).toBe('developer')
     expect(sectionFromSearchParams(new URLSearchParams('tab=zzz'))).toBe('production')

@@ -20,6 +20,12 @@ describe('document catalog', () => {
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.movementOrderPersonalized)).toBe(
       'set-paperwork'
     )
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.riskAssessment)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.dailyProgressReport)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.continuityPhoto)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.continuitySheets)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.editorsLog)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.markedUpScript)).toBe('set-paperwork')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.contributorForm)).toBe('people-locations')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.permit)).toBe('people-locations')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.locationRelease)).toBe('people-locations')
@@ -35,6 +41,8 @@ describe('document catalog', () => {
     expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.budgetCsv)).toBe('Budget CSV')
     expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.expenseReceipt)).toBe('Expense receipt')
     expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.permit)).toBe('Permit')
+    expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.riskAssessment)).toBe('Risk assessment')
+    expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.markedUpScript)).toBe('Marked-up script')
     expect(getDocumentTypeLabel(null)).toBe('General upload')
   })
 
@@ -42,6 +50,11 @@ describe('document catalog', () => {
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.permit)).toBe('/locations')
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.locationRelease)).toBe('/locations')
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.contributorForm)).toBe('/people/cast-manager')
+  })
+
+  it('links risk assessment documents back to the risk assessments page', () => {
+    expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.riskAssessment)).toBe('/risk-assessments')
+    expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.callSheet)).toBe('/call-sheets')
   })
 
   it('validates category slugs', () => {
@@ -73,6 +86,7 @@ describe('document catalog', () => {
       T.callSheetPersonalized,
       T.movementOrder,
       T.movementOrderPersonalized,
+      T.riskAssessment,
       T.manualUploadSchedule,
       T.manualUploadDeliverable,
     ]

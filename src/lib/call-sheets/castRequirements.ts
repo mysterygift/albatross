@@ -32,6 +32,10 @@ export type CallSheetCastRow = {
   booking_schedule_line?: string | null
   /** Booking.notes for this shoot day. */
   booking_notes?: string | null
+  /** Optional per-person times shown on the call sheet cast table when present. */
+  pickup_time?: string | null
+  makeup_time?: string | null
+  wardrobe_time?: string | null
 }
 
 export type CallSheetCastWarning = {

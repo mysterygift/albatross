@@ -3,6 +3,7 @@ export type SettingsSectionId =
   | 'budget-accounts'
   | 'appearance'
   | 'people'
+  | 'script-supervisor'
   | 'users'
   | 'project-access'
   | 'integrations'
@@ -32,6 +33,7 @@ export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
 export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
   { id: 'production', label: 'Production', group: 'production' },
   { id: 'budget-accounts', label: 'Budget accounts', group: 'production' },
+  { id: 'script-supervisor', label: 'Script supervisor', group: 'production' },
   { id: 'appearance', label: 'Appearance', group: 'appearance' },
   { id: 'people', label: 'Crew structure', group: 'team' },
   { id: 'users', label: 'User management', group: 'team' },
@@ -45,6 +47,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
 const LEGACY_TAB_TO_SECTION: Record<string, SettingsSectionId> = {
   budget: 'production',
   people: 'people',
+  script_supervisor: 'script-supervisor',
   apis: 'integrations',
   developer_tools: 'developer',
 }

@@ -88,6 +88,10 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     cueSheets,
     callSheets,
     scriptDocuments,
+    hazardTemplates,
+    riskAssessments,
+    riskAssessmentUnits,
+    riskAssessmentHazards,
   ] = await Promise.all([
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM productions WHERE id = $1 AND deleted_at IS NULL`,
@@ -390,7 +394,42 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
          AND (sd.document_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL))`,
       [$1]
     ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM hazard_templates WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    // Risk assessments: the exported PDF link is cleared below when its document is not exported.
+    db.select<Record<string, unknown>[]>(
+      `SELECT ra.* FROM risk_assessments ra
+       INNER JOIN shoot_days sd ON sd.id = ra.shoot_day_id AND sd.production_id = $1 AND sd.deleted_at IS NULL
+       WHERE ra.production_id = $1 AND ra.deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT rau.* FROM risk_assessment_units rau
+       INNER JOIN risk_assessments ra ON ra.id = rau.risk_assessment_id AND ra.production_id = $1 AND ra.deleted_at IS NULL
+       INNER JOIN shoot_days sd ON sd.id = ra.shoot_day_id AND sd.deleted_at IS NULL
+       INNER JOIN shoot_day_units sdu ON sdu.id = rau.shoot_day_unit_id AND sdu.deleted_at IS NULL
+       WHERE rau.deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT h.* FROM risk_assessment_hazards h
+       INNER JOIN risk_assessments ra ON ra.id = h.risk_assessment_id AND ra.production_id = $1 AND ra.deleted_at IS NULL
+       INNER JOIN shoot_days sd ON sd.id = ra.shoot_day_id AND sd.deleted_at IS NULL
+       WHERE h.deleted_at IS NULL`,
+      [$1]
+    ),
   ])
+
+  const exportedDocumentIds = new Set(documents.map((d) => d.id as string))
+  const exportedRiskAssessments = riskAssessments.map((r) => ({
+    ...r,
+    generated_document_id:
+      r.generated_document_id != null && exportedDocumentIds.has(r.generated_document_id as string)
+        ? r.generated_document_id
+        : null,
+  }))
 
   const vendors = await resolveVendorsForExport(productionId)
   const exportedPeople = encryptionEnabled ? await Promise.all(people.map(decryptPersonFields)) : people
@@ -461,6 +500,10 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     cue_sheets: asRows(cueSheets),
     call_sheets: asRows(callSheets),
     script_documents: asRows(scriptDocuments),
+    hazard_templates: asRows(hazardTemplates),
+    risk_assessments: asRows(exportedRiskAssessments),
+    risk_assessment_units: asRows(riskAssessmentUnits),
+    risk_assessment_hazards: asRows(riskAssessmentHazards),
   }
 
   for (const key of APF_V1_TABLE_KEYS) {

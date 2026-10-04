@@ -109,7 +109,7 @@ describe('generateCallSheetPdf with booked crew', () => {
     expect(longBytes.length).toBeGreaterThan(shortBytes.length)
   })
 
-  it('renders safety information beneath weather in Environment & safety', async () => {
+  it('renders weather in the header strip, then safety, then day notes', async () => {
     const bytes = await generateCallSheetPdf(
       minimalData({
         weatherSummary: 'Sunny, 72°F',
@@ -118,16 +118,60 @@ describe('generateCallSheetPdf with booked crew', () => {
       }),
     )
     const text = await extractPdfText(bytes)
-    const forecastIdx = text.indexOf('Forecast')
-    const safetyIdx = text.indexOf('Safety information')
-    const dayNotesIdx = text.indexOf('Day notes')
-    expect(forecastIdx).toBeGreaterThanOrEqual(0)
-    expect(safetyIdx).toBeGreaterThan(forecastIdx)
+    const weatherIdx = text.indexOf('Sunny')
+    const safetyIdx = text.indexOf('SAFETY')
+    const dayNotesIdx = text.indexOf('DAY NOTES')
+    expect(weatherIdx).toBeGreaterThanOrEqual(0)
+    expect(safetyIdx).toBeGreaterThan(weatherIdx)
     expect(dayNotesIdx).toBeGreaterThan(safetyIdx)
     expect(text).toMatch(/Hard hats required on set/)
   })
 
-  it('grows Environment & safety section height for multi-line safety text', async () => {
+  it('renders "Day X of Y", the crew call and page numbers on A4', async () => {
+    const bytes = await generateCallSheetPdf(minimalData({ dayNumber: 3, totalDays: 24 }))
+    const { PDFDocument } = await import('pdf-lib')
+    const [page] = (await PDFDocument.load(bytes.slice())).getPages()
+    const text = await extractPdfText(bytes)
+    expect(text).toContain('Day 3 of 24')
+    expect(text).toContain('CREW CALL')
+    expect(text).toContain('07:00')
+    expect(text).toMatch(/Page 1 of 1/)
+    expect(Math.round(page!.getWidth())).toBe(595)
+    expect(Math.round(page!.getHeight())).toBe(842)
+  })
+
+  it('supports US Letter and uses | rather than dot separators', async () => {
+    const bytes = await generateCallSheetPdf(
+      minimalData({ paperSize: 'Letter', shootingBlocMastheadLabel: 'Block A' }),
+    )
+    const { PDFDocument } = await import('pdf-lib')
+    const [page] = (await PDFDocument.load(bytes.slice())).getPages()
+    const text = await extractPdfText(bytes)
+    expect(text).toContain('Unit: Main | Shooting bloc: Block A')
+    expect(text).not.toContain('\u00b7')
+    expect(Math.round(page!.getWidth())).toBe(612)
+  })
+
+  it('wraps rather than truncates long cast notes and rows paginate', async () => {
+    const rows = Array.from({ length: 80 }, (_, i) => ({
+      person_id: `c${i}`,
+      cast_number: String(i + 1),
+      name: `Cast Member ${i + 1}`,
+      phone: null,
+      email: null,
+      agent_name: null,
+      agent_email: null,
+      agent_phone: null,
+      source: 'shot' as const,
+      booking_notes: 'ENDMARKER',
+    }))
+    const bytes = await generateCallSheetPdf(minimalData({ castCalledRows: rows }))
+    const text = await extractPdfText(bytes)
+    expect(text).toContain('Cast Member 80')
+    expect(text).toMatch(/Page 2 of \d+/)
+  })
+
+  it('grows the safety box for multi-line safety text', async () => {
     const singleLine = 'Wear hi-vis vests at all times.'
     const multiLine = Array(12).fill(singleLine).join('\n')
     const shortBytes = await generateCallSheetPdf(

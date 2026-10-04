@@ -81,8 +81,9 @@ Registered file-level migrators (`src/lib/importExport/migrate.ts`):
 | v4 → v5 | New table `vendor_purchase_order_amendments`; `vendor_purchase_order_expenses.allocated_amount` (matches SQLite migration 0088). Older files import with no amendments and NULL allocations (= whole expense for single-PO expenses). |
 | v5 → v6 | New table `expense_receipts` (receipt metadata keyed to an `expense_receipt` document; matches SQLite migration 0089). Older files import with no receipts. |
 | v6 → v7 | `vendor_purchase_orders.currency_code` / `exchange_rate` (NULL = production currency; matches SQLite migration 0090). `approval` is derived from `status`: POs ticked approved but still draft / issued become `approved`, then `approval` is set from status. |
+| v7 → v8 | New tables `hazard_templates`, `risk_assessments`, `risk_assessment_units`, `risk_assessment_hazards` (matches SQLite migration 0092; see [risk-assessments.md](risk-assessments.md)). Older files import with none. `risk_assessments.generated_document_id` is exported as NULL when its PDF document is not part of the export. |
 
-Exports from current builds write **`formatVersion` 7** and omit `scenes.heading`. Imports of v1–v6 packages run the chain above before INSERT planning.
+Exports from current builds write **`formatVersion` 8** and omit `scenes.heading`. Imports of v1–v7 packages run the chain above before INSERT planning.
 
 ### 4.4 Compatibility rules
 
@@ -416,4 +417,5 @@ Verified behaviours:
 | 2026-06-16 | **formatVersion 4:** remove redundant `scenes.heading` from interchange rows; v3→v4 migrator backfills empty `title` from `heading`. |
 | 2026-10-03 | **formatVersion 5:** add `vendor_purchase_order_amendments` table and `vendor_purchase_order_expenses.allocated_amount`; v4→v5 migrator adds the empty table. |
 | 2026-10-04 | **formatVersion 7:** `vendor_purchase_orders.currency_code` / `exchange_rate`; `approval` derived from `status`; v6→v7 migrator backfills NULL currency and derives approval. |
+| 2026-10-04 | **formatVersion 8:** add risk assessment tables (`risk_assessments`, `risk_assessment_units`, `risk_assessment_hazards`) and project `hazard_templates`; v7→v8 migrator adds empty tables. |
 | 2026-10-03 | **formatVersion 6:** add `expense_receipts` (receipt date / amount / reference per `expense_receipt` document); v5→v6 migrator adds the empty table. |

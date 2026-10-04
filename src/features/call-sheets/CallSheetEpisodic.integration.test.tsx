@@ -2,12 +2,14 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { CallSheetsPage } from '@/features/call-sheets/page'
 import { getDefaultCrewHierarchyConfig } from '@/lib/people/crewHierarchyResolver'
 import { generateCallSheetPdf } from '@/lib/pdf/callSheet'
+import { getWeatherForCallSheet } from '@/lib/weather/openMeteo'
 import {
   extractPdfText,
   minimalCallSheetDataForEpisodicPdfTest,
@@ -154,6 +156,11 @@ const repo = vi.hoisted(() => ({
   getEffectiveCrewHierarchyOrDefault: vi.fn(),
   getSetting: vi.fn(),
   setSetting: vi.fn(),
+  listRiskAssessmentsByShootDay: vi.fn(),
+}))
+
+vi.mock('@/lib/db/repositories/risk-assessments', () => ({
+  listRiskAssessmentsByShootDay: repo.listRiskAssessmentsByShootDay,
 }))
 
 vi.mock('@/lib/db/repositories/production', () => ({
@@ -288,6 +295,12 @@ function setupRepoDefaults() {
   repo.getEffectiveCrewHierarchyOrDefault.mockResolvedValue(getDefaultCrewHierarchyConfig())
   repo.getSetting.mockResolvedValue(null)
   repo.setSetting.mockResolvedValue(undefined)
+  // Default: the day's RAMS is signed off, so the gate stays out of the way of other tests.
+  repo.listRiskAssessmentsByShootDay.mockResolvedValue([ramsRow('approved', ['sdu-1'])])
+}
+
+function ramsRow(status: 'draft' | 'approved', shootDayUnitIds: string[]) {
+  return { id: 'ra-1', shoot_day_id: 'day-1', status, shoot_day_unit_ids: shootDayUnitIds }
 }
 
 function wrap(ui: React.ReactElement) {
@@ -450,5 +463,84 @@ describe('CallSheetsPage episodic UI', () => {
     )
 
     vi.useRealTimers()
+  })
+})
+
+describe('CallSheetsPage RAMS sign-off gate', () => {
+  beforeEach(() => {
+    globalThis.ResizeObserver = class {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    } as unknown as typeof ResizeObserver
+    Element.prototype.hasPointerCapture = () => false
+    Element.prototype.setPointerCapture = () => {}
+    Element.prototype.releasePointerCapture = () => {}
+    Element.prototype.scrollIntoView = () => {}
+    URL.createObjectURL = vi.fn(() => 'blob:mock')
+    URL.revokeObjectURL = vi.fn()
+    vi.clearAllMocks()
+    prodCtx.isEpisodic = false
+    setupRepoDefaults()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  async function openDayAndUnit() {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>{wrap(<CallSheetsPage />)}</MemoryRouter>
+    )
+    await user.click(screen.getAllByRole('combobox')[0]!)
+    await user.click(await screen.findByRole('option', { name: /2025-06-01/ }))
+    await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+    await user.click(screen.getAllByRole('combobox')[1]!)
+    await user.click(await screen.findByRole('option', { name: /main unit/i }))
+    return user
+  }
+
+  it('shows "RAMS not signed off" and asks before exporting; cancel stops the export', async () => {
+    repo.listRiskAssessmentsByShootDay.mockResolvedValue([ramsRow('draft', ['sdu-1'])])
+    const user = await openDayAndUnit()
+
+    expect(await screen.findByText('RAMS not signed off')).toBeTruthy()
+
+    const preview = await screen.findByRole('button', { name: 'Preview PDF' })
+    await waitFor(() => expect((preview as HTMLButtonElement).disabled).toBe(false))
+    await user.click(preview)
+    expect(await screen.findByText('Export anyway?')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByText('Export anyway?')).toBeNull())
+    expect(vi.mocked(getWeatherForCallSheet)).not.toHaveBeenCalled()
+  })
+
+  it('exports when the user confirms "Export anyway"', async () => {
+    repo.listRiskAssessmentsByShootDay.mockResolvedValue([ramsRow('draft', ['sdu-1'])])
+    const user = await openDayAndUnit()
+
+    const preview = await screen.findByRole('button', { name: 'Preview PDF' })
+    await waitFor(() => expect((preview as HTMLButtonElement).disabled).toBe(false))
+    await user.click(preview)
+    await user.click(await screen.findByRole('button', { name: 'Export anyway' }))
+    await waitFor(() => expect(vi.mocked(getWeatherForCallSheet)).toHaveBeenCalled())
+  })
+
+  it('distinguishes "No RAMS covers this unit" from an unsigned one', async () => {
+    repo.listRiskAssessmentsByShootDay.mockResolvedValue([ramsRow('approved', ['some-other-unit'])])
+    await openDayAndUnit()
+    expect(await screen.findByText('No RAMS covers this unit')).toBeTruthy()
+    expect(screen.queryByText('RAMS not signed off')).toBeNull()
+  })
+
+  it('shows no warning and no prompt when the RAMS is approved', async () => {
+    const user = await openDayAndUnit()
+    const preview = await screen.findByRole('button', { name: 'Preview PDF' })
+    await waitFor(() => expect((preview as HTMLButtonElement).disabled).toBe(false))
+    expect(screen.queryByTestId('rams-signoff-alert')).toBeNull()
+    await user.click(preview)
+    expect(screen.queryByText('Export anyway?')).toBeNull()
+    await waitFor(() => expect(vi.mocked(getWeatherForCallSheet)).toHaveBeenCalled())
   })
 })

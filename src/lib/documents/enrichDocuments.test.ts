@@ -1,7 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { Document } from '@/lib/db/types'
+
+vi.mock('@/lib/db/repositories/deliverable', () => ({ listDeliverablesByProduction: async () => [] }))
+vi.mock('@/lib/db/repositories/equipmentLists', () => ({ listEquipmentListsByProduction: async () => [] }))
+vi.mock('@/lib/db/repositories/location', () => ({ listLocationsByProduction: async () => [] }))
+vi.mock('@/lib/db/repositories/person', () => ({ listPeopleByProduction: async () => [] }))
+vi.mock('@/lib/db/repositories/sidesExports', () => ({ listSidesExportsByProduction: async () => [] }))
+vi.mock('@/lib/db/repositories/schedule', () => ({
+  listShootDaysByProduction: async () => [
+    { id: 'day-9', shoot_date: '2026-06-09', day_number: 4 },
+  ],
+}))
+
 import {
+  enrichDocumentsForProduction,
   groupEnrichedDocuments,
   partitionDocumentsByCategory,
   type EnrichedDocument,
@@ -69,5 +82,19 @@ describe('enrichDocuments grouping helpers', () => {
     const groups = groupEnrichedDocuments(docs)
     expect(groups).toHaveLength(2)
     expect(groups.find((g) => g.groupKey === 'day-1')?.documents).toHaveLength(2)
+  })
+
+  it('groups risk assessment PDFs by shoot day like call sheets', async () => {
+    const raw = doc({
+      id: 'rams-1',
+      entity_type: DOCUMENT_ENTITY_TYPES.riskAssessment,
+      entity_id: 'day-9',
+    })
+    const [enriched] = await enrichDocumentsForProduction('prod-1', [raw])
+    expect(enriched!.categoryId).toBe('set-paperwork')
+    expect(enriched!.typeLabel).toBe('Risk assessment')
+    expect(enriched!.groupKey).toBe('day-9')
+    expect(enriched!.groupTitle).toBe('Day 4 — 2026-06-09')
+    expect(enriched!.groupSortKey).toBe('2026-06-09')
   })
 })

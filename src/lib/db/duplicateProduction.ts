@@ -65,7 +65,7 @@ export async function duplicateProduction(
   const deliveryDate = (prodRows[0]!.delivery_date as string | null) ?? null
 
   // Load all source data first (reads only).
-  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, crewAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs, episodes, shootingBlocs, scriptVersions, scriptPages, scriptSections, scriptSectionRanges, scriptSectionCharacters, shotScriptSections, shootDaySidesExports] = await Promise.all([
+  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, crewAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs, episodes, shootingBlocs, scriptVersions, scriptPages, scriptSections, scriptSectionRanges, scriptSectionCharacters, shotScriptSections, shootDaySidesExports, hazardTemplateRows, riskAssessmentRows, riskAssessmentUnitRows, riskAssessmentHazardRows] = await Promise.all([
     db.select<Record<string, unknown>[]>(`SELECT * FROM units WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM people WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM locations WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -124,6 +124,20 @@ export async function duplicateProduction(
       [sourceProductionId]
     ),
     db.select<Record<string, unknown>[]>(`SELECT * FROM shoot_day_sides_exports WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM hazard_templates WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM risk_assessments WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(
+      `SELECT rau.* FROM risk_assessment_units rau
+       INNER JOIN risk_assessments ra ON ra.id = rau.risk_assessment_id AND ra.production_id = $1 AND ra.deleted_at IS NULL
+       WHERE rau.deleted_at IS NULL`,
+      [sourceProductionId]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT h.* FROM risk_assessment_hazards h
+       INNER JOIN risk_assessments ra ON ra.id = h.risk_assessment_id AND ra.production_id = $1 AND ra.deleted_at IS NULL
+       WHERE h.deleted_at IS NULL`,
+      [sourceProductionId]
+    ),
   ])
 
   const taskIdMap: IdMap = new Map()
@@ -682,6 +696,65 @@ export async function duplicateProduction(
     })
   }
 
+  // Hazard templates and risk assessments (RAMS). Links to a location / person / PDF that did not
+  // make it into the copy become NULL; a RAMS whose shoot day was not copied is skipped.
+  for (const r of hazardTemplateRows) {
+    statements.push({
+      sql: `INSERT INTO hazard_templates (id, production_id, name, description, risks, outcomes, control_measures, at_risk_crew, at_risk_cast, at_risk_public, severity_before, probability_before, severity_after, probability_after, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      bindValues: [
+        newId(), newProdId, r.name, r.description, r.risks, r.outcomes, r.control_measures,
+        r.at_risk_crew, r.at_risk_cast, r.at_risk_public,
+        r.severity_before, r.probability_before, r.severity_after, r.probability_after, ts, ts,
+      ],
+    })
+  }
+  const riskAssessmentIdMap: IdMap = new Map()
+  for (const r of riskAssessmentRows) {
+    const shootDayId = shootDayIdMap.get(r.shoot_day_id as string)
+    if (!shootDayId) continue
+    const id = newId()
+    riskAssessmentIdMap.set(r.id as string, id)
+    statements.push({
+      sql: `INSERT INTO risk_assessments (id, production_id, shoot_day_id, location_id, location_name, activities, responsible_person_id, responsible_person_name, first_aiders_json, hospital_name, hospital_address, hospital_phone, police_name, police_address, police_phone, status, approved_by, approved_at, generated_document_id, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
+      bindValues: [
+        id, newProdId, shootDayId,
+        locationIdMap.get((r.location_id as string | null) ?? '') ?? null,
+        r.location_name, r.activities,
+        personIdMap.get((r.responsible_person_id as string | null) ?? '') ?? null,
+        r.responsible_person_name, r.first_aiders_json ?? null,
+        r.hospital_name ?? null, r.hospital_address ?? null, r.hospital_phone ?? null,
+        r.police_name ?? null, r.police_address ?? null, r.police_phone ?? null,
+        r.status, r.approved_by ?? null, r.approved_at ?? null,
+        documentIdMap.get((r.generated_document_id as string | null) ?? '') ?? null,
+        ts, ts,
+      ],
+    })
+  }
+  for (const r of riskAssessmentUnitRows) {
+    const raId = riskAssessmentIdMap.get(r.risk_assessment_id as string)
+    const sduId = shootDayUnitIdMap.get(r.shoot_day_unit_id as string)
+    if (!raId || !sduId) continue
+    statements.push({
+      sql: `INSERT INTO risk_assessment_units (id, risk_assessment_id, shoot_day_unit_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+      bindValues: [newId(), raId, sduId, ts, ts],
+    })
+  }
+  for (const r of riskAssessmentHazardRows) {
+    const raId = riskAssessmentIdMap.get(r.risk_assessment_id as string)
+    if (!raId) continue
+    statements.push({
+      sql: `INSERT INTO risk_assessment_hazards (id, risk_assessment_id, sort_order, name, description, risks, outcomes, control_measures, at_risk_crew, at_risk_cast, at_risk_public, severity_before, probability_before, severity_after, probability_after, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+      bindValues: [
+        newId(), raId, r.sort_order, r.name, r.description, r.risks, r.outcomes, r.control_measures,
+        r.at_risk_crew, r.at_risk_cast, r.at_risk_public,
+        r.severity_before, r.probability_before, r.severity_after, r.probability_after, ts, ts,
+      ],
+    })
+  }
+
   // Crew hierarchy is production-specific setup; Crew Manager, task mapping, and call-sheet
   // ordering depend on it. Duplicate any stored config so the new production keeps the same
   // operational structure. If source has no config row, none is created—resolver falls back to default.
@@ -718,7 +791,7 @@ function mapEntityId(
   if (entityId == null) return null
   if (entityType === 'location_release' || entityType === 'permit' || entityType === 'location') return maps.locationIdMap.get(entityId) ?? entityId
   if (entityType === 'contributor_form' || entityType === 'person') return maps.personIdMap.get(entityId) ?? entityId
-  if (entityType === 'call_sheet' || entityType === 'shoot_day' || entityType === 'sides_export') return maps.shootDayIdMap.get(entityId) ?? entityId
+  if (entityType === 'call_sheet' || entityType === 'shoot_day' || entityType === 'sides_export' || entityType === 'risk_assessment') return maps.shootDayIdMap.get(entityId) ?? entityId
   if (entityType === 'deliverable') return maps.deliverableIdMap.get(entityId) ?? entityId
   return entityId
 }
