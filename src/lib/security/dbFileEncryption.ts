@@ -195,6 +195,11 @@ export async function restoreSqliteFromInstanceKeyBackup(): Promise<void> {
   await invoke('restore_sqlite_from_instance_key_backup')
 }
 
+/** Returns true when the plain pre-SQLCipher backup was restored, false when the file was removed. */
+export async function discardUnopenableSetupDatabase(): Promise<boolean> {
+  return invoke<boolean>('discard_unopenable_setup_database')
+}
+
 export async function removeDbEncryptionMeta(): Promise<void> {
   const { remove } = await import('@tauri-apps/plugin-fs')
   for (const path of [await getDbMetaPath(), await getLegacyDbMetaPath()]) {

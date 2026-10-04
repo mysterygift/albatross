@@ -165,6 +165,54 @@ pub fn restore_sqlite_from_instance_key_backup(app: tauri::AppHandle) -> Result<
     Ok(())
 }
 
+fn sqlite_sidecar_path(db_path: &Path, suffix: &str) -> PathBuf {
+    let mut name = db_path.as_os_str().to_owned();
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Returns true when the plain backup was restored, false when the encrypted file was removed.
+fn discard_unopenable_setup_database_at(db_path: &Path) -> Result<bool, String> {
+    if !db_path.is_file() {
+        return Err("Database file not found".into());
+    }
+    if is_plain_sqlite_file(db_path)? {
+        return Err("Database is not encrypted".into());
+    }
+    if pre_instance_key_backup_path(db_path).is_file() {
+        return Err("An instance-key migration backup exists; refusing to discard database".into());
+    }
+
+    // The WAL/SHM belong to the encrypted file; replaying them onto a restored plain file corrupts it.
+    remove_file_if_exists(&sqlite_sidecar_path(db_path, "-wal"))?;
+    remove_file_if_exists(&sqlite_sidecar_path(db_path, "-shm"))?;
+
+    let backup_path = pre_sqlcipher_backup_path(db_path);
+    if backup_path.is_file() && is_plain_sqlite_file(&backup_path)? {
+        fs::copy(&backup_path, db_path).map_err(|e| e.to_string())?;
+        return Ok(true);
+    }
+    remove_file_if_exists(db_path)?;
+    Ok(false)
+}
+
+/// Roll back an encrypted `albatross.db` whose instance key was never persisted (first-run setup
+/// interrupted before the first admin's wrapper was written). The frontend checks that no wrapper
+/// or recovery escrow exists before calling this.
+#[tauri::command]
+pub fn discard_unopenable_setup_database(app: tauri::AppHandle) -> Result<bool, String> {
+    let db_path = db_path(&app)?;
+    discard_unopenable_setup_database_at(&db_path)
+}
+
 #[tauri::command]
 pub fn probe_sqlcipher_passphrase(app: tauri::AppHandle, passphrase: String) -> Result<bool, String> {
     let path = db_path(&app)?;
@@ -358,6 +406,94 @@ mod tests {
         let old_read: Result<String, _> =
             verify_old.query_row("SELECT v FROM t LIMIT 1", [], |r| r.get(0));
         assert_ne!(old_read.ok().as_deref(), Some("ok"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn discard_test_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("albatross-discard-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        dir
+    }
+
+    fn write_encrypted_db_with_wal(path: &std::path::Path) {
+        let conn = Connection::open(path).expect("open");
+        apply_cipher_key(&conn, "lost-instance-key").expect("key");
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT);
+             INSERT INTO t (v) VALUES ('encrypted');",
+        )
+        .expect("schema");
+        // Leak the connection so the -wal/-shm files stay on disk, as after an app kill.
+        std::mem::forget(conn);
+    }
+
+    #[test]
+    fn discard_restores_plain_backup_and_drops_wal() {
+        use super::{discard_unopenable_setup_database_at, is_plain_sqlite_file};
+
+        let dir = discard_test_dir("restore");
+        let db_path = dir.join("albatross.db");
+        let backup_path = dir.join("albatross.db.pre-sqlcipher-backup");
+
+        let plain = Connection::open(&backup_path).expect("open backup");
+        plain
+            .execute_batch(
+                "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT);
+                 INSERT INTO t (v) VALUES ('plain');",
+            )
+            .expect("seed backup");
+        drop(plain);
+        write_encrypted_db_with_wal(&db_path);
+        assert!(dir.join("albatross.db-wal").is_file());
+
+        assert!(discard_unopenable_setup_database_at(&db_path).expect("discard"));
+        assert!(is_plain_sqlite_file(&db_path).expect("header"));
+        assert!(!dir.join("albatross.db-wal").exists());
+        assert!(!dir.join("albatross.db-shm").exists());
+        let v: String = Connection::open(&db_path)
+            .expect("reopen")
+            .query_row("SELECT v FROM t LIMIT 1", [], |r| r.get(0))
+            .expect("read");
+        assert_eq!(v, "plain");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn discard_removes_db_without_backup() {
+        use super::discard_unopenable_setup_database_at;
+
+        let dir = discard_test_dir("remove");
+        let db_path = dir.join("albatross.db");
+        write_encrypted_db_with_wal(&db_path);
+
+        assert!(!discard_unopenable_setup_database_at(&db_path).expect("discard"));
+        assert!(!db_path.exists());
+        assert!(!dir.join("albatross.db-wal").exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn discard_refuses_plain_db_and_rekey_backup() {
+        use super::discard_unopenable_setup_database_at;
+
+        let dir = discard_test_dir("refuse");
+        let db_path = dir.join("albatross.db");
+        Connection::open(&db_path)
+            .expect("open")
+            .execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY);")
+            .expect("schema");
+        assert!(discard_unopenable_setup_database_at(&db_path).is_err());
+
+        fs::remove_file(&db_path).expect("remove plain");
+        write_encrypted_db_with_wal(&db_path);
+        fs::write(dir.join("albatross.db.pre-instance-key-backup"), b"x").expect("rekey backup");
+        assert!(discard_unopenable_setup_database_at(&db_path).is_err());
+        assert!(db_path.is_file());
 
         let _ = fs::remove_dir_all(&dir);
     }

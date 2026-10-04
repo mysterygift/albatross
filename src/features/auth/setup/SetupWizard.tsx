@@ -22,6 +22,8 @@ import {
 import { getUnlockedDbAdminsCountIfAvailable } from '@/lib/auth/initialSetupStatus'
 import { getDb } from '@/lib/db/client'
 import {
+  detectInstallStateForSetup,
+  discardStrandedSetupEncryption,
   isSetupEncryptionAlreadyPrepared,
   runSetupEncryption,
   SETUP_ENCRYPTION_FAILED_MESSAGE,
@@ -164,6 +166,12 @@ export function SetupWizard({
       if (detection.route === 'sign_in') {
         await clearSetupProgress()
         onRequireSignIn()
+        return
+      }
+
+      if (await discardStrandedSetupEncryption(detection, progress)) {
+        // The earlier attempt was interrupted before its key was saved; start setup over.
+        await clearSetupProgress()
         return
       }
 
@@ -422,7 +430,7 @@ export function SetupWizard({
           <SetupDetectStep
             key={detectAttempt}
             busy={busy}
-            detectInstallState={detectInstallState}
+            detectInstallState={detectInstallStateForSetup}
             onDetected={(result) => void handleDetectionResult(result)}
             onError={(message) => void handleDetectionFailure(message)}
           />

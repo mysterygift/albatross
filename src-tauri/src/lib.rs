@@ -651,6 +651,7 @@ pub fn run() {
             db_encryption::get_instance_key_backup_status,
             db_encryption::backup_encrypted_db_before_rekey,
             db_encryption::restore_sqlite_from_instance_key_backup,
+            db_encryption::discard_unopenable_setup_database,
             db_encryption::probe_sqlcipher_passphrase,
             db_encryption::migrate_plain_db_to_sqlcipher,
             db_encryption::rekey_sqlcipher_database,

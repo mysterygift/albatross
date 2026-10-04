@@ -50,6 +50,8 @@ const progressMocks = vi.hoisted(() => ({
 
 const encryptionMocks = vi.hoisted(() => ({
   isSetupEncryptionAlreadyPrepared: vi.fn(async () => true),
+  discardStrandedSetupEncryption: vi.fn(async () => false),
+  detectInstallStateForSetup: vi.fn(() => detectionMocks.detectInstallState()),
   runSetupEncryption: vi.fn(async () => ({ status: 'ready' as const, keyMode: 'instance_key' as const })),
   SETUP_ENCRYPTION_FAILED_MESSAGE:
     'Could not secure the local database. Try setup again from the beginning.',
@@ -172,6 +174,7 @@ describe('SetupWizard', () => {
     })
     progressMocks.readSetupProgress.mockResolvedValue(null)
     encryptionMocks.isSetupEncryptionAlreadyPrepared.mockResolvedValue(true)
+    encryptionMocks.discardStrandedSetupEncryption.mockResolvedValue(false)
     setupStatusMocks.getUnlockedDbAdminsCountIfAvailable.mockResolvedValue(0)
     recoveryMocks.generateRecoveryKey.mockReturnValue(TEST_RECOVERY_KEY)
     commitMocks.runSetupCommit.mockResolvedValue({
@@ -642,6 +645,42 @@ describe('SetupWizard', () => {
 
     expect(await screen.findByText("Setup can't continue automatically")).toBeTruthy()
     expect(screen.queryByTestId('setup-admin-account-screen')).toBeNull()
+  })
+
+  it('restarts at welcome when an interrupted setup left an unopenable DB', async () => {
+    progressMocks.readSetupProgress.mockResolvedValue({
+      version: 1,
+      phase: 'admin_pending',
+      started_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    })
+    detectionMocks.detectInstallState.mockResolvedValue({
+      kind: 'encrypted_incomplete',
+      route: 'repair',
+      diagnostics: {
+        dbFileExists: true,
+        encryptionMetaExists: true,
+        isPlainSqlite: false,
+        encryptionMode: 'instance_key',
+        recoveryMetaExists: false,
+        activeWrapperCount: 0,
+        plainAdminCount: null,
+      },
+    })
+    encryptionMocks.discardStrandedSetupEncryption.mockResolvedValue(true)
+
+    render(
+      <SetupWizard
+        busy={false}
+        onSetupComplete={vi.fn()}
+        onError={vi.fn()}
+        onRequireSignIn={vi.fn()}
+      />
+    )
+
+    expect(await screen.findByText('Welcome to Albatross')).toBeTruthy()
+    expect(progressMocks.clearSetupProgress).toHaveBeenCalled()
+    expect(screen.queryByText("Setup can't continue automatically")).toBeNull()
   })
 
   it('resumes recovery screen when progress is recovery_pending and admin exists', async () => {

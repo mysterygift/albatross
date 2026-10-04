@@ -21,10 +21,22 @@ const dbFileMocks = vi.hoisted(() => ({
     key_mode: 'instance_key' as const,
   })),
   deriveSqlCipherPassphraseFromPassword: vi.fn(async () => 'legacy-pass'),
+  discardUnopenableSetupDatabase: vi.fn(async () => true),
+  removeDbEncryptionMeta: vi.fn(async () => undefined),
+}))
+
+const detectionMocks = vi.hoisted(() => ({
+  detectInstallState: vi.fn(),
+}))
+
+const progressMocks = vi.hoisted(() => ({
+  readSetupProgress: vi.fn(),
 }))
 
 const instanceKeyMocks = vi.hoisted(() => ({
-  readInstanceKeyWrappersMeta: vi.fn(async () => null),
+  readInstanceKeyWrappersMeta: vi.fn<
+    () => Promise<{ version: 1; wrappers: Array<Record<string, unknown>> } | null>
+  >(async () => null),
 }))
 
 const recoveryMocks = vi.hoisted(() => ({
@@ -48,8 +60,14 @@ vi.mock('@/lib/security/instanceKey', async (importOriginal) => {
   }
 })
 vi.mock('@/lib/security/recoveryKey', () => recoveryMocks)
+vi.mock('@/lib/auth/installDetection', () => detectionMocks)
+vi.mock('@/lib/auth/setupProgress', () => progressMocks)
 
+import type { InstallDetectionResult } from '@/lib/auth/installDetection'
+import type { SetupProgressState } from '@/lib/auth/setupProgress'
 import {
+  detectInstallStateForSetup,
+  discardStrandedSetupEncryption,
   getPreparedInstanceKeyForSetup,
   isSetupEncryptionAlreadyPrepared,
   runSetupEncryption,
@@ -123,5 +141,100 @@ describe('setupEncryptionService', () => {
     clientMocks.isDbUnlocked.mockReturnValue(false)
     await runSetupEncryption()
     expect(dbFileMocks.deriveSqlCipherPassphraseFromPassword).not.toHaveBeenCalled()
+  })
+
+  describe('stranded setup encryption', () => {
+    const strandedDetection: InstallDetectionResult = {
+      kind: 'encrypted_incomplete',
+      route: 'repair',
+      diagnostics: {
+        dbFileExists: true,
+        encryptionMetaExists: true,
+        isPlainSqlite: false,
+        encryptionMode: 'instance_key',
+        recoveryMetaExists: false,
+        activeWrapperCount: 0,
+        plainAdminCount: null,
+      },
+    }
+    const adminPending: SetupProgressState = {
+      version: 1,
+      phase: 'admin_pending',
+      started_at: '2026-10-04T21:11:12.428Z',
+      updated_at: '2026-10-04T21:11:13.344Z',
+    }
+
+    beforeEach(() => {
+      clientMocks.isDbUnlocked.mockReturnValue(false)
+    })
+
+    it('discards an encrypted DB whose instance key was never persisted', async () => {
+      await expect(discardStrandedSetupEncryption(strandedDetection, adminPending)).resolves.toBe(
+        true
+      )
+      expect(clientMocks.closeDb).toHaveBeenCalled()
+      expect(dbFileMocks.discardUnopenableSetupDatabase).toHaveBeenCalled()
+      expect(dbFileMocks.removeDbEncryptionMeta).toHaveBeenCalled()
+    })
+
+    it.each([
+      ['no setup in progress', strandedDetection, null],
+      ['admin already created', strandedDetection, { ...adminPending, phase: 'recovery_pending' }],
+      [
+        'recovery escrow exists',
+        {
+          ...strandedDetection,
+          diagnostics: { ...strandedDetection.diagnostics, recoveryMetaExists: true },
+        },
+        adminPending,
+      ],
+      [
+        'legacy password-derived DB',
+        {
+          ...strandedDetection,
+          diagnostics: {
+            ...strandedDetection.diagnostics,
+            encryptionMode: 'legacy_password_derived',
+          },
+        },
+        adminPending,
+      ],
+      ['a plain DB', { ...strandedDetection, kind: 'inconsistent_state' }, adminPending],
+    ] as Array<[string, InstallDetectionResult, SetupProgressState | null]>)(
+      'keeps the DB when %s',
+      async (_label, detection, progress) => {
+        await expect(discardStrandedSetupEncryption(detection, progress)).resolves.toBe(false)
+        expect(dbFileMocks.discardUnopenableSetupDatabase).not.toHaveBeenCalled()
+      }
+    )
+
+    it('keeps the DB when any wrapper exists, even a revoked one', async () => {
+      instanceKeyMocks.readInstanceKeyWrappersMeta.mockResolvedValue({
+        version: 1,
+        wrappers: [{ revoked_at: '2026-01-01T00:00:00.000Z' }],
+      })
+      await expect(discardStrandedSetupEncryption(strandedDetection, adminPending)).resolves.toBe(
+        false
+      )
+      expect(dbFileMocks.discardUnopenableSetupDatabase).not.toHaveBeenCalled()
+    })
+
+    it('keeps the DB while it is unlocked in this session', async () => {
+      clientMocks.isDbUnlocked.mockReturnValue(true)
+      await expect(discardStrandedSetupEncryption(strandedDetection, adminPending)).resolves.toBe(
+        false
+      )
+    })
+
+    it('detectInstallStateForSetup re-detects after discarding', async () => {
+      const fresh = { ...strandedDetection, kind: 'fresh_install', route: 'admin' } as const
+      detectionMocks.detectInstallState
+        .mockResolvedValueOnce(strandedDetection)
+        .mockResolvedValueOnce(fresh)
+      progressMocks.readSetupProgress.mockResolvedValue({ ...adminPending, phase: 'detect' })
+
+      await expect(detectInstallStateForSetup()).resolves.toEqual(fresh)
+      expect(dbFileMocks.discardUnopenableSetupDatabase).toHaveBeenCalledTimes(1)
+    })
   })
 })
