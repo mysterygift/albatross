@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -65,6 +66,13 @@ function MapTilesForm({ config }: { config: MapTileConfig }) {
           disabled={saveMutation.isPending}
         >
           Reset URL to default
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => shellOpen('https://www.maptiler.com/cloud/')}
+        >
+          Get free key
         </Button>
       </div>
       {saveMutation.error instanceof Error && (
