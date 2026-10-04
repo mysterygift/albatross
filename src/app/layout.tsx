@@ -12,6 +12,7 @@ import { getSetting } from '@/lib/db/repositories/settings'
 import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { useUiTheme } from '@/hooks/useUiTheme'
 import { ApfDesktopOpenBridge } from '@/features/productions/ApfDesktopOpenBridge'
+import { SidebarSwipeGestures } from '@/components/sidebar-swipe-gestures'
 import { ApfMenuEventBridge } from '@/features/productions/ApfMenuEventBridge'
 import { GlobalSearchDialog } from '@/features/search/GlobalSearchDialog'
 import { GlobalShortcutBridge } from '@/app/GlobalShortcutBridge'
@@ -199,6 +200,7 @@ function AppLayoutShell() {
     <TutorialProvider>
       <SidebarProvider>
         <MenuSidebarBridge />
+        <SidebarSwipeGestures />
         <GlobalShortcutBridge
           searchOpen={searchOpen}
           onToggleSearch={toggleSearch}
