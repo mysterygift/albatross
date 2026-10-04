@@ -34,6 +34,8 @@ export type LiningTramline = {
   description: string | null
   camera: string
   printTakeNumbers: number[]
+  startElementId: string
+  endElementId: string
   startSortIndex: number
   endSortIndex: number
   /** Overrides by element id; elements in the run without one are on camera. */

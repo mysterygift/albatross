@@ -8,7 +8,7 @@ const el = (sort_index: number, element_type: LiningElement['element_type'], pag
 
 const tram = (over: Partial<LiningTramline>): LiningTramline => ({
   id: 't', slateId: 'sl', slateLabel: '1', slateCreatedAt: '2026-10-07T10:00', shotType: 'master', shotCode: null,
-  description: null, camera: '', printTakeNumbers: [], startSortIndex: 0, endSortIndex: 0, segments: new Map(), ...over,
+  description: null, camera: '', printTakeNumbers: [], startElementId: 'e0', endElementId: 'e0', startSortIndex: 0, endSortIndex: 0, segments: new Map(), ...over,
 })
 
 describe('lined script layout (SS6)', () => {

@@ -5,7 +5,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SlatingSystem } from '@/lib/db/types'
 import { loadShootProgress } from '@/lib/db/scriptSupervisorProgressService'
-import { loadLinedScene } from '@/lib/db/repositories/scriptLining'
+import {
+  createTramline,
+  loadLinedScene,
+  restoreTramline,
+  setTramlineSegments,
+  softDeleteTramline,
+  updateTramlineRange,
+  type CreateTramlineInput,
+} from '@/lib/db/repositories/scriptLining'
 import {
   countLiveSlates,
   createSlate,
@@ -188,4 +196,20 @@ export function useLinedScene(productionId: string | null | undefined, sceneId: 
     queryFn: () => loadLinedScene(productionId!, sceneId!),
     enabled: !!productionId && !!sceneId,
   })
+}
+
+/** Lining writes (SS7). Each invalidates the lined scene and coverage-derived views. */
+export function useLiningMutations() {
+  return {
+    create: useInvalidatingMutation((input: CreateTramlineInput) => createTramline(input)),
+    range: useInvalidatingMutation(({ id, start, end }: { id: string; start: string; end: string }) =>
+      updateTramlineRange(id, start, end)
+    ),
+    segments: useInvalidatingMutation(
+      ({ id, changes }: { id: string; changes: Array<{ elementId: string; state: 'on' | 'off' | 'not_covered' }> }) =>
+        setTramlineSegments(id, changes)
+    ),
+    remove: useInvalidatingMutation((id: string) => softDeleteTramline(id)),
+    restore: useInvalidatingMutation((id: string) => restoreTramline(id)),
+  }
 }

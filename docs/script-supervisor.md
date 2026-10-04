@@ -54,7 +54,7 @@ Migration [`0087_script_supervisor_slating_system.sql`](../src-tauri/migrations/
   preference in local storage (`useTouchLayout`), not production data.
 - Remote-server productions see a notice instead of the workspace.
 
-Not yet: drawing tramlines (SS7), demo seed data.
+Not yet: demo seed data.
 
 ## SS4 — scene status and progress
 
@@ -129,6 +129,23 @@ Migration [`0090_script_supervisor_lining.sql`](../src-tauri/migrations/0090_scr
   tramline labels (`212/4 WS`), colours by shot type, dashed off-camera, a coverage strip flagging blocks with fewer
   than two tramlines, and page-break markers. Repository writes for drawing (`createTramline`, `updateTramlineRange`,
   `setTramlineSegment`, `softDeleteTramline`) are in place for SS7.
+
+## SS7 — drawing tramlines
+
+Line & log → **Script** is editable for the current slate ([`LinedScript.tsx`](../src/features/script-supervisor/LinedScript.tsx),
+helpers in [`liningEdit.ts`](../src/lib/script-supervisor/liningEdit.ts)):
+
+- **Draw lane** (right-hand column, labelled `Draw 217`): click or tap the first line, then the last line the shot
+  covers. Dragging down the lane does the same in one gesture (Pointer Events, so mouse, touch and pen share one code
+  path; `touch-action: none` on the lane stops the page scrolling mid-drag; the page auto-scrolls near the edges).
+  Headings are skipped. If the slate already has a tramline, drawing again redraws it (`updateTramlineRange`).
+- **Segments**: tap a line segment to cycle on camera → off camera → not covered. Long-press (touch/pen) or
+  right-click / context-menu key opens a menu: the three states, *Off camera for CHARACTER to the end of this line*
+  (dialogue rows), and *Delete tramline*.
+- **Undo** (button or ⌘/Ctrl+Z while the script is showing): the last 20 lining actions — line, redraw, segment
+  changes (including the bulk character change, applied with `setTramlineSegments` in one transaction) and delete
+  (`restoreTramline`, refused if the slate has been lined again since).
+- Keyboard: every draw cell and segment is a real button with a descriptive label; Esc cancels a half-drawn line.
 
 ## Rules
 

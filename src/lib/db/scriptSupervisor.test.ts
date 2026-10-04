@@ -76,7 +76,10 @@ import {
   ensureScriptElements,
   listScriptElementsForScene,
   loadLinedScene,
+  restoreTramline,
   setTramlineSegment,
+  setTramlineSegments,
+  softDeleteTramline,
 } from '@/lib/db/repositories/scriptLining'
 import { layoutLinedScript } from '@/lib/script-supervisor/lining'
 
@@ -334,6 +337,30 @@ describe('lining (SS6)', () => {
     expect(pageBreak.element.page_number).toBe('32')
     expect(pageBreak.cells.map((c) => c.state)).toEqual(['on', 'on'])
     expect(layout.rows[2]!.cells.map((c) => c.state)).toEqual(['on', 'off'])
+  })
+
+  it('applies segment changes together and restores a deleted tramline (undo)', async () => {
+    const { production, scene, day1 } = await setup()
+    await seedScript(production.id, scene.id)
+    await ensureScriptElements('v1')
+    const els = await listScriptElementsForScene('v1', scene.id)
+    const slate = await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id })
+    const t = await createTramline({ slateId: slate.id, scriptVersionId: 'v1', startElementId: els[1]!.id, endElementId: els[4]!.id })
+
+    await setTramlineSegments(t, [
+      { elementId: els[2]!.id, state: 'off' },
+      { elementId: els[3]!.id, state: 'not_covered' },
+    ])
+    let lined = await loadLinedScene(production.id, scene.id)
+    expect(layoutLinedScript(lined!.elements, lined!.tramlines).rows.map((r) => r.cells[0]?.state ?? null)).toEqual([
+      null, 'on', 'off', 'not_covered', 'on',
+    ])
+
+    await softDeleteTramline(t)
+    expect((await loadLinedScene(production.id, scene.id))!.tramlines).toHaveLength(0)
+    await restoreTramline(t)
+    lined = await loadLinedScene(production.id, scene.id)
+    expect(lined!.tramlines.map((x) => [x.id, x.startElementId, x.endElementId])).toEqual([[t, els[1]!.id, els[4]!.id]])
   })
 
   it('returns null for a scene that is not in any imported script', async () => {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Info, Plus, Tablet } from 'lucide-react'
+import { Check, Info, Plus, Tablet, Undo2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { SegmentedControl } from '@/components/ui/segmented-control'
@@ -24,7 +24,14 @@ import { SCRIPT_SUPERVISOR_REMOTE_ERROR } from '@/lib/db/repositories/scriptSupe
 import type { UpdateSlateInput } from '@/lib/db/repositories/scriptSupervisor'
 import type { Slate, TakeNgReason, TakeStatus } from '@/lib/db/types'
 import { slateDisplayLabel } from '@/lib/script-supervisor/slateNumbering'
-import { layoutLinedScript } from '@/lib/script-supervisor/lining'
+import { layoutLinedScript, type CellState, type LiningRow } from '@/lib/script-supervisor/lining'
+import {
+  characterRunElementIds,
+  popUndo,
+  pushUndo,
+  snapRangeToLineable,
+  type LiningUndoEntry,
+} from '@/lib/script-supervisor/liningEdit'
 import { SCENE_STATUS_LABEL, type SceneProgressStatus } from '@/lib/script-supervisor/progress'
 import {
   carryOverFields,
@@ -41,6 +48,7 @@ import {
   useCreateTake,
   useDayLog,
   useLinedScene,
+  useLiningMutations,
   useSaveDayLog,
   useNextSlatePreview,
   useScenesForShootDay,
@@ -193,6 +201,97 @@ export function ScriptSupervisorPage() {
   const sceneNumberById = useMemo(() => new Map(allScenes.map((s) => [s.id, s.scene_number])), [allScenes])
   const labelOf = (s: Slate) => slateDisplayLabel(s, s.scene_id ? sceneNumberById.get(s.scene_id) : null)
 
+  // ─── Lining (SS7) ──────────────────────────────────────────────────────────
+  const lining = useLiningMutations()
+  const [undoStack, setUndoStack] = useState<LiningUndoEntry[]>([])
+  const remember = (entry: LiningUndoEntry) => setUndoStack((stack) => pushUndo(stack, entry))
+  const liningBusy =
+    lining.create.isPending ||
+    lining.range.isPending ||
+    lining.segments.isPending ||
+    lining.remove.isPending ||
+    lining.restore.isPending
+  const activeTramline =
+    linedScene && currentSlate
+      ? linedScene.tramlines.find((t) => t.slateId === currentSlate.id && t.camera === '') ?? null
+      : null
+  const tramlineAt = (laneIndex: number) => {
+    const id = linedLayout?.columns[laneIndex]?.tramlineId
+    return linedScene?.tramlines.find((t) => t.id === id) ?? null
+  }
+  const laneLabel = (laneIndex: number) => linedLayout?.columns[laneIndex]?.label ?? ''
+
+  const handleDraw = (startSort: number, endSort: number) => {
+    if (!linedLayout || !linedScene || !currentSlate) return
+    const snapped = snapRangeToLineable(linedLayout.rows, startSort, endSort)
+    if (!snapped) return
+    const idBySort = new Map(linedLayout.rows.map((r) => [r.element.sort_index, r.element.id]))
+    const start = idBySort.get(snapped.start)!
+    const end = idBySort.get(snapped.end)!
+    const label = labelOf(currentSlate)
+    if (activeTramline) {
+      const previous = { start: activeTramline.startElementId, end: activeTramline.endElementId }
+      lining.range.mutate(
+        { id: activeTramline.id, start, end },
+        {
+          onSuccess: () =>
+            remember({ kind: 'range', tramlineId: activeTramline.id, startElementId: previous.start, endElementId: previous.end, label: `redraw of ${label}` }),
+        }
+      )
+    } else {
+      lining.create.mutate(
+        { slateId: currentSlate.id, scriptVersionId: linedScene.scriptVersionId, startElementId: start, endElementId: end },
+        { onSuccess: (tramlineId) => remember({ kind: 'created', tramlineId, label: `lining ${label}` }) }
+      )
+    }
+  }
+
+  const handleSetSegment = (laneIndex: number, row: LiningRow, state: CellState) => {
+    const t = tramlineAt(laneIndex)
+    const previous = row.cells[laneIndex]?.state ?? 'on'
+    if (!t || previous === state) return
+    lining.segments.mutate(
+      { id: t.id, changes: [{ elementId: row.element.id, state }] },
+      {
+        onSuccess: () =>
+          remember({ kind: 'segments', tramlineId: t.id, previous: [{ elementId: row.element.id, state: previous }], label: `change to ${laneLabel(laneIndex)}` }),
+      }
+    )
+  }
+
+  const handleCharacterOff = (laneIndex: number, row: LiningRow) => {
+    const t = tramlineAt(laneIndex)
+    if (!t || !linedLayout || !row.element.character_name) return
+    const ids = characterRunElementIds(linedLayout.rows, laneIndex, row.element.sort_index, row.element.character_name)
+    const stateById = new Map<string, CellState>(
+      linedLayout.rows.map((r): [string, CellState] => [r.element.id, r.cells[laneIndex]?.state ?? 'on'])
+    )
+    const previous = ids.map((id) => ({ elementId: id, state: stateById.get(id) ?? 'on' }))
+    lining.segments.mutate(
+      { id: t.id, changes: ids.map((id) => ({ elementId: id, state: 'off' as const })) },
+      { onSuccess: () => remember({ kind: 'segments', tramlineId: t.id, previous, label: `${row.element.character_name} off camera` }) }
+    )
+  }
+
+  const handleDeleteTramline = (laneIndex: number) => {
+    const t = tramlineAt(laneIndex)
+    if (!t) return
+    const label = laneLabel(laneIndex)
+    lining.remove.mutate(t.id, { onSuccess: () => remember({ kind: 'deleted', tramlineId: t.id, label: `deleting ${label}` }) })
+  }
+
+  const handleUndo = () => {
+    if (liningBusy) return
+    const { entry, rest } = popUndo(undoStack)
+    if (!entry) return
+    setUndoStack(rest)
+    if (entry.kind === 'created') lining.remove.mutate(entry.tramlineId)
+    else if (entry.kind === 'deleted') lining.restore.mutate(entry.tramlineId)
+    else if (entry.kind === 'range') lining.range.mutate({ id: entry.tramlineId, start: entry.startElementId, end: entry.endElementId })
+    else lining.segments.mutate({ id: entry.tramlineId, changes: entry.previous })
+  }
+  const lastUndo = undoStack[undoStack.length - 1] ?? null
+
   const isUs = settings?.slating_system === 'us'
   const busy = createSlate.isPending || createTake.isPending || updateTake.isPending
   const canCreateSlate =
@@ -245,11 +344,18 @@ export function ScriptSupervisorPage() {
   }
 
   // Single-key shortcuts (N, Space, P, H, G) — ignored while typing or with modifier keys.
-  const shortcuts = useRef({ handleNewSlate, handleRollCut, handleMark })
-  shortcuts.current = { handleNewSlate, handleRollCut, handleMark }
+  const shortcuts = useRef({ handleNewSlate, handleRollCut, handleMark, handleUndo, middleView })
+  shortcuts.current = { handleNewSlate, handleRollCut, handleMark, handleUndo, middleView }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return
+      if (e.defaultPrevented || isTypingTarget(e.target)) return
+      // Undo lining (Cmd/Ctrl+Z) while the script is showing.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && shortcuts.current.middleView === 'script') {
+        e.preventDefault()
+        shortcuts.current.handleUndo()
+        return
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return
       const target = e.target as HTMLElement | null
       const onButton = target?.tagName?.toLowerCase() === 'button'
       switch (e.key.toLowerCase()) {
@@ -305,7 +411,12 @@ export function ScriptSupervisorPage() {
     updateTake.error,
     setSceneProgress.error,
     saveDayLog.error,
-    exportDpr.error
+    exportDpr.error,
+    lining.create.error,
+    lining.range.error,
+    lining.segments.error,
+    lining.remove.error,
+    lining.restore.error
   )
   const selectedSceneComplete = sceneId ? sceneStatus(sceneId) === 'complete' : false
   const toggleSceneComplete = () => {
@@ -522,6 +633,23 @@ export function ScriptSupervisorPage() {
             ]}
           />
           {middleView === 'script' ? (
+            <>
+            {linedScene && (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size={touch ? 'lg' : 'sm'}
+                  disabled={!lastUndo || liningBusy}
+                  aria-keyshortcuts="Control+Z Meta+Z"
+                  onClick={handleUndo}
+                >
+                  <Undo2 aria-hidden />
+                  {lastUndo ? `Undo ${lastUndo.label}` : 'Undo'}
+                </Button>
+                {!currentSlate && <span className="text-xs text-muted-foreground">Create a slate to line it.</span>}
+              </div>
+            )}
             <LinedScript
               layout={linedLayout}
               isLoading={linedLoading && !!sceneId}
@@ -529,7 +657,19 @@ export function ScriptSupervisorPage() {
               sceneNumber={sceneId ? sceneNumberById.get(sceneId) ?? null : null}
               currentSlateId={currentSlate?.id ?? null}
               touch={touch}
+              editing={{
+                activeSlateId: currentSlate?.id ?? null,
+                activeLabel: currentSlate ? labelOf(currentSlate) : null,
+                activeShotType: currentSlate?.shot_type ?? null,
+                activeHasTramline: !!activeTramline,
+                busy: liningBusy,
+                onDraw: handleDraw,
+                onSetSegment: handleSetSegment,
+                onCharacterOff: handleCharacterOff,
+                onDeleteTramline: handleDeleteTramline,
+              }}
             />
+            </>
           ) : (
           <section aria-label="Slates on this day" className="space-y-2">
             <ul className="space-y-1">

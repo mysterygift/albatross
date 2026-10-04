@@ -143,7 +143,7 @@ export async function loadLinedScene(productionId: string, sceneId: string): Pro
   const maxSort = elements[elements.length - 1]!.sort_index
   const db = await getDb()
   const tRows = await db.select<Record<string, unknown>[]>(
-    `SELECT t.id, t.slate_id, t.camera, es.sort_index AS start_sort, ee.sort_index AS end_sort,
+    `SELECT t.id, t.slate_id, t.camera, t.start_element_id, t.end_element_id, es.sort_index AS start_sort, ee.sort_index AS end_sort,
             s.slating_system, s.slate_prefix, s.slate_number, s.shot_type, s.shot_code, s.description,
             s.created_at AS slate_created_at, sc.scene_number
      FROM ${TRAMLINES} t
@@ -203,6 +203,8 @@ export async function loadLinedScene(productionId: string, sceneId: string): Pro
     description: (r.description as string | null) ?? null,
     camera: (r.camera as string | null) ?? '',
     printTakeNumbers: (printsBySlate.get(r.slate_id as string) ?? []).sort((a, b) => a - b),
+    startElementId: r.start_element_id as string,
+    endElementId: r.end_element_id as string,
     startSortIndex: coerceNumber(r.start_sort, 0),
     endSortIndex: coerceNumber(r.end_sort, 0),
     segments: segmentsByTramline.get(r.id as string) ?? new Map(),
@@ -381,6 +383,79 @@ export async function softDeleteTramline(id: string): Promise<void> {
       { sql: 'BEGIN', bindValues: [] },
       { sql: `UPDATE ${TRAMLINES} SET deleted_at = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`, bindValues: [ts, ts, id] },
       outboxStatementForRow({ entity: TRAMLINES, entityId: id, operation: 'delete', payloadJson: null }),
+      { sql: 'COMMIT', bindValues: [] },
+    ])
+  })
+}
+
+/**
+ * Sets several elements' states on one tramline in a single transaction (used by "off camera for this
+ * character to the end of the line" and by undo).
+ */
+export async function setTramlineSegments(
+  tramlineId: string,
+  changes: ReadonlyArray<{ elementId: string; state: 'on' | SegmentState }>
+): Promise<void> {
+  if (changes.length === 0) return
+  const t = await getTramline(tramlineId)
+  if (!t) throw new Error('Tramline not found')
+  await assertScriptSupervisorLocal(t.production_id)
+  const els = await getElementsByIds([...new Set(changes.map((c) => c.elementId))])
+  for (const c of changes) {
+    if (!['on', 'off', 'not_covered'].includes(c.state)) throw new Error('Segment must be on, off or not covered')
+    const el = els.get(c.elementId)
+    if (!el || el.script_version_id !== t.script_version_id) throw new Error('Script line not found')
+  }
+  const ts = now()
+  const statements: Stmt[] = [{ sql: 'BEGIN', bindValues: [] }]
+  for (const c of changes) {
+    statements.push(
+      c.state === 'on'
+        ? { sql: `DELETE FROM ${SEGMENTS} WHERE tramline_id = $1 AND element_id = $2`, bindValues: [tramlineId, c.elementId] }
+        : {
+            sql: `INSERT INTO ${SEGMENTS} (id, tramline_id, element_id, state, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)
+                  ON CONFLICT (tramline_id, element_id) DO UPDATE SET state = $4, updated_at = $6`,
+            bindValues: [uuid(), tramlineId, c.elementId, c.state, ts, ts],
+          }
+    )
+  }
+  statements.push(
+    outboxStatementForRow({
+      entity: SEGMENTS, entityId: tramlineId, operation: 'update',
+      payloadJson: JSON.stringify({ tramline_id: tramlineId, changes }),
+    }),
+    { sql: 'COMMIT', bindValues: [] }
+  )
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    await executeBatch(db, statements)
+  })
+}
+
+/** Brings back a soft-deleted tramline (undo of delete), unless the slate has been lined again since. */
+export async function restoreTramline(id: string): Promise<void> {
+  const db = await getDb()
+  const rows = await db.select<Array<{ production_id: string; slate_id: string; script_version_id: string; camera: string }>>(
+    `SELECT t.production_id, t.slate_id, t.script_version_id, t.camera FROM ${TRAMLINES} t
+     INNER JOIN slates s ON s.id = t.slate_id AND s.deleted_at IS NULL
+     WHERE t.id = $1 AND t.deleted_at IS NOT NULL`,
+    [id]
+  )
+  const t = rows[0]
+  if (!t) throw new Error('Nothing to restore')
+  await assertScriptSupervisorLocal(t.production_id)
+  const clash = await db.select<Array<{ id: string }>>(
+    `SELECT id FROM ${TRAMLINES} WHERE slate_id = $1 AND script_version_id = $2 AND camera = $3 AND deleted_at IS NULL`,
+    [t.slate_id, t.script_version_id, t.camera]
+  )
+  if (clash.length > 0) throw new Error('This slate has been lined again since, so the old tramline can’t come back')
+  const ts = now()
+  await runInSerializedTransaction(async () => {
+    const conn = await getDb()
+    await executeBatch(conn, [
+      { sql: 'BEGIN', bindValues: [] },
+      { sql: `UPDATE ${TRAMLINES} SET deleted_at = NULL, updated_at = $1 WHERE id = $2`, bindValues: [ts, id] },
+      outboxStatementForRow({ entity: TRAMLINES, entityId: id, operation: 'update', payloadJson: JSON.stringify({ deleted_at: null }) }),
       { sql: 'COMMIT', bindValues: [] },
     ])
   })

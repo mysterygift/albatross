@@ -19,7 +19,7 @@ const elements = [
 
 const tramline: LiningTramline = {
   id: 't1', slateId: 'sl1', slateLabel: '212', slateCreatedAt: '2026-10-07T10:00', shotType: 'master', shotCode: 'WS',
-  description: null, camera: '', printTakeNumbers: [4], startSortIndex: 1, endSortIndex: 3, segments: new Map(),
+  description: null, camera: '', printTakeNumbers: [4], startElementId: 'e1', endElementId: 'e3', startSortIndex: 1, endSortIndex: 3, segments: new Map(),
 }
 
 function renderLined(props: Partial<Parameters<typeof LinedScript>[0]> = {}) {
