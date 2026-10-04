@@ -1,7 +1,8 @@
 {
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "iOS/Android permissions: app sandbox only (no Desktop/Downloads, no reveal-in-folder)",
+  "platforms": ["iOS", "android"],
   "windows": [
     "main"
   ],
@@ -15,15 +16,9 @@
     "fs:default",
     "fs:allow-appdata-write-recursive",
     "fs:allow-appdata-read-recursive",
-    "fs:allow-desktop-write-recursive",
-    "fs:allow-desktop-read-recursive",
     "fs:allow-document-write-recursive",
     "fs:allow-document-read-recursive",
-    "fs:allow-download-write-recursive",
-    "fs:allow-download-read-recursive",
     "dialog:default",
-    "shell:default",
-    "opener:allow-reveal-item-in-dir",
     "opener:default",
     {
       "identifier": "opener:allow-open-path",

@@ -73,7 +73,7 @@ import { sectionFromSearchParams, type SettingsSectionId } from '@/features/sett
 import { useDeveloperMode } from '@/hooks/useDeveloperMode'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/sonner'
-import { open as shellOpen } from '@tauri-apps/plugin-shell'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import {
   ensureDemoData,
   resetDemoData,
@@ -809,7 +809,7 @@ export function SettingsPage() {
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => shellOpen('https://openrouteservice.org')}
+                  onClick={() => openUrl('https://openrouteservice.org')}
                 >
                   Get free key
                 </Button>

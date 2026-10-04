@@ -1,4 +1,7 @@
 //! Desktop `.apf` open routing: argv queue (cold start), single-instance handoff, fs scope grant.
+//! On mobile there is no argv or second instance, so only the commands are used (the queue stays
+//! empty and `.apf` files arrive through the document picker instead).
+#![cfg_attr(mobile, allow(dead_code))]
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

@@ -1,6 +1,6 @@
 /**
  * Attachments: pick file via dialog, copy into app data directory, return path.
- * Open file in OS default app via Tauri opener (local paths) or shell (URLs).
+ * Open file in OS default app via Tauri opener (local paths and URLs).
  * Save file via native save dialog (user chooses location).
  */
 import { appDataDir } from '@tauri-apps/api/path'
@@ -15,8 +15,7 @@ import {
   writeFile,
   writeTextFile,
 } from '@tauri-apps/plugin-fs'
-import { openPath as openerOpenPath } from '@tauri-apps/plugin-opener'
-import { open as shellOpen } from '@tauri-apps/plugin-shell'
+import { openPath as openerOpenPath, openUrl as openerOpenUrl } from '@tauri-apps/plugin-opener'
 
 const ATTACHMENTS_DIR = 'attachments'
 
@@ -70,14 +69,14 @@ export async function deleteAttachmentFile(relativePath: string): Promise<void> 
   }
 }
 
-/** Open a file or URL in the OS default application. Uses opener for file:// paths (shell does not allow file:// by default). */
+/** Open a file or URL in the OS default application. Local file:// paths go through openPath; everything else through openUrl. */
 export async function openInSystem(pathOrUrl: string): Promise<void> {
   if (pathOrUrl.startsWith('file://')) {
     const path = pathOrUrl.slice(7)
     await openerOpenPath(decodeURIComponent(path))
     return
   }
-  await shellOpen(pathOrUrl)
+  await openerOpenUrl(pathOrUrl)
 }
 
 export interface SaveFileDialogOptions {
