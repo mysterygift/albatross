@@ -85,8 +85,14 @@ export function SetupCommittingScreen({
 
   const runCommitRef = useRef(runCommit)
   runCommitRef.current = runCommit
+  // StrictMode re-runs effects in dev; a second concurrent commit fails and closes the DB.
+  const startedAttemptRef = useRef<number | null>(null)
 
   useEffect(() => {
+    if (startedAttemptRef.current === attempt) {
+      return
+    }
+    startedAttemptRef.current = attempt
     void runCommitRef.current()
   }, [attempt])
 

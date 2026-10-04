@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -56,6 +57,30 @@ describe('SetupCommittingScreen', () => {
     const status = await screen.findByRole('status')
     expect(status.getAttribute('aria-live')).toBe('polite')
     expect(status.getAttribute('aria-busy')).toBe('true')
+  })
+
+  it('runs the commit once under StrictMode', async () => {
+    const onSuccess = vi.fn()
+
+    render(
+      <StrictMode>
+        <SetupCommittingScreen
+          busy={false}
+          pendingCommit={{
+            plainRecoveryKey: TEST_RECOVERY_KEY,
+            credentials: {
+              username: 'admin',
+              password: 'validpass123',
+            },
+          }}
+          onSuccess={onSuccess}
+          onError={vi.fn()}
+        />
+      </StrictMode>
+    )
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    expect(commitMocks.runSetupCommit).toHaveBeenCalledTimes(1)
   })
 
   it('shows retry after commit failure without calling onSuccess', async () => {
