@@ -3,6 +3,7 @@ import L from 'leaflet'
 import { MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { Trash2 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
+import { recordApiCall } from '@/lib/dev/apiCallTracker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -159,7 +160,12 @@ function MapFrame({
       className="rounded border border-border"
       scrollWheelZoom
     >
-      <TileLayer url={leafletTileUrl(tileConfig)} attribution={MAP_TILE_ATTRIBUTION_HTML} maxZoom={19} />
+      <TileLayer
+        url={leafletTileUrl(tileConfig)}
+        attribution={MAP_TILE_ATTRIBUTION_HTML}
+        maxZoom={19}
+        eventHandlers={{ tileloadstart: () => recordApiCall('map_tiles') }}
+      />
       <FitView points={scene.fitPoints} minZoom={fitMinZoom} maxZoom={fitMaxZoom} />
       <ClickToAddPin onAdd={onAddPin} />
       <SceneLayers scene={scene} pins={pins} onMovePin={onMovePin} />

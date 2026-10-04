@@ -1,3 +1,4 @@
+import { recordApiCall } from '@/lib/dev/apiCallTracker'
 import {
   TILE_SIZE,
   planTiles,
@@ -37,6 +38,7 @@ export function projectScene(
 }
 
 function loadTile(url: string): Promise<HTMLImageElement | null> {
+  recordApiCall('map_tiles')
   return new Promise((resolve) => {
     const image = new Image()
     image.crossOrigin = 'anonymous'
