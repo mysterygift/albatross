@@ -571,18 +571,20 @@ export function ScriptSupervisorPage() {
             { value: 'review', label: 'Review' },
           ]}
         />
-        <Button
-          type="button"
-          variant="outline"
-          size={touch ? 'icon-lg' : 'icon'}
-          aria-label="Tablet layout"
-          title="Tablet layout"
-          aria-pressed={touch}
-          onClick={toggleTouch}
-          className={cn(touch && 'border-primary/60 bg-primary/15 text-primary')}
-        >
-          <Tablet aria-hidden />
-        </Button>
+        {toggleTouch && (
+          <Button
+            type="button"
+            variant="outline"
+            size={touch ? 'icon-lg' : 'icon'}
+            aria-label="Tablet layout"
+            title="Tablet layout"
+            aria-pressed={touch}
+            onClick={toggleTouch}
+            className={cn(touch && 'border-primary/60 bg-primary/15 text-primary')}
+          >
+            <Tablet aria-hidden />
+          </Button>
+        )}
         <Button
           type="button"
           size={touch ? 'lg' : 'default'}

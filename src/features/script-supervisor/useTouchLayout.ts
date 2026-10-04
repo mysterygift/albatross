@@ -5,21 +5,20 @@ const STORAGE_KEY = 'albatross.scriptSupervisor.touchLayout'
 
 function readStored(): boolean {
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY)
-    // No saved choice yet: default to the tablet layout on iOS/Android.
-    if (stored == null) return isMobilePlatform()
-    return stored === 'true'
+    return window.localStorage.getItem(STORAGE_KEY) === 'true'
   } catch {
-    return isMobilePlatform()
+    return false
   }
 }
 
 /**
  * Tablet (touch) layout for the Script Supervisor workspace: larger targets and a compact scene rail.
- * A per-device preference, so it is kept in local storage rather than the production database.
+ * On iOS/Android it is always on and the toggle is `null`. On desktop it is a per-device preference,
+ * so it is kept in local storage rather than the production database.
  */
-export function useTouchLayout(): [boolean, () => void] {
-  const [touch, setTouch] = useState<boolean>(readStored)
+export function useTouchLayout(): [boolean, (() => void) | null] {
+  const [forced] = useState(isMobilePlatform)
+  const [stored, setTouch] = useState<boolean>(readStored)
   const toggle = useCallback(() => {
     setTouch((prev) => {
       const next = !prev
@@ -31,5 +30,5 @@ export function useTouchLayout(): [boolean, () => void] {
       return next
     })
   }, [])
-  return [touch, toggle]
+  return forced ? [true, null] : [stored, toggle]
 }
