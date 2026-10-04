@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Info, Plus, Tablet, Undo2 } from 'lucide-react'
+import { Check, FileDown, Info, Plus, Tablet, Undo2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { SegmentedControl } from '@/components/ui/segmented-control'
@@ -47,6 +47,7 @@ import { cn } from '@/lib/utils'
 import {
   useCreateSlate,
   useCreateTake,
+  useDayCoverage,
   useDayLog,
   useLinedScene,
   useLiningMutations,
@@ -67,6 +68,15 @@ import {
   useUpdateTake,
 } from './hooks'
 import { DayReportCard } from './DayReportCard'
+import { ExportsCard } from './ExportsCard'
+import {
+  exportContinuitySheets,
+  exportDayMarkedUpScript,
+  exportEditorsLog,
+  exportSceneMarkedUpScript,
+  type DayExportContext,
+  type ExportKind,
+} from './exports'
 import { LinedScript } from './LinedScript'
 import { ProgressView } from './ProgressView'
 import { SceneStatusPip } from './SceneStatusPip'
@@ -196,6 +206,57 @@ export function ScriptSupervisorPage() {
     onSuccess: () => {
       if (currentProductionId) void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
     },
+  })
+
+  // ─── Exports (SS9) ─────────────────────────────────────────────────────────
+  const { data: dayCoverage, isLoading: coverageLoading } = useDayCoverage(
+    mode === 'review' ? currentProductionId : null,
+    dayId
+  )
+  const [exportNotice, setExportNotice] = useState<string | null>(null)
+  const refreshDocuments = () => {
+    if (currentProductionId) void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+  }
+  const dayExport = useMutation({
+    mutationFn: async (kind: ExportKind): Promise<string | null> => {
+      const day = days.find((d) => d.id === dayId)
+      if (!currentProductionId || !day) throw new Error('Choose a shoot day first')
+      const ctx: DayExportContext = {
+        productionId: currentProductionId,
+        productionName: currentProduction?.name ?? 'Production',
+        shootDayId: day.id,
+        shootDate: day.shoot_date,
+        dayNumber: day.day_number,
+        totalShootDays: days.length,
+      }
+      if (kind === 'continuity') await exportContinuitySheets(ctx)
+      else if (kind === 'editors_log') await exportEditorsLog(ctx)
+      else {
+        const missing = await exportDayMarkedUpScript(ctx)
+        if (missing.length > 0) {
+          return `Left out ${missing.map((n) => `Sc ${n}`).join(', ')}: not in an imported script.`
+        }
+      }
+      return null
+    },
+    onMutate: () => setExportNotice(null),
+    onSuccess: (notice) => {
+      setExportNotice(notice)
+      refreshDocuments()
+    },
+  })
+  const sceneExport = useMutation({
+    mutationFn: async () => {
+      const scene = allScenes.find((s) => s.id === sceneId)
+      if (!currentProductionId || !scene) throw new Error('Choose a scene first')
+      await exportSceneMarkedUpScript({
+        productionId: currentProductionId,
+        productionName: currentProduction?.name ?? 'Production',
+        scene: { sceneId: scene.id, sceneNumber: scene.scene_number, title: scene.title ?? null },
+        asOf: localIsoDate(),
+      })
+    },
+    onSuccess: refreshDocuments,
   })
 
   const [rolling, setRolling] = useState<{ slateId: string; since: number } | null>(null)
@@ -435,6 +496,8 @@ export function ScriptSupervisorPage() {
     setSceneProgress.error,
     saveDayLog.error,
     exportDpr.error,
+    dayExport.error,
+    sceneExport.error,
     lining.create.error,
     lining.range.error,
     lining.segments.error,
@@ -543,6 +606,7 @@ export function ScriptSupervisorPage() {
           }}
           header={
             chosenDay ? (
+              <div className="space-y-4">
               <DayReportCard
                 dayLabel={chosenDay.day_number != null ? `Day ${chosenDay.day_number}` : chosenDay.shoot_date}
                 dayLog={dayLog}
@@ -555,6 +619,21 @@ export function ScriptSupervisorPage() {
                 exporting={exportDpr.isPending}
                 touch={touch}
               />
+              <ExportsCard
+                dayLabel={chosenDay.day_number != null ? `Day ${chosenDay.day_number}` : chosenDay.shoot_date}
+                coverage={dayCoverage}
+                coverageLoading={coverageLoading}
+                exporting={dayExport.isPending ? dayExport.variables ?? null : null}
+                notice={exportNotice}
+                touch={touch}
+                onExport={(kind) => dayExport.mutate(kind)}
+                onOpenScene={(id) => {
+                  setChosenSceneId(id)
+                  setMiddleView('script')
+                  setMode('log')
+                }}
+              />
+              </div>
             ) : null
           }
         />
@@ -673,6 +752,17 @@ export function ScriptSupervisorPage() {
                   {lastUndo ? `Undo ${lastUndo.label}` : 'Undo'}
                 </Button>
                 {!currentSlate && <span className="text-xs text-muted-foreground">Create a slate to line it.</span>}
+                <span className="flex-1" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size={touch ? 'lg' : 'sm'}
+                  disabled={sceneExport.isPending}
+                  onClick={() => sceneExport.mutate()}
+                >
+                  <FileDown aria-hidden />
+                  {sceneExport.isPending ? 'Exporting…' : 'Export PDF'}
+                </Button>
               </div>
             )}
             <LinedScript

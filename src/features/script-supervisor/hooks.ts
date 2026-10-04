@@ -5,6 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SlatingSystem } from '@/lib/db/types'
 import { loadShootProgress } from '@/lib/db/scriptSupervisorProgressService'
+import { loadDayCoverage } from '@/lib/db/scriptSupervisorExportService'
 import {
   createAnnotation,
   listAnnotationsForScene,
@@ -208,6 +209,15 @@ export function useLinedScene(productionId: string | null | undefined, sceneId: 
     queryKey: ['script-supervisor', 'lined-scene', productionId ?? null, sceneId ?? null],
     queryFn: () => loadLinedScene(productionId!, sceneId!),
     enabled: !!productionId && !!sceneId,
+  })
+}
+
+/** Two-tramline check for the scenes slated on a day (SS9). */
+export function useDayCoverage(productionId: string | null | undefined, shootDayId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['script-supervisor', 'day-coverage', productionId ?? null, shootDayId ?? null],
+    queryFn: () => loadDayCoverage(productionId!, shootDayId!),
+    enabled: !!productionId && !!shootDayId,
   })
 }
 

@@ -90,6 +90,14 @@ import {
   listContinuityMediaForSlate,
   updateAnnotation,
 } from '@/lib/db/repositories/scriptAnnotations'
+import {
+  listScenesShotOnDay,
+  loadContinuityDay,
+  loadDayCoverage,
+  loadMarkedUpScenes,
+} from '@/lib/db/scriptSupervisorExportService'
+import { buildContinuitySheets, buildEditorsLogCsv } from '@/lib/script-supervisor/continuitySheets'
+import { planMarkedUpScript } from '@/lib/script-supervisor/markedUpScript'
 
 function applyAllMigrations(db: Database): void {
   const dir = join(process.cwd(), 'src-tauri/migrations')
@@ -428,5 +436,71 @@ describe('notes and continuity photos (SS8)', () => {
     const photos = await listContinuityMediaForSlate(slate.id)
     expect(photos).toHaveLength(1)
     expect(photos[0]).toMatchObject({ takeNumber: 1, tags: 'wardrobe,props', filePath: 'attachments/p/doc1-c.jpg' })
+  })
+})
+
+describe('exports (SS9)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    dataSourceOverride = null
+  })
+
+  async function seed() {
+    const ctx = await setup()
+    const { production, scene, day1 } = ctx
+    const other = await createScene({ production_id: production.id, scene_number: '24', page_eighths: 4 })
+    await dbAdapter.execute(
+      `INSERT INTO script_versions (id, production_id, is_locked, created_at, updated_at) VALUES ('v1', $1, 0, 't', 't')`,
+      [production.id]
+    )
+    await dbAdapter.execute(
+      `INSERT INTO script_pages (id, script_version_id, scene_id, page_number, page_index, content, created_at, updated_at)
+       VALUES ('pg', 'v1', $1, '31', 0, 'INT. EDIT SUITE - NIGHT\n\nMonitors glow.\n\nELENA\nThere is no cutaway.', 't', 't')`,
+      [scene.id]
+    )
+    const els = (await loadLinedScene(production.id, scene.id))!.elements
+    const master = await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id, shot_type: 'master', shot_code: 'WS', camera_roll: 'A014' })
+    const t1 = await createTake(master.id, { status: 'ng', ng_reason: 'focus', duration_ms: 12_000 })
+    const t2 = await createTake(master.id, { status: 'print', duration_ms: 95_000 })
+    await createTramline({ slateId: master.id, scriptVersionId: 'v1', startElementId: els[1]!.id, endElementId: els[2]!.id })
+    await createAnnotation({ elementId: els[2]!.id, kind: 'ad_lib', text: '+ “Nobody ever does.”', slateId: master.id, takeIds: [t2.id] })
+    // A second scene slated later the same day, with no script.
+    const wild = await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: other.id, sound_mode: 'wild_track' })
+    return { ...ctx, other, els, master, wild, t1, t2 }
+  }
+
+  it('loads the day for continuity sheets with notes on their lines', async () => {
+    const { day1, master } = await seed()
+    const slates = await loadContinuityDay(day1.id)
+    expect(slates.map((s) => [s.label, s.sceneNumber, s.takes.length])).toEqual([['1', '23', 2], ['2', '24', 0]])
+    expect(slates[0]!.notes).toMatchObject([{ kind: 'ad_lib', takeNumbers: [2], excerpt: 'ELENA: There is no cutaway.' }])
+    const sheets = buildContinuitySheets({ productionName: 'P', shootDate: '2026-10-06', dayNumber: 1, totalShootDays: 2, slates })
+    expect(sheets.sheets[0]).toMatchObject({ slateId: master.id, printed: 'Print 2' })
+    expect(sheets.sheets[0]!.scriptNotes).toEqual([{ line: 'ELENA: There is no cutaway.', text: 'T2 · Ad-lib: + “Nobody ever does.”' }])
+    const csv = buildEditorsLogCsv({ productionName: 'P', shootDate: '2026-10-06', dayNumber: 1, totalShootDays: 2, slates })
+    expect(csv.trimEnd().split('\r\n')).toHaveLength(1 + 2 + 1)
+  })
+
+  it('exports marked-up pages from the same layout as the Script view and checks two-tramline coverage', async () => {
+    const { production, day1, day2, scene } = await seed()
+    const scenes = await listScenesShotOnDay(day1.id)
+    expect(scenes.map((s) => s.sceneNumber)).toEqual(['23', '24'])
+    expect(await listScenesShotOnDay(day2.id)).toEqual([])
+
+    const { scenes: inputs, missing } = await loadMarkedUpScenes(production.id, scenes)
+    expect(missing.map((m) => m.sceneNumber)).toEqual(['24'])
+    const lined = await loadLinedScene(production.id, scene.id)
+    const onScreen = layoutLinedScript(lined!.elements, lined!.tramlines)
+    expect(inputs[0]!.layout).toEqual(onScreen)
+    const page = planMarkedUpScript(inputs).pages[0]!
+    expect(page.lanes.map((l) => l.label)).toEqual(onScreen.columns.map((c) => c.label))
+    expect(page.pieces.map((p) => p.cells.map((c) => c.state))).toEqual(onScreen.rows.map((r) => r.cells.map((c) => c.state)))
+    expect(page.pieces.flatMap((p) => p.lines.filter((l) => l.kind === 'note').map((l) => l.text))).toEqual(['T2 · 1 · Ad-lib: + “Nobody ever does.”'])
+
+    const coverage = await loadDayCoverage(production.id, day1.id)
+    expect(coverage.map((c) => [c.sceneNumber, c.state, c.underCovered])).toEqual([
+      ['23', 'under', 2],
+      ['24', 'no_script', 0],
+    ])
   })
 })

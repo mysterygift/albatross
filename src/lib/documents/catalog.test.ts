@@ -20,6 +20,9 @@ describe('document catalog', () => {
     )
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.dailyProgressReport)).toBe('set-paperwork')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.continuityPhoto)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.continuitySheets)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.editorsLog)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.markedUpScript)).toBe('set-paperwork')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.contributorForm)).toBe('people-locations')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.deliverable)).toBe('deliverables')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.cueSheet)).toBe('music')
@@ -30,6 +33,7 @@ describe('document catalog', () => {
   it('provides human-readable type labels', () => {
     expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.sidesExport)).toBe('Shoot-day sides')
     expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.budgetCsv)).toBe('Budget CSV')
+    expect(getDocumentTypeLabel(DOCUMENT_ENTITY_TYPES.markedUpScript)).toBe('Marked-up script')
     expect(getDocumentTypeLabel(null)).toBe('General upload')
   })
 

@@ -167,6 +167,31 @@ Migration [`0091_script_supervisor_annotations_media.sql`](../src-tauri/migratio
   photos and *Add photos* (a file input, so touch devices offer the camera or library). New photos file against the
   selected take, else the latest. Images are read back as blob URLs (`createAppDataObjectUrl`), so no asset protocol is needed.
 
+## SS9 — exports and the two-tramline check
+
+No migration. **Review → Exports** (for the selected shoot day) and **Line & log → Script → Export PDF** (one scene).
+Every export saves a copy to Documents → Set paperwork, then opens a save dialog.
+
+| Export | Built by | Contents |
+| --- | --- | --- |
+| Continuity sheets (PDF, `continuity_sheets`) | [`continuitySheets.ts`](../src/lib/script-supervisor/continuitySheets.ts) → [`pdf/continuitySheets.ts`](../src/lib/pdf/continuitySheets.ts) | One sheet per slate in shot order: shot type, camera, lens, stop, filter, sound, int/ext, day/night, camera and sound rolls; takes (duration, status, NG reason, end board, remarks); printed takes; script notes with the line each was said on; slate notes; photo count and tags. |
+| Editor's log (CSV, `editors_log`) | `buildEditorsLogCsv` | One row per take (a slate without takes gets one row). Script notes on a row are those for that take plus whole-slate notes. UTF-8 BOM for Excel; cells starting `= + - @` get a leading apostrophe so an ad-lib like `+ "Nobody ever does."` is not read as a formula. |
+| Marked-up script (PDF, `marked_up_script`) | [`markedUpScript.ts`](../src/lib/script-supervisor/markedUpScript.ts) → [`pdf/markedUpScript.ts`](../src/lib/pdf/markedUpScript.ts) | The day's slated scenes (Review) or one scene lined to date (Script view): Courier script text, tramline lanes with labels, caps, dashed off-camera runs and gaps, the coverage strip, notes under their lines, script page changes. |
+
+- **Exported pages match the screen.** The loader ([`scriptSupervisorExportService.ts`](../src/lib/db/scriptSupervisorExportService.ts))
+  feeds `planMarkedUpScript` the same `layoutLinedScript` output the Script view draws. The plan is pure (positions,
+  lanes, cell states) and the renderer only paints it; tests check that every element appears once in order and every
+  lane's cell state and start/end caps on paper equal the on-screen layout, including across split blocks and pages.
+- Layout: a block that won't fit moves to the next page; a block taller than a page splits by line, and the tramline
+  runs on (caps only at its real start and end). Lines also run across script page changes. More tramlines than fit
+  across A4 (about 19) print as further passes of the scene ("Tramlines 20–38 of 38"), so none is dropped.
+- Print colours (`PRINT_TRAMLINE_HEX`): master `#c2410c`, single `#2f5fb3`, multiple `#1a1a1a`, insert `#3f7a5c` —
+  the UK colours darkened from the screen palette to at least 3:1 on white (tested). Print mint is only used for
+  fills (coverage strip, rules).
+- **Two-tramline check** (`loadDayCoverage`): each scene slated that day is *covered*, *under* (N blocks with fewer
+  than two tramlines), *not lined yet* or *not in an imported script*. Tap a scene to open its script.
+- Scenes not in an imported script are left out of the day's marked-up script and listed after the export.
+
 ## Rules
 
 - **Local SQLite only**, like the SB1 script-section tables. Writes throw `SCRIPT_SUPERVISOR_REMOTE_ERROR`

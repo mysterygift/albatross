@@ -141,6 +141,20 @@ vi.mock('@/lib/db/repositories/schedule', () => ({
   ],
 }))
 
+const exportsMock = vi.hoisted(() => ({
+  exportContinuitySheets: vi.fn(async () => {}),
+  exportEditorsLog: vi.fn(async () => {}),
+  exportDayMarkedUpScript: vi.fn(async () => ['24']),
+  exportSceneMarkedUpScript: vi.fn(async () => {}),
+}))
+vi.mock('./exports', () => exportsMock)
+vi.mock('@/lib/db/scriptSupervisorExportService', () => ({
+  loadDayCoverage: async () => [
+    { sceneId: 'sc23', sceneNumber: '23', title: 'Edit suite', state: 'under', tramlines: 3, underCovered: 2 },
+    { sceneId: 'sc24', sceneNumber: '24', title: 'Corridor', state: 'no_script', tramlines: 0, underCovered: 0 },
+  ],
+}))
+
 vi.mock('@/hooks/useEffectiveDataSourceForProduction', () => ({
   useEffectiveDataSourceForProduction: () => ({ data: 'local_sqlite', dataSourceKey: 'local_sqlite' }),
 }))
@@ -232,5 +246,28 @@ describe('Script Supervisor page (SS3)', () => {
     const row = await screen.findByTestId('progress-row-23')
     expect(within(row).getByRole('img', { name: 'Complete' })).toBeTruthy()
     expect(within(screen.getByTestId('progress-row-24')).getByRole('img', { name: 'Not shot' })).toBeTruthy()
+  })
+
+  it('exports the day’s paperwork and opens a scene from the two-tramline check (SS9)', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('tab', { name: 'Review' }))
+    const card = await screen.findByRole('region', { name: 'Exports' })
+    expect(await within(card).findByText('2 blocks have fewer than two tramlines')).toBeTruthy()
+    expect(within(card).getByText('Not in an imported script')).toBeTruthy()
+
+    await user.click(within(card).getByRole('button', { name: /continuity sheets/i }))
+    await waitFor(() => expect(exportsMock.exportContinuitySheets).toHaveBeenCalledTimes(1))
+    expect(exportsMock.exportContinuitySheets).toHaveBeenCalledWith(
+      expect.objectContaining({ productionId: 'prod-1', shootDayId: 'day-14', shootDate: '2026-10-07', dayNumber: 14 })
+    )
+    await user.click(within(card).getByRole('button', { name: /editor’s log/i }))
+    await waitFor(() => expect(exportsMock.exportEditorsLog).toHaveBeenCalledTimes(1))
+    await user.click(within(card).getByRole('button', { name: /marked-up script/i }))
+    expect(await within(card).findByText('Left out Sc 24: not in an imported script.')).toBeTruthy()
+
+    await user.click(within(card).getByRole('button', { name: /scene 23: 2 blocks/i }))
+    expect((await screen.findByRole('tab', { name: 'Line & log' })).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: /script · sc 23/i }).getAttribute('aria-selected')).toBe('true')
   })
 })

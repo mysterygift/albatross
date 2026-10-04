@@ -119,6 +119,24 @@ export async function listScriptElementsForScene(scriptVersionId: string, sceneI
   return rows.map(rowToElement)
 }
 
+/** Line text by element id for notes on exports: 'ELENA: There is no cutaway.' for dialogue. */
+export async function getScriptElementExcerpts(ids: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids)]
+  if (unique.length === 0) return new Map()
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT id, element_type, character_name, text FROM ${ELEMENTS} WHERE id IN (${unique.map((_, i) => `$${i + 1}`).join(', ')})`,
+    unique
+  )
+  return new Map(
+    rows.map((r) => {
+      const text = ((r.text as string | null) ?? '').replace(/\s+/g, ' ').trim()
+      const who = r.element_type === 'dialogue' && r.character_name ? `${r.character_name as string}: ` : ''
+      return [r.id as string, `${who}${text}`]
+    })
+  )
+}
+
 // ─── Read model ─────────────────────────────────────────────────────────────
 
 export type LinedScene = {
