@@ -112,6 +112,7 @@
   [data-slot="dropdown-menu-sub-content"],
   [data-slot="select-content"],
   [data-slot="popover-content"],
+  [data-slot="hover-card-content"],
   [data-slot="command"]
 ) {
   background-color: var(--popover);
@@ -223,6 +224,57 @@
   background-color: var(--card);
   color: var(--foreground);
   font-weight: 700;
+}
+
+/* Bookings: the month grid / timeline frame and its header band (weekdays, dates) */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="booking-frame"] {
+  border: var(--ui-border-w) solid var(--foreground);
+  border-radius: var(--ui-card-radius);
+  box-shadow: var(--ui-shadow-lg);
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="booking-head"] {
+  background-color: var(--ui-card-header-bg);
+  background-image: var(--ui-card-header-image);
+  background-size: var(--ui-card-header-size);
+  border-bottom: var(--ui-border-w) solid var(--foreground);
+  color: var(--foreground);
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="booking-more"] {
+  border-radius: var(--ui-tag-radius);
+  font-weight: 700;
+}
+
+/* Bookings: span pills. --pill-color / --pill-text are set per pill from the colour coding, so the colour
+   code is unchanged and the theme only decides how it is drawn. A --ui-pill-ink of "initial" means "use
+   the contrast text computed for the fill"; --ui-pill-border-color of "initial" means "use the pill colour". */
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="booking-pill"] {
+  background-color: color-mix(in srgb, var(--pill-color) var(--ui-pill-tint), var(--card));
+  color: var(--ui-pill-ink, var(--pill-text));
+  border: var(--ui-pill-border-w) solid var(--ui-pill-border-color, color-mix(in srgb, var(--pill-color) 70%, transparent));
+  border-radius: var(--ui-pill-radius);
+  box-shadow: inset var(--ui-pill-bar) 0 0 var(--pill-color), var(--ui-pill-shadow);
+  font-family: var(--ui-pill-font);
+  font-size: var(--ui-pill-size);
+  font-weight: var(--ui-pill-weight);
+  text-transform: var(--ui-pill-transform);
+  letter-spacing: var(--ui-pill-tracking);
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="booking-pill"] > button {
+  padding-inline: var(--ui-pill-pad);
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="booking-pill"][data-continues-left="true"] {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left-width: 0;
+  box-shadow: var(--ui-pill-shadow);
+}
+:root:not([data-ui-theme="albatross-mint"]) [data-slot="booking-pill"][data-continues-right="true"] {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right-width: 0;
 }
 
 /* Arbitrary-value focus ring in the settings page that reads an undefined --mint variable */

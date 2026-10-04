@@ -340,7 +340,7 @@ export function DayOutOfDaysPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                <TableHead className="w-40 sticky left-0 z-10 bg-card border-r">Name</TableHead>
+                <TableHead className="w-40 sticky left-0 z-[1] bg-card border-r">Name</TableHead>
                 {dates.map((d: string) => (
                   <TableHead key={d} className="text-center min-w-[3rem]">
                     {d}
@@ -356,7 +356,7 @@ export function DayOutOfDaysPage() {
             <TableBody>
               {filteredRows.map((r) => (
                 <TableRow key={r.personId}>
-                  <TableCell className="font-medium sticky left-0 z-10 bg-card border-r">
+                  <TableCell className="font-medium sticky left-0 z-[1] bg-card border-r">
                     {r.personName}
                   </TableCell>
                   {r.cells.map((status, i) => (

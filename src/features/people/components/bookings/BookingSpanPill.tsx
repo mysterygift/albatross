@@ -1,6 +1,7 @@
 import { useDraggable } from '@dnd-kit/core'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { pillColorStyle } from './bookingViewShared'
 import {
   Tooltip,
   TooltipContent,
@@ -10,9 +11,12 @@ import {
 export type SpanDragKind = 'move' | 'resize-left' | 'resize-right'
 
 /**
- * A single contiguous booking pill on the calendar. The body is draggable to
- * move the whole span; the left/right edges are draggable to resize. Corners are
- * squared off where the span continues into an adjacent week or month.
+ * A single contiguous booking pill, used by both the Calendar View and the Timeline View. The
+ * body is draggable to move the whole span; the left/right edges are draggable to resize.
+ * Corners are squared off where the span continues into an adjacent week or month.
+ *
+ * The fill is always the booking's colour code. Shape, border, shadow and type come from the
+ * active theme through `data-slot="booking-pill"`; Albatross Mint uses the classes below.
  */
 export function BookingSpanPill({
   spanKey,
@@ -70,18 +74,16 @@ export function BookingSpanPill({
     <Tooltip>
       <TooltipTrigger asChild>
         <div
+          data-slot="booking-pill"
+          data-continues-left={continuesLeft}
+          data-continues-right={continuesRight}
           className={cn(
-            'relative h-full min-w-0 select-none',
-            continuesLeft ? 'rounded-l-none' : 'rounded-l-md',
-            continuesRight ? 'rounded-r-none' : 'rounded-r-md',
+            'relative h-full min-w-0 select-none overflow-hidden rounded-md bg-(--pill-color) text-(--pill-text) ring-1 ring-inset ring-black/10',
+            continuesLeft && 'rounded-l-none',
+            continuesRight && 'rounded-r-none',
             isDragging && 'opacity-40'
           )}
-          style={{
-            backgroundColor: color,
-            color: textColor,
-            backgroundImage:
-              'linear-gradient(to bottom, rgba(0,0,0,0) 45%, rgba(0,0,0,0.28) 100%)',
-          }}
+          style={pillColorStyle(color, textColor)}
         >
           <button
             type="button"
@@ -103,7 +105,7 @@ export function BookingSpanPill({
               {...leftListeners}
               {...leftAttributes}
               aria-label="Resize booking start"
-              className="absolute inset-y-0 left-0 w-2 cursor-ew-resize touch-none rounded-l-md hover:bg-black/15 dark:hover:bg-white/20"
+              className="absolute inset-y-0 left-0 w-2 cursor-ew-resize touch-none hover:bg-black/15 dark:hover:bg-white/20"
             />
           )}
           {!continuesRight && (
@@ -112,7 +114,7 @@ export function BookingSpanPill({
               {...rightListeners}
               {...rightAttributes}
               aria-label="Resize booking end"
-              className="absolute inset-y-0 right-0 w-2 cursor-ew-resize touch-none rounded-r-md hover:bg-black/15 dark:hover:bg-white/20"
+              className="absolute inset-y-0 right-0 w-2 cursor-ew-resize touch-none hover:bg-black/15 dark:hover:bg-white/20"
             />
           )}
         </div>
@@ -124,5 +126,18 @@ export function BookingSpanPill({
         {tooltip}
       </TooltipContent>
     </Tooltip>
+  )
+}
+
+/** The floating copy shown under the cursor while a pill is being moved. */
+export function BookingPillDragPreview({ label, color, textColor }: { label: string; color: string; textColor: string }) {
+  return (
+    <div
+      data-slot="booking-pill"
+      className="flex h-6 items-center overflow-hidden rounded-md bg-(--pill-color) px-2 text-xs font-medium text-(--pill-text) shadow-lg ring-1 ring-border"
+      style={pillColorStyle(color, textColor)}
+    >
+      <span className="truncate">{label}</span>
+    </div>
   )
 }

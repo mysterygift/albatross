@@ -1,37 +1,12 @@
-import { toast } from '@/components/ui/sonner'
 import { useMemo, useState, type ReactNode } from 'react'
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  useDroppable,
-  closestCenter,
-  type DragEndEvent,
-  type DragStartEvent,
-} from '@dnd-kit/core'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useDroppable } from '@dnd-kit/core'
 import { cn } from '@/lib/utils'
-import type { Booking, Person, ShootDay, Unit } from '@/lib/db/types'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import type { Booking, Person, ShootDay } from '@/lib/db/types'
 import type { BookingIntelligenceSummary } from '@/lib/people/bookingIntelligence'
 import {
-  assignLanes,
-  buildBookingSpans,
-  computeSpanMovePlan,
-  computeSpanResizePlan,
-  diffDaysIso,
   getMonthSpanSegments,
+  layoutWeekLanes,
   type BookingSpan,
 } from '@/features/people/lib/bookingSpans'
 import {
@@ -39,52 +14,51 @@ import {
   resolvePersonColor,
   type BookingColorConfig,
 } from '@/features/people/lib/bookingCalendarColors'
-import { BookingSpanPill, type SpanDragKind } from './BookingSpanPill'
+import { BookingSpanPill } from './BookingSpanPill'
+import { SpanTooltip } from './SpanTooltip'
+import { BOOKING_DATE_ATTR, formatDateRange, personPriority, spanKeyOf } from './bookingViewShared'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const HEADER_ROW = '1.9rem'
 const LANE_HEIGHT = '1.55rem'
+const BOTTOM_PADDING = '0.375rem'
 
-export type BookingChanges = {
-  updates?: { bookingId: string; shootDayId: string }[]
-  creates?: { personId: string; shootDayId: string; role: string | null; notes: string | null }[]
-  deletes?: string[]
-}
+/** Faint diagonal hatching marks days with no shoot day, so gaps read as intentional. */
+const OFF_DAY_HATCH =
+  'repeating-linear-gradient(135deg, color-mix(in srgb, var(--foreground) 6%, transparent) 0 6px, transparent 6px 12px)'
 
-function spanKeyOf(span: BookingSpan): string {
-  return `${span.personId}|${span.startDate}|${span.endDate}`
-}
-
-function formatDateRange(startDate: string, endDate: string): string {
-  const fmt = (iso: string) => {
-    const [y, m, d] = iso.split('-').map(Number)
-    return new Date(y, m - 1, d).toLocaleDateString('default', {
-      day: 'numeric',
-      month: 'short',
-    })
-  }
-  return startDate === endDate ? fmt(startDate) : `${fmt(startDate)} – ${fmt(endDate)}`
+function localIso(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 function DroppableDayCell({
   dateStr,
   col,
   isShootDay,
+  isLastCol,
   children,
 }: {
   dateStr: string
   col: number
   isShootDay: boolean
+  isLastCol: boolean
   children: ReactNode
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `date-${dateStr}` })
   return (
     <div
       ref={setNodeRef}
-      style={{ gridColumn: col + 1, gridRow: '1 / -1' }}
+      {...{ [BOOKING_DATE_ATTR]: dateStr }}
+      style={{
+        gridColumn: col + 1,
+        gridRow: '1 / -1',
+        backgroundImage: isShootDay ? undefined : OFF_DAY_HATCH,
+      }}
       className={cn(
-        'min-h-[92px] border border-border p-1.5',
-        isShootDay ? 'bg-card' : 'bg-muted/20',
+        'border-foreground/15 px-1.5 pt-1',
+        !isLastCol && 'border-r',
+        !isShootDay && 'bg-muted/40',
         isOver && 'ring-2 ring-inset ring-mint-500/60'
       )}
     >
@@ -93,61 +67,119 @@ function DroppableDayCell({
   )
 }
 
-export function BookingsCalendarView({
-  bookings,
-  allBookings,
-  shootDays,
-  people,
+/** "+n more" button for a day whose bookings do not all fit; opens the full list for that day. */
+function MoreButton({
+  count,
+  date,
+  daySpans,
   personById,
   colorConfig,
-  bookingIntelligence,
-  filterUnit,
-  setFilterUnit,
-  filterDepartment,
-  setFilterDepartment,
-  filterCastCrew,
-  setFilterCastCrew,
-  units,
-  departments,
-  onApplyChanges,
+  col,
+  row,
   onEditBooking,
+  bookingById,
 }: {
-  bookings: Booking[]
-  allBookings: Booking[]
-  shootDays: ShootDay[]
-  people: Person[]
+  count: number
+  date: string
+  daySpans: BookingSpan[]
   personById: Map<string, Person>
   colorConfig: BookingColorConfig
-  bookingIntelligence?: BookingIntelligenceSummary
-  filterUnit: string
-  setFilterUnit: (v: string) => void
-  filterDepartment: string
-  setFilterDepartment: (v: string) => void
-  filterCastCrew: string
-  setFilterCastCrew: (v: string) => void
-  units: Unit[]
-  departments: string[]
-  onApplyChanges: (changes: BookingChanges) => Promise<void>
+  col: number
+  row: number
+  bookingById: Map<string, Booking>
   onEditBooking: (booking: Booking) => void
 }) {
-  const [month, setMonth] = useState(() => new Date())
-  const [activeLabel, setActiveLabel] = useState<{ label: string; color: string; text: string } | null>(null)
-  const [pending, setPending] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [y, m, d] = date.split('-').map(Number)
+  const heading = new Date(y, m - 1, d).toLocaleDateString('default', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          data-slot="booking-more"
+          style={{ gridColumn: col + 1, gridRow: row }}
+          className="mx-1 my-px self-center rounded-md border border-dashed border-foreground/40 text-[11px] font-medium leading-none text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          +{count} more
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-2" align="start">
+        <p className="px-2 pb-1.5 pt-1 text-xs font-semibold text-foreground">
+          {heading} <span className="font-normal text-muted-foreground">| {daySpans.length} booked</span>
+        </p>
+        <ul className="max-h-60 space-y-0.5 overflow-y-auto">
+          {daySpans.map((span) => {
+            const person = personById.get(span.personId)
+            const color = person ? resolvePersonColor(person, colorConfig) : colorConfig.crewFallbackColor
+            const rep = bookingById.get(span.bookingIds[0])
+            return (
+              <li key={spanKeyOf(span)}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setOpen(false)
+                    if (rep) onEditBooking(rep)
+                  }}
+                >
+                  <span className="size-3 shrink-0 rounded-sm border border-foreground/30" style={{ backgroundColor: color }} />
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">{person?.name ?? 'Unknown'}</span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {formatDateRange(span.startDate, span.endDate)}
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
-  const year = month.getFullYear()
-  const monthIndex = month.getMonth()
+/**
+ * Calendar View: a month grid where every week row is the same height. Each week reserves
+ * `lanesPerWeek` lane slots; when a week needs more, the last slot becomes "+n more" buttons.
+ */
+export function BookingsCalendarView({
+  year,
+  monthIndex,
+  monthLabel,
+  spans,
+  personById,
+  bookingById,
+  colorConfig,
+  shootDays,
+  bookingIntelligence,
+  lanesPerWeek,
+  pending,
+  onEditBooking,
+}: {
+  year: number
+  monthIndex: number
+  monthLabel: string
+  spans: BookingSpan[]
+  personById: Map<string, Person>
+  bookingById: Map<string, Booking>
+  colorConfig: BookingColorConfig
+  shootDays: ShootDay[]
+  bookingIntelligence?: BookingIntelligenceSummary
+  lanesPerWeek: number
+  pending: boolean
+  onEditBooking: (booking: Booking) => void
+}) {
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate()
   const firstWeekday = new Date(year, monthIndex, 1).getDay()
   const weekCount = Math.ceil((firstWeekday + daysInMonth) / 7)
+  const todayIso = localIso(new Date())
 
   const pad = (n: number) => String(n).padStart(2, '0')
   const dateStrOf = (day: number) => `${year}-${pad(monthIndex + 1)}-${pad(day)}`
-
-  const bookingById = useMemo(() => {
-    const m = new Map<string, Booking>()
-    for (const b of allBookings) m.set(b.id, b)
-    return m
-  }, [allBookings])
 
   const shootDayByDate = useMemo(() => {
     const m = new Map<string, ShootDay>()
@@ -155,29 +187,7 @@ export function BookingsCalendarView({
     return m
   }, [shootDays])
 
-  const shootDayIdByDate = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const d of shootDays) m.set(d.shoot_date, d.id)
-    return m
-  }, [shootDays])
-
-  const spans = useMemo(() => buildBookingSpans(bookings, shootDays), [bookings, shootDays])
-  const spanByKey = useMemo(() => {
-    const m = new Map<string, BookingSpan>()
-    for (const s of spans) m.set(spanKeyOf(s), s)
-    return m
-  }, [spans])
-
-  // Per-week laned segments for the visible month.
-  const weekLanes = useMemo(() => {
-    const perWeek: {
-      span: BookingSpan
-      startCol: number
-      endCol: number
-      continuesLeft: boolean
-      continuesRight: boolean
-      lane: number
-    }[][] = Array.from({ length: weekCount }, () => [])
+  const weekLayouts = useMemo(() => {
     const rawByWeek: {
       span: BookingSpan
       startCol: number
@@ -185,380 +195,185 @@ export function BookingsCalendarView({
       continuesLeft: boolean
       continuesRight: boolean
     }[][] = Array.from({ length: weekCount }, () => [])
-
     for (const span of spans) {
       for (const seg of getMonthSpanSegments(span, year, monthIndex)) {
         if (seg.weekIndex < 0 || seg.weekIndex >= weekCount) continue
         rawByWeek[seg.weekIndex].push({ span, ...seg })
       }
     }
-    rawByWeek.forEach((segs, w) => {
-      for (const { segment, lane } of assignLanes(segs)) {
-        perWeek[w].push({ ...segment, lane })
-      }
-    })
-    return perWeek
-  }, [spans, weekCount, year, monthIndex])
+    return rawByWeek.map((segs) =>
+      layoutWeekLanes(segs, lanesPerWeek, (s) =>
+        personPriority(personById.get(s.span.personId), colorConfig)
+      )
+    )
+  }, [spans, weekCount, year, monthIndex, lanesPerWeek, personById, colorConfig])
 
-  const maxLanesByWeek = useMemo(
-    () => weekLanes.map((segs) => segs.reduce((max, s) => Math.max(max, s.lane + 1), 0)),
-    [weekLanes]
+  const hasAnyBooking = useMemo(
+    () => spans.some((s) => getMonthSpanSegments(s, year, monthIndex).length > 0),
+    [spans, year, monthIndex]
   )
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
-
-  const notify = (message: string) => toast.error(message)
-
-  const handleDragStart = (ev: DragStartEvent) => {
-    const data = ev.active.data.current as { kind?: SpanDragKind; spanKey?: string } | undefined
-    if (data?.kind === 'move' && data.spanKey) {
-      const span = spanByKey.get(data.spanKey)
-      const person = span && personById.get(span.personId)
-      if (span && person) {
-        const color = resolvePersonColor(person, colorConfig)
-        setActiveLabel({ label: person.name, color, text: getContrastText(color) })
-      }
-    }
-  }
-
-  const runChanges = (changes: BookingChanges) => {
-    setPending(true)
-    onApplyChanges(changes)
-      .catch(() => notify('Could not update booking.'))
-      .finally(() => setPending(false))
-  }
-
-  const handleDragEnd = (ev: DragEndEvent) => {
-    setActiveLabel(null)
-    const { active, over } = ev
-    const data = active.data.current as { kind?: SpanDragKind; spanKey?: string } | undefined
-    if (!data?.kind || !data.spanKey) return
-    const overId = over?.id
-    if (typeof overId !== 'string' || !overId.startsWith('date-')) return
-    const targetDate = overId.slice(5)
-    if (targetDate.length !== 10) return
-    const span = spanByKey.get(data.spanKey)
-    if (!span || pending) return
-
-    if (data.kind === 'move') {
-      const offset = diffDaysIso(span.startDate, targetDate)
-      if (offset === 0) return
-      const spanShootDays = new Set(span.shootDayIds)
-      const blocked = new Set<string>()
-      for (const b of allBookings) {
-        if (b.person_id === span.personId && b.shoot_day_id && !spanShootDays.has(b.shoot_day_id)) {
-          blocked.add(b.shoot_day_id)
-        }
-      }
-      const plan = computeSpanMovePlan({
-        span,
-        offsetDays: offset,
-        shootDayIdByDate,
-        blockedShootDayIds: blocked,
-      })
-      if (!plan.ok) {
-        notify(plan.reason)
-        return
-      }
-      if (plan.updates.length > 0) runChanges({ updates: plan.updates })
-      return
-    }
-
-    // Resize
-    const newStartDate = data.kind === 'resize-left' ? targetDate : span.startDate
-    const newEndDate = data.kind === 'resize-right' ? targetDate : span.endDate
-    if (newStartDate > newEndDate) {
-      notify('Start must be on or before the end day.')
-      return
-    }
-    const shootDaysInRange = shootDays
-      .filter((d) => d.shoot_date >= newStartDate && d.shoot_date <= newEndDate)
-      .map((d) => ({ id: d.id, date: d.shoot_date }))
-    if (shootDaysInRange.length === 0) {
-      notify('No shoot days in that range.')
-      return
-    }
-    const personBooked = new Set<string>()
-    for (const b of allBookings) {
-      if (b.person_id === span.personId && b.shoot_day_id) personBooked.add(b.shoot_day_id)
-    }
-    const rep = bookingById.get(span.bookingIds[0])
-    const plan = computeSpanResizePlan({
-      span,
-      newStartDate,
-      newEndDate,
-      shootDaysInRange,
-      personBookedShootDayIds: personBooked,
-      role: rep?.role ?? null,
-      notes: rep?.notes ?? null,
-    })
-    if (plan.creates.length === 0 && plan.deletes.length === 0) return
-    runChanges({
-      creates: plan.creates.map((c) => ({ personId: span.personId, ...c })),
-      deletes: plan.deletes,
-    })
-  }
-
-  const monthLabel = month.toLocaleString('default', { month: 'long', year: 'numeric' })
-
-  const legendItems = useMemo(() => {
-    const items: { key: string; label: string; color: string }[] = []
-    for (const dept of departments) {
-      items.push({ key: `dept-${dept}`, label: dept, color: colorConfig.departmentColors[dept] ?? colorConfig.crewFallbackColor })
-    }
-    const principals = people
-      .filter((p) => p.is_cast === 1 && p.id in colorConfig.principalCastColors)
-      .sort((a, b) => a.name.localeCompare(b.name))
-    for (const p of principals) {
-      items.push({ key: `cast-${p.id}`, label: p.name, color: colorConfig.principalCastColors[p.id] })
-    }
-    const hasOtherCast = people.some((p) => p.is_cast === 1 && !(p.id in colorConfig.principalCastColors))
-    if (hasOtherCast) {
-      items.push({ key: 'supporting', label: 'Supporting cast', color: colorConfig.supportingCastColor })
-    }
-    return items
-  }, [departments, people, colorConfig])
+  const spansOnDate = (date: string) =>
+    spans
+      .filter((s) => s.startDate <= date && date <= s.endDate)
+      .sort(
+        (a, b) =>
+          personPriority(personById.get(a.personId), colorConfig) -
+            personPriority(personById.get(b.personId), colorConfig) ||
+          (personById.get(a.personId)?.name ?? '').localeCompare(personById.get(b.personId)?.name ?? '')
+      )
 
   return (
-    <>
-      <Card className="rounded-lg border-border bg-card">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Label className="text-muted-foreground text-sm whitespace-nowrap">Unit</Label>
-              <Select value={filterUnit} onValueChange={setFilterUnit}>
-                <SelectTrigger className="w-[140px] focus-visible:ring-mint-500/50 focus-visible:border-mint-500">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  {units.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-muted-foreground text-sm whitespace-nowrap">Department</Label>
-              <Select value={filterDepartment} onValueChange={setFilterDepartment}>
-                <SelectTrigger className="w-[140px] focus-visible:ring-mint-500/50 focus-visible:border-mint-500">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  {departments.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-muted-foreground text-sm whitespace-nowrap">Cast/Crew</Label>
-              <Select value={filterCastCrew} onValueChange={setFilterCastCrew}>
-                <SelectTrigger className="w-[120px] focus-visible:ring-mint-500/50 focus-visible:border-mint-500">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="cast">Cast</SelectItem>
-                  <SelectItem value="crew">Crew</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+    <div data-slot="booking-frame" className="overflow-hidden rounded-lg border border-border bg-card">
+      <div
+        data-slot="booking-head"
+        className="grid grid-cols-7 border-b border-border bg-muted/40 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+      >
+        {WEEKDAYS.map((d) => (
+          <div key={d} className="py-2">
+            {d}
           </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
-        <Button
-          variant="outline"
-          size="icon"
-          className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
-          onClick={() => setMonth(new Date(year, monthIndex - 1))}
-          aria-label="Previous month"
-        >
-          <ChevronLeft className="size-4" />
-        </Button>
-        <span className="min-w-[180px] text-center font-medium text-foreground">{monthLabel}</span>
-        <Button
-          variant="outline"
-          size="icon"
-          className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
-          onClick={() => setMonth(new Date(year, monthIndex + 1))}
-          aria-label="Next month"
-        >
-          <ChevronRight className="size-4" />
-        </Button>
+        ))}
       </div>
 
-      {legendItems.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1 text-xs text-muted-foreground">
-          {legendItems.map((item) => (
-            <span key={item.key} className="flex items-center gap-1.5">
-              <span className="size-3 rounded-sm" style={{ backgroundColor: item.color }} />
-              {item.label}
-            </span>
-          ))}
-        </div>
-      )}
-
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragCancel={() => setActiveLabel(null)}
-      >
-        <div className="grid grid-cols-7 text-center text-sm text-muted-foreground">
-          {WEEKDAYS.map((d) => (
-            <div key={d} className="py-2 font-medium">
-              {d}
-            </div>
-          ))}
-        </div>
-
-        <div className="space-y-1.5">
-          {Array.from({ length: weekCount }, (_, week) => {
-            const maxLanes = maxLanesByWeek[week]
-            const gridTemplateRows = `${HEADER_ROW}${maxLanes > 0 ? ` repeat(${maxLanes}, ${LANE_HEIGHT})` : ''}`
-            return (
-              <div
-                key={week}
-                className="grid grid-cols-7 overflow-hidden rounded-md"
-                style={{ gridTemplateRows }}
-              >
-                {Array.from({ length: 7 }, (_, col) => {
-                  const day = week * 7 + col - firstWeekday + 1
-                  const inMonth = day >= 1 && day <= daysInMonth
-                  if (!inMonth) {
-                    return (
-                      <div
-                        key={col}
-                        style={{ gridColumn: col + 1, gridRow: '1 / -1' }}
-                        className="min-h-[92px] border border-border bg-muted/10"
-                      />
-                    )
-                  }
-                  const dateStr = dateStrOf(day)
-                  const shootDay = shootDayByDate.get(dateStr)
-                  const coverage =
-                    bookingIntelligence && shootDay
-                      ? bookingIntelligence.byShootDay.get(shootDay.id)
-                      : null
-                  return (
-                    <DroppableDayCell key={col} dateStr={dateStr} col={col} isShootDay={!!shootDay}>
-                      <div className="flex items-start justify-between gap-1">
-                        <span className={cn('text-sm font-medium', shootDay ? 'text-foreground' : 'text-muted-foreground')}>
-                          {day}
-                        </span>
-                        {coverage && (coverage.missingCount > 0 || coverage.unnecessaryCount > 0) && (
-                          <div className="flex flex-wrap justify-end gap-1">
-                            {coverage.missingCount > 0 && (
-                              <span
-                                className="rounded border border-amber-500/60 bg-amber-500/10 px-1 text-[10px] font-medium text-amber-700 dark:text-amber-300"
-                                title={`${coverage.missingCount} needed but not booked`}
-                              >
-                                {coverage.missingCount}
-                              </span>
-                            )}
-                            {coverage.unnecessaryCount > 0 && (
-                              <span
-                                className="rounded border border-border bg-muted/50 px-1 text-[10px] text-muted-foreground"
-                                title={`${coverage.unnecessaryCount} booked but not needed`}
-                              >
-                                +{coverage.unnecessaryCount}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </DroppableDayCell>
-                  )
-                })}
-
-                {weekLanes[week].map(({ span, startCol, endCol, continuesLeft, continuesRight, lane }) => {
-                  const person = personById.get(span.personId)
-                  const color = person ? resolvePersonColor(person, colorConfig) : colorConfig.crewFallbackColor
-                  const textColor = getContrastText(color)
-                  const rep = bookingById.get(span.bookingIds[0])
-                  const tooltip = (
-                    <div className="space-y-1 text-xs">
-                      <p className="font-semibold text-foreground">{person?.name ?? 'Unknown'}</p>
-                      <p className="text-muted-foreground">
-                        {person?.is_cast === 1 ? 'Cast' : 'Crew'}
-                        {person?.department ? ` · ${person.department}` : ''}
-                        {person?.role_name ? ` · ${person.role_name}` : ''}
-                      </p>
-                      <p className="text-foreground">
-                        {formatDateRange(span.startDate, span.endDate)}
-                        <span className="text-muted-foreground">
-                          {' '}· {span.shootDayIds.length} {span.shootDayIds.length === 1 ? 'day' : 'days'}
-                        </span>
-                      </p>
-                      {rep?.role && <p className="text-muted-foreground">Role: {rep.role}</p>}
-                      {rep?.notes && <p className="text-muted-foreground">Notes: {rep.notes}</p>}
-                    </div>
-                  )
+      <div className="relative">
+        {Array.from({ length: weekCount }, (_, week) => {
+          const layout = weekLayouts[week]
+          return (
+            <div
+              key={week}
+              className="grid grid-cols-7 border-t border-foreground/15 first:border-t-0"
+              style={{
+                gridTemplateRows: `${HEADER_ROW} repeat(${lanesPerWeek}, ${LANE_HEIGHT}) ${BOTTOM_PADDING}`,
+              }}
+            >
+              {Array.from({ length: 7 }, (_, col) => {
+                const day = week * 7 + col - firstWeekday + 1
+                const inMonth = day >= 1 && day <= daysInMonth
+                if (!inMonth) {
                   return (
                     <div
-                      key={`${spanKeyOf(span)}-${lane}`}
-                      className={cn('px-px pb-0.5', continuesLeft && 'pl-0', continuesRight && 'pr-0')}
-                      style={{
-                        gridColumn: `${startCol + 1} / ${endCol + 2}`,
-                        gridRow: lane + 2,
-                      }}
-                    >
-                      <BookingSpanPill
-                        spanKey={spanKeyOf(span)}
-                        weekIndex={week}
-                        label={person?.name ?? '—'}
-                        color={color}
-                        textColor={textColor}
-                        continuesLeft={continuesLeft}
-                        continuesRight={continuesRight}
-                        tooltip={tooltip}
-                        disabled={pending}
-                        onOpen={() => {
-                          if (rep) onEditBooking(rep)
-                        }}
-                      />
+                      key={col}
+                      style={{ gridColumn: col + 1, gridRow: '1 / -1' }}
+                      className={cn('bg-muted/20', col < 6 && 'border-r border-foreground/15')}
+                    />
+                  )
+                }
+                const dateStr = dateStrOf(day)
+                const shootDay = shootDayByDate.get(dateStr)
+                const coverage =
+                  bookingIntelligence && shootDay ? bookingIntelligence.byShootDay.get(shootDay.id) : null
+                const isToday = dateStr === todayIso
+                return (
+                  <DroppableDayCell
+                    key={col}
+                    dateStr={dateStr}
+                    col={col}
+                    isShootDay={!!shootDay}
+                    isLastCol={col === 6}
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <span
+                        className={cn(
+                          'inline-flex h-[1.375rem] min-w-[1.375rem] items-center justify-center rounded-[var(--ui-tag-radius,0.375rem)] px-1 text-sm font-medium tabular-nums',
+                          isToday
+                            ? 'bg-primary font-bold text-primary-foreground'
+                            : shootDay
+                              ? 'text-foreground'
+                              : 'text-muted-foreground'
+                        )}
+                      >
+                        {day}
+                      </span>
+                      {coverage && (coverage.missingCount > 0 || coverage.unnecessaryCount > 0) && (
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {coverage.missingCount > 0 && (
+                            <span
+                              className="rounded border border-amber-500/60 bg-amber-500/10 px-1 text-[10px] font-medium text-amber-700 dark:text-amber-300"
+                              title={`${coverage.missingCount} needed but not booked`}
+                            >
+                              {coverage.missingCount}
+                            </span>
+                          )}
+                          {coverage.unnecessaryCount > 0 && (
+                            <span
+                              className="rounded border border-border bg-muted/50 px-1 text-[10px] text-muted-foreground"
+                              title={`${coverage.unnecessaryCount} booked but not needed`}
+                            >
+                              +{coverage.unnecessaryCount}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
+                  </DroppableDayCell>
+                )
+              })}
+
+              {layout.visible.map(({ segment, lane }) => {
+                const { span, startCol, endCol, continuesLeft, continuesRight } = segment
+                const person = personById.get(span.personId)
+                const color = person ? resolvePersonColor(person, colorConfig) : colorConfig.crewFallbackColor
+                const rep = bookingById.get(span.bookingIds[0])
+                return (
+                  <div
+                    key={`${spanKeyOf(span)}-${lane}`}
+                    className={cn('px-px pb-0.5', continuesLeft && 'pl-0', continuesRight && 'pr-0')}
+                    style={{ gridColumn: `${startCol + 1} / ${endCol + 2}`, gridRow: lane + 2 }}
+                  >
+                    <BookingSpanPill
+                      spanKey={spanKeyOf(span)}
+                      weekIndex={week}
+                      label={person?.name ?? '—'}
+                      color={color}
+                      textColor={getContrastText(color)}
+                      continuesLeft={continuesLeft}
+                      continuesRight={continuesRight}
+                      tooltip={<SpanTooltip span={span} person={person} representative={rep} />}
+                      disabled={pending}
+                      onOpen={() => {
+                        if (rep) onEditBooking(rep)
+                      }}
+                    />
+                  </div>
+                )
+              })}
+
+              {layout.hasOverflow &&
+                layout.hiddenPerColumn.map((count, col) => {
+                  const day = week * 7 + col - firstWeekday + 1
+                  if (count === 0 || day < 1 || day > daysInMonth) return null
+                  const date = dateStrOf(day)
+                  return (
+                    <MoreButton
+                      key={`more-${col}`}
+                      count={count}
+                      date={date}
+                      daySpans={spansOnDate(date)}
+                      personById={personById}
+                      bookingById={bookingById}
+                      colorConfig={colorConfig}
+                      col={col}
+                      row={lanesPerWeek + 1}
+                      onEditBooking={onEditBooking}
+                    />
                   )
                 })}
-              </div>
-            )
-          })}
-        </div>
-
-        <DragOverlay dropAnimation={null}>
-          {activeLabel ? (
-            <div
-              className="flex h-6 items-center overflow-hidden rounded-md px-2 text-xs font-medium shadow-lg ring-1 ring-border"
-              style={{ backgroundColor: activeLabel.color, color: activeLabel.text }}
-            >
-              <span className="truncate">{activeLabel.label}</span>
             </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+          )
+        })}
 
-      {bookings.length === 0 && (
-        <Card className="rounded-lg border-border bg-card">
-          <CardHeader>
-            <CardTitle className="text-foreground">No bookings</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground text-sm">
-              Add a booking above to assign people to shoot days.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-    </>
+        {!hasAnyBooking && (
+          <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
+            <div className="max-w-xs rounded-lg border border-border bg-popover px-5 py-4 text-center shadow-sm">
+              <p className="text-sm font-semibold text-foreground">No bookings in {monthLabel}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Add a booking, or use the arrows to find another month.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

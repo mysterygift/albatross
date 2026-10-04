@@ -12,7 +12,20 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { Person } from '@/lib/db/types'
+import {
+  DEFAULT_APPEARANCE_CONFIG,
+  MAX_LANES_PER_WEEK,
+  MIN_LANES_PER_WEEK,
+  type BookingAppearanceConfig,
+} from '@/features/people/lib/bookingAppearance'
 import {
   getDefaultColorConfig,
   getDepartmentNames,
@@ -43,26 +56,35 @@ function ColorSwatch({
   )
 }
 
-export function BookingColorSettingsDialog({
+const LANE_OPTIONS = Array.from(
+  { length: MAX_LANES_PER_WEEK - MIN_LANES_PER_WEEK + 1 },
+  (_, i) => MIN_LANES_PER_WEEK + i
+)
+
+export function BookingAppearanceSettingsDialog({
   open,
   onOpenChange,
   people,
   config,
+  appearance,
   onSave,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   people: Person[]
   config: BookingColorConfig
-  onSave: (config: BookingColorConfig) => void
+  appearance: BookingAppearanceConfig
+  onSave: (config: BookingColorConfig, appearance: BookingAppearanceConfig) => void
 }) {
   const [draft, setDraft] = useState<BookingColorConfig>(config)
+  const [appearanceDraft, setAppearanceDraft] = useState<BookingAppearanceConfig>(appearance)
   const [wasOpen, setWasOpen] = useState(open)
 
-  // Reset the working copy to the latest saved config each time the dialog opens.
+  // Reset the working copy to the latest saved settings each time the dialog opens.
   if (open && !wasOpen) {
     setWasOpen(true)
     setDraft(config)
+    setAppearanceDraft(appearance)
   } else if (!open && wasOpen) {
     setWasOpen(false)
   }
@@ -105,14 +127,71 @@ export function BookingColorSettingsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="rounded-lg sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-lg">Calendar colors</DialogTitle>
+          <DialogTitle className="text-lg">Appearance Settings</DialogTitle>
           <DialogDescription>
-            Color-code booking pills by crew department and cast tier.
+            Choose how the Calendar and Timeline views are laid out, and color-code booking pills by
+            crew department and cast tier.
           </DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="max-h-[60vh] pr-3">
           <div className="space-y-6 py-1">
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">Calendar View</h3>
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <Label htmlFor="lanes-per-week" className="text-sm font-normal text-foreground">
+                    Lanes per week
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Every week is this tall. When a week has more bookings than lanes, the rest fold into a
+                    &ldquo;+n more&rdquo; button.
+                  </p>
+                </div>
+                <Select
+                  value={String(appearanceDraft.lanesPerWeek)}
+                  onValueChange={(v) => setAppearanceDraft((a) => ({ ...a, lanesPerWeek: Number(v) }))}
+                >
+                  <SelectTrigger
+                    id="lanes-per-week"
+                    className="w-[80px] shrink-0 focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LANE_OPTIONS.map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </section>
+
+            <Separator className="bg-border" />
+
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">Timeline View</h3>
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="hide-unbooked-people"
+                  checked={appearanceDraft.hideUnbookedPeople}
+                  onCheckedChange={(checked) =>
+                    setAppearanceDraft((a) => ({ ...a, hideUnbookedPeople: checked === true }))
+                  }
+                />
+                <Label
+                  htmlFor="hide-unbooked-people"
+                  className="flex-1 cursor-pointer text-sm font-normal text-foreground"
+                >
+                  Hide people with no bookings in the visible month
+                </Label>
+              </div>
+            </section>
+
+            <Separator className="bg-border" />
+
             <section className="space-y-3">
               <h3 className="text-sm font-semibold text-foreground">Crew departments</h3>
               {departments.length === 0 ? (
@@ -180,7 +259,7 @@ export function BookingColorSettingsDialog({
                         >
                           {p.name}
                           {p.role_name ? (
-                            <span className="text-muted-foreground"> · {p.role_name}</span>
+                            <span className="text-muted-foreground"> | {p.role_name}</span>
                           ) : null}
                         </Label>
                         {isPrincipal && (
@@ -203,7 +282,14 @@ export function BookingColorSettingsDialog({
           <Button
             variant="outline"
             className="mr-auto"
-            onClick={() => setDraft(getDefaultColorConfig(people))}
+            onClick={() => {
+              setDraft(getDefaultColorConfig(people))
+              setAppearanceDraft((a) => ({
+                ...a,
+                lanesPerWeek: DEFAULT_APPEARANCE_CONFIG.lanesPerWeek,
+                hideUnbookedPeople: DEFAULT_APPEARANCE_CONFIG.hideUnbookedPeople,
+              }))
+            }}
           >
             Reset to defaults
           </Button>
@@ -213,7 +299,7 @@ export function BookingColorSettingsDialog({
           <Button
             className="bg-mint-600 text-white hover:bg-mint-700 focus-visible:ring-mint-500/50"
             onClick={() => {
-              onSave(draft)
+              onSave(draft, appearanceDraft)
               onOpenChange(false)
             }}
           >

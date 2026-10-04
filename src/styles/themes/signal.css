@@ -102,4 +102,19 @@
   --ui-card-header-bg: #14160f;
   --ui-card-header-image: none;
   --ui-card-header-size: auto;
+
+  /* Booking pills: a tint of the booking colour with an edge bar; border colour follows the booking colour */
+  --ui-pill-radius: 2px;
+  --ui-pill-border-w: 1px;
+  --ui-pill-border-color: initial;
+  --ui-pill-shadow: 0 0 0 0 transparent;
+  --ui-pill-weight: 600;
+  --ui-pill-font: ui-monospace, "SF Mono", Menlo, monospace;
+  --ui-pill-size: 0.6875rem;
+  --ui-pill-transform: none;
+  --ui-pill-tracking: 0;
+  --ui-pill-pad: 0.5625rem;
+  --ui-pill-tint: 42%;
+  --ui-pill-bar: 3px;
+  --ui-pill-ink: var(--foreground);
 }

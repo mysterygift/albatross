@@ -100,4 +100,19 @@
   --ui-card-header-bg: #ffc93c;
   --ui-card-header-image: radial-gradient(circle, rgba(29, 42, 74, 0.28) 1.6px, transparent 2px);
   --ui-card-header-size: 10px 10px;
+
+  /* Booking pills: the booking colour as the fill; shape, border and type come from the theme */
+  --ui-pill-radius: 999px;
+  --ui-pill-border-w: 2px;
+  --ui-pill-border-color: var(--foreground);
+  --ui-pill-shadow: 0 0 0 0 transparent;
+  --ui-pill-weight: 700;
+  --ui-pill-font: inherit;
+  --ui-pill-size: 0.75rem;
+  --ui-pill-transform: none;
+  --ui-pill-tracking: 0;
+  --ui-pill-pad: 0.75rem;
+  --ui-pill-tint: 100%;
+  --ui-pill-bar: 0px;
+  --ui-pill-ink: initial;
 }

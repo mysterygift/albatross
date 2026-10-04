@@ -7,6 +7,7 @@ import {
   computeSpanResizePlan,
   diffDaysIso,
   getMonthSpanSegments,
+  layoutWeekLanes,
   type BookingSpan,
 } from './bookingSpans'
 import type { Booking, ShootDay } from '@/lib/db/types'
@@ -222,5 +223,30 @@ describe('computeSpanResizePlan', () => {
     })
     expect(plan.creates).toEqual([])
     expect(plan.deletes).toEqual(['b2'])
+  })
+})
+
+describe('layoutWeekLanes', () => {
+  const seg = (startCol: number, endCol: number, name = 'x') => ({ startCol, endCol, name })
+
+  it('shows everything when the segments fit in the lane budget', () => {
+    const layout = layoutWeekLanes([seg(0, 6), seg(1, 2), seg(3, 4)], 4)
+    expect(layout.hasOverflow).toBe(false)
+    expect(layout.visible).toHaveLength(3)
+    expect(layout.hiddenPerColumn).toEqual([0, 0, 0, 0, 0, 0, 0])
+  })
+
+  it('reserves the last slot for "+n more" and counts hidden segments per column', () => {
+    const segments = [seg(0, 6, 'a'), seg(0, 6, 'b'), seg(0, 6, 'c'), seg(2, 3, 'd')]
+    const layout = layoutWeekLanes(segments, 3)
+    expect(layout.hasOverflow).toBe(true)
+    expect(layout.visible.map((v) => v.lane).sort()).toEqual([0, 1])
+    expect(layout.hiddenPerColumn).toEqual([1, 1, 2, 2, 1, 1, 1])
+  })
+
+  it('gives lower priority values the visible lanes', () => {
+    const segments = [seg(0, 6, 'crew'), seg(0, 6, 'crew2'), seg(0, 6, 'lead')]
+    const layout = layoutWeekLanes(segments, 2, (s) => (s.name === 'lead' ? 0 : 1))
+    expect(layout.visible.map((v) => v.segment.name)).toEqual(['lead'])
   })
 })

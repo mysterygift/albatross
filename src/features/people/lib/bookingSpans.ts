@@ -201,6 +201,60 @@ export function assignLanes<T extends { startCol: number; endCol: number }>(
   return result
 }
 
+export type WeekLaneLayout<T> = {
+  /** Segments that fit within the lane budget, each with its lane. */
+  visible: { segment: T; lane: number }[]
+  /** Per column (0 = Sunday ... 6 = Saturday), how many segments are folded into "+n more". */
+  hiddenPerColumn: number[]
+  /** True when some segments did not fit; the last lane slot is then reserved for the "+n more" row. */
+  hasOverflow: boolean
+}
+
+/**
+ * Lays out a week's segments within a fixed number of lane slots so every week
+ * row can be the same height. Lower `priority` values claim the top lanes first
+ * (e.g. principal cast before crew). When segments need more than `laneSlots`
+ * lanes, the last slot is reserved for a "+n more" row and everything below it
+ * is folded into per-column hidden counts.
+ */
+export function layoutWeekLanes<T extends { startCol: number; endCol: number }>(
+  segments: T[],
+  laneSlots: number,
+  priority: (segment: T) => number = () => 0
+): WeekLaneLayout<T> {
+  const ordered = [...segments].sort(
+    (a, b) =>
+      priority(a) - priority(b) || a.startCol - b.startCol || b.endCol - b.startCol - (a.endCol - a.startCol)
+  )
+  const lanes: boolean[][] = []
+  const placed: { segment: T; lane: number }[] = []
+  for (const segment of ordered) {
+    let lane = lanes.findIndex((occupied) => {
+      for (let c = segment.startCol; c <= segment.endCol; c++) if (occupied[c]) return false
+      return true
+    })
+    if (lane === -1) {
+      lane = lanes.length
+      lanes.push([])
+    }
+    for (let c = segment.startCol; c <= segment.endCol; c++) lanes[lane][c] = true
+    placed.push({ segment, lane })
+  }
+
+  const hasOverflow = lanes.length > laneSlots
+  const visibleLanes = hasOverflow ? Math.max(laneSlots - 1, 0) : laneSlots
+  const hiddenPerColumn = Array.from({ length: 7 }, () => 0)
+  const visible: { segment: T; lane: number }[] = []
+  for (const entry of placed) {
+    if (entry.lane < visibleLanes) {
+      visible.push(entry)
+      continue
+    }
+    for (let c = entry.segment.startCol; c <= entry.segment.endCol; c++) hiddenPerColumn[c]++
+  }
+  return { visible, hiddenPerColumn, hasOverflow }
+}
+
 export type SpanMovePlan =
   | { ok: true; updates: { bookingId: string; shootDayId: string }[] }
   | { ok: false; reason: string }

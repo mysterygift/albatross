@@ -101,6 +101,21 @@
   --ui-card-header-bg: #fffdf8;
   --ui-card-header-image: none;
   --ui-card-header-size: auto;
+
+  /* Booking pills: a tint of the booking colour with an edge bar */
+  --ui-pill-radius: 0;
+  --ui-pill-border-w: 1px;
+  --ui-pill-border-color: var(--foreground);
+  --ui-pill-shadow: 0 0 0 0 transparent;
+  --ui-pill-weight: 400;
+  --ui-pill-font: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --ui-pill-size: 0.78rem;
+  --ui-pill-transform: none;
+  --ui-pill-tracking: 0;
+  --ui-pill-pad: 0.6875rem;
+  --ui-pill-tint: 17%;
+  --ui-pill-bar: 4px;
+  --ui-pill-ink: var(--foreground);
 }
 
 /* Editorial type: serif headings and card titles, sans body text */

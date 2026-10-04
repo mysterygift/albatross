@@ -22,16 +22,7 @@ import { listShootDaysByProduction } from '@/lib/db/repositories/schedule'
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import { listShootDayUnitsByProduction } from '@/lib/db/repositories/shoot-day-units'
 import { createBooking, deleteBooking, updateBooking } from '@/lib/db/repositories/booking'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -48,12 +39,13 @@ import {
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import { Plus, AlertTriangle, UserMinus, Settings } from 'lucide-react'
+import { Plus, Settings } from 'lucide-react'
 import { getBookingCoverageByShootDay } from '@/lib/people/bookingIntelligence'
 import type { Booking } from '@/lib/db/types'
 import type { Person } from '@/lib/db/types'
-import { BookingsCalendarView, type BookingChanges } from '@/features/people/components/bookings/BookingsCalendarView'
-import { BookingColorSettingsDialog } from '@/features/people/components/bookings/BookingColorSettingsDialog'
+import { BookingsView, type BookingChanges } from '@/features/people/components/bookings/BookingsView'
+import { MissingBookingsHoverCard } from '@/features/people/components/bookings/MissingBookingsHoverCard'
+import { BookingAppearanceSettingsDialog } from '@/features/people/components/bookings/BookingAppearanceSettingsDialog'
 import {
   getDefaultColorConfig,
   loadColorConfig,
@@ -61,6 +53,13 @@ import {
   saveColorConfig,
   type BookingColorConfig,
 } from '@/features/people/lib/bookingCalendarColors'
+import {
+  DEFAULT_APPEARANCE_CONFIG,
+  loadAppearanceConfig,
+  saveAppearanceConfig,
+  type BookingAppearanceConfig,
+  type BookingView,
+} from '@/features/people/lib/bookingAppearance'
 
 function formatPersonBookingLabel(person: Person): string {
   const meta = [
@@ -68,7 +67,7 @@ function formatPersonBookingLabel(person: Person): string {
     person.department?.trim(),
     person.role_name?.trim(),
   ].filter(Boolean)
-  return meta.length > 0 ? `${person.name} · ${meta.join(' · ')}` : person.name
+  return meta.length > 0 ? `${person.name} | ${meta.join(' | ')}` : person.name
 }
 
 export function BookingsPage() {
@@ -87,7 +86,11 @@ export function BookingsPage() {
     productionId: string
     config: BookingColorConfig
   } | null>(null)
-  const [colorSettingsOpen, setColorSettingsOpen] = useState(false)
+  const [appearanceOverride, setAppearanceOverride] = useState<{
+    productionId: string
+    config: BookingAppearanceConfig
+  } | null>(null)
+  const [appearanceSettingsOpen, setAppearanceSettingsOpen] = useState(false)
   const queryClient = useQueryClient()
 
   const { data: bookings = [] } = useQuery({
@@ -286,11 +289,29 @@ export function BookingsPage() {
     return storedColorConfig
   }, [colorOverride, currentProductionId, people, storedColorConfig])
 
-  const handleSaveColors = (cfg: BookingColorConfig) => {
+  const storedAppearance = useMemo(
+    () => (currentProductionId ? loadAppearanceConfig(currentProductionId) : DEFAULT_APPEARANCE_CONFIG),
+    [currentProductionId]
+  )
+
+  const activeAppearance =
+    appearanceOverride && appearanceOverride.productionId === currentProductionId
+      ? appearanceOverride.config
+      : storedAppearance
+
+  const updateAppearance = (cfg: BookingAppearanceConfig) => {
     if (currentProductionId) {
-      saveColorConfig(currentProductionId, cfg)
-      setColorOverride({ productionId: currentProductionId, config: cfg })
+      saveAppearanceConfig(currentProductionId, cfg)
+      setAppearanceOverride({ productionId: currentProductionId, config: cfg })
     }
+  }
+
+  const handleSaveAppearance = (colors: BookingColorConfig, appearance: BookingAppearanceConfig) => {
+    if (currentProductionId) {
+      saveColorConfig(currentProductionId, colors)
+      setColorOverride({ productionId: currentProductionId, config: colors })
+    }
+    updateAppearance(appearance)
   }
 
   const applyBookingChanges = async (changes: BookingChanges) => {
@@ -382,24 +403,20 @@ export function BookingsPage() {
     )
   }
 
-  const hasIntelligenceWarnings =
-    bookingIntelligence &&
-    (bookingIntelligence.totalMissingThisProduction > 0 ||
-      bookingIntelligence.totalUnnecessaryThisProduction > 0)
-
   return (
     <div className="space-y-6">
       <PageHeader
         title="Bookings"
         actions={
           <>
+            <MissingBookingsHoverCard rows={neededBookingRows} />
             <Button
               variant="outline"
               size="icon"
               className="focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
-              onClick={() => setColorSettingsOpen(true)}
-              aria-label="Calendar color settings"
-              title="Calendar colors"
+              onClick={() => setAppearanceSettingsOpen(true)}
+              aria-label="Appearance settings"
+              title="Appearance settings"
             >
               <Settings className="size-4" />
             </Button>
@@ -520,73 +537,15 @@ export function BookingsPage() {
         }
       />
 
-      {bookingIntelligence && hasIntelligenceWarnings && (
-        <Card className="rounded-lg border-amber-500/30 bg-amber-500/5 dark:border-amber-600/40 dark:bg-amber-950/30">
-          <CardContent className="py-2 px-4">
-            <div className="flex flex-wrap items-center gap-8 text-sm">
-              {bookingIntelligence.totalMissingThisProduction > 0 && (
-                <span className="flex items-center gap-1.5 text-amber-800 dark:text-amber-200">
-                  <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <strong>{bookingIntelligence.totalMissingThisProduction}</strong>
-                  {bookingIntelligence.totalMissingThisProduction === 1
-                    ? ' cast needed but not booked'
-                    : ' cast needed but not booked'}
-                </span>
-              )}
-              {bookingIntelligence.totalUnnecessaryThisProduction > 0 && (
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <UserMinus className="size-4 shrink-0" />
-                  <strong>{bookingIntelligence.totalUnnecessaryThisProduction}</strong>
-                  {bookingIntelligence.totalUnnecessaryThisProduction === 1
-                    ? ' person booked but not needed'
-                    : ' people booked but not needed'}
-                </span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {neededBookingRows.length > 0 && (
-        <Card className="rounded-lg border-border bg-card">
-          <CardHeader className="py-3 px-4 border-b border-border">
-            <CardTitle className="text-sm font-medium flex items-center gap-2 text-foreground">
-              <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
-              Cast needed but not booked
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 pt-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-border hover:bg-transparent">
-                    <TableHead className="text-muted-foreground text-xs font-medium">Date</TableHead>
-                    <TableHead className="text-muted-foreground text-xs font-medium">Role</TableHead>
-                    <TableHead className="text-muted-foreground text-xs font-medium">Cast</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {neededBookingRows.map((row) => (
-                    <TableRow key={row.key} className="border-border">
-                      <TableCell className="text-sm py-2 text-foreground">{row.date}</TableCell>
-                      <TableCell className="text-sm py-2 text-muted-foreground">{row.role}</TableCell>
-                      <TableCell className="text-sm py-2 text-foreground">{row.name}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <BookingsCalendarView
+      <BookingsView
           bookings={filteredBookings}
           allBookings={bookings}
           shootDays={shootDays}
           people={people}
           personById={personById}
           colorConfig={activeColorConfig}
+          appearance={activeAppearance}
+          onViewChange={(view: BookingView) => updateAppearance({ ...activeAppearance, view })}
           bookingIntelligence={bookingIntelligence ?? undefined}
           filterUnit={filterUnit}
           setFilterUnit={setFilterUnit}
@@ -600,12 +559,13 @@ export function BookingsPage() {
           onEditBooking={openEditBooking}
         />
 
-      <BookingColorSettingsDialog
-        open={colorSettingsOpen}
-        onOpenChange={setColorSettingsOpen}
+      <BookingAppearanceSettingsDialog
+        open={appearanceSettingsOpen}
+        onOpenChange={setAppearanceSettingsOpen}
         people={people}
         config={activeColorConfig}
-        onSave={handleSaveColors}
+        appearance={activeAppearance}
+        onSave={handleSaveAppearance}
       />
     </div>
   )
