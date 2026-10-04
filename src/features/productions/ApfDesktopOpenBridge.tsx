@@ -12,7 +12,8 @@ import { userMessageForImportFailure } from '@/lib/importExport'
 type ApfOpenPayload = { paths: string[] }
 
 /**
- * Cold-start argv queue + `apf-open-request` (single-instance handoff).
+ * Cold-start argv queue + `apf-open-request` (desktop single-instance handoff; iOS Files app,
+ * share sheet and AirDrop via src-tauri/src/apf_ios.rs).
  * Auto-imports the first `.apf` using the same importer as the Productions page.
  */
 export function ApfDesktopOpenBridge() {
@@ -75,23 +76,33 @@ export function ApfDesktopOpenBridge() {
       }
     }
 
-    async function boot() {
+    async function popPending(): Promise<string[]> {
       try {
-        const pending = await invoke<string[]>('pop_pending_apf_open_paths')
-        if (!cancelled && pending[0]) {
-          await processPath(pending[0])
-        }
+        return await invoke<string[]>('pop_pending_apf_open_paths')
+      } catch {
+        return [] /* not running under Tauri */
+      }
+    }
+
+    async function boot() {
+      // Listen before draining the queue so a file opened in between is not missed.
+      try {
+        const off = await listen<ApfOpenPayload>('apf-open-request', async (event) => {
+          // iOS also queues opened files (for cold start / the sign-in screen); drain the queue here
+          // so they are not imported a second time on the next mount.
+          const pending = await popPending()
+          const p = pending[0] ?? event.payload.paths[0]
+          if (p) void processPath(p)
+        })
+        if (cancelled) off()
+        else unlisten = off
       } catch {
         /* not running under Tauri */
       }
 
-      try {
-        unlisten = await listen<ApfOpenPayload>('apf-open-request', (event) => {
-          const p = event.payload.paths[0]
-          if (p) void processPath(p)
-        })
-      } catch {
-        /* not running under Tauri */
+      const pending = await popPending()
+      if (!cancelled && pending[0]) {
+        await processPath(pending[0])
       }
     }
 
@@ -107,7 +118,9 @@ export function ApfDesktopOpenBridge() {
   return (
     <div
       role="status"
-      className="fixed top-4 left-1/2 z-[100] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-3 text-sm text-foreground shadow-lg"
+      // --safe-top is only set on iOS/Android (styles/platform-mobile.css); 0 on desktop.
+      style={{ top: 'calc(1rem + var(--safe-top, 0px))' }}
+      className="fixed left-1/2 z-[100] w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-3 text-sm text-foreground shadow-lg"
     >
       <span>Importing project file…</span>
     </div>

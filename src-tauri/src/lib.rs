@@ -1,4 +1,6 @@
 mod apf_desktop;
+#[cfg(target_os = "ios")]
+mod apf_ios;
 mod db_encryption;
 mod open_route_service;
 mod sqlite_load;
@@ -633,7 +635,7 @@ pub fn run() {
         }));
     }
 
-    builder
+    let app = builder
         .manage(sqlite_load::AlbatrossSqlMigrations(migrations))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
@@ -676,6 +678,15 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // Must run between build (which registers the iOS app delegate) and run (UIApplicationMain).
+    #[cfg(target_os = "ios")]
+    apf_ios::install_open_url_hook();
+
+    app.run(|_app_handle, _event| {
+        #[cfg(target_os = "ios")]
+        apf_ios::on_run_event(_app_handle, &_event);
+    });
 }
