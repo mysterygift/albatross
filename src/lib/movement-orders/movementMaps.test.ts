@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { projectScene } from '@/lib/maps/staticMapRenderer'
-import { buildLocationScene, buildOverviewScene, viewForScene } from './movementMaps'
+import { buildLocationScene, buildOverviewScene } from './movementMaps'
 import { applyResolvedLocationCoordinates, buildMovementOrderLegSkeleton } from './movementLegs'
 import type { MovementPin } from './pins'
 import type { MovementOrderLocation } from './types'
@@ -61,33 +60,20 @@ describe('buildOverviewScene', () => {
 })
 
 describe('buildLocationScene', () => {
-  it('centres a close-up on the location and zooms in', () => {
+  it('fits a close-up to its own location and nearby pins, not distant stops', () => {
     const scene = buildLocationScene(data(), 0)!
-    const view = viewForScene(scene, 800, 600)!
-    expect(view.zoom).toBeGreaterThanOrEqual(14)
-    expect(view.zoom).toBeLessThanOrEqual(17)
-    expect(view.center.lat).toBeCloseTo(51.5, 2)
+    expect(scene.maxZoom).toBe(17)
+    expect(scene.fitPoints[0]).toEqual({ lat: 51.5, lng: -0.12 })
+    // The base pin (~30 m) is close; the parking pin (~650 m) and second stop (~1.3 km) are not.
+    expect(scene.fitPoints).toContainEqual({ lat: 51.5002, lng: -0.1198 })
+    expect(scene.fitPoints).not.toContainEqual({ lat: 51.505, lng: -0.115 })
+    expect(scene.fitPoints).not.toContainEqual({ lat: 51.51, lng: -0.11 })
   })
 
   it('has no close-up for a location without coordinates', () => {
     const d = data({ locations: [location('a', null, null)] })
     expect(buildLocationScene(d, 0)).toBeNull()
     expect(buildLocationScene(d, 5)).toBeNull()
-  })
-})
-
-describe('projectScene', () => {
-  it('puts the view centre in the middle of the canvas', () => {
-    const scene = buildLocationScene(data(), 0)!
-    const view = { center: { lat: 51.5, lng: -0.12 }, zoom: 16 }
-    const projected = projectScene(scene, view, 800, 600)
-    const first = projected.markers.find((m) => m.label === '1')!
-    expect(first.at.x).toBeCloseTo(400, 3)
-    expect(first.at.y).toBeCloseTo(300, 3)
-    // North is up, east is right.
-    const second = projected.markers.find((m) => m.label === '2')!
-    expect(second.at.y).toBeLessThan(300)
-    expect(second.at.x).toBeGreaterThan(400)
   })
 })
 

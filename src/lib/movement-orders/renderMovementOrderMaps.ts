@@ -1,9 +1,5 @@
 import { renderStaticMap } from '@/lib/maps/staticMapRenderer'
-import {
-  MAP_TILE_ATTRIBUTION,
-  isMapTileConfigIncomplete,
-  type MapTileConfig,
-} from '@/lib/maps/tileConfig'
+import { MAP_ATTRIBUTION, type MapStyleConfig } from '@/lib/maps/mapStyle'
 import {
   LOCATION_MAP_SIZE,
   OVERVIEW_MAP_SIZE,
@@ -29,11 +25,8 @@ export interface RenderedMovementOrderMaps {
  */
 export async function renderMovementOrderMaps(
   data: MovementOrderData,
-  tileConfig: MapTileConfig
+  styleConfig: MapStyleConfig
 ): Promise<RenderedMovementOrderMaps> {
-  if (isMapTileConfigIncomplete(tileConfig)) {
-    return { maps: null, warning: 'Maps were left out: add a map tile API key under Settings → Integrations.' }
-  }
   const overviewScene = buildOverviewScene(data)
   const locationScenes = data.locations.map((_, i) => buildLocationScene(data, i))
   if (!overviewScene && locationScenes.every((scene) => scene === null)) {
@@ -47,7 +40,7 @@ export async function renderMovementOrderMaps(
     scene: NonNullable<typeof overviewScene>,
     size: { width: number; height: number }
   ): Promise<MovementOrderMapImage> => ({
-    png: await renderStaticMap({ scene, ...size, tileConfig, attribution: MAP_TILE_ATTRIBUTION }),
+    png: await renderStaticMap({ scene, ...size, styleConfig, attribution: MAP_ATTRIBUTION }),
     ...size,
   })
 
@@ -78,7 +71,7 @@ export async function renderMovementOrderMaps(
     }
   }
   return {
-    maps: { overview, locations, attribution: MAP_TILE_ATTRIBUTION },
+    maps: { overview, locations, attribution: MAP_ATTRIBUTION },
     warning:
       failedCloseUps > 0
         ? `${failedCloseUps} location map${failedCloseUps === 1 ? '' : 's'} could not be drawn and ${failedCloseUps === 1 ? 'was' : 'were'} left out.`

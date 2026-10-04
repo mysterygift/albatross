@@ -1,58 +1,26 @@
+import { Map as MapLibreMap } from 'maplibre-gl'
 import { recordApiCall } from '@/lib/dev/apiCallTracker'
-import {
-  TILE_SIZE,
-  planTiles,
-  projectToWorldPixels,
-  type PixelPoint,
-} from '@/lib/maps/mapMath'
-import { tileUrl, type MapTileConfig } from '@/lib/maps/tileConfig'
-import {
-  MARKER_COLORS,
-  ROUTE_COLOR,
-  viewForScene,
-  type MapScene,
-  type MapView,
-} from '@/lib/movement-orders/movementMaps'
+import { boundsOf, routesToGeoJson } from '@/lib/maps/mapMath'
+import type { MapStyleConfig } from '@/lib/maps/mapStyle'
+import { MARKER_COLORS, ROUTE_COLOR, type MapMarkerStyle, type MapScene } from '@/lib/movement-orders/movementMaps'
 
-export interface ProjectedScene {
-  routes: PixelPoint[][]
-  markers: Array<{ at: PixelPoint; label: string; style: MapScene['markers'][number]['style'] }>
-}
+/** Output is drawn at 2x so close-ups stay sharp in print. */
+const PIXEL_RATIO = 2
+const LOAD_TIMEOUT_MS = 25000
+/** Padding around the fitted points, in CSS px. */
+const FIT_PADDING = 28
 
-/** Pixel positions of a scene's routes and markers on a `width` x `height` canvas. */
-export function projectScene(
-  scene: MapScene,
-  view: MapView,
-  width: number,
-  height: number
-): ProjectedScene {
-  const c = projectToWorldPixels(view.center, view.zoom)
-  const toPixel = (p: { lat: number; lng: number }): PixelPoint => {
-    const w = projectToWorldPixels(p, view.zoom)
-    return { x: w.x - c.x + width / 2, y: w.y - c.y + height / 2 }
-  }
-  return {
-    routes: scene.routes.map((line) => line.map(toPixel)),
-    markers: scene.markers.map((m) => ({ at: toPixel(m.position), label: m.label, style: m.style })),
-  }
-}
-
-function loadTile(url: string): Promise<HTMLImageElement | null> {
-  recordApiCall('map_tiles')
-  return new Promise((resolve) => {
-    const image = new Image()
-    image.crossOrigin = 'anonymous'
-    image.onload = () => resolve(image)
-    image.onerror = () => resolve(null)
-    image.src = url
-  })
+/** Counts tile requests for the dev API call tracker. */
+export function transformMapRequest(_url: string, resourceType?: string): { url: string } {
+  if (resourceType === 'Tile') recordApiCall('map_tiles')
+  return { url: _url }
 }
 
 function drawMarker(
   ctx: CanvasRenderingContext2D,
-  at: PixelPoint,
+  at: { x: number; y: number },
   label: string,
-  style: MapScene['markers'][number]['style'],
+  style: MapMarkerStyle,
   scale: number
 ): void {
   const r = (label.length > 1 ? 13 : 11) * scale
@@ -77,78 +45,116 @@ function drawMarker(
   ctx.restore()
 }
 
+function waitForEvent(map: MapLibreMap, event: 'load' | 'idle', failure: () => string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      map.off(event, onEvent)
+      reject(new Error(failure()))
+    }, LOAD_TIMEOUT_MS)
+    const onEvent = () => {
+      window.clearTimeout(timer)
+      resolve()
+    }
+    map.once(event, onEvent)
+  })
+}
+
 /**
- * Draw a scene on top of map tiles and return it as PNG bytes. Needs a browser canvas, so it
- * runs in the app, not in Node. Throws if no tile could be loaded (offline, bad key), so the
- * caller can leave the map out rather than print a blank one.
+ * Draw a scene with MapLibre on an off-screen canvas, put the markers and attribution on top,
+ * and return PNG bytes. Needs a browser with WebGL, so it runs in the app, not in Node. Throws
+ * if the style or tiles cannot be loaded (offline, bad style URL) so the caller can leave the
+ * map out rather than print a blank one.
  */
 export async function renderStaticMap(args: {
   scene: MapScene
   width: number
   height: number
-  tileConfig: MapTileConfig
+  styleConfig: MapStyleConfig
   attribution: string
 }): Promise<Uint8Array> {
-  const { scene, width, height, tileConfig, attribution } = args
-  const view = viewForScene(scene, width, height)
-  if (!view) throw new Error('Nothing to show on this map.')
+  const { scene, width, height, styleConfig, attribution } = args
+  const bounds = boundsOf(scene.fitPoints)
+  if (!bounds) throw new Error('Nothing to show on this map.')
 
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas is not available.')
-  ctx.fillStyle = '#e5e7eb'
-  ctx.fillRect(0, 0, width, height)
+  const container = document.createElement('div')
+  container.style.cssText = `position:fixed;left:-10000px;top:0;width:${width / PIXEL_RATIO}px;height:${height / PIXEL_RATIO}px;`
+  document.body.appendChild(container)
 
-  // Tiles are 256px; draw them at 2x so close-ups stay sharp in print.
-  const { tiles } = planTiles({ center: view.center, zoom: view.zoom, width, height })
-  const loaded = await Promise.all(
-    tiles.map(async (tile) => ({
-      tile,
-      image: await loadTile(tileUrl(tileConfig, tile.z, tile.x, tile.y)),
-    }))
-  )
-  const drawn = loaded.filter((entry) => entry.image !== null)
-  if (drawn.length === 0) throw new Error('No map tiles could be loaded. Check the map tile settings.')
-  for (const { tile, image } of drawn) {
-    ctx.drawImage(image!, tile.px, tile.py, TILE_SIZE, TILE_SIZE)
-  }
+  let lastError = ''
+  const map = new MapLibreMap({
+    container,
+    style: styleConfig.styleUrl,
+    center: [(bounds.west + bounds.east) / 2, (bounds.south + bounds.north) / 2],
+    zoom: 2,
+    interactive: false,
+    attributionControl: false,
+    fadeDuration: 0,
+    pixelRatio: PIXEL_RATIO,
+    canvasContextAttributes: { preserveDrawingBuffer: true },
+    transformRequest: transformMapRequest,
+  })
+  map.on('error', (event) => {
+    lastError = event.error?.message ?? 'unknown error'
+  })
 
-  const scale = width / 800
-  const projected = projectScene(scene, view, width, height)
-  ctx.lineJoin = 'round'
-  ctx.lineCap = 'round'
-  for (const [color, lineWidth] of [
-    ['#ffffff', 9 * scale],
-    [ROUTE_COLOR, 5 * scale],
-  ] as const) {
-    ctx.strokeStyle = color
-    ctx.lineWidth = lineWidth
-    for (const line of projected.routes) {
-      ctx.beginPath()
-      line.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
-      ctx.stroke()
+  try {
+    await waitForEvent(map, 'load', () =>
+      `The map style could not be loaded${lastError ? ` (${lastError})` : ''}. Check the map style in Settings → Integrations.`
+    )
+    map.addSource('route', { type: 'geojson', data: routesToGeoJson(scene.routes) })
+    for (const [id, color, lineWidth] of [
+      ['route-casing', '#ffffff', 9],
+      ['route-line', ROUTE_COLOR, 5],
+    ] as const) {
+      map.addLayer({
+        id,
+        type: 'line',
+        source: 'route',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': color, 'line-width': lineWidth },
+      })
     }
-  }
-  for (const marker of projected.markers) {
-    const margin = 20 * scale
-    if (marker.at.x < -margin || marker.at.y < -margin || marker.at.x > width + margin || marker.at.y > height + margin) {
-      continue
+    map.fitBounds(
+      [
+        [bounds.west, bounds.south],
+        [bounds.east, bounds.north],
+      ],
+      { padding: FIT_PADDING, maxZoom: scene.maxZoom, animate: false }
+    )
+    await waitForEvent(map, 'idle', () =>
+      `The map tiles did not finish loading${lastError ? ` (${lastError})` : ''}.`
+    )
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas is not available.')
+    ctx.drawImage(map.getCanvas(), 0, 0, width, height)
+
+    const scale = width / 800
+    for (const marker of scene.markers) {
+      const point = map.project([marker.position.lng, marker.position.lat])
+      const at = { x: point.x * PIXEL_RATIO, y: point.y * PIXEL_RATIO }
+      const margin = 20 * scale
+      if (at.x < -margin || at.y < -margin || at.x > width + margin || at.y > height + margin) continue
+      drawMarker(ctx, at, marker.label, marker.style, scale)
     }
-    drawMarker(ctx, marker.at, marker.label, marker.style, scale)
+
+    ctx.font = `${10 * scale}px Helvetica, Arial, sans-serif`
+    const textWidth = ctx.measureText(attribution).width
+    ctx.fillStyle = 'rgba(255,255,255,0.8)'
+    ctx.fillRect(width - textWidth - 12 * scale, height - 18 * scale, textWidth + 12 * scale, 18 * scale)
+    ctx.fillStyle = '#333333'
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(attribution, width - 6 * scale, height - 9 * scale)
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    if (!blob) throw new Error('Could not encode the map image.')
+    return new Uint8Array(await blob.arrayBuffer())
+  } finally {
+    map.remove()
+    container.remove()
   }
-
-  ctx.font = `${10 * scale}px Helvetica, Arial, sans-serif`
-  const textWidth = ctx.measureText(attribution).width
-  ctx.fillStyle = 'rgba(255,255,255,0.8)'
-  ctx.fillRect(width - textWidth - 12 * scale, height - 18 * scale, textWidth + 12 * scale, 18 * scale)
-  ctx.fillStyle = '#333333'
-  ctx.textAlign = 'right'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(attribution, width - 6 * scale, height - 9 * scale)
-
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-  if (!blob) throw new Error('Could not encode the map image.')
-  return new Uint8Array(await blob.arrayBuffer())
 }
