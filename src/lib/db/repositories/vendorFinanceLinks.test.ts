@@ -44,7 +44,10 @@ vi.mock('@/lib/db/client', async (importOriginal) => {
 import {
   createVendorInvoiceExpenseLink,
   createVendorPurchaseOrderExpenseLink,
+  deleteVendorInvoiceExpenseLink,
+  deleteVendorPurchaseOrderExpenseLink,
   listInvoiceLinksByExpenseId,
+  listPoLinkCountsByExpenseIds,
   listPurchaseOrderLinksByExpenseId,
 } from '@/lib/db/repositories/vendorFinanceLinks'
 
@@ -132,5 +135,80 @@ describe('vendorFinanceLinks reverse lookup', () => {
     await expect(createVendorInvoiceExpenseLink('invoice-b', EXPENSE_A)).rejects.toThrow(
       /same vendor/
     )
+  })
+})
+
+describe('vendorFinanceLinks journalling', () => {
+  beforeEach(async () => {
+    await makeDb()
+    await seedVendorFinance()
+  })
+
+  async function outboxRows(entity: string): Promise<Array<{ entity_id: string; operation: string }>> {
+    return dbAdapter.select(`SELECT entity_id, operation FROM outbox WHERE entity = $1 ORDER BY created_at, rowid`, [entity])
+  }
+
+  it('writes an outbox row when a link is created and when it is removed', async () => {
+    const poLink = await createVendorPurchaseOrderExpenseLink(PO_A, EXPENSE_A)
+    const invoiceLink = await createVendorInvoiceExpenseLink(INVOICE_A, EXPENSE_A)
+    expect(await outboxRows('vendor_purchase_order_expenses')).toEqual([{ entity_id: poLink.id, operation: 'create' }])
+    expect(await outboxRows('vendor_invoice_expenses')).toEqual([{ entity_id: invoiceLink.id, operation: 'create' }])
+
+    await deleteVendorPurchaseOrderExpenseLink(PO_A, EXPENSE_A)
+    await deleteVendorInvoiceExpenseLink(INVOICE_A, EXPENSE_A)
+    expect(await outboxRows('vendor_purchase_order_expenses')).toEqual([
+      { entity_id: poLink.id, operation: 'create' },
+      { entity_id: poLink.id, operation: 'delete' },
+    ])
+    expect(await outboxRows('vendor_invoice_expenses')).toEqual([
+      { entity_id: invoiceLink.id, operation: 'create' },
+      { entity_id: invoiceLink.id, operation: 'delete' },
+    ])
+    expect(await listPurchaseOrderLinksByExpenseId(EXPENSE_A)).toEqual([])
+    expect(await listInvoiceLinksByExpenseId(EXPENSE_A)).toEqual([])
+  })
+
+  it('deleting a link that does not exist is a quiet no-op', async () => {
+    await deleteVendorPurchaseOrderExpenseLink(PO_A, EXPENSE_A)
+    expect(await outboxRows('vendor_purchase_order_expenses')).toEqual([])
+  })
+
+  it('journals the pin of an existing NULL allocation when a second PO is linked', async () => {
+    await dbAdapter.execute(
+      `INSERT INTO vendor_purchase_orders (id, production_id, vendor_id, po_number, status, approval, created_at, updated_at)
+       VALUES ('po-b2', $1, $2, 'PO-002', 'issued', 0, $3, $3)`,
+      [PRODUCTION_ID, VENDOR_A, TS]
+    )
+    const first = await createVendorPurchaseOrderExpenseLink(PO_A, EXPENSE_A)
+    await createVendorPurchaseOrderExpenseLink('po-b2', EXPENSE_A, 40)
+    const links = await listPurchaseOrderLinksByExpenseId(EXPENSE_A)
+    expect(links.find((l) => l.id === first.id)!.allocated_amount).toBe(100)
+    expect((await outboxRows('vendor_purchase_order_expenses')).filter((r) => r.operation === 'update')).toEqual([
+      { entity_id: first.id, operation: 'update' },
+    ])
+  })
+})
+
+describe('listPoLinkCountsByExpenseIds', () => {
+  beforeEach(async () => {
+    await makeDb()
+    await seedVendorFinance()
+  })
+
+  it('returns a count for every id in one batched query, ignoring archived POs', async () => {
+    await createVendorPurchaseOrderExpenseLink(PO_A, EXPENSE_A)
+    await dbAdapter.execute(
+      `INSERT INTO expenses (id, production_id, amount, date, expense_type, vendor_id, created_at, updated_at)
+       VALUES ('expense-b', $1, 10, '2026-06-01', 'other', $2, $3, $3)`,
+      [PRODUCTION_ID, VENDOR_A, TS]
+    )
+    expect(await listPoLinkCountsByExpenseIds([EXPENSE_A, 'expense-b', EXPENSE_A])).toEqual({
+      [EXPENSE_A]: 1,
+      'expense-b': 0,
+    })
+    expect(await listPoLinkCountsByExpenseIds([])).toEqual({})
+
+    await dbAdapter.execute(`UPDATE vendor_purchase_orders SET deleted_at = $1 WHERE id = $2`, [TS, PO_A])
+    expect((await listPoLinkCountsByExpenseIds([EXPENSE_A]))[EXPENSE_A]).toBe(0)
   })
 })

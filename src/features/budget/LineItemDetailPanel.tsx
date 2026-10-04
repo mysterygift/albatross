@@ -2,7 +2,6 @@ import { useState, useRef } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { hasMaxTwoDecimalPlaces } from '@/lib/budget/fieldValidation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -58,8 +57,7 @@ const lineItemEditSchema = z.object({
   estimated_cost: z.coerce
     .number()
     .finite('Estimated cost must be a number')
-    .nonnegative('Estimated cost must be 0 or more')
-    .refine(hasMaxTwoDecimalPlaces, { message: 'Estimated cost must have at most 2 decimal places' }),
+    .nonnegative('Estimated cost must be 0 or more'),
   vendor: z.string().optional(),
   lineItemType: z.string(),
 })

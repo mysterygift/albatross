@@ -1,5 +1,5 @@
-import { getDb, now, runInSerializedTransaction, uuid } from '../client'
-import { outboxPush } from '../outbox'
+import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import { outboxPush, outboxStatementForRow } from '../outbox'
 import { coerceBoolean, coerceNumber } from '../sqlValueCoercion'
 import type {
   ExpenseTaxCreditAllocation,
@@ -391,33 +391,60 @@ function validateAllocations(
   }
 }
 
+/**
+ * Statements that replace an expense's tax credit allocations (soft-delete existing, insert new,
+ * outbox rows), for use in executeBatch (no BEGIN/COMMIT). Validates before building.
+ */
+export function buildReplaceExpenseTaxCreditAllocationStatements(
+  expenseId: string,
+  expenseAmount: number,
+  allocations: TaxCreditAllocationInput[],
+  ts: string
+): Array<{ sql: string; bindValues: unknown[] }> {
+  validateAllocations(expenseAmount, allocations)
+  const statements: Array<{ sql: string; bindValues: unknown[] }> = [
+    {
+      sql: `UPDATE ${ALLOCATIONS_TABLE} SET deleted_at = $1, updated_at = $2 WHERE expense_id = $3 AND deleted_at IS NULL`,
+      bindValues: [ts, ts, expenseId],
+    },
+  ]
+  for (const a of allocations) {
+    const id = uuid()
+    statements.push(
+      {
+        sql: `INSERT INTO ${ALLOCATIONS_TABLE} (id, expense_id, tax_credit_scheme_id, qualifying_amount, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        bindValues: [id, expenseId, a.tax_credit_scheme_id, a.qualifying_amount, ts, ts],
+      },
+      outboxStatementForRow({
+        entity: ALLOCATIONS_TABLE,
+        entityId: id,
+        operation: 'create',
+        payloadJson: JSON.stringify({ expense_id: expenseId, ...a }),
+      })
+    )
+  }
+  return statements
+}
+
 export async function replaceExpenseTaxCreditAllocations(
   expenseId: string,
   expenseAmount: number,
   allocations: TaxCreditAllocationInput[]
 ): Promise<ExpenseTaxCreditAllocation[]> {
-  validateAllocations(expenseAmount, allocations)
-  const ts = now()
+  const statements = buildReplaceExpenseTaxCreditAllocationStatements(
+    expenseId,
+    expenseAmount,
+    allocations,
+    now()
+  )
   await runInSerializedTransaction(async () => {
     const db = await getDb()
-    await db.execute(
-      `UPDATE ${ALLOCATIONS_TABLE} SET deleted_at = $1, updated_at = $2 WHERE expense_id = $3 AND deleted_at IS NULL`,
-      [ts, ts, expenseId]
-    )
-    for (const a of allocations) {
-      const id = uuid()
-      await db.execute(
-        `INSERT INTO ${ALLOCATIONS_TABLE} (id, expense_id, tax_credit_scheme_id, qualifying_amount, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, expenseId, a.tax_credit_scheme_id, a.qualifying_amount, ts, ts]
-      )
-      await outboxPush(
-        ALLOCATIONS_TABLE,
-        id,
-        'create',
-        JSON.stringify({ expense_id: expenseId, ...a })
-      )
-    }
+    await executeBatch(db, [
+      { sql: 'BEGIN', bindValues: [] },
+      ...statements,
+      { sql: 'COMMIT', bindValues: [] },
+    ])
   })
   return listAllocationsByExpense(expenseId)
 }

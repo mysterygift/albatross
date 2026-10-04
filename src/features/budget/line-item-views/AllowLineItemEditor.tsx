@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { ValidatedField } from '@/components/budget/ValidatedField'
 import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
-import { hasMaxTwoDecimalPlaces, NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
+import { NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   ALLOW_LINE_ITEM_STATUSES,
@@ -23,8 +23,7 @@ const allowLineItemEditSchema = z.object({
       z
         .number()
         .finite(NON_NEGATIVE_MONEY_MESSAGE)
-        .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
-        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+        .nonnegative(NON_NEGATIVE_MONEY_MESSAGE),
     ])
     .optional(),
   status: z.enum(ALLOW_LINE_ITEM_STATUSES).nullable().optional(),

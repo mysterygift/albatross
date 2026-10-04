@@ -122,8 +122,8 @@ describe('migrateApfToCurrentVersion', () => {
     const data = JSON.parse(JSON.stringify(d2)) as (typeof d2 & { formatVersion: number })
     data.formatVersion = 1
     const out = migrateApfToCurrentVersion({ manifest, data })
-    expect(out.manifest.formatVersion).toBe(4)
-    expect(out.data.formatVersion).toBe(4)
+    expect(out.manifest.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
+    expect(out.data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
     expect(Array.isArray(out.data.tables.episodes)).toBe(true)
   })
 
@@ -151,9 +151,80 @@ describe('migrateApfToCurrentVersion', () => {
     delete (data.tables as Record<string, unknown>).float_expense_links
 
     const out = migrateApfToCurrentVersion({ manifest, data })
-    expect(out.data.formatVersion).toBe(4)
+    expect(out.data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
     expect(out.data.tables.budget_revisions).toHaveLength(1)
     expect(out.data.tables.budget_revisions[0]!.id).toBe(revId)
+  })
+
+  it('v4→v5 adds an empty vendor_purchase_order_amendments table and keeps link rows', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    tables.vendor_purchase_order_expenses = [
+      { id: 'l1', vendor_purchase_order_id: 'po1', expense_id: 'e1', created_at: 't', updated_at: 't' },
+    ]
+    const { manifest: m5, dataFile: d5 } = buildFixtureDataAndManifest({ tables })
+    const manifest = { ...m5, formatVersion: 4 as const }
+    const data = JSON.parse(JSON.stringify(d5)) as (typeof d5 & { formatVersion: number })
+    data.formatVersion = 4
+    delete (data.tables as Record<string, unknown>).vendor_purchase_order_amendments
+
+    const out = migrateApfToCurrentVersion({ manifest, data })
+    expect(out.data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
+    expect(out.data.tables.vendor_purchase_order_amendments).toEqual([])
+    expect(out.data.tables.vendor_purchase_order_expenses).toHaveLength(1)
+  })
+
+  it('v5→v6 adds an empty expense_receipts table', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    const { manifest: m6, dataFile: d6 } = buildFixtureDataAndManifest({ tables })
+    const manifest = { ...m6, formatVersion: 5 as const }
+    const data = JSON.parse(JSON.stringify(d6)) as (typeof d6 & { formatVersion: number })
+    data.formatVersion = 5
+    delete (data.tables as Record<string, unknown>).expense_receipts
+
+    const out = migrateApfToCurrentVersion({ manifest, data })
+    expect(out.data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
+    expect(out.data.tables.expense_receipts).toEqual([])
+  })
+
+  it('v6→v7 backfills PO currency (NULL) and derives approval from status', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    const po = (id: string, status: string, approval: number) => ({
+      id,
+      production_id: 'p1',
+      vendor_id: 'v1',
+      po_number: id,
+      status,
+      approval,
+      created_at: 't',
+      updated_at: 't',
+    })
+    tables.vendor_purchase_orders = [
+      po('ticked-draft', 'draft', 1),
+      po('ticked-issued', 'issued', 1),
+      po('plain-issued', 'issued', 0),
+      po('approved', 'approved', 0),
+      po('closed', 'closed', 0),
+      po('cancelled', 'cancelled', 1),
+    ]
+    const { manifest: m7, dataFile: d7 } = buildFixtureDataAndManifest({ tables })
+    const manifest = { ...m7, formatVersion: 6 as const }
+    const data = JSON.parse(JSON.stringify(d7)) as (typeof d7 & { formatVersion: number })
+    data.formatVersion = 6
+
+    const out = migrateApfToCurrentVersion({ manifest, data })
+    expect(out.data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
+    const rows = Object.fromEntries(
+      (out.data.tables.vendor_purchase_orders as Array<Record<string, unknown>>).map((r) => [r.id, r])
+    )
+    expect(rows['ticked-draft']).toMatchObject({ status: 'approved', approval: 1, currency_code: null, exchange_rate: null })
+    expect(rows['ticked-issued']).toMatchObject({ status: 'approved', approval: 1 })
+    expect(rows['plain-issued']).toMatchObject({ status: 'issued', approval: 0 })
+    expect(rows['approved']).toMatchObject({ status: 'approved', approval: 1 })
+    expect(rows['closed']).toMatchObject({ status: 'closed', approval: 1 })
+    expect(rows['cancelled']).toMatchObject({ status: 'cancelled', approval: 0 })
   })
 
   it('v3→v4 backfills scenes.title from heading and removes heading', () => {
@@ -187,7 +258,7 @@ describe('migrateApfToCurrentVersion', () => {
     data.formatVersion = 3
 
     const out = migrateApfToCurrentVersion({ manifest, data })
-    expect(out.data.formatVersion).toBe(4)
+    expect(out.data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
     const scenes = out.data.tables.scenes as Array<Record<string, unknown>>
     expect(scenes[0]!.title).toBe('INT. KITCHEN - DAY')
     expect(scenes[0]).not.toHaveProperty('heading')

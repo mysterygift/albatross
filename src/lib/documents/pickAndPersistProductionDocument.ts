@@ -24,6 +24,8 @@ function guessMimeType(fileName: string): string | null {
   if (ext === 'png') return 'image/png'
   if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
   if (ext === 'csv') return 'text/csv'
+  if (ext === 'doc') return 'application/msword'
+  if (ext === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   return null
 }
 

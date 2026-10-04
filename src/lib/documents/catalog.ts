@@ -22,6 +22,8 @@ export const DOCUMENT_ENTITY_TYPES = {
   movementOrder: 'movement_order',
   movementOrderPersonalized: 'movement_order_personalized',
   locationRelease: 'location_release',
+  /** Location permit (entity_id = location id). */
+  permit: 'permit',
   contributorForm: 'contributor_form',
   cueSheet: 'cue_sheet',
   budgetCsv: 'budget_csv',
@@ -40,6 +42,8 @@ export const DOCUMENT_ENTITY_TYPES = {
   manualUploadProductionLists: 'manual_upload_production_lists',
   vendorInvoice: 'vendor_invoice',
   vendorPurchaseOrder: 'vendor_purchase_order',
+  /** Receipt proof attached directly to an expense (entity_id = expense id); no vendor needed. */
+  expenseReceipt: 'expense_receipt',
 } as const
 
 export type DocumentEntityType =
@@ -107,13 +111,14 @@ export const DOCUMENT_CATEGORIES: DocumentCategoryConfig[] = [
   {
     id: 'people-locations',
     label: 'People & locations',
-    description: 'Contributor forms and location releases',
+    description: 'Contributor forms, location releases and permits',
     icon: Users,
     sourceRoute: '/people/cast-manager',
     emptyMessage: 'No people or location documents yet.',
     entityTypes: [
       DOCUMENT_ENTITY_TYPES.contributorForm,
       DOCUMENT_ENTITY_TYPES.locationRelease,
+      DOCUMENT_ENTITY_TYPES.permit,
       DOCUMENT_ENTITY_TYPES.manualUploadPeopleLocations,
     ],
   },
@@ -148,6 +153,7 @@ export const DOCUMENT_CATEGORIES: DocumentCategoryConfig[] = [
       DOCUMENT_ENTITY_TYPES.manualUploadFinance,
       DOCUMENT_ENTITY_TYPES.vendorInvoice,
       DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder,
+      DOCUMENT_ENTITY_TYPES.expenseReceipt,
     ],
   },
   {
@@ -193,6 +199,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   [DOCUMENT_ENTITY_TYPES.movementOrder]: 'Movement order',
   [DOCUMENT_ENTITY_TYPES.movementOrderPersonalized]: 'Personalised movement order',
   [DOCUMENT_ENTITY_TYPES.locationRelease]: 'Location release',
+  [DOCUMENT_ENTITY_TYPES.permit]: 'Permit',
   [DOCUMENT_ENTITY_TYPES.contributorForm]: 'Contributor form',
   [DOCUMENT_ENTITY_TYPES.cueSheet]: 'Cue sheet',
   [DOCUMENT_ENTITY_TYPES.budgetCsv]: 'Budget CSV',
@@ -210,6 +217,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   [DOCUMENT_ENTITY_TYPES.manualUploadProductionLists]: 'Uploaded file',
   [DOCUMENT_ENTITY_TYPES.vendorInvoice]: 'Vendor invoice',
   [DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder]: 'Vendor purchase order',
+  [DOCUMENT_ENTITY_TYPES.expenseReceipt]: 'Expense receipt',
 }
 
 export function getDocumentTypeLabel(entityType: string | null): string {
@@ -218,6 +226,9 @@ export function getDocumentTypeLabel(entityType: string | null): string {
 }
 
 export function getDocumentSourceRoute(entityType: string | null): string {
+  if (entityType === DOCUMENT_ENTITY_TYPES.locationRelease || entityType === DOCUMENT_ENTITY_TYPES.permit) {
+    return '/locations'
+  }
   const categoryId = getDocumentCategoryId(entityType)
   return getDocumentCategory(categoryId).sourceRoute
 }

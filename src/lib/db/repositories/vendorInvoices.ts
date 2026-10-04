@@ -1,5 +1,6 @@
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxStatementForRow } from '../outbox'
+import { roundMoneyOrNull } from '@/lib/money/roundMoney'
 import { coerceNumber } from '../sqlValueCoercion'
 import type { VendorInvoice, VendorInvoiceStatus } from '../types'
 
@@ -100,6 +101,8 @@ export function buildCreateVendorInvoiceStatements(
   data: CreateVendorInvoiceData
 ): Array<{ sql: string; bindValues: unknown[] }> {
   const status = data.status ?? 'draft'
+  const amount = roundMoneyOrNull(data.amount)
+  const tax = roundMoneyOrNull(data.tax)
   const insert = {
     sql: `INSERT INTO ${TABLE} (id, production_id, vendor_id, po_id, invoice_number, issue_date, due_date, amount, tax, currency_code, status, notes, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
@@ -111,8 +114,8 @@ export function buildCreateVendorInvoiceStatements(
       data.invoice_number,
       data.issue_date ?? null,
       data.due_date ?? null,
-      data.amount ?? null,
-      data.tax ?? null,
+      amount,
+      tax,
       data.currency_code ?? null,
       status,
       data.notes ?? null,
@@ -124,7 +127,7 @@ export function buildCreateVendorInvoiceStatements(
     entity: TABLE,
     entityId: id,
     operation: 'create',
-    payloadJson: JSON.stringify({ ...data, id, status }),
+    payloadJson: JSON.stringify({ ...data, id, amount, tax, status }),
   })
   return [insert, outbox]
 }
@@ -169,10 +172,16 @@ export async function updateVendorInvoice(
   const cols: string[] = []
   const vals: unknown[] = []
   let i = 1
+  // Money columns are always persisted at 2dp.
+  const persisted: UpdatePatch = {
+    ...patch,
+    ...(patch.amount !== undefined ? { amount: roundMoneyOrNull(patch.amount) } : {}),
+    ...(patch.tax !== undefined ? { tax: roundMoneyOrNull(patch.tax) } : {}),
+  }
   for (const k of EDITABLE_KEYS) {
-    if (patch[k] !== undefined) {
+    if (persisted[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
-      vals.push(patch[k])
+      vals.push(persisted[k])
     }
   }
   if (cols.length === 0) {
@@ -195,7 +204,7 @@ export async function updateVendorInvoice(
       entity: TABLE,
       entityId: invoiceId,
       operation: 'update',
-      payloadJson: JSON.stringify(patch),
+      payloadJson: JSON.stringify(persisted),
     }),
     { sql: 'COMMIT', bindValues: [] },
   ]

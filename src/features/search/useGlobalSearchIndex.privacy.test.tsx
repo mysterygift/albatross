@@ -139,9 +139,11 @@ describe('global search PII authorization boundary', () => {
         booked_status: 'booked',
         what3words: 'private.contact.address',
         parking_info: 'Rear gate',
-        permit_fee: null,
         location_fee: null,
         availability_constraints: null,
+        contact_name: 'Riley Owner',
+        contact_email: 'riley@example.test',
+        contact_phone: '+44 7700 900456',
       },
     ])
     mocks.listVendors.mockResolvedValue([
@@ -162,6 +164,8 @@ describe('global search PII authorization boundary', () => {
     expect(rendered).toContain('+44 7700 900123')
     expect(rendered).toContain('12 Sensitive Street, London')
     expect(rendered).toContain('private.contact.address')
+    expect(rendered).toContain('Riley Owner')
+    expect(rendered).toContain('riley@example.test')
     expect(rendered).toContain('Taylor Vendor')
     expect(rendered).toContain('taylor@example.test')
   })

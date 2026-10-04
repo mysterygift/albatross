@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { VendorPicker } from '@/components/vendors/VendorPicker'
 import { ValidatedField } from '@/components/budget/ValidatedField'
 import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
-import { hasMaxTwoDecimalPlaces, POSITIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
+import { POSITIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import {
   DEPOSIT_REFUNDABLE_STATUSES,
   parseDepositDetails,
@@ -24,8 +24,7 @@ const depositEditSchema = z.object({
     z
       .number()
       .finite(POSITIVE_MONEY_MESSAGE)
-      .positive('Deposit amount must be greater than 0')
-      .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+      .positive('Deposit amount must be greater than 0'),
   ]),
   refundable_status: z.enum(DEPOSIT_REFUNDABLE_STATUSES, {
     message: 'Select refundable or non-refundable',
@@ -74,6 +73,7 @@ export function DepositTransactionEditor({
   hideFooter,
   editorRef,
   onVendorIdChange,
+  onAmountChange,
 }: TypedExpenseEditProps<DepositDetails>) {
   const productionId = context.productionId
   const locations = context.locations ?? []
@@ -123,6 +123,7 @@ export function DepositTransactionEditor({
     editorRef,
     () => ({
       submit: () => form.handleSubmit((data) => onSave(toDepositDetails(data)))(),
+      setVendorId: (id) => form.setValue('vendor_id', id ?? '', { shouldDirty: true }),
     }),
     [form, onSave]
   )
@@ -131,6 +132,12 @@ export function DepositTransactionEditor({
   useEffect(() => {
     onVendorIdChange?.(watchedVendorId?.trim() ? watchedVendorId.trim() : null)
   }, [watchedVendorId, onVendorIdChange])
+
+  const watchedAmount = form.watch('amount')
+  useEffect(() => {
+    const n = watchedAmount === '' ? null : Number(watchedAmount)
+    onAmountChange?.(n != null && Number.isFinite(n) && n > 0 ? n : null)
+  }, [watchedAmount, onAmountChange])
 
   const errors = form.formState.errors
 

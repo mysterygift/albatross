@@ -198,7 +198,7 @@ export async function duplicateProduction(
     const id = newId()
     locationIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO locations (id, production_id, name, name_sort_key, booked_status, address, what3words, parking_info, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      sql: `INSERT INTO locations (id, production_id, name, name_sort_key, booked_status, address, what3words, parking_info, availability_constraints, location_fee, notes, contact_name, contact_email, contact_phone, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       bindValues: [
         id,
         newProdId,
@@ -209,9 +209,11 @@ export async function duplicateProduction(
         r.what3words ?? null,
         r.parking_info ?? null,
         r.availability_constraints,
-        r.permit_fee,
         r.location_fee,
         r.notes,
+        r.contact_name ?? null,
+        r.contact_email ?? null,
+        r.contact_phone ?? null,
         ts,
         ts,
       ],
@@ -714,7 +716,7 @@ function mapEntityId(
   maps: { locationIdMap: IdMap; personIdMap: IdMap; shootDayIdMap: IdMap; deliverableIdMap: IdMap }
 ): string | null {
   if (entityId == null) return null
-  if (entityType === 'location_release' || entityType === 'location') return maps.locationIdMap.get(entityId) ?? entityId
+  if (entityType === 'location_release' || entityType === 'permit' || entityType === 'location') return maps.locationIdMap.get(entityId) ?? entityId
   if (entityType === 'contributor_form' || entityType === 'person') return maps.personIdMap.get(entityId) ?? entityId
   if (entityType === 'call_sheet' || entityType === 'shoot_day' || entityType === 'sides_export') return maps.shootDayIdMap.get(entityId) ?? entityId
   if (entityType === 'deliverable') return maps.deliverableIdMap.get(entityId) ?? entityId

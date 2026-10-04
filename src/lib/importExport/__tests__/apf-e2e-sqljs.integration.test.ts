@@ -189,7 +189,7 @@ describe('apf E2E (sql.js + real FS)', () => {
     const exportedBytes = new Uint8Array(await readFile(apfPath))
     const parsedExport = parseApfArchiveBytes(exportedBytes)
     expect(parsedExport.normalized.data.tables.budget_revisions).toHaveLength(1)
-    expect(parsedExport.normalized.data.formatVersion).toBe(4)
+    expect(parsedExport.normalized.data.formatVersion).toBe(7)
 
     clearUserData()
     const imp = await importProductionFromApf(apfPath)

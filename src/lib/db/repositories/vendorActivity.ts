@@ -8,6 +8,9 @@ import { listExpensesByVendorId } from './budget'
 import { listVendorInvoicesByVendorId } from './vendorInvoices'
 import { listVendorPurchaseOrdersByVendorId } from './vendorPurchaseOrders'
 import { getLineItemTypeConfig } from '../../budget/line-items/registry'
+import { poAmountInProductionCurrency } from '../../budget/vendors/poCurrency'
+import { formatMoney } from '../../money/formatMoney'
+import { roundMoney } from '../../money/roundMoney'
 
 /** Internal shape for the Recent activity UI only. */
 export type VendorActivityItem = {
@@ -68,8 +71,10 @@ function invoiceToActivity(inv: VendorInvoice): VendorActivityItem {
 
 function poToActivity(po: VendorPurchaseOrder): VendorActivityItem {
   const activity_at = po.issue_date?.trim() ? po.issue_date : po.created_at
-  const approvalPart = po.approval === 1 ? 'Approved' : 'Not approved'
-  const subtitle = [po.status, approvalPart].filter(Boolean).join(' · ') || po.status || null
+  // Status already says whether the PO is approved (approval is derived from it). `amount` is in the
+  // production currency; a foreign-currency PO also shows its original value.
+  const original = po.currency_code && po.amount != null ? formatMoney(roundMoney(po.amount), po.currency_code) : null
+  const subtitle = [po.status, original].filter(Boolean).join(' · ') || null
   return {
     id: `purchase_order:${po.id}`,
     entity_type: 'purchase_order',
@@ -77,7 +82,7 @@ function poToActivity(po: VendorPurchaseOrder): VendorActivityItem {
     activity_at,
     title: `PO ${po.po_number}`,
     subtitle,
-    amount: po.amount,
+    amount: po.amount == null ? null : poAmountInProductionCurrency(po, po.amount),
     status: po.status,
   }
 }

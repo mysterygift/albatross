@@ -128,7 +128,10 @@ function enrichSingleDocument(doc: Document, maps: LookupMaps): EnrichedDocument
     groupKey = doc.entity_id
     groupTitle = person?.name ?? 'Contributor'
     groupSortKey = person?.name ?? doc.created_at
-  } else if (entityType === DOCUMENT_ENTITY_TYPES.locationRelease && doc.entity_id) {
+  } else if (
+    (entityType === DOCUMENT_ENTITY_TYPES.locationRelease || entityType === DOCUMENT_ENTITY_TYPES.permit) &&
+    doc.entity_id
+  ) {
     const location = maps.locationById.get(doc.entity_id)
     contextLabel = location?.address ?? null
     groupKey = doc.entity_id

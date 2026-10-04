@@ -2,6 +2,9 @@ import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../c
 import { outboxStatementForRow } from '../outbox'
 import { coerceBoolean, coerceNumber } from '../sqlValueCoercion'
 import type { VendorPurchaseOrder, PurchaseOrderStatus } from '../types'
+import { derivePoApproval } from '@/lib/budget/vendors/poStatus'
+import { isValidExchangeRate, roundExchangeRate } from '@/lib/budget/vendors/poCurrency'
+import { roundMoneyOrNull } from '@/lib/money/roundMoney'
 
 const TABLE = 'vendor_purchase_orders'
 
@@ -18,7 +21,10 @@ function rowToVendorPurchaseOrder(r: Record<string, unknown>): VendorPurchaseOrd
     issue_date: (r.issue_date as string | null) ?? null,
     due_date: (r.due_date as string | null) ?? null,
     amount: r.amount != null ? coerceNumber(r.amount, 0) : null,
+    currency_code: (r.currency_code as string | null) ?? null,
+    exchange_rate: r.exchange_rate != null ? coerceNumber(r.exchange_rate, 0) : null,
     status: (r.status as PurchaseOrderStatus) ?? 'draft',
+    // Derived from status on every write; read as stored (legacy rows were backfilled by migration 0090).
     approval: coerceBoolean(r.approval, false) ? 1 : 0,
     notes: (r.notes as string | null) ?? null,
     created_at: r.created_at as string,
@@ -68,10 +74,29 @@ const EDITABLE_KEYS = [
   'issue_date',
   'due_date',
   'amount',
+  'currency_code',
+  'exchange_rate',
   'status',
-  'approval',
   'notes',
 ] as const
+
+/**
+ * Normalises a PO's currency pair: NULL currency (production currency) carries no rate; a foreign
+ * currency needs a positive locked rate (rounded to 6dp). Throws otherwise.
+ */
+function normaliseCurrencyPair(
+  currencyCode: string | null | undefined,
+  exchangeRate: number | null | undefined
+): { currency_code: string | null; exchange_rate: number | null } {
+  const code = currencyCode?.trim().toUpperCase() || null
+  if (code == null) return { currency_code: null, exchange_rate: null }
+  if (!isValidExchangeRate(exchangeRate)) {
+    throw new Error(`An exchange rate is required for a PO in ${code}`)
+  }
+  const rate = roundExchangeRate(exchangeRate)
+  if (!(rate > 0)) throw new Error(`An exchange rate is required for a PO in ${code}`)
+  return { currency_code: code, exchange_rate: rate }
+}
 
 export type CreateVendorPurchaseOrderData = {
   production_id: string
@@ -80,9 +105,13 @@ export type CreateVendorPurchaseOrderData = {
   description?: string | null
   issue_date?: string | null
   due_date?: string | null
+  /** PO value in the PO's own currency (excl. tax). Rounded to 2dp on write. */
   amount?: number | null
+  /** NULL / omitted = production currency. */
+  currency_code?: string | null
+  /** 1 unit of PO currency in production currency, locked on the PO. Required with a currency. */
+  exchange_rate?: number | null
   status?: PurchaseOrderStatus
-  approval?: number
   notes?: string | null
 }
 
@@ -96,10 +125,13 @@ export function buildCreateVendorPurchaseOrderStatements(
   data: CreateVendorPurchaseOrderData
 ): Array<{ sql: string; bindValues: unknown[] }> {
   const status = data.status ?? 'draft'
-  const approval = coerceBoolean(data.approval ?? 0, false)
+  // `approval` is derived from status, never user-set.
+  const approval = derivePoApproval(status)
+  const amount = roundMoneyOrNull(data.amount)
+  const currency = normaliseCurrencyPair(data.currency_code, data.exchange_rate)
   const insert = {
-    sql: `INSERT INTO ${TABLE} (id, production_id, vendor_id, po_number, description, issue_date, due_date, amount, status, approval, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    sql: `INSERT INTO ${TABLE} (id, production_id, vendor_id, po_number, description, issue_date, due_date, amount, currency_code, exchange_rate, status, approval, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
     bindValues: [
       id,
       data.production_id,
@@ -108,7 +140,9 @@ export function buildCreateVendorPurchaseOrderStatements(
       data.description ?? null,
       data.issue_date ?? null,
       data.due_date ?? null,
-      data.amount ?? null,
+      amount,
+      currency.currency_code,
+      currency.exchange_rate,
       status,
       approval,
       data.notes ?? null,
@@ -120,7 +154,7 @@ export function buildCreateVendorPurchaseOrderStatements(
     entity: TABLE,
     entityId: id,
     operation: 'create',
-    payloadJson: JSON.stringify({ ...data, id, status, approval }),
+    payloadJson: JSON.stringify({ ...data, id, amount, ...currency, status, approval }),
   })
   return [insert, outbox]
 }
@@ -128,7 +162,7 @@ export function buildCreateVendorPurchaseOrderStatements(
 /**
  * Creates a vendor purchase order. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
  * so the INSERT and outbox row are in the same transaction.
- * production_id, vendor_id, and po_number are required. status defaults to 'draft', approval to 0.
+ * production_id, vendor_id, and po_number are required. status defaults to 'draft'; `approval` is derived from status.
  */
 export async function createVendorPurchaseOrder(
   data: CreateVendorPurchaseOrderData
@@ -153,9 +187,60 @@ export type UpdateVendorPurchaseOrderPatch = Partial<
   Pick<VendorPurchaseOrder, (typeof EDITABLE_KEYS)[number]>
 >
 
+/** Patch as persisted: rounded amount, normalised currency pair and the derived `approval`. */
+function normalisePatch(patch: UpdateVendorPurchaseOrderPatch): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...patch }
+  if (patch.amount !== undefined) out.amount = roundMoneyOrNull(patch.amount)
+  if (patch.currency_code !== undefined || patch.exchange_rate !== undefined) {
+    // Currency and rate are only meaningful together, so a patch touching either must carry both.
+    if (patch.currency_code === undefined || patch.exchange_rate === undefined) {
+      throw new Error('currency_code and exchange_rate must be updated together')
+    }
+    Object.assign(out, normaliseCurrencyPair(patch.currency_code, patch.exchange_rate))
+  }
+  if (patch.status !== undefined) out.approval = derivePoApproval(patch.status)
+  return out
+}
+
+/**
+ * Returns statements to update a vendor purchase order for use in executeBatch.
+ * Does not include BEGIN/COMMIT. Returns empty array if patch has no keys.
+ */
+export function buildUpdateVendorPurchaseOrderStatements(
+  poId: string,
+  ts: string,
+  patch: UpdateVendorPurchaseOrderPatch
+): Array<{ sql: string; bindValues: unknown[] }> {
+  const cols: string[] = []
+  const vals: unknown[] = []
+  let i = 1
+  const persisted = normalisePatch(patch)
+  for (const k of [...EDITABLE_KEYS, 'approval'] as const) {
+    if (persisted[k] !== undefined) {
+      cols.push(`${k} = $${i++}`)
+      vals.push(persisted[k])
+    }
+  }
+  if (cols.length === 0) return []
+  cols.push(`updated_at = $${i}`)
+  vals.push(ts, poId)
+  const update = {
+    sql: `UPDATE ${TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1} AND deleted_at IS NULL`,
+    bindValues: vals,
+  }
+  const outbox = outboxStatementForRow({
+    entity: TABLE,
+    entityId: poId,
+    operation: 'update',
+    payloadJson: JSON.stringify(persisted),
+  })
+  return [update, outbox]
+}
+
 /**
  * Updates a vendor purchase order. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
  * so the UPDATE and outbox row are in the same transaction.
+ * To change `amount` with an audit trail use `amendPurchaseOrderAmount` instead.
  */
 export async function updateVendorPurchaseOrder(
   poId: string,
@@ -163,20 +248,8 @@ export async function updateVendorPurchaseOrder(
 ): Promise<VendorPurchaseOrder> {
   const db = await getDb()
   const ts = now()
-  const cols: string[] = []
-  const vals: unknown[] = []
-  let i = 1
-  for (const k of EDITABLE_KEYS) {
-    if (patch[k] !== undefined) {
-      cols.push(`${k} = $${i++}`)
-      if (k === 'approval') {
-        vals.push(coerceBoolean(patch[k], false))
-      } else {
-        vals.push(patch[k])
-      }
-    }
-  }
-  if (cols.length === 0) {
+  const updateStatements = buildUpdateVendorPurchaseOrderStatements(poId, ts, patch)
+  if (updateStatements.length === 0) {
     const rows = await db.select<Record<string, unknown>[]>(
       `SELECT * FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL`,
       [poId]
@@ -184,20 +257,9 @@ export async function updateVendorPurchaseOrder(
     if (rows.length === 0) throw new Error(`Vendor purchase order not found: ${poId}`)
     return rowToVendorPurchaseOrder(rows[0]!)
   }
-  cols.push(`updated_at = $${i}`)
-  vals.push(ts, poId)
   const statements: Array<{ sql: string; bindValues: unknown[] }> = [
     { sql: 'BEGIN', bindValues: [] },
-    {
-      sql: `UPDATE ${TABLE} SET ${cols.join(', ')} WHERE id = $${i + 1} AND deleted_at IS NULL`,
-      bindValues: vals,
-    },
-    outboxStatementForRow({
-      entity: TABLE,
-      entityId: poId,
-      operation: 'update',
-      payloadJson: JSON.stringify(patch),
-    }),
+    ...updateStatements,
     { sql: 'COMMIT', bindValues: [] },
   ]
   await runInSerializedTransaction(async () => {
@@ -249,4 +311,11 @@ export function vendorPurchaseOrdersQueryKey(
 /** Query key for a single purchase order: ['vendor-purchase-order', poId] */
 export function vendorPurchaseOrderQueryKey(poId: string): readonly [string, string] {
   return ['vendor-purchase-order', poId]
+}
+
+/** Query key for every purchase order in a production: ['vendor-purchase-orders-production', productionId] */
+export function vendorPurchaseOrdersByProductionQueryKey(
+  productionId: string
+): readonly [string, string] {
+  return ['vendor-purchase-orders-production', productionId]
 }

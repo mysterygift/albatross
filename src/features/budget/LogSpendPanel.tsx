@@ -17,9 +17,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { uuid } from '@/lib/db/client'
 import { riskWatchQueryKey } from '@/lib/budget/vendors/riskWatch'
 import { typedExpenseRegistry, getTypedExpenseConfig } from '@/lib/budget/transactions/registry'
-import { createTypedExpense } from '@/lib/db/repositories/createTypedExpense'
+import type { CreateTypedExpenseParams } from '@/lib/db/repositories/createTypedExpense'
 import type { ExpenseTransactionType } from '@/lib/db/types'
 import type { BudgetAccount } from '@/lib/db/types'
 import type { ExpenseViewContext, FormatAmount, LogSpendEditorHandle } from '@/features/budget/typed-expense-views/types'
@@ -28,22 +29,18 @@ import { computeDraftExpenseAmount } from '@/lib/budget/computeDraftExpenseAmoun
 import { getProductionBudgetFeatures } from '@/lib/db/repositories/taxCredits'
 import { listVatReclaimRates, validateExpenseVatReclaim } from '@/lib/db/repositories/vatReclaim'
 import { buildVatReclaimRateMap, computeExpenseVatReclaim } from '@/lib/budget/vatReclaim'
-import {
-  ExpenseVendorFinanceSection,
-  emptyExpenseVendorFinanceDraft,
-} from '@/features/budget/vendors/ExpenseVendorFinanceSection'
+import { ExpenseDocumentMatch } from '@/features/budget/vendors/ExpenseDocumentMatch'
 import { getVendorById } from '@/lib/db/repositories/vendors'
 import {
-  linkExpenseVendorFinance,
+  createExpenseWithFinance,
+  emptyExpenseVendorFinanceDraft,
   type ExpenseVendorFinanceDraft,
-  isExpenseVendorFinanceDraftEmpty,
+  isExpenseReceiptDraftEmpty,
+  validateExpenseVendorFinanceDraft,
 } from '@/lib/db/vendorFinanceDocumentService'
-import { vendorInvoicesQueryKey } from '@/lib/db/repositories/vendorInvoices'
-import { vendorPurchaseOrdersQueryKey } from '@/lib/db/repositories/vendorPurchaseOrders'
-import {
-  vendorInvoiceLinksByExpenseQueryKey,
-  vendorPurchaseOrderLinksByExpenseQueryKey,
-} from '@/lib/db/repositories/vendorFinanceLinks'
+import { invalidateExpenseFinanceQueries } from '@/lib/budget/vendors/invalidateVendorFinanceQueries'
+import { PO_MATCHABLE_TRANSACTION_TYPES } from '@/lib/budget/expenseFinanceFlags'
+import { toast } from '@/components/ui/sonner'
 
 const emptyVatReclaim = (): ExpenseVatReclaimDraft => ({
   vat_reclaimed_amount: null,
@@ -66,12 +63,6 @@ const TRANSACTION_TYPE_HELPER: Record<ExpenseTransactionType, string> = {
   allow: 'Use for provisional allocations where final cost is not yet known.',
   deposit: 'Use for refundable or non-refundable deposits.',
 }
-
-const VENDOR_FINANCE_TRANSACTION_TYPES: ExpenseTransactionType[] = [
-  'purchase',
-  'rental',
-  'deposit',
-]
 
 export type LogSpendPanelProps = {
   open: boolean
@@ -106,6 +97,8 @@ export function LogSpendPanel({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [formKey, setFormKey] = useState(0)
   const saveAndAddAnotherRef = useRef(false)
+  // Stable per save attempt: a retry after a failed/ambiguous save reuses it so no duplicate expense is created.
+  const expenseIdRef = useRef(uuid())
   const [taxCreditAllocations, setTaxCreditAllocations] = useState<ExpenseTaxCreditDraft[]>([])
   const [vatRatePercent, setVatRatePercent] = useState<number | null>(null)
   const [vatReclaim, setVatReclaim] = useState<ExpenseVatReclaimDraft>(emptyVatReclaim)
@@ -113,6 +106,8 @@ export function LogSpendPanel({
     emptyExpenseVendorFinanceDraft()
   )
   const [logSpendVendorId, setLogSpendVendorId] = useState<string | null>(null)
+  // Live amount from the typed editor (the saved draft only updates on submit); feeds PO balances and tax fields.
+  const [liveAmount, setLiveAmount] = useState<number | null>(null)
 
   const editorRef = useRef<LogSpendEditorHandle>(null)
   const queryClient = useQueryClient()
@@ -155,51 +150,46 @@ export function LogSpendPanel({
       date?: string
       vatRatePercent?: number | null
       taxCreditAllocations?: Array<{ tax_credit_scheme_id: string; qualifying_amount: number }>
-      vatReclaim?: Parameters<typeof createTypedExpense>[0]['vatReclaim']
+      vatReclaim?: CreateTypedExpenseParams['vatReclaim']
+      expenseId: string
       vendorFinanceDraft: ExpenseVendorFinanceDraft
       vendorCompanyName: string
     }) => {
-      const expense = await createTypedExpense(variables)
-      if (
-        !isExpenseVendorFinanceDraftEmpty(variables.vendorFinanceDraft) &&
-        expense.vendor_id
-      ) {
-        await linkExpenseVendorFinance({
-          expenseId: expense.id,
-          productionId: variables.productionId,
-          vendorId: expense.vendor_id,
-          vendorCompanyName: variables.vendorCompanyName,
-          productionCurrency,
-          draft: variables.vendorFinanceDraft,
+      // One transaction: expense + PO links + invoice link/upload. A retry reuses variables.expenseId,
+      // so a failed or repeated save can never leave or create a duplicate expense.
+      const { vendorFinanceDraft, ...expenseVariables } = variables
+      return createExpenseWithFinance({
+        ...expenseVariables,
+        finance: vendorFinanceDraft,
+        productionCurrency,
+      })
+    },
+    onSuccess: (result, variables) => {
+      const data = result.expense
+      // Mismatch warnings never block the save; surface them once it has gone through.
+      if (result.warnings.length > 0) {
+        toast.warning('Spend saved with PO warnings', {
+          description: result.warnings.map((w) => w.message).join(' '),
         })
       }
-      return expense
-    },
-    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['expenses', variables.productionId] })
       queryClient.invalidateQueries({ queryKey: ['budget-item-expense-links', variables.productionId, revisionId] })
       queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(variables.productionId, revisionId) })
       queryClient.invalidateQueries({ queryKey: ['expense-with-details', data.id] })
       queryClient.invalidateQueries({ queryKey: ['expense-tax-allocations-production', variables.productionId] })
-      if (data.vendor_id) {
-        queryClient.invalidateQueries({
-          queryKey: vendorInvoicesQueryKey(variables.productionId, data.vendor_id),
-        })
-        queryClient.invalidateQueries({
-          queryKey: vendorPurchaseOrdersQueryKey(variables.productionId, data.vendor_id),
-        })
-        queryClient.invalidateQueries({
-          queryKey: vendorInvoiceLinksByExpenseQueryKey(data.id),
-        })
-        queryClient.invalidateQueries({
-          queryKey: vendorPurchaseOrderLinksByExpenseQueryKey(data.id),
-        })
-      }
+      invalidateExpenseFinanceQueries(queryClient, {
+        productionId: variables.productionId,
+        expenseId: data.id,
+        vendorId: data.vendor_id,
+        poIds: result.poIds,
+        invoiceIds: result.invoiceId ? [result.invoiceId] : [],
+      })
       if (variables.transactionType === 'allow') {
         queryClient.invalidateQueries({ queryKey: ['allow-expense-details', variables.productionId] })
       }
       setSaveError(null)
       setVendorFinanceDraft(emptyExpenseVendorFinanceDraft())
+      expenseIdRef.current = uuid()
       if (saveAndAddAnotherRef.current) {
         setDraftByType((prev) => {
           const next = { ...prev }
@@ -234,6 +224,7 @@ export function LogSpendPanel({
       setVatReclaim(emptyVatReclaim())
       setVendorFinanceDraft(emptyExpenseVendorFinanceDraft())
       setLogSpendVendorId(null)
+      setLiveAmount(null)
       setSaveError(null)
     }
     onOpenChange(next)
@@ -290,6 +281,11 @@ export function LogSpendPanel({
     ]
   )
 
+  // PO matching needs a vendor field, so only vendor-type expenses offer it; receipts apply to every type.
+  const allowPoMatching = Boolean(
+    selectedTransactionType && PO_MATCHABLE_TRANSACTION_TYPES.includes(selectedTransactionType)
+  )
+
   const canSave = Boolean(selectedAccountId && selectedTransactionType && hasEditableType)
   const isSaving = createMutation.isPending
 
@@ -313,6 +309,7 @@ export function LogSpendPanel({
       return
     }
     setLogSpendVendorId(null)
+    setLiveAmount(null)
     setVendorFinanceDraft(emptyExpenseVendorFinanceDraft())
     setSelectedTransactionType(nextType)
   }
@@ -320,6 +317,7 @@ export function LogSpendPanel({
   const confirmTypeSwitch = () => {
     if (pendingTypeSwitch == null) return
     setLogSpendVendorId(null)
+    setLiveAmount(null)
     setVendorFinanceDraft(emptyExpenseVendorFinanceDraft())
     setSelectedTransactionType(pendingTypeSwitch.nextType)
     setPendingTypeSwitch(null)
@@ -348,21 +346,19 @@ export function LogSpendPanel({
         return
       }
     }
-    if (!isExpenseVendorFinanceDraftEmpty(vendorFinanceDraft)) {
-      if (
-        vendorFinanceDraft.invoiceMode === 'upload' &&
-        !vendorFinanceDraft.uploadInvoice?.invoice_number?.trim()
-      ) {
-        setSaveError('Invoice number is required when uploading a new invoice')
-        return
-      }
-      if (
-        vendorFinanceDraft.invoiceMode === 'existing' &&
-        !vendorFinanceDraft.existingInvoiceId
-      ) {
-        setSaveError('Select an existing invoice or choose a different invoice option')
-        return
-      }
+    // PO / invoice matching needs the vendor (and a vendor-type expense); a receipt does not.
+    const financeDraft: ExpenseVendorFinanceDraft =
+      allowPoMatching && logSpendVendorId
+        ? vendorFinanceDraft
+        : { ...emptyExpenseVendorFinanceDraft(), receipt: vendorFinanceDraft.receipt }
+    const finance: ExpenseVendorFinanceDraft = {
+      ...financeDraft,
+      receipt: isExpenseReceiptDraftEmpty(financeDraft.receipt) ? null : financeDraft.receipt,
+    }
+    const financeError = validateExpenseVendorFinanceDraft(finance)
+    if (financeError) {
+      setSaveError(financeError)
+      return
     }
     setDraftByType((prev) => ({ ...prev, [selectedTransactionType]: details }))
     createMutation.mutate({
@@ -374,7 +370,8 @@ export function LogSpendPanel({
       vatRatePercent: vatOn ? vatRatePercent : null,
       taxCreditAllocations: budgetFeatures?.tax_credits_enabled ? taxCreditAllocations : [],
       vatReclaim: vatOn ? vatReclaim : undefined,
-      vendorFinanceDraft,
+      expenseId: expenseIdRef.current,
+      vendorFinanceDraft: finance,
       vendorCompanyName: logSpendVendor?.company_name ?? 'Vendor',
     })
   }
@@ -397,12 +394,6 @@ export function LogSpendPanel({
     pendingTypeSwitch?.nextType != null
       ? typedExpenseRegistry[pendingTypeSwitch.nextType].label
       : null
-
-  const showVendorFinanceSection = Boolean(
-    logSpendVendorId &&
-      selectedTransactionType &&
-      VENDOR_FINANCE_TRANSACTION_TYPES.includes(selectedTransactionType)
-  )
 
   return (
     <>
@@ -476,6 +467,24 @@ export function LogSpendPanel({
               </div>
             </section>
 
+            {/* PO & documents: near the top so POs / proof are chosen before the details */}
+            {selectedTransactionType && (
+              <section className="px-6 py-4 border-b border-border">
+                <ExpenseDocumentMatch
+                  productionId={productionId}
+                  vendorId={logSpendVendorId}
+                  onVendorChange={(id) => editorRef.current?.setVendorId?.(id)}
+                  expenseAmount={liveAmount}
+                  productionCurrency={productionCurrency}
+                  format={format}
+                  draft={vendorFinanceDraft}
+                  onDraftChange={setVendorFinanceDraft}
+                  mode="create"
+                  allowPoMatching={allowPoMatching}
+                />
+              </section>
+            )}
+
             {/* Form section */}
             <section className="px-6 py-5 flex-1 min-h-0">
               <Label className="text-muted-foreground text-xs uppercase tracking-wider">
@@ -500,31 +509,17 @@ export function LogSpendPanel({
                       hideFooter
                       editorRef={editorRef}
                       onVendorIdChange={setLogSpendVendorId}
+                      onAmountChange={setLiveAmount}
                     />
                   </div>
                 ) : null}
               </div>
 
-              {showVendorFinanceSection && logSpendVendorId && (
-                <div className="mt-4">
-                  <ExpenseVendorFinanceSection
-                    productionId={productionId}
-                    vendorId={logSpendVendorId}
-                    vendorCompanyName={logSpendVendor?.company_name ?? 'Vendor'}
-                    productionCurrency={productionCurrency}
-                    mode="create"
-                    format={format}
-                    draft={vendorFinanceDraft}
-                    onDraftChange={setVendorFinanceDraft}
-                  />
-                </div>
-              )}
-
               {(budgetFeatures?.tax_credits_enabled || budgetFeatures?.vat_tracking_enabled) && (
                 <div className="mt-4">
                   <ExpenseTaxFields
                     productionId={productionId}
-                    expenseAmount={previewAmount}
+                    expenseAmount={liveAmount ?? previewAmount}
                     transactionType={selectedTransactionType}
                     value={taxCreditAllocations}
                     onChange={setTaxCreditAllocations}

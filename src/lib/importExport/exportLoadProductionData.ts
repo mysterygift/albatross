@@ -74,6 +74,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     floatExpenseLinks,
     vendorInvoiceExpenses,
     vendorPurchaseOrderExpenses,
+    vendorPurchaseOrderAmendments,
     equipment,
     equipmentLists,
     equipmentListItems,
@@ -83,6 +84,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     costReportGroupAccounts,
     productionTotalAccounts,
     documents,
+    expenseReceipts,
     cueSheets,
     callSheets,
     scriptDocuments,
@@ -309,6 +311,12 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
+      `SELECT a.* FROM vendor_purchase_order_amendments a
+       INNER JOIN vendor_purchase_orders po ON po.id = a.vendor_purchase_order_id AND po.production_id = $1 AND po.deleted_at IS NULL
+       WHERE a.deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
       `SELECT * FROM equipment WHERE production_id = $1 AND deleted_at IS NULL`,
       [$1]
     ),
@@ -352,6 +360,13 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     ),
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM documents WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT r.* FROM expense_receipts r
+       INNER JOIN expenses e ON e.id = r.expense_id AND e.production_id = $1 AND e.deleted_at IS NULL
+       INNER JOIN documents d ON d.id = r.document_id AND d.production_id = $1 AND d.deleted_at IS NULL
+       WHERE r.deleted_at IS NULL`,
       [$1]
     ),
     db.select<Record<string, unknown>[]>(
@@ -432,6 +447,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     float_expense_links: asRows(floatExpenseLinks),
     vendor_invoice_expenses: asRows(vendorInvoiceExpenses),
     vendor_purchase_order_expenses: asRows(vendorPurchaseOrderExpenses),
+    vendor_purchase_order_amendments: asRows(vendorPurchaseOrderAmendments),
     equipment: asRows(equipment),
     equipment_lists: asRows(equipmentLists),
     equipment_list_items: asRows(equipmentListItems),
@@ -441,6 +457,7 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     cost_report_group_accounts: asRows(costReportGroupAccounts),
     production_total_accounts: asRows(productionTotalAccounts),
     documents: asRows(documents),
+    expense_receipts: asRows(expenseReceipts),
     cue_sheets: asRows(cueSheets),
     call_sheets: asRows(callSheets),
     script_documents: asRows(scriptDocuments),

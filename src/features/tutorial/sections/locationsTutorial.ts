@@ -24,7 +24,7 @@ export const locationsFlow: TutorialFlow = {
     {
       id: 'save-location',
       title: 'Save the location',
-      body: 'Enter a name and booked status, then save.',
+      body: 'Enter a name and address (both required), choose a booked status, then save.',
       instruction: 'Fill in the form in the open dialog and save it.',
       requires: { kind: 'event', event: 'location.created' },
       hint: 'Save the location in the open dialog to continue.',

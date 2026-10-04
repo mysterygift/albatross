@@ -25,7 +25,6 @@ const NUMERIC_COLUMN_ALLOWLIST = new Set([
   'actual_cost',
   'matched_amount',
   'rate',
-  'permit_fee',
   'location_fee',
   'replacement_value',
   'sort_index',

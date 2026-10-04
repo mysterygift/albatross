@@ -16,6 +16,11 @@ import {
   type FloatSummaryRow,
 } from '@/lib/budget/floatSummary'
 import { cn } from '@/lib/utils'
+import {
+  formatMissingReceiptsSummary,
+  type FloatReceiptCoverage,
+  type ReceiptCoverage,
+} from '@/lib/budget/receiptStatus'
 import type { PettyCashFloatReconciliationStatus } from '@/lib/db/types'
 import {
   computeFloatReminderSeverity,
@@ -93,6 +98,18 @@ function FloatRowReminderHints({
   )
 }
 
+function ReceiptCoverageCell({ coverage }: { coverage: ReceiptCoverage | undefined }) {
+  if (!coverage || coverage.total === 0) return <span className="text-muted-foreground">—</span>
+  if (coverage.missing === 0) {
+    return <span className="text-green-700 dark:text-green-500 text-sm">All {coverage.total} ok</span>
+  }
+  return (
+    <span className="text-amber-700 dark:text-amber-400 text-sm tabular-nums">
+      {coverage.missing} of {coverage.total} missing
+    </span>
+  )
+}
+
 export type FloatReconciliationOverviewProps = {
   summary: FloatSummaryForProduction
   /** Shown when all floats share one currency; used only for headline totals hint. */
@@ -103,6 +120,8 @@ export type FloatReconciliationOverviewProps = {
   onReconcile: (row: FloatSummaryRow) => void
   /** When true (e.g. /budget?floats=outstanding), turn on the unreconciled filter once. */
   activateActionableFilter?: boolean
+  /** Receipt coverage of the expenses matched to floats; omit (or null while loading) to hide receipt status. */
+  receiptCoverage?: FloatReceiptCoverage | null
 }
 
 export function FloatReconciliationOverview({
@@ -112,6 +131,7 @@ export function FloatReconciliationOverview({
   budgetLineLabel,
   onReconcile,
   activateActionableFilter = false,
+  receiptCoverage = null,
 }: FloatReconciliationOverviewProps) {
   const [filterActionable, setFilterActionable] = useState(false)
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(() => new Set())
@@ -168,6 +188,21 @@ export function FloatReconciliationOverview({
       {summary.hasMixedCurrencies && (
         <p className="text-xs text-amber-700 dark:text-amber-500 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
           Floats use multiple currencies. Headline totals sum numeric amounts; use the table for per-float figures.
+        </p>
+      )}
+
+      {receiptCoverage && receiptCoverage.overall.total > 0 && (
+        <p
+          data-testid="float-receipt-summary"
+          className={cn(
+            'text-sm rounded-md border px-3 py-2',
+            receiptCoverage.overall.missing > 0
+              ? 'border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200'
+              : 'border-border bg-muted/20 text-muted-foreground'
+          )}
+        >
+          {formatMissingReceiptsSummary(receiptCoverage.overall)}
+          {receiptCoverage.overall.missing > 0 && ' — open Reconcile on a float to attach them.'}
         </p>
       )}
 
@@ -232,13 +267,14 @@ export function FloatReconciliationOverview({
               <TableHead className="text-right">Matched</TableHead>
               <TableHead className="text-right">Remaining</TableHead>
               <TableHead>Status</TableHead>
+              {receiptCoverage && <TableHead>Receipts</TableHead>}
               <TableHead className="w-[100px] text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {displayRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground text-sm py-8">
+                <TableCell colSpan={receiptCoverage ? 9 : 8} className="text-center text-muted-foreground text-sm py-8">
                   No floats in this view. Clear the filter to see all floats.
                 </TableCell>
               </TableRow>
@@ -268,6 +304,11 @@ export function FloatReconciliationOverview({
                   <TableCell>
                     <FloatReconciliationStatusBadge status={row.status} />
                   </TableCell>
+                  {receiptCoverage && (
+                    <TableCell>
+                      <ReceiptCoverageCell coverage={receiptCoverage.byFloatId[row.floatId]} />
+                    </TableCell>
+                  )}
                   <TableCell className="text-right">
                     <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => onReconcile(row)}>
                       Reconcile
@@ -346,6 +387,11 @@ export function FloatReconciliationOverview({
                             <span className="block font-medium truncate">{r.personName}</span>
                             <p className="text-muted-foreground truncate mt-0.5">{budgetLineLabel(r)}</p>
                             <FloatRowReminderHints row={r} format={format} />
+                            {receiptCoverage?.byFloatId[r.floatId]?.missing ? (
+                              <p className="mt-0.5 text-amber-700 dark:text-amber-400">
+                                Receipts: <ReceiptCoverageCell coverage={receiptCoverage.byFloatId[r.floatId]} />
+                              </p>
+                            ) : null}
                           </span>
                           <div className="flex shrink-0 flex-col items-stretch sm:items-end gap-1 sm:pt-0.5">
                             <span className="tabular-nums text-right">

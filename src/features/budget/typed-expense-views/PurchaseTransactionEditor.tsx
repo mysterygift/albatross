@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { VendorPicker } from '@/components/vendors/VendorPicker'
 import { ValidatedField } from '@/components/budget/ValidatedField'
 import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
-import { hasMaxTwoDecimalPlaces, POSITIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
+import { POSITIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import { parsePurchaseDetails } from '@/lib/budget/transactions/purchase'
 import type { PurchaseDetails } from '@/lib/budget/transactions/purchase'
 import { ExpenseEditorFooter } from '../expense-shared'
@@ -28,8 +28,7 @@ const purchaseEditSchema = z.object({
       z
         .number()
         .finite(POSITIVE_MONEY_MESSAGE)
-        .positive(POSITIVE_MONEY_MESSAGE)
-        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+        .positive(POSITIVE_MONEY_MESSAGE),
     ])
     .superRefine((val, ctx) => {
       if (val === '') {
@@ -76,6 +75,7 @@ export function PurchaseTransactionEditor({
   hideFooter,
   editorRef,
   onVendorIdChange,
+  onAmountChange,
 }: TypedExpenseEditProps<PurchaseDetails>) {
   const productionId = context.productionId
   const locations = context.locations ?? []
@@ -129,12 +129,19 @@ export function PurchaseTransactionEditor({
 
   useImperativeHandle(editorRef, () => ({
     submit: () => form.handleSubmit((data) => onSave(toPurchaseDetails(data)))(),
+    setVendorId: (id) => form.setValue('vendor_id', id ?? '', { shouldDirty: true }),
   }), [form, onSave])
 
   const watchedVendorId = form.watch('vendor_id')
   useEffect(() => {
     onVendorIdChange?.(watchedVendorId?.trim() ? watchedVendorId.trim() : null)
   }, [watchedVendorId, onVendorIdChange])
+
+  const watchedAmount = form.watch('amount')
+  useEffect(() => {
+    const n = watchedAmount === '' ? null : Number(watchedAmount)
+    onAmountChange?.(n != null && Number.isFinite(n) && n > 0 ? n : null)
+  }, [watchedAmount, onAmountChange])
 
   const isService = !!form.watch('is_service_purchase')
   const errors = form.formState.errors

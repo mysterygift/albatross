@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import type { Expense } from '@/lib/db/types'
 
 type ExpenseDetailHeaderProps = {
@@ -6,6 +8,8 @@ type ExpenseDetailHeaderProps = {
   formatAmount: (amount: number, currency: string) => { formatted: string }
   productionCurrency: string
   transactionTypeLabel?: string
+  /** Status badges (e.g. "No PO" / "No proof") shown under the date. */
+  badges?: ReactNode
 }
 
 export function ExpenseDetailHeader({
@@ -14,6 +18,7 @@ export function ExpenseDetailHeader({
   formatAmount,
   productionCurrency,
   transactionTypeLabel,
+  badges,
 }: ExpenseDetailHeaderProps) {
   return (
     <div className="rounded-md border border-border bg-muted/20 p-3">
@@ -21,6 +26,7 @@ export function ExpenseDetailHeader({
         <div>
           <p className="text-sm font-medium">{accountLabel}</p>
           <p className="text-xs text-muted-foreground">{expense.date}</p>
+          {badges != null && <div className="mt-1.5 empty:hidden">{badges}</div>}
           {transactionTypeLabel != null && transactionTypeLabel !== '' && (
             <p className="text-xs text-muted-foreground mt-1">Transaction type: {transactionTypeLabel}</p>
           )}

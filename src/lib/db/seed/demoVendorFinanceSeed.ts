@@ -9,6 +9,7 @@
 import { executeBatch, getDb, runInSerializedTransaction } from '../client'
 import { buildCreateTaskStatements } from '../repositories/tasks'
 import { IDS } from './constants'
+import { derivePoApproval } from '@/lib/budget/vendors/poStatus'
 
 export type DemoVendorFinanceIdSource = {
   vendorPO: (n: number) => string
@@ -59,7 +60,6 @@ type DemoPODef = {
   due_offset: number
   amount: number
   status: 'draft' | 'issued' | 'approved' | 'closed' | 'cancelled'
-  approval: number
   notes: string
 }
 
@@ -82,16 +82,16 @@ const DEMO_INVOICE_LIST: DemoInvoiceDef[] = [
 ]
 
 const DEMO_PO_LIST: DemoPODef[] = [
-  { vendorCompany: 'Panavision London', po_number: 'PO-PL-001', description: 'Camera package – principal photography week 1', issue_offset: 1, due_offset: 2, amount: 12500, status: 'approved', approval: 1, notes: 'Approved camera rental package' },
-  { vendorCompany: 'Panavision London', po_number: 'PO-PL-002', description: 'Camera package – week 2 extension', issue_offset: 8, due_offset: 9, amount: 11800, status: 'issued', approval: 0, notes: 'Awaiting final sign-off from production' },
-  { vendorCompany: 'Lumen Grip & Light', po_number: 'PO-LG-001', description: 'Lighting package rental', issue_offset: 1, due_offset: 2, amount: 7750, status: 'closed', approval: 1, notes: 'Closed against delivered rental' },
-  { vendorCompany: 'Lumen Grip & Light', po_number: 'PO-LG-002', description: 'Grip package rental', issue_offset: 9, due_offset: 10, amount: 8200, status: 'approved', approval: 1, notes: 'Grip support for second week' },
-  { vendorCompany: 'Crown Unit Catering', po_number: 'PO-CUC-001', description: 'Unit catering block booking', issue_offset: 3, due_offset: 4, amount: 16200, status: 'approved', approval: 1, notes: 'Catering provision for main unit block' },
-  { vendorCompany: 'Regent Stays Hospitality', po_number: 'PO-RSH-001', description: 'Cast hotel block', issue_offset: 2, due_offset: 3, amount: 22000, status: 'issued', approval: 0, notes: 'Awaiting approval on final rooming list' },
-  { vendorCompany: 'Borough Film Locations', po_number: 'PO-BFL-001', description: 'Mint building location fee', issue_offset: 1, due_offset: 5, amount: 25000, status: 'approved', approval: 1, notes: 'Main location booking' },
-  { vendorCompany: 'The Post Yard', po_number: 'PO-TPY-001', description: 'Editing suite booking', issue_offset: 40, due_offset: 44, amount: 12800, status: 'draft', approval: 0, notes: 'Draft hold on offline edit booking' },
-  { vendorCompany: 'DCP Lab UK', po_number: 'PO-DCP-001', description: 'DCP and delivery materials', issue_offset: 90, due_offset: 94, amount: 3500, status: 'approved', approval: 1, notes: 'Delivery package for premiere and distributor' },
-  { vendorCompany: 'Costume House London', po_number: 'PO-CH-001', description: 'Costume hire for principals', issue_offset: 1, due_offset: 2, amount: 12000, status: 'cancelled', approval: 0, notes: 'Superseded by revised costume pull' },
+  { vendorCompany: 'Panavision London', po_number: 'PO-PL-001', description: 'Camera package – principal photography week 1', issue_offset: 1, due_offset: 2, amount: 12500, status: 'approved', notes: 'Approved camera rental package' },
+  { vendorCompany: 'Panavision London', po_number: 'PO-PL-002', description: 'Camera package – week 2 extension', issue_offset: 8, due_offset: 9, amount: 11800, status: 'issued', notes: 'Awaiting final sign-off from production' },
+  { vendorCompany: 'Lumen Grip & Light', po_number: 'PO-LG-001', description: 'Lighting package rental', issue_offset: 1, due_offset: 2, amount: 7750, status: 'closed', notes: 'Closed against delivered rental' },
+  { vendorCompany: 'Lumen Grip & Light', po_number: 'PO-LG-002', description: 'Grip package rental', issue_offset: 9, due_offset: 10, amount: 8200, status: 'approved', notes: 'Grip support for second week' },
+  { vendorCompany: 'Crown Unit Catering', po_number: 'PO-CUC-001', description: 'Unit catering block booking', issue_offset: 3, due_offset: 4, amount: 16200, status: 'approved', notes: 'Catering provision for main unit block' },
+  { vendorCompany: 'Regent Stays Hospitality', po_number: 'PO-RSH-001', description: 'Cast hotel block', issue_offset: 2, due_offset: 3, amount: 22000, status: 'issued', notes: 'Awaiting approval on final rooming list' },
+  { vendorCompany: 'Borough Film Locations', po_number: 'PO-BFL-001', description: 'Mint building location fee', issue_offset: 1, due_offset: 5, amount: 25000, status: 'approved', notes: 'Main location booking' },
+  { vendorCompany: 'The Post Yard', po_number: 'PO-TPY-001', description: 'Editing suite booking', issue_offset: 40, due_offset: 44, amount: 12800, status: 'draft', notes: 'Draft hold on offline edit booking' },
+  { vendorCompany: 'DCP Lab UK', po_number: 'PO-DCP-001', description: 'DCP and delivery materials', issue_offset: 90, due_offset: 94, amount: 3500, status: 'approved', notes: 'Delivery package for premiere and distributor' },
+  { vendorCompany: 'Costume House London', po_number: 'PO-CH-001', description: 'Costume hire for principals', issue_offset: 1, due_offset: 2, amount: 12000, status: 'cancelled', notes: 'Superseded by revised costume pull' },
 ]
 
 /** Invoice index (0-based) → DEMO_EXPENSES index (0-based) for invoice↔expense link. */
@@ -160,7 +160,7 @@ export async function seedDemoVendorFinance(
           addDaysLocal(startDate, po.due_offset),
           po.amount,
           po.status,
-          po.approval,
+          derivePoApproval(po.status), // approval is derived from status
           po.notes,
           ts,
           ts,

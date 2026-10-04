@@ -966,6 +966,30 @@ pub fn run() {
             sql: include_str!("../migrations/0087_sync_v2_foundation.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 88,
+            description: "vendor_po_allocations_and_amendments",
+            sql: include_str!("../migrations/0088_vendor_po_allocations_and_amendments.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 89,
+            description: "expense_receipts",
+            sql: include_str!("../migrations/0089_expense_receipts.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 90,
+            description: "vendor_po_currency_and_derived_approval",
+            sql: include_str!("../migrations/0090_vendor_po_currency_and_derived_approval.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 91,
+            description: "locations_contact_drop_permit_fee",
+            sql: include_str!("../migrations/0091_locations_contact_drop_permit_fee.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

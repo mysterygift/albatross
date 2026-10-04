@@ -15,6 +15,7 @@ import type { GlobalSearchResult, PreviewField } from '@/features/search/types'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
 import { requireProjectViewAccess } from '@/lib/access/projectAccessService'
+import { formatPoAmount } from '@/lib/budget/vendors/poCurrency'
 
 function joinSearchText(parts: Array<string | null | undefined>): string {
   return parts
@@ -194,6 +195,9 @@ export function useGlobalSearchIndex(
           location.name,
           location.address,
           location.booked_status,
+          location.contact_name,
+          location.contact_email,
+          location.contact_phone,
         ]),
         to: `/locations?highlight=${location.id}`,
         preview: {
@@ -204,9 +208,11 @@ export function useGlobalSearchIndex(
             { label: 'Address', value: location.address },
             { label: 'what3words', value: location.what3words },
             { label: 'Parking', value: location.parking_info },
-            { label: 'Permit fee', value: money(location.permit_fee) },
             { label: 'Location fee', value: money(location.location_fee) },
             { label: 'Availability', value: location.availability_constraints },
+            { label: 'Contact', value: location.contact_name },
+            { label: 'Contact email', value: location.contact_email },
+            { label: 'Contact phone', value: location.contact_phone },
           ]),
         },
       })
@@ -381,10 +387,12 @@ export function useGlobalSearchIndex(
             { label: 'PO number', value: po.po_number },
             { label: 'Vendor', value: vendorName },
             { label: 'Status', value: po.status },
-            { label: 'Amount', value: money(po.amount) },
+            {
+              label: 'Amount (excl. tax)',
+              value: po.amount == null ? null : formatPoAmount(po, po.amount, { productionCurrency: currencyCode, format }),
+            },
             { label: 'Issue date', value: formatDate(po.issue_date) },
             { label: 'Due date', value: formatDate(po.due_date) },
-            { label: 'Approval', value: po.approval === 1 ? 'Approved' : 'Not approved' },
             { label: 'Description', value: po.description },
           ]),
         },

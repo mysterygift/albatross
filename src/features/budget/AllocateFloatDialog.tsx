@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ValidatedField } from '@/components/budget/ValidatedField'
 import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
-import { hasMaxTwoDecimalPlaces, POSITIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
+import { POSITIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import {
   Select,
   SelectContent,
@@ -45,9 +45,6 @@ const schema = z.object({
     .union([z.null(), z.number()])
     .refine((v): v is number => v != null && Number.isFinite(v) && v > 0, {
       message: POSITIVE_MONEY_MESSAGE,
-    })
-    .refine((v): v is number => v != null && hasMaxTwoDecimalPlaces(v), {
-      message: 'Amount must have at most 2 decimal places',
     }),
   currency: z.string().min(1, 'Currency is required'),
   issued_date: z.string().min(1, 'Issued date is required'),

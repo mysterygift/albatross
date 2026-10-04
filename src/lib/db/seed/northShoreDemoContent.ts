@@ -28,9 +28,11 @@ export type NorthShoreLocationSeed = {
   booked_status: 'unbooked' | 'hold' | 'booked' | 'wrap'
   address: string
   availability_constraints: string | null
-  permit_fee: number | null
   location_fee: number | null
   notes: string | null
+  contact_name?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
 }
 
 /** Seven canonical coastal Italian bases (linked from scenes via `locationIndex`). */
@@ -40,16 +42,17 @@ export const NORTH_SHORE_LOCATIONS: NorthShoreLocationSeed[] = [
     booked_status: 'booked',
     address: 'Località Prevo, 19016 Monterosso al Mare SP, Italy',
     availability_constraints: 'Wooden access road; tech scout before first company move. Quiet hours 22:00-07:00.',
-    permit_fee: 280,
     location_fee: 1850,
     notes: 'Terraced vineyard cabin above Monterosso. Power: 32A distro from unit generator.',
+    contact_name: 'Marco Ferrari',
+    contact_email: 'marco.ferrari@example.com',
+    contact_phone: '+39 0187 555 0142',
   },
   {
     name: "Ship's Deck",
     booked_status: 'booked',
     address: 'Molo Piano di Sorrento, 80063 Piano di Sorrento NA, Italy',
     availability_constraints: 'Harbour master call 48h before; no drone without port authority clearance.',
-    permit_fee: 640,
     location_fee: 4200,
     notes: 'Berth for 35m support yacht. Zodiac transfer for camera from floating dock.',
   },
@@ -58,7 +61,6 @@ export const NORTH_SHORE_LOCATIONS: NorthShoreLocationSeed[] = [
     booked_status: 'hold',
     address: 'Mercato Annonario, Lungomare Vittorio Veneto, 17024 Finale Ligure SV, Italy',
     availability_constraints: 'Saturday market peak 08:00-13:00; background clearance via comune.',
-    permit_fee: 450,
     location_fee: null,
     notes: 'Covered hall + palm-lined esplanade for exterior reverses.',
   },
@@ -67,7 +69,6 @@ export const NORTH_SHORE_LOCATIONS: NorthShoreLocationSeed[] = [
     booked_status: 'booked',
     address: 'Spiaggia del Cannone, Via Krupp, 80073 Capri NA, Italy',
     availability_constraints: 'Night shoot window approved Fri-Sun only; turtle nesting signage respected.',
-    permit_fee: 520,
     location_fee: 3600,
     notes: 'Tide check D-1. Bonfire SFX cold only; marine safety RIB on standby.',
   },
@@ -76,7 +77,6 @@ export const NORTH_SHORE_LOCATIONS: NorthShoreLocationSeed[] = [
     booked_status: 'booked',
     address: 'Via Aurelia Nord, 54033 Marina di Carrara MS, Italy (coastal SS1 staging / process)',
     availability_constraints: 'Process trailer base at Carrara lorry park; highway permits for tow rig.',
-    permit_fee: 380,
     location_fee: 900,
     notes: 'Hero picture car: side-mount and Russian arm support from Livorno vendor.',
   },
@@ -85,7 +85,6 @@ export const NORTH_SHORE_LOCATIONS: NorthShoreLocationSeed[] = [
     booked_status: 'hold',
     address: 'Hotel Excelsior, Lungomare Marconi, 30126 Lido di Venezia VE, Italy',
     availability_constraints: 'Guest floor quiet corridor; wet-down after 23:00 only with hotel engineering.',
-    permit_fee: null,
     location_fee: 2400,
     notes: 'Corner suite bathroom dressed as shared rental flat. Steam generator on GFI circuit.',
   },
@@ -94,7 +93,6 @@ export const NORTH_SHORE_LOCATIONS: NorthShoreLocationSeed[] = [
     booked_status: 'booked',
     address: 'Liceo Scientifico Galilei, Viale Italia, 57123 Livorno LI, Italy',
     availability_constraints: 'Term-time: weekends and holidays only. Minors: tutor + safeguarding on unit.',
-    permit_fee: 200,
     location_fee: 3200,
     notes: 'Main corridor + science lab holding. Fire alarm bypass 09:00-18:00 signed with headteacher.',
   },

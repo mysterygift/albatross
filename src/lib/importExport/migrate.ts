@@ -132,11 +132,79 @@ const migrateV3ToV4: ApfFileMigrator = {
   },
 }
 
+/**
+ * v5 adds `vendor_purchase_order_amendments` and `vendor_purchase_order_expenses.allocated_amount`.
+ * Older payloads get an empty amendments table (injected before validation); a missing
+ * `allocated_amount` imports as NULL, which means "whole expense" for single-PO expenses.
+ */
+const migrateV4ToV5: ApfFileMigrator = {
+  fromVersion: 4,
+  toVersion: 5,
+  migrate: (ctx) => {
+    const next = cloneCtx(ctx)
+    next.manifest.formatVersion = 5
+    next.data.formatVersion = 5
+    if (!Array.isArray(next.data.tables.vendor_purchase_order_amendments)) {
+      next.data.tables.vendor_purchase_order_amendments = []
+    }
+    return next
+  },
+}
+
+/**
+ * v6 adds `expense_receipts` (receipt metadata keyed to an `expense_receipt` document).
+ * Older payloads get an empty table (injected before validation).
+ */
+const migrateV5ToV6: ApfFileMigrator = {
+  fromVersion: 5,
+  toVersion: 6,
+  migrate: (ctx) => {
+    const next = cloneCtx(ctx)
+    next.manifest.formatVersion = 6
+    next.data.formatVersion = 6
+    if (!Array.isArray(next.data.tables.expense_receipts)) {
+      next.data.tables.expense_receipts = []
+    }
+    return next
+  },
+}
+
+/**
+ * v7 adds `vendor_purchase_orders.currency_code` / `exchange_rate` (NULL = production currency) and makes
+ * `approval` a value DERIVED from `status` (approved / closed => 1). Older rows import with NULL currency;
+ * POs that were ticked approved but still draft / issued become `approved` (matches SQLite migration 0090).
+ */
+const migrateV6ToV7: ApfFileMigrator = {
+  fromVersion: 6,
+  toVersion: 7,
+  migrate: (ctx) => {
+    const next = cloneCtx(ctx)
+    next.manifest.formatVersion = 7
+    next.data.formatVersion = 7
+    const pos = next.data.tables.vendor_purchase_orders
+    if (Array.isArray(pos)) {
+      next.data.tables.vendor_purchase_orders = pos.map((row) => {
+        const r = { ...(row as Record<string, unknown>) }
+        const ticked = r.approval === 1 || r.approval === true || r.approval === '1'
+        if (ticked && (r.status === 'draft' || r.status === 'issued')) r.status = 'approved'
+        r.approval = r.status === 'approved' || r.status === 'closed' ? 1 : 0
+        if (r.currency_code === undefined) r.currency_code = null
+        if (r.exchange_rate === undefined) r.exchange_rate = null
+        return r
+      }) as typeof pos
+    }
+    return next
+  },
+}
+
 /** Registered migrators for older `.apf` payloads (sequential v → v+1). */
 export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [
   migrateV1ToV2,
   migrateV2ToV3,
   migrateV3ToV4,
+  migrateV4ToV5,
+  migrateV5ToV6,
+  migrateV6ToV7,
 ]
 
 /**

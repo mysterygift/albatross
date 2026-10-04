@@ -21,6 +21,17 @@ import { listVendorPurchaseOrdersByProduction } from '@/lib/db/repositories/vend
 import { listVendors } from '@/lib/db/repositories/vendors'
 import { listExpensesByProduction } from '@/lib/db/repositories/budget'
 import { listBudgetItemExpenseLinksByProduction } from '@/lib/db/repositories/budgetReconciliation'
+import { listReceiptStatusByExpenseIds } from '@/lib/db/repositories/expenseReceipts'
+import { listPoCommitmentLinksByProduction } from '@/lib/db/repositories/vendorFinanceLinks'
+import { computePoCommitments, toPoCommitmentInput } from '@/lib/budget/vendors/poMatching'
+import { poAmountInProductionCurrency } from '@/lib/budget/vendors/poCurrency'
+import { formatMoney } from '@/lib/money/formatMoney'
+import { roundMoney } from '@/lib/money/roundMoney'
+import {
+  noPoSpendItems,
+  noProofSpendItems,
+  overCommittedPoItems,
+} from '@/lib/budget/vendors/riskWatchSignals'
 
 const INVOICES_DUE_SOON_DAYS = 7
 const RISK_WATCH_CAP = 20
@@ -102,8 +113,15 @@ function poAwaitingApprovalItems(
     category: 'vendor_finance' as const,
     severity: 'warning' as const,
     title: `PO ${po.po_number} awaiting approval — ${vendorNameById.get(po.vendor_id) ?? 'Vendor'}`,
-    subtitle: po.issue_date ? `Issued ${formatDueDate(po.issue_date)}` : null,
-    amount: po.amount,
+    subtitle:
+      [
+        po.issue_date ? `Issued ${formatDueDate(po.issue_date)}` : null,
+        // `amount` below is in the production currency; show the original for foreign-currency POs.
+        po.currency_code && po.amount != null ? `${formatMoney(roundMoney(po.amount), po.currency_code)} original` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || null,
+    amount: po.amount == null ? null : poAmountInProductionCurrency(po, po.amount),
     href: `/budget/vendors/${po.vendor_id}`,
     sortDate: po.issue_date ?? po.created_at,
   }))
@@ -253,7 +271,7 @@ function getVendorsWithOpenPOExposure(
   for (const po of open) {
     const cur = byVendor.get(po.vendor_id) ?? { count: 0, total: 0 }
     cur.count += 1
-    cur.total += po.amount ?? 0
+    cur.total = roundMoney(cur.total + poAmountInProductionCurrency(po, po.amount ?? 0))
     byVendor.set(po.vendor_id, cur)
   }
   return [...byVendor.entries()]
@@ -284,20 +302,24 @@ function severityOrder(s: RiskWatchItem['severity']): number {
 
 /**
  * Fetches production invoices, POs, vendors, expenses, and links; builds vendor-finance Risk Watch items.
- * Includes Stage 2A (overdue, due soon, PO approval) and Stage 2B (large unpaid, unmatched spend, inactivity, open PO exposure).
+ * Includes Stage 2A (overdue, due soon, PO approval), Stage 2B (large unpaid, unmatched spend, inactivity,
+ * open PO exposure) and PO / proof signals (spend with no PO matched, spend with no proof, POs over-committed).
  * Sorted by severity (critical first) then by sortDate descending (null last). Capped at RISK_WATCH_CAP.
  */
 export async function getVendorFinanceRiskItems(
   productionId: string,
   revisionId?: string
 ): Promise<RiskWatchItem[]> {
-  const [invoices, pos, vendors, expenses, links] = await Promise.all([
+  const [invoices, pos, vendors, expenses, links, poLinks] = await Promise.all([
     listVendorInvoicesByProduction(productionId),
     listVendorPurchaseOrdersByProduction(productionId),
     listVendors(productionId),
     listExpensesByProduction(productionId),
     listBudgetItemExpenseLinksByProduction(productionId, revisionId),
+    listPoCommitmentLinksByProduction(productionId),
   ])
+  // Batched (chunked) proof lookup for every expense; no per-expense queries.
+  const proofByExpenseId = await listReceiptStatusByExpenseIds(expenses.map((e) => e.id))
 
   const vendorNameById = new Map(vendors.map((v) => [v.id, v.company_name]))
   const today = new Date().toISOString().slice(0, 10)
@@ -318,6 +340,14 @@ export async function getVendorFinanceRiskItems(
   const unmatchedVendors = getVendorsWithUnmatchedSpend(expenses, links)
   const openPOExposure = getVendorsWithOpenPOExposure(pos, OPEN_PO_EXPOSURE_THRESHOLD)
 
+  const commitments = computePoCommitments(
+    pos.map(toPoCommitmentInput),
+    poLinks
+  )
+  const poLinkCountByExpenseId: Record<string, number> = {}
+  for (const l of poLinks) poLinkCountByExpenseId[l.expenseId] = (poLinkCountByExpenseId[l.expenseId] ?? 0) + 1
+  const vendorIdsWithPos = new Set(pos.filter((po) => po.status !== 'cancelled').map((po) => po.vendor_id))
+
   const items: RiskWatchItem[] = [
     ...overdueInvoiceItems(invoices, vendorNameById),
     ...dueSoonInvoiceItems(invoices, today, vendorNameById),
@@ -325,6 +355,9 @@ export async function getVendorFinanceRiskItems(
     ...largeUnpaidInvoiceItems(invoices, vendorNameById, excludeFromLargeUnpaid),
     ...vendorUnmatchedSpendItems(unmatchedVendors, vendorNameById),
     ...vendorOpenPOExposureItems(openPOExposure, vendorNameById),
+    ...overCommittedPoItems({ pos, commitments, vendorNameById }),
+    ...noPoSpendItems({ expenses, poLinkCountByExpenseId, vendorIdsWithPos, vendorNameById }),
+    ...noProofSpendItems({ expenses, proofByExpenseId, vendorNameById }),
     ...vendorInactivityItems(
       inactiveVendorIds,
       vendorNameById,
@@ -342,6 +375,11 @@ export async function getVendorFinanceRiskItems(
   })
 
   return items.slice(0, RISK_WATCH_CAP)
+}
+
+/** Prefix matching every Risk Watch query of a production (any revision): ['risk-watch', productionId]. */
+export function riskWatchBaseQueryKey(productionId: string): readonly [string, string] {
+  return ['risk-watch', productionId]
 }
 
 /** Query key for Risk Watch items: ['risk-watch', productionId, revisionId?]. */

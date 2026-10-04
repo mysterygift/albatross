@@ -49,6 +49,13 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import type { Location } from '@/lib/db/types'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
+import { documentsQueryKey } from '@/lib/documents/persistDocument'
+import type { PickedFileBytes } from '@/lib/documents/pickAndPersistProductionDocument'
+import {
+  LocationDocumentsSection,
+  persistPendingLocationDocuments,
+} from './LocationDocumentsSection'
 
 const feeSchema = z
   .union([z.coerce.number(), z.literal('')])
@@ -60,19 +67,41 @@ const feeSchema = z
       .optional()
   )
 
+const emailRefine = (v: string | undefined) =>
+  !v || v.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
+
 const locationSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().trim().min(1, 'Name is required'),
   booked_status: z.enum(['unbooked', 'hold', 'booked', 'wrap']),
-  address: z.string().optional(),
+  address: z.string().trim().min(1, 'Address is required'),
   what3words: z.string().optional(),
   parking_info: z.string().optional(),
   availability_constraints: z.string().optional(),
-  permit_fee: feeSchema,
   location_fee: feeSchema,
   notes: z.string().optional(),
+  contact_name: z.string().optional(),
+  contact_email: z.string().optional().refine(emailRefine, { message: 'Invalid email' }),
+  contact_phone: z.string().optional(),
 })
 
 type LocationForm = z.infer<typeof locationSchema>
+
+type PendingLocationFiles = { permits: PickedFileBytes[]; releases: PickedFileBytes[] }
+
+function trimOrNull(s: string | undefined): string | null {
+  const t = s?.trim()
+  return t ? t : null
+}
+
+/** Trim the contact fields and store blanks as null. */
+function normalizeContact(d: LocationForm) {
+  return {
+    ...d,
+    contact_name: trimOrNull(d.contact_name),
+    contact_email: trimOrNull(d.contact_email),
+    contact_phone: trimOrNull(d.contact_phone),
+  }
+}
 
 export function LocationsPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
@@ -81,6 +110,7 @@ export function LocationsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const highlightedId = useHighlightParam()
   const queryClient = useQueryClient()
 
@@ -92,20 +122,45 @@ export function LocationsPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (d: LocationForm) =>
-      createLocation({
+    mutationFn: async ({ data, pending }: { data: LocationForm; pending: PendingLocationFiles }) => {
+      const location = await createLocation({
         production_id: currentProductionId!,
-        ...d,
-      }),
-    onSuccess: () => {
+        ...normalizeContact(data),
+      })
+      // The location now exists, so a failed upload must not fail (and re-run) the create.
+      try {
+        await persistPendingLocationDocuments(
+          currentProductionId!,
+          location.id,
+          DOCUMENT_ENTITY_TYPES.permit,
+          pending.permits
+        )
+        await persistPendingLocationDocuments(
+          currentProductionId!,
+          location.id,
+          DOCUMENT_ENTITY_TYPES.locationRelease,
+          pending.releases
+        )
+        return null
+      } catch (err) {
+        return err instanceof Error ? err.message : 'Upload failed'
+      }
+    },
+    onSuccess: (uploadError) => {
       queryClient.invalidateQueries({ queryKey: ['locations'] })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
+      setNotice(
+        uploadError
+          ? `Location saved, but some files could not be uploaded (${uploadError}). Edit the location to add them again.`
+          : null
+      )
       setOpen(false)
     },
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<LocationForm> }) =>
-      updateLocation(id, data),
+    mutationFn: ({ id, data }: { id: string; data: LocationForm }) =>
+      updateLocation(id, normalizeContact(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['locations'] })
       setEditingId(null)
@@ -117,7 +172,10 @@ export function LocationsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteLocation,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['locations'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['locations'] })
+      queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId ?? '') })
+    },
   })
 
   const columns: ColumnDef<Location>[] = [
@@ -130,6 +188,24 @@ export function LocationsPage() {
       cell: ({ getValue }) => {
         const v = getValue() as number | null
         return v != null ? format(v, productionCurrency).formatted : '—'
+      },
+    },
+    {
+      id: 'contact',
+      header: 'Contact',
+      cell: ({ row }) => {
+        const { contact_name, contact_email, contact_phone } = row.original
+        if (!contact_name && !contact_email && !contact_phone) return '—'
+        return (
+          <div className="space-y-0.5">
+            {contact_name && <div>{contact_name}</div>}
+            {(contact_email || contact_phone) && (
+              <div className="text-xs text-muted-foreground">
+                {[contact_email, contact_phone].filter(Boolean).join(' · ')}
+              </div>
+            )}
+          </div>
+        )
       },
     },
     {
@@ -177,10 +253,11 @@ export function LocationsPage() {
               <DialogTrigger asChild>
                 <Button data-tutorial="locations-add"><Plus className="mr-2 size-4" />Add location</Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-h-[85vh] overflow-y-auto">
                 <LocationForm
+                  productionId={currentProductionId}
                   defaultValues={{ name: '', booked_status: 'unbooked' }}
-                  onSubmit={createMutation.mutate}
+                  onSubmit={(data, pending) => createMutation.mutate({ data, pending })}
                   onCancel={() => setOpen(false)}
                   isLoading={createMutation.isPending}
                 />
@@ -189,6 +266,14 @@ export function LocationsPage() {
           </>
         }
       />
+      {notice && (
+        <p className="flex items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <span>{notice}</span>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setNotice(null)}>
+            Dismiss
+          </Button>
+        </p>
+      )}
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -223,11 +308,12 @@ export function LocationsPage() {
       </div>
       {editingId && (
         <Dialog open={!!editingId} onOpenChange={() => { setUpdateError(null); setEditingId(null) }}>
-          <DialogContent>
+          <DialogContent className="max-h-[85vh] overflow-y-auto">
             {updateError && (
               <p className="text-sm text-destructive">{updateError}</p>
             )}
             <LocationForm
+              productionId={currentProductionId}
               defaultValues={locations.find((l) => l.id === editingId)!}
               onSubmit={(d) => updateMutation.mutate({ id: editingId, data: d })}
               onCancel={() => setEditingId(null)}
@@ -241,13 +327,15 @@ export function LocationsPage() {
 }
 
 function LocationForm({
+  productionId,
   defaultValues,
   onSubmit,
   onCancel,
   isLoading,
 }: {
+  productionId: string
   defaultValues: Partial<Location>
-  onSubmit: (d: LocationForm) => void
+  onSubmit: (d: LocationForm, pending: PendingLocationFiles) => void
   onCancel: () => void
   isLoading: boolean
 }) {
@@ -260,20 +348,26 @@ function LocationForm({
       what3words: defaultValues.what3words ?? '',
       parking_info: defaultValues.parking_info ?? '',
       availability_constraints: defaultValues.availability_constraints ?? '',
-      permit_fee: defaultValues.permit_fee ?? undefined,
       location_fee: defaultValues.location_fee ?? undefined,
       notes: defaultValues.notes ?? '',
+      contact_name: defaultValues.contact_name ?? '',
+      contact_email: defaultValues.contact_email ?? '',
+      contact_phone: defaultValues.contact_phone ?? '',
     },
   })
+  const [pending, setPending] = useState<PendingLocationFiles>({ permits: [], releases: [] })
   return (
     <>
       <DialogHeader>
         <DialogTitle>{defaultValues.id ? 'Edit location' : 'Add location'}</DialogTitle>
       </DialogHeader>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit((d) => onSubmit(d, pending))} className="space-y-4">
         <div className="space-y-1.5">
-          <Label>Name</Label>
+          <Label>Name<span className="text-destructive">*</span></Label>
           <Input {...form.register('name')} />
+          {form.formState.errors.name && (
+            <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label>Booked status</Label>
@@ -291,8 +385,11 @@ function LocationForm({
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>Address</Label>
+          <Label>Address<span className="text-destructive">*</span></Label>
           <Input {...form.register('address')} />
+          {form.formState.errors.address && (
+            <p className="text-sm text-destructive">{form.formState.errors.address.message}</p>
+          )}
         </div>
         <div className="space-y-1.5">
             <Label>what3words</Label>
@@ -306,21 +403,51 @@ function LocationForm({
           <Label>Availability constraints</Label>
           <Input {...form.register('availability_constraints')} />
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>Permit fee</Label>
-            <Input type="number" step={0.01} min={0} {...form.register('permit_fee')} />
+        <div className="space-y-1.5">
+          <Label>Location fee</Label>
+          <Input type="number" step={0.01} min={0} {...form.register('location_fee')} />
+          <p className="text-sm text-muted-foreground">Fee must be 0 or greater.</p>
+        </div>
+        <div className="space-y-3">
+          <Label>Location contact</Label>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">Name</Label>
+              <Input {...form.register('contact_name')} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">Phone</Label>
+              <Input type="tel" {...form.register('contact_phone')} />
+            </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Location fee</Label>
-            <Input type="number" step={0.01} min={0} {...form.register('location_fee')} />
+            <Label className="text-muted-foreground">Email</Label>
+            <Input type="email" {...form.register('contact_email')} />
+            {form.formState.errors.contact_email && (
+              <p className="text-sm text-destructive">{form.formState.errors.contact_email.message}</p>
+            )}
           </div>
         </div>
-        <p className="text-sm text-muted-foreground">Fees must be 0 or greater.</p>
         <div className="space-y-1.5">
           <Label>Notes</Label>
           <Textarea {...form.register('notes')} rows={2} />
         </div>
+        <LocationDocumentsSection
+          productionId={productionId}
+          locationId={defaultValues.id ?? null}
+          entityType={DOCUMENT_ENTITY_TYPES.permit}
+          label="Permits"
+          pendingFiles={pending.permits}
+          onPendingFilesChange={(permits) => setPending((p) => ({ ...p, permits }))}
+        />
+        <LocationDocumentsSection
+          productionId={productionId}
+          locationId={defaultValues.id ?? null}
+          entityType={DOCUMENT_ENTITY_TYPES.locationRelease}
+          label="Location release forms"
+          pendingFiles={pending.releases}
+          onPendingFilesChange={(releases) => setPending((p) => ({ ...p, releases }))}
+        />
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
           <Button type="submit" disabled={isLoading}>Save</Button>

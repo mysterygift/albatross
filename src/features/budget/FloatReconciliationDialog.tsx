@@ -16,6 +16,13 @@ import { parseMoneyInput } from '@/lib/budget/fieldValidation'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ClassificationBadge } from '@/features/budget/ClassificationBadge'
 import { FloatReconciliationStatusBadge } from '@/features/budget/FloatReconciliationStatusBadge'
+import {
+  AttachReceiptButton,
+  ExpenseReceiptStatusBadge,
+  MissingReceiptsWarning,
+} from '@/features/budget/FloatReceiptStatus'
+import { useExpenseReceiptStatus } from '@/features/budget/useExpenseReceiptStatus'
+import { formatMissingReceiptsSummary, summarizeReceiptCoverage } from '@/lib/budget/receiptStatus'
 import { listExpensesByProduction } from '@/lib/db/repositories/budget'
 import { listAccounts } from '@/lib/db/repositories/budgetAccounts'
 import { listBudgetItemExpenseLinksByProduction } from '@/lib/db/repositories/budgetReconciliation'
@@ -123,6 +130,17 @@ export function FloatReconciliationDialog({
       .sort((a, b) => String(b.date).localeCompare(String(a.date)))
   }, [expenses, expenseIdsLinkedToAnyFloat, budgetLinks, floatLinks])
 
+  // One batched status query for everything shown: this float's linked expenses + the candidates.
+  const receiptStatusIds = useMemo(
+    () => [...new Set([...linksForThisFloat.map((l) => l.expense_id), ...candidates.map((e) => e.id)])],
+    [linksForThisFloat, candidates]
+  )
+  const { proofByExpenseId, isLoading: receiptStatusLoading } = useExpenseReceiptStatus(
+    productionId,
+    receiptStatusIds,
+    open
+  )
+
   const allocatingNow = useMemo(() => {
     const sum = selectedExpenseIds.reduce((sum, id) => {
       const n = parseFloat(amounts[id] ?? '')
@@ -130,6 +148,18 @@ export function FloatReconciliationDialog({
     }, 0)
     return roundMoney(sum)
   }, [selectedExpenseIds, amounts])
+
+  // Receipt check over what this float would hold after saving: existing matches + the current selection.
+  const receiptCoverage = useMemo(
+    () =>
+      summarizeReceiptCoverage(
+        [...linksForThisFloat.map((l) => l.expense_id), ...selectedExpenseIds],
+        proofByExpenseId
+      ),
+    [linksForThisFloat, selectedExpenseIds, proofByExpenseId]
+  )
+  const missingReceiptsMessage =
+    !receiptStatusLoading && receiptCoverage.missing > 0 ? formatMissingReceiptsSummary(receiptCoverage) : null
 
   const sameCurrency = Boolean(
     pettyCashFloat && pettyCashFloat.currency === productionCurrency
@@ -324,6 +354,9 @@ export function FloatReconciliationDialog({
                           <div className="flex flex-wrap items-center gap-2 mt-1">
                             <ClassificationBadge type={expense.transaction_type as LineItemType | null} />
                             <span className="text-xs text-muted-foreground">{formatDateShort(expense.date)}</span>
+                            {!receiptStatusLoading && (
+                              <ExpenseReceiptStatusBadge counts={proofByExpenseId[expense.id]} />
+                            )}
                           </div>
                           <p className="text-xs text-muted-foreground mt-1">
                             {account ? `${account.code} · ${account.name}` : '—'} · Amount{' '}
@@ -381,6 +414,8 @@ export function FloatReconciliationDialog({
                 })}
               </ul>
             )}
+
+            {missingReceiptsMessage && <MissingReceiptsWarning message={`${missingReceiptsMessage}.`} />}
 
             <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2 text-sm">
               <p className="font-medium text-foreground">Summary</p>
@@ -472,6 +507,13 @@ export function FloatReconciliationDialog({
                               )}
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
+                              {!receiptStatusLoading && (
+                                <ExpenseReceiptStatusBadge counts={proofByExpenseId[link.expense_id]} />
+                              )}
+                              {!receiptStatusLoading &&
+                                !summarizeReceiptCoverage([link.expense_id], proofByExpenseId).withProof && (
+                                  <AttachReceiptButton productionId={productionId} expenseId={link.expense_id} />
+                                )}
                               <span className="tabular-nums font-medium">
                                 {format(link.matched_amount, productionCurrency).formatted}
                               </span>

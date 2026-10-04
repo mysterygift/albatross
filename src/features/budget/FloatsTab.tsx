@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { AllocateFloatDialog } from '@/features/budget/AllocateFloatDialog'
 import { FloatReconciliationDialog } from '@/features/budget/FloatReconciliationDialog'
 import { FloatReconciliationOverview } from '@/features/budget/FloatReconciliationOverview'
+import { useFloatReceiptCoverage } from '@/features/budget/useFloatReceiptCoverage'
 import type { FloatSummaryForProduction, FloatSummaryRow } from '@/lib/budget/floatSummary'
 import type { BudgetAccount, BudgetItem, Person, PettyCashFloat } from '@/lib/db/types'
 
@@ -47,6 +48,7 @@ export function FloatsTab({
 }: FloatsTabProps) {
   const [allocateOpen, setAllocateOpen] = useState(false)
   const [reconcileTarget, setReconcileTarget] = useState<PettyCashFloat | null>(null)
+  const receiptCoverage = useFloatReceiptCoverage(productionId, revisionId)
 
   const floatById = useMemo(() => new Map(productionFloats.map((f) => [f.id, f])), [productionFloats])
   const itemById = useMemo(() => new Map(budgetItems.map((i) => [i.id, i])), [budgetItems])
@@ -78,6 +80,7 @@ export function FloatsTab({
         format={format}
         budgetLineLabel={budgetLineLabel}
         onReconcile={handleReconcile}
+        receiptCoverage={receiptCoverage}
         activateActionableFilter={activateActionableFilter}
       />
 

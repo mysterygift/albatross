@@ -90,10 +90,12 @@ All of the following are either keyed by `production_id` or hang off rows that a
 | Table | PK | Scoped by | Important FKs |
 |-------|----|-----------|---------------|
 | `vendors` | `id` | `production_id` | `productions` |
-| `vendor_purchase_orders` | `id` | `production_id` | `vendors` |
+| `vendor_purchase_orders` | `id` | `production_id` | `vendors`; `currency_code` / `exchange_rate` (nullable; NULL = production currency); `approval` derived from `status` |
 | `vendor_invoices` | `id` | `production_id` | `vendors`, `vendor_purchase_orders` (`po_id`, nullable) |
 | `vendor_invoice_expenses` | `id` | indirect | `vendor_invoices`, `expenses` |
-| `vendor_purchase_order_expenses` | `id` | indirect | `vendor_purchase_orders`, `expenses` |
+| `vendor_purchase_order_expenses` | `id` | indirect | `vendor_purchase_orders`, `expenses`; `allocated_amount` (nullable) |
+| `vendor_purchase_order_amendments` | `id` | indirect | `vendor_purchase_orders`; soft-delete `deleted_at` |
+| `expense_receipts` | `id` | indirect | `expenses`, `documents` (`document_id`; the file is a `documents` row with `entity_type = 'expense_receipt'`); soft-delete `deleted_at` |
 
 ### 2.8 Equipment registry & lists
 
@@ -193,6 +195,7 @@ Canonical order (copy for audits; code is source of truth):
 40. `budget_item_expense_links`  
 41. `vendor_invoice_expenses`  
 42. `vendor_purchase_order_expenses`  
+42b. `vendor_purchase_order_amendments`  
 43. `equipment`  
 44. `equipment_lists`  
 45. `equipment_list_items`  
@@ -202,6 +205,7 @@ Canonical order (copy for audits; code is source of truth):
 49. `cost_report_group_accounts`  
 50. `production_total_accounts`  
 51. `documents` — **files** copied and `file_path` rewritten on disk (see [§5](#5-document--file-path-audit))  
+51b. `expense_receipts`  
 52. `cue_sheets`  
 53. `call_sheets`  
 54. `script_documents`  

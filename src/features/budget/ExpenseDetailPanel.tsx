@@ -30,7 +30,9 @@ import {
 } from '@/lib/db/repositories/taxCredits'
 import { listVatReclaimRates } from '@/lib/db/repositories/vatReclaim'
 import { buildVatReclaimRateMap, computeExpenseVatReclaim } from '@/lib/budget/vatReclaim'
-import { ExpenseVendorFinanceSection } from '@/features/budget/vendors/ExpenseVendorFinanceSection'
+import { ExpenseFinanceBadges } from '@/features/budget/ExpenseFinanceBadges'
+import { useExpenseFinanceFlags } from '@/features/budget/useExpenseFinanceFlags'
+import { ExpenseFinanceEditor } from '@/features/budget/vendors/ExpenseFinanceEditor'
 
 export type ExpenseDetailPanelProps = {
   expenseWithDetails: ExpenseWithDetails | null | undefined
@@ -86,6 +88,11 @@ export function ExpenseDetailPanel({
   })
 
   const expenseId = expenseWithDetails?.expense.id
+  const flagExpenses = useMemo(
+    () => (expenseWithDetails ? [expenseWithDetails.expense] : []),
+    [expenseWithDetails]
+  )
+  const { flagsById } = useExpenseFinanceFlags(productionId, flagExpenses)
   const { data: expenseAllocations = [] } = useQuery({
     queryKey: ['expense-tax-allocations', expenseId],
     queryFn: () => listAllocationsByExpense(expenseId!),
@@ -380,6 +387,7 @@ export function ExpenseDetailPanel({
           formatAmount={format}
           productionCurrency={productionCurrency}
           transactionTypeLabel={transactionTypeLabel}
+          badges={<ExpenseFinanceBadges flags={flagsById[expense.id]} />}
         />
         <ExpenseDetailMetaGrid>
           <ExpenseDetailMetaRow
@@ -432,19 +440,13 @@ export function ExpenseDetailPanel({
             />
           )}
         <ExpenseTypedSection>{typedContent}</ExpenseTypedSection>
-        {expense.vendor_id && (
-          <ExpenseVendorFinanceSection
-            productionId={productionId}
-            vendorId={expense.vendor_id}
-            vendorCompanyName={
-              expenseWithDetails.vendor?.company_name ?? expense.vendor ?? 'Vendor'
-            }
-            productionCurrency={productionCurrency}
-            mode="edit"
-            expenseId={expense.id}
-            format={format}
-          />
-        )}
+        <ExpenseFinanceEditor
+          key={expense.id}
+          productionId={productionId}
+          expense={expense}
+          productionCurrency={productionCurrency}
+          format={format}
+        />
         {saveError && (
           <p className="text-sm text-destructive">{saveError}</p>
         )}

@@ -254,9 +254,16 @@ describe('postgres core production graph validation', () => {
         booked_status: 'hold',
         address: null,
       })
-      const updated = await updateLocation(location.id, { address: 'Pier 12, Harbor Road', permit_fee: null })
+      const updated = await updateLocation(location.id, {
+        address: 'Pier 12, Harbor Road',
+        contact_name: 'Sam Porter',
+        contact_email: 'sam@example.com',
+        contact_phone: '+44 7700 900123',
+      })
       expect(updated.address).toContain('Harbor')
-      expect(updated.permit_fee).toBeNull()
+      expect(updated.contact_name).toBe('Sam Porter')
+      expect(updated.contact_email).toBe('sam@example.com')
+      expect(updated.contact_phone).toBe('+44 7700 900123')
 
       const scene = await createScene({ production_id: production.id, scene_number: '10' })
       await linkLocationScene(location.id, scene.id)

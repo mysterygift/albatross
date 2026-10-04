@@ -77,6 +77,8 @@ import { parseMoneyInput } from '@/lib/budget/fieldValidation'
 import { Label } from '@/components/ui/label'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Receipt, AlertTriangle } from 'lucide-react'
+import { ExpenseFinanceBadges } from '@/features/budget/ExpenseFinanceBadges'
+import { useExpenseFinanceFlags } from '@/features/budget/useExpenseFinanceFlags'
 
 const LINE_ITEM_STATUS_ORDER: BudgetItemReconciliationStatus[] = ['unmatched', 'partial', 'matched', 'overspent']
 const EXPENSE_STATUS_ORDER: ExpenseReconciliationStatus[] = ['unallocated', 'partial', 'allocated']
@@ -281,6 +283,9 @@ export function ActualisationPage() {
     })
     return list
   }, [expenses, typeFilter, expenseStatusFilter, links, floatLinksByExpenseId])
+
+  // "No PO" / "No proof" badges for the listed expenses: batched, not per row.
+  const { flagsById: expenseFlagsById } = useExpenseFinanceFlags(currentProductionId ?? '', filteredExpenses)
 
   const expenseById = useMemo(() => new Map(expenses.map((e) => [e.id, e])), [expenses])
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
@@ -683,7 +688,10 @@ export function ActualisationPage() {
                       <TableCell className="max-w-[200px] truncate">{expenseDescription(expense)}</TableCell>
                       <TableCell className="text-right tabular-nums">{format(expense.amount, productionCurrency).formatted}</TableCell>
                       <TableCell>
-                        <ClassificationBadge type={expense.transaction_type} />
+                        <div className="flex flex-wrap items-center gap-1">
+                          <ClassificationBadge type={expense.transaction_type} />
+                          <ExpenseFinanceBadges flags={expenseFlagsById[expense.id]} />
+                        </div>
                       </TableCell>
                       <TableCell>
                         <ExpenseAllocationStatusBadge status={status} />

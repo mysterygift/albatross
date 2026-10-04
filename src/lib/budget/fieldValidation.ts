@@ -47,24 +47,15 @@ export function formatMoneyForInput(value: number | null | undefined): string {
   return String(value)
 }
 
+/** Fixed 2dp text for a money input (e.g. 1250 -> "1250.00"); rounds first. Empty for null. */
+export function formatMoneyFixedForInput(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return ''
+  return roundMoney(value).toFixed(2)
+}
+
 export function formatIntegerForInput(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return ''
   return String(Math.trunc(value))
-}
-
-/** True when value has at most 2 decimal places (after rounding). */
-export function hasMaxTwoDecimalPlaces(value: number): boolean {
-  return roundMoney(value) === value || Math.abs(roundMoney(value) - value) < 1e-9
-}
-
-export function moneyMaxTwoDecimalsRefine(value: number, ctx: z.RefinementCtx, path?: (string | number)[]): void {
-  if (!hasMaxTwoDecimalPlaces(value)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Amount must have at most 2 decimal places',
-      ...(path ? { path } : {}),
-    })
-  }
 }
 
 const emptyToUndefined = z.literal('').transform(() => undefined)
@@ -84,8 +75,8 @@ export function requiredPositiveMoneyField(message = POSITIVE_MONEY_MESSAGE) {
       z
         .number({ message })
         .finite(message)
-        .positive(message)
-        .refine(hasMaxTwoDecimalPlaces, { message })
+        .transform(roundMoney)
+        .pipe(z.number().positive(message))
     )
 }
 
@@ -98,8 +89,8 @@ export function optionalPositiveMoneyField(message = POSITIVE_MONEY_MESSAGE) {
       z
         .number()
         .finite(message)
-        .positive(message)
-        .refine(hasMaxTwoDecimalPlaces, { message })
+        .transform(roundMoney)
+        .pipe(z.number().positive(message))
         .nullable()
     )
 }
@@ -113,8 +104,8 @@ export function optionalNonNegativeMoneyField(message = NON_NEGATIVE_MONEY_MESSA
       z
         .number()
         .finite(message)
-        .nonnegative(message)
-        .refine(hasMaxTwoDecimalPlaces, { message })
+        .transform(roundMoney)
+        .pipe(z.number().nonnegative(message))
         .nullable()
     )
 }
@@ -142,8 +133,8 @@ export function nullablePositiveMoneySchema(message = POSITIVE_MONEY_MESSAGE) {
   return z
     .number()
     .finite(message)
-    .positive(message)
-    .refine(hasMaxTwoDecimalPlaces, { message })
+    .transform(roundMoney)
+    .pipe(z.number().positive(message))
     .nullable()
     .optional()
     .default(null)
@@ -154,8 +145,8 @@ export function nullableNonNegativeMoneySchema(message = NON_NEGATIVE_MONEY_MESS
   return z
     .number()
     .finite(message)
-    .nonnegative(message)
-    .refine(hasMaxTwoDecimalPlaces, { message })
+    .transform(roundMoney)
+    .pipe(z.number().nonnegative(message))
     .nullable()
     .optional()
     .default(null)

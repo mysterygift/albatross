@@ -28,6 +28,9 @@ export const LOCATION_PROTECTED_FIELDS = [
   'parking_info',
   'availability_constraints',
   'notes',
+  'contact_name',
+  'contact_email',
+  'contact_phone',
 ] as const
 
 export const VENDOR_PROTECTED_FIELDS = [

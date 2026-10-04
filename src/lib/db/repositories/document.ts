@@ -84,6 +84,20 @@ export function buildCreateDocumentStatements(id: string, ts: string, data: Docu
   return [insert, outbox]
 }
 
+/**
+ * Returns statements to soft-delete a document for use in executeBatch (update + outbox).
+ * Does not include BEGIN/COMMIT. Mirrors {@link deleteDocument} for atomic multi-write callers.
+ */
+export function buildDeleteDocumentStatements(id: string, ts: string): Stmt[] {
+  return [
+    {
+      sql: `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+      bindValues: [ts, ts, id],
+    },
+    outboxStatementForRow({ entity: TABLE, entityId: id, operation: 'delete', payloadJson: null }),
+  ]
+}
+
 export async function createDocument(data: DocumentInsert): Promise<Document> {
   const db = await getDb()
   const id = uuid()

@@ -415,6 +415,21 @@ CREATE TABLE exchange_rates (
   CONSTRAINT pk_exchange_rates PRIMARY KEY (id)
 );
 
+CREATE TABLE expense_receipts (
+  id UUID DEFAULT gen_random_uuid(),
+  expense_id UUID NOT NULL,
+  document_id UUID NOT NULL,
+  receipt_date DATE,
+  amount NUMERIC,
+  reference TEXT,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  deleted_at TIMESTAMPTZ,
+  CONSTRAINT pk_expense_receipts PRIMARY KEY (id),
+  CONSTRAINT fk_expense_receipts_1_document_id FOREIGN KEY (document_id) REFERENCES documents(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT fk_expense_receipts_2_expense_id FOREIGN KEY (expense_id) REFERENCES expenses(id) ON UPDATE NO ACTION ON DELETE CASCADE
+);
+
 CREATE TABLE expense_transaction_details (
   id UUID DEFAULT gen_random_uuid(),
   expense_id UUID NOT NULL,
@@ -545,7 +560,6 @@ CREATE TABLE locations (
   booked_status TEXT NOT NULL DEFAULT 'unbooked',
   address TEXT,
   availability_constraints TEXT,
-  permit_fee NUMERIC,
   location_fee NUMERIC,
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL,
@@ -553,6 +567,9 @@ CREATE TABLE locations (
   deleted_at TIMESTAMPTZ,
   what3words TEXT,
   parking_info TEXT,
+  contact_name TEXT,
+  contact_email TEXT,
+  contact_phone TEXT,
   CONSTRAINT pk_locations PRIMARY KEY (id),
   CONSTRAINT fk_locations_1_production_id FOREIGN KEY (production_id) REFERENCES productions(id) ON UPDATE NO ACTION ON DELETE CASCADE
 );
@@ -1025,11 +1042,25 @@ CREATE TABLE vendor_purchase_order_expenses (
   id UUID DEFAULT gen_random_uuid(),
   vendor_purchase_order_id UUID NOT NULL,
   expense_id UUID NOT NULL,
+  allocated_amount NUMERIC,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   CONSTRAINT pk_vendor_purchase_order_expenses PRIMARY KEY (id),
   CONSTRAINT fk_vendor_purchase_order_expenses_1_expense_id FOREIGN KEY (expense_id) REFERENCES expenses(id) ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT fk_vendor_purchase_order_expenses_2_vendor_purchase_order_id FOREIGN KEY (vendor_purchase_order_id) REFERENCES vendor_purchase_orders(id) ON UPDATE NO ACTION ON DELETE CASCADE
+);
+
+CREATE TABLE vendor_purchase_order_amendments (
+  id UUID DEFAULT gen_random_uuid(),
+  vendor_purchase_order_id UUID NOT NULL,
+  previous_amount NUMERIC,
+  new_amount NUMERIC NOT NULL,
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  deleted_at TIMESTAMPTZ,
+  CONSTRAINT pk_vendor_purchase_order_amendments PRIMARY KEY (id),
+  CONSTRAINT fk_vendor_purchase_order_amendments_1_vendor_purchase_order_id FOREIGN KEY (vendor_purchase_order_id) REFERENCES vendor_purchase_orders(id) ON UPDATE NO ACTION ON DELETE CASCADE
 );
 
 CREATE TABLE vendor_purchase_orders (
@@ -1041,6 +1072,8 @@ CREATE TABLE vendor_purchase_orders (
   issue_date DATE,
   due_date DATE,
   amount NUMERIC,
+  currency_code TEXT,
+  exchange_rate NUMERIC,
   status TEXT NOT NULL,
   approval BOOLEAN NOT NULL DEFAULT FALSE,
   notes TEXT,
@@ -1138,6 +1171,8 @@ CREATE INDEX idx_equipment_terms_production_type ON equipment_terms(production_i
 CREATE UNIQUE INDEX sqlite_autoindex_equipment_terms_2 ON equipment_terms(production_id, type, value);
 CREATE INDEX idx_exchange_rates_base_quote ON exchange_rates(base_currency, quote_currency);
 CREATE UNIQUE INDEX sqlite_autoindex_exchange_rates_2 ON exchange_rates(base_currency, quote_currency);
+CREATE UNIQUE INDEX idx_expense_receipts_document ON expense_receipts(document_id);
+CREATE INDEX idx_expense_receipts_expense ON expense_receipts(expense_id);
 CREATE INDEX idx_expense_transaction_details_expense_id ON expense_transaction_details(expense_id);
 CREATE UNIQUE INDEX sqlite_autoindex_expense_transaction_details_2 ON expense_transaction_details(expense_id);
 CREATE INDEX idx_expenses_vendor_id ON expenses(vendor_id);
@@ -1231,6 +1266,7 @@ CREATE INDEX idx_vendor_invoices_po_id ON vendor_invoices(po_id);
 CREATE INDEX idx_vendor_invoices_vendor_active ON vendor_invoices(vendor_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_vendor_invoices_vendor_id ON vendor_invoices(vendor_id);
 CREATE INDEX idx_vendor_invoices_production_id ON vendor_invoices(production_id);
+CREATE INDEX idx_vendor_po_amendments_po ON vendor_purchase_order_amendments(vendor_purchase_order_id);
 CREATE INDEX idx_vendor_po_expenses_expense ON vendor_purchase_order_expenses(expense_id);
 CREATE INDEX idx_vendor_po_expenses_po ON vendor_purchase_order_expenses(vendor_purchase_order_id);
 CREATE UNIQUE INDEX sqlite_autoindex_vendor_purchase_order_expenses_2 ON vendor_purchase_order_expenses(vendor_purchase_order_id, expense_id);

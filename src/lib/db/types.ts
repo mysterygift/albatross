@@ -80,9 +80,11 @@ export type Location = {
   what3words: string | null
   parking_info: string | null
   availability_constraints: string | null
-  permit_fee: number | null
   location_fee: number | null
   notes: string | null
+  contact_name: string | null
+  contact_email: string | null
+  contact_phone: string | null
 } & SoftDeletable
 
 export type Document = {
@@ -235,9 +237,38 @@ export type VendorPurchaseOrderExpenseLink = {
   id: string
   vendor_purchase_order_id: string
   expense_id: string
+  /**
+   * Portion of the expense charged to this PO. NULL = the whole expense amount when the
+   * expense is linked to exactly one PO; multi-PO links must carry explicit allocations.
+   */
+  allocated_amount: number | null
   created_at: string
   updated_at: string
 }
+
+/** Audit trail row written whenever a PO's current value (`amount`) is changed. */
+export type VendorPurchaseOrderAmendment = {
+  id: string
+  vendor_purchase_order_id: string
+  /** PO amount before the amendment (null if the PO had no value set). */
+  previous_amount: number | null
+  new_amount: number
+  reason: string | null
+} & SoftDeletable
+
+/**
+ * Receipt metadata for an expense. The file is the `documents` row `document_id`
+ * (`entity_type = 'expense_receipt'`, `entity_id` = expense id). Date / amount / reference are optional.
+ */
+export type ExpenseReceiptRow = {
+  id: string
+  expense_id: string
+  document_id: string
+  /** ISO date (YYYY-MM-DD) printed on the receipt. */
+  receipt_date: string | null
+  amount: number | null
+  reference: string | null
+} & SoftDeletable
 
 /** Purchase order lifecycle status. Enforced in DB via CHECK; use this union in TS. */
 export type PurchaseOrderStatus =
@@ -255,8 +286,14 @@ export type VendorPurchaseOrder = {
   description: string | null
   issue_date: string | null
   due_date: string | null
+  /** PO value in the PO's own currency (excl. tax). */
   amount: number | null
+  /** NULL = production currency. */
+  currency_code: string | null
+  /** 1 unit of PO currency in PRODUCTION currency, locked on the PO; NULL when currency_code is NULL. */
+  exchange_rate: number | null
   status: PurchaseOrderStatus
+  /** DERIVED from status (approved / closed => 1); never user-set. Kept for sync / export compat. */
   approval: number
   notes: string | null
 } & SoftDeletable

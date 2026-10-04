@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { DEPOSIT_REFUNDABLE_STATUSES } from '@/lib/budget/line-items/deposit'
-import { hasMaxTwoDecimalPlaces } from '@/lib/budget/fieldValidation'
+import { roundMoney } from '@/lib/money/roundMoney'
 
 export { DEPOSIT_REFUNDABLE_STATUSES }
 export type { DepositRefundableStatus } from '@/lib/budget/line-items/deposit'
@@ -14,7 +14,7 @@ export const depositDetailsSchema = z.object({
     .number()
     .finite()
     .positive('Deposit amount must be greater than 0')
-    .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+    .transform(roundMoney),
   vendor_id: z.string().nullable().optional().default(null),
   location_id: z.string().nullable().optional().default(null),
   notes: z.string().nullable().optional().default(null),

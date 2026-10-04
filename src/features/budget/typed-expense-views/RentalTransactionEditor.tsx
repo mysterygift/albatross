@@ -31,6 +31,7 @@ export function RentalTransactionEditor({
   hideFooter,
   editorRef,
   onVendorIdChange,
+  onAmountChange,
 }: TypedExpenseEditProps<RentalDetails>) {
   const productionId = context.productionId
   const format = context.format
@@ -76,6 +77,7 @@ export function RentalTransactionEditor({
 
   useImperativeHandle(editorRef, () => ({
     submit: () => form.handleSubmit((data) => onSave(data))(),
+    setVendorId: (id) => form.setValue('vendor_id', id, { shouldDirty: true }),
   }), [form, onSave])
 
   const watchedVendorId = form.watch('vendor_id')
@@ -87,6 +89,9 @@ export function RentalTransactionEditor({
   const computedDays = computeRentalDays(watchAll.rental_start_date ?? null, watchAll.rental_end_date ?? null)
   const effectiveDays = getEffectiveRentalDays(watchAll)
   const calculatedTotal = calculateRentalExpenseAmount(watchAll)
+  useEffect(() => {
+    onAmountChange?.(calculatedTotal != null && calculatedTotal > 0 ? calculatedTotal : null)
+  }, [calculatedTotal, onAmountChange])
   const errors = form.formState.errors
 
   return (

@@ -5,6 +5,9 @@
 import type { VendorInvoice, VendorPurchaseOrder } from '@/lib/db/types'
 import { listVendorInvoicesByProduction } from '@/lib/db/repositories/vendorInvoices'
 import { listVendorPurchaseOrdersByProduction } from '@/lib/db/repositories/vendorPurchaseOrders'
+import { poAmountInProductionCurrency } from '@/lib/budget/vendors/poCurrency'
+import { isPoAwaitingApproval } from '@/lib/budget/vendors/poStatus'
+import { sumMoney } from '@/lib/money/roundMoney'
 
 const INVOICES_DUE_SOON_DAYS = 7
 
@@ -40,11 +43,14 @@ export function getOpenVendorPurchaseOrders(pos: VendorPurchaseOrder[]): VendorP
   return pos.filter((po) => po.status !== 'closed' && po.status !== 'cancelled')
 }
 
-/** POs awaiting approval: approval = 0 and status not closed or cancelled. */
+/** POs awaiting approval: status is draft or issued (approval is derived from status). */
 export function getVendorPurchaseOrdersAwaitingApproval(pos: VendorPurchaseOrder[]): VendorPurchaseOrder[] {
-  return pos.filter(
-    (po) => po.approval === 0 && po.status !== 'closed' && po.status !== 'cancelled'
-  )
+  return pos.filter(isPoAwaitingApproval)
+}
+
+/** Total PO value in the PRODUCTION currency (each PO converted via its locked rate). */
+export function sumPurchaseOrdersInProductionCurrency(pos: VendorPurchaseOrder[]): number {
+  return sumMoney(pos.map((po) => poAmountInProductionCurrency(po, po.amount ?? 0)))
 }
 
 export type DashboardVendorFinanceData = {
@@ -80,11 +86,11 @@ export async function getDashboardVendorFinanceData(
     },
     openPOs: {
       count: openPOs.length,
-      total: openPOs.reduce((s, po) => s + (po.amount ?? 0), 0),
+      total: sumPurchaseOrdersInProductionCurrency(openPOs),
     },
     posAwaitingApproval: {
       count: awaitingApproval.length,
-      total: awaitingApproval.reduce((s, po) => s + (po.amount ?? 0), 0),
+      total: sumPurchaseOrdersInProductionCurrency(awaitingApproval),
     },
   }
 }

@@ -14,7 +14,7 @@ export const SENSITIVE_TABLES = {
     repositoryModule: '@/lib/db/repositories/person',
   },
   locations: {
-    encryptedColumns: ['name', 'address', 'what3words', 'parking_info', 'availability_constraints', 'notes'] as const,
+    encryptedColumns: ['name', 'address', 'what3words', 'parking_info', 'availability_constraints', 'notes', 'contact_name', 'contact_email', 'contact_phone'] as const,
     sortKeyColumn: 'name_sort_key',
     repositoryModule: '@/lib/db/repositories/location',
   },

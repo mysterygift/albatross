@@ -13,6 +13,7 @@ import {
 import { allowDetailsSchema, allowDetailsToJson, type AllowDetails } from '@/lib/budget/transactions/allow'
 import { depositDetailsSchema, depositDetailsToJson, type DepositDetails } from '@/lib/budget/transactions/deposit'
 import type { ExpenseVatReclaimInput } from './vatReclaim'
+import { buildReplaceExpenseTaxCreditAllocationStatements } from './taxCredits'
 
 const EXP_TABLE = 'expenses'
 const DETAILS_TABLE = 'expense_transaction_details'
@@ -27,9 +28,22 @@ export type CreateTypedExpenseParams = {
   vatRatePercent?: number | null
   taxCreditAllocations?: Array<{ tax_credit_scheme_id: string; qualifying_amount: number }>
   vatReclaim?: ExpenseVatReclaimInput
+  /**
+   * Caller-supplied expense id. Lets a caller make a save idempotent: generate the id once per
+   * form session and reuse it on retry (see createExpenseWithFinance).
+   */
+  expenseId?: string
 }
 
-function rowToExpense(r: Record<string, unknown>): Expense {
+type Stmt = { sql: string; bindValues: unknown[] }
+
+export type PreparedTypedExpense = {
+  expense: Expense
+  /** Expense + details + side-effect + outbox + tax allocation statements; NO BEGIN/COMMIT. */
+  statements: Stmt[]
+}
+
+export function rowToExpense(r: Record<string, unknown>): Expense {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
@@ -53,11 +67,13 @@ function rowToExpense(r: Record<string, unknown>): Expense {
 }
 
 /**
- * Create a new expense with typed transaction details in one atomic transaction.
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Validate a typed expense draft and build every statement needed to persist it (expense row,
+ * transaction details, location booking side effect, tax credit allocations, outbox rows),
+ * without executing anything. Lets callers compose the expense with other writes in ONE
+ * transaction (see createExpenseWithFinance). Statements exclude BEGIN/COMMIT.
  * Validates that accountId is a postable account.
  */
-export async function createTypedExpense(params: CreateTypedExpenseParams): Promise<Expense> {
+export async function prepareTypedExpense(params: CreateTypedExpenseParams): Promise<PreparedTypedExpense> {
   const {
     productionId,
     accountId,
@@ -80,7 +96,7 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
     throw new Error('Account does not belong to this production')
   }
 
-  const id = uuid()
+  const id = params.expenseId ?? uuid()
   const ts = now()
 
   let amount: number
@@ -193,80 +209,93 @@ export async function createTypedExpense(params: CreateTypedExpenseParams): Prom
     updated_at: ts,
   }
 
-  await runInSerializedTransaction(async () => {
-    const db = await getDb()
-    const statements: Array<{ sql: string; bindValues: unknown[] }> = [
-      { sql: 'BEGIN TRANSACTION', bindValues: [] },
-      {
-        sql: `INSERT INTO ${EXP_TABLE} (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, vat_rate_percent, vat_reclaimed_amount, vat_reclaim_date, vat_reclaim_reference, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-        bindValues: [
-          id,
-          productionId,
-          null,
-          accountId,
-          transactionType,
-          vendorId,
-          amount,
-          date,
-          null,
-          notes,
-          'other',
-          vatRatePercent ?? null,
-          vatReclaim?.vat_reclaimed_amount ?? null,
-          vatReclaim?.vat_reclaim_date ?? null,
-          vatReclaim?.vat_reclaim_reference?.trim() ? vatReclaim.vat_reclaim_reference.trim() : null,
-          ts,
-          ts,
-        ],
-      },
-      // expense_transaction_details: no outbox row. Sync is driven by expenses; details are subsidiary.
-      {
-        sql: `
-          INSERT INTO ${DETAILS_TABLE} (id, expense_id, transaction_type, details_json, created_at, updated_at)
-          VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT(expense_id) DO UPDATE SET
-            transaction_type = excluded.transaction_type,
-            details_json = excluded.details_json,
-            updated_at = excluded.updated_at
-        `,
-        bindValues: [uuid(), id, transactionType, detailsJson, ts, ts],
-      },
-    ]
+  const statements: Stmt[] = [
+    {
+      sql: `INSERT INTO ${EXP_TABLE} (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, vat_rate_percent, vat_reclaimed_amount, vat_reclaim_date, vat_reclaim_reference, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+      bindValues: [
+        id,
+        productionId,
+        null,
+        accountId,
+        transactionType,
+        vendorId,
+        amount,
+        date,
+        null,
+        notes,
+        'other',
+        vatRatePercent ?? null,
+        vatReclaim?.vat_reclaimed_amount ?? null,
+        vatReclaim?.vat_reclaim_date ?? null,
+        vatReclaim?.vat_reclaim_reference?.trim() ? vatReclaim.vat_reclaim_reference.trim() : null,
+        ts,
+        ts,
+      ],
+    },
+    // expense_transaction_details: no outbox row. Sync is driven by expenses; details are subsidiary.
+    {
+      sql: `
+        INSERT INTO ${DETAILS_TABLE} (id, expense_id, transaction_type, details_json, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT(expense_id) DO UPDATE SET
+          transaction_type = excluded.transaction_type,
+          details_json = excluded.details_json,
+          updated_at = excluded.updated_at
+      `,
+      bindValues: [uuid(), id, transactionType, detailsJson, ts, ts],
+    },
+  ]
 
-    if (transactionType === 'purchase' && locationId != null) {
-      statements.push({
-        sql: `UPDATE ${LOC_TABLE} SET booked_status = 'booked', updated_at = $1 WHERE id = $2 AND deleted_at IS NULL`,
-        bindValues: [ts, locationId],
-      })
-      // locations table participates in sync (see location.ts outboxPush on update); include outbox row.
-      statements.push(
-        outboxStatementForRow({
-          entity: LOC_TABLE,
-          entityId: locationId,
-          operation: 'update',
-          payloadJson: JSON.stringify({ booked_status: 'booked' }),
-        })
-      )
-    }
-
+  if (transactionType === 'purchase' && locationId != null) {
+    statements.push({
+      sql: `UPDATE ${LOC_TABLE} SET booked_status = 'booked', updated_at = $1 WHERE id = $2 AND deleted_at IS NULL`,
+      bindValues: [ts, locationId],
+    })
+    // locations table participates in sync (see location.ts outboxPush on update); include outbox row.
     statements.push(
       outboxStatementForRow({
-        entity: EXP_TABLE,
-        entityId: id,
-        operation: 'create',
-        payloadJson: JSON.stringify(expensePayload),
+        entity: LOC_TABLE,
+        entityId: locationId,
+        operation: 'update',
+        payloadJson: JSON.stringify({ booked_status: 'booked' }),
       })
     )
-    statements.push({ sql: 'COMMIT', bindValues: [] })
+  }
 
-    await executeBatch(db, statements)
+  statements.push(
+    outboxStatementForRow({
+      entity: EXP_TABLE,
+      entityId: id,
+      operation: 'create',
+      payloadJson: JSON.stringify(expensePayload),
+    })
+  )
 
-    if (taxCreditAllocations.length > 0) {
-      const { replaceExpenseTaxCreditAllocations } = await import('./taxCredits')
-      await replaceExpenseTaxCreditAllocations(id, amount, taxCreditAllocations)
-    }
+  if (taxCreditAllocations.length > 0) {
+    // Validates against the expense amount before anything is written.
+    statements.push(
+      ...buildReplaceExpenseTaxCreditAllocationStatements(id, amount, taxCreditAllocations, ts)
+    )
+  }
+
+  return { expense: rowToExpense(expensePayload), statements }
+}
+
+/**
+ * Create a new expense with typed transaction details in one atomic transaction.
+ * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Validates that accountId is a postable account.
+ */
+export async function createTypedExpense(params: CreateTypedExpenseParams): Promise<Expense> {
+  const { expense, statements } = await prepareTypedExpense(params)
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    await executeBatch(db, [
+      { sql: 'BEGIN TRANSACTION', bindValues: [] },
+      ...statements,
+      { sql: 'COMMIT', bindValues: [] },
+    ])
   })
-
-  return rowToExpense(expensePayload)
+  return expense
 }

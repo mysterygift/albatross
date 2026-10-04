@@ -90,7 +90,7 @@ import { Input } from '@/components/ui/input'
 import { ValidatedField } from '@/components/budget/ValidatedField'
 import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
 import { PercentageInput } from '@/components/budget/PercentageInput'
-import { hasMaxTwoDecimalPlaces, NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
+import { NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -121,6 +121,8 @@ import { parseAllowDetails } from '@/lib/budget/transactions/allow'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { ActualisationPage } from '@/features/budget/actualisation/page'
 import { ExpenseDetailPanel } from '@/features/budget/ExpenseDetailPanel'
+import { ExpenseFinanceBadges } from '@/features/budget/ExpenseFinanceBadges'
+import { useExpenseFinanceFlags } from '@/features/budget/useExpenseFinanceFlags'
 import { LineItemDetailPanel } from '@/features/budget/LineItemDetailPanel'
 import { FloatsTab } from '@/features/budget/FloatsTab'
 import { LogSpendPanel } from '@/features/budget/LogSpendPanel'
@@ -213,13 +215,11 @@ const itemSchema = z.object({
   estimated_cost: z
     .number()
     .finite(NON_NEGATIVE_MONEY_MESSAGE)
-    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
-    .refine(hasMaxTwoDecimalPlaces, { message: 'Estimated cost must have at most 2 decimal places' }),
+    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE),
   actual_cost: z
     .number()
     .finite(NON_NEGATIVE_MONEY_MESSAGE)
-    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
-    .refine(hasMaxTwoDecimalPlaces, { message: 'Actual cost must have at most 2 decimal places' }),
+    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE),
   vendor: z.string().optional(),
 })
 
@@ -228,8 +228,7 @@ const inlineItemSchema = z.object({
   estimated_cost: z
     .number()
     .finite(NON_NEGATIVE_MONEY_MESSAGE)
-    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
-    .refine(hasMaxTwoDecimalPlaces, { message: 'Estimated cost must have at most 2 decimal places' }),
+    .nonnegative(NON_NEGATIVE_MONEY_MESSAGE),
 })
 
 /** Rate as percentage 0–100; stored as decimal 0–1 in DB. */
@@ -1084,6 +1083,14 @@ export function BudgetPage() {
   )
   const uncodedTotal = useMemo(() => uncodedSpendTotal(expenses), [expenses])
   const uncodedList = useMemo(() => uncodedExpensesList(expenses), [expenses])
+  // "No PO" / "No proof" badges: one batched lookup for just the rows currently listed (uncoded section
+  // when expanded + the examined account's expenses), never one query per row.
+  const flaggedExpenses = useMemo(() => {
+    const rows = uncodedExpanded ? [...uncodedList] : []
+    if (examinedAccountId != null) rows.push(...expenses.filter((e) => e.account_id === examinedAccountId))
+    return rows
+  }, [uncodedExpanded, uncodedList, examinedAccountId, expenses])
+  const { flagsById: expenseFlagsById } = useExpenseFinanceFlags(currentProductionId ?? '', flaggedExpenses)
   const legacyItems = useMemo(() => legacyBudgetItemsList(items), [items])
 
   const fringeTotals = useMemo(
@@ -2177,6 +2184,7 @@ export function BudgetPage() {
                               {exp.vendor ? ` · ${exp.vendor}` : ''}
                               {exp.notes ? ` · ${exp.notes}` : ''}
                             </span>
+                            <ExpenseFinanceBadges flags={expenseFlagsById[exp.id]} className="ml-2 align-middle" />
                           </TableCell>
                           <TableCell />
                           <TableCell className="text-right">{format(exp.amount, productionCurrency).formatted}</TableCell>
@@ -2549,6 +2557,7 @@ export function BudgetPage() {
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <ClassificationBadge type={getExpenseType(e)} />
                                   <p className="text-sm">{e.date}</p>
+                                  <ExpenseFinanceBadges flags={expenseFlagsById[e.id]} />
                                 </div>
                                 <p className="text-xs text-muted-foreground truncate mt-0.5">
                                   {e.vendor ? e.vendor : '—'}

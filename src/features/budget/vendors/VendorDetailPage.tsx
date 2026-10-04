@@ -37,9 +37,34 @@ import {
   listExpenseLinkCountsByInvoiceIds,
   listExpenseLinkCountsByPurchaseOrderIds,
   getLinkedExpenseIdsForVendor,
+  listPoCommitmentLinksByPurchaseOrderIds,
   vendorInvoiceExpenseLinksQueryKey,
+  vendorPoCommitmentLinksQueryKey,
   vendorPurchaseOrderExpenseLinksQueryKey,
 } from '@/lib/db/repositories/vendorFinanceLinks'
+import {
+  amendPurchaseOrderAmount,
+  listAmendmentsByPurchaseOrderIds,
+  vendorPoAmendmentsByVendorQueryKey,
+} from '@/lib/db/repositories/vendorPurchaseOrderAmendments'
+import { computePoCommitments, toPoCommitmentInput, type PoCommitment } from '@/lib/budget/vendors/poMatching'
+import { describeAmendment } from '@/lib/budget/vendors/poAmendments'
+import {
+  formatExchangeRateForInput,
+  formatPoAmount,
+  formatPoDerivedAmount,
+  isForeignPoCurrency,
+  parseExchangeRateInput,
+  poAmountInProductionCurrency,
+  resolvePoCurrencyPair,
+  EXCHANGE_RATE_REQUIRED_MESSAGE,
+} from '@/lib/budget/vendors/poCurrency'
+import { isPoApproved } from '@/lib/budget/vendors/poStatus'
+import { PoCurrencyFields } from '@/features/budget/vendors/PoCurrencyFields'
+import { InvoiceCurrencySelect } from '@/features/budget/vendors/InvoiceCurrencySelect'
+import { INVOICE_STATUS_OPTIONS } from '@/features/budget/vendors/invoiceStatusOptions'
+import { moneyEquals, sumMoney } from '@/lib/money/roundMoney'
+import { invalidateExpenseFinanceQueries, invalidatePurchaseOrderQueries } from '@/lib/budget/vendors/invalidateVendorFinanceQueries'
 import {
   listRecentVendorActivity,
   vendorRecentActivityQueryKey,
@@ -102,12 +127,20 @@ import {
   createVendorPurchaseOrderWithDocument,
   type VendorFinanceFileInput,
 } from '@/lib/db/vendorFinanceDocumentService'
-import type { BudgetItemExpenseLink, Expense, ExpenseReconciliationStatus, VendorInvoice, VendorPurchaseOrder } from '@/lib/db/types'
-import { ArrowLeft, Pencil, Eye, FilePlus, ArchiveIcon, FileText, Link2, X, Receipt, Package, Paperclip, Globe, Trash2, Building2 } from 'lucide-react'
+import type {
+  BudgetItemExpenseLink,
+  Expense,
+  ExpenseReconciliationStatus,
+  VendorInvoice,
+  VendorPurchaseOrder,
+  VendorPurchaseOrderAmendment,
+} from '@/lib/db/types'
+import { ArrowLeft, Pencil, Eye, FilePlus, ArchiveIcon, FileText, Link2, X, Receipt, Package, Paperclip, Globe, Trash2, Building2, History } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { GlobalVendorBadge } from '@/features/budget/vendors/GlobalVendorBadge'
 import { getFileUrl, openInSystem } from '@/lib/files'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { hasMaxTwoDecimalPlaces, POSITIVE_MONEY_MESSAGE, NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
+import { POSITIVE_MONEY_MESSAGE, NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import { ValidatedField } from '@/components/budget/ValidatedField'
 import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
 
@@ -127,8 +160,7 @@ const invoiceFormSchema = z.object({
       z
         .number()
         .finite(POSITIVE_MONEY_MESSAGE)
-        .positive(POSITIVE_MONEY_MESSAGE)
-        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+        .positive(POSITIVE_MONEY_MESSAGE),
     ])
     .optional(),
   tax: z
@@ -137,8 +169,7 @@ const invoiceFormSchema = z.object({
       z
         .number()
         .finite(NON_NEGATIVE_MONEY_MESSAGE)
-        .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
-        .refine(hasMaxTwoDecimalPlaces, { message: 'Tax must have at most 2 decimal places' }),
+        .nonnegative(NON_NEGATIVE_MONEY_MESSAGE),
     ])
     .optional(),
   currency_code: z.string().optional(),
@@ -146,14 +177,6 @@ const invoiceFormSchema = z.object({
   notes: z.string().optional(),
   po_id: z.string().nullable().optional(),
 })
-
-const INVOICE_STATUS_OPTIONS: { value: VendorInvoice['status']; label: string }[] = [
-  { value: 'draft', label: 'Draft' },
-  { value: 'received', label: 'Received' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'overdue', label: 'Overdue' },
-]
 
 const PO_STATUS_OPTIONS: { value: VendorPurchaseOrder['status']; label: string }[] = [
   { value: 'draft', label: 'Draft' },
@@ -174,12 +197,14 @@ const poFormSchema = z.object({
       z
         .number()
         .finite(POSITIVE_MONEY_MESSAGE)
-        .positive(POSITIVE_MONEY_MESSAGE)
-        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+        .positive(POSITIVE_MONEY_MESSAGE),
     ])
     .optional(),
+  /** Currency code; the production currency means "no foreign currency" (stored as NULL). */
+  currency_code: z.string().min(1),
+  /** Exchange rate text (1 unit of PO currency in production currency); only used for a foreign currency. */
+  exchange_rate: z.string().optional(),
   status: z.enum(['draft', 'issued', 'approved', 'closed', 'cancelled']),
-  approval: z.boolean(),
   notes: z.string().optional(),
 })
 
@@ -275,6 +300,29 @@ export function VendorDetailPage() {
     enabled: !!currentProductionId && !!vendorId,
   })
 
+  // Keyed by the PO ids so the batched lookups re-run once the PO list has loaded; both keys keep the
+  // shared prefixes that every writer invalidates.
+  const poIdsKey = purchaseOrders.map((p) => p.id).join(',')
+  const { data: poCommitmentLinks = [] } = useQuery({
+    queryKey: [...vendorPoCommitmentLinksQueryKey(currentProductionId!), vendorId, poIdsKey],
+    queryFn: () => listPoCommitmentLinksByPurchaseOrderIds(purchaseOrders.map((p) => p.id)),
+    enabled: !!currentProductionId && !!vendorId && purchaseOrders.length > 0,
+  })
+  const poCommitments = useMemo(
+    () =>
+      computePoCommitments(
+        purchaseOrders.map(toPoCommitmentInput),
+        poCommitmentLinks
+      ),
+    [purchaseOrders, poCommitmentLinks]
+  )
+
+  const { data: poAmendments = {} } = useQuery({
+    queryKey: [...vendorPoAmendmentsByVendorQueryKey(currentProductionId!, vendorId!), poIdsKey],
+    queryFn: () => listAmendmentsByPurchaseOrderIds(purchaseOrders.map((p) => p.id)),
+    enabled: !!currentProductionId && !!vendorId && purchaseOrders.length > 0,
+  })
+
   const { data: linkedExpenseIds = new Set<string>() } = useQuery({
     queryKey: ['vendor-linked-expense-ids', currentProductionId, vendorId],
     queryFn: () => getLinkedExpenseIdsForVendor(currentProductionId!, vendorId!),
@@ -301,9 +349,10 @@ export function VendorDetailPage() {
   }, [invoices])
 
   const poSummary = useMemo(() => {
-    const approved = purchaseOrders.filter((po) => po.approval === 1)
+    const approved = purchaseOrders.filter(isPoApproved)
     const open = purchaseOrders.filter((po) => po.status !== 'closed' && po.status !== 'cancelled')
-    const openTotal = open.reduce((sum, po) => sum + (po.amount ?? 0), 0)
+    // PO amounts are in each PO's own currency; total in the production currency.
+    const openTotal = sumMoney(open.map((po) => poAmountInProductionCurrency(po, po.amount ?? 0)))
     return { approvedCount: approved.length, openCount: open.length, openTotal }
   }, [purchaseOrders])
 
@@ -551,12 +600,33 @@ export function VendorDetailPage() {
       id,
       patch,
       file,
+      amountChangeReason,
     }: {
       id: string
       patch: Parameters<typeof updateVendorPurchaseOrder>[1]
       file?: VendorFinanceFileInput | null
+      amountChangeReason?: string | null
     }) => {
-      const updated = await updateVendorPurchaseOrder(id, patch)
+      const current = purchaseOrders.find((p) => p.id === id)
+      const newAmount = patch.amount
+      // A changed value goes through amendPurchaseOrderAmount so the audit trail records it; the other
+      // fields are saved in the same transaction. Clearing the value is a plain edit (no trail row).
+      const currencyChanged =
+        current != null &&
+        ((patch.currency_code ?? null) !== (current.currency_code ?? null) ||
+          (patch.exchange_rate ?? null) !== (current.exchange_rate ?? null))
+      // A currency / rate change re-bases the value, so it is a plain edit (previous -> new would mix currencies).
+      const amended =
+        newAmount != null && current != null && !currencyChanged && !moneyEquals(newAmount, current.amount ?? Number.NaN)
+      let updated: VendorPurchaseOrder
+      if (amended) {
+        const rest = { ...patch }
+        delete rest.amount
+        updated = (await amendPurchaseOrderAmount({ poId: id, newAmount, reason: amountChangeReason, patch: rest }))
+          .purchaseOrder
+      } else {
+        updated = await updateVendorPurchaseOrder(id, patch)
+      }
       if (file) {
         await attachDocumentToVendorPurchaseOrder(id, file)
       }
@@ -565,8 +635,11 @@ export function VendorDetailPage() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: poListKey })
       queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId!, vendorId!) })
-      queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId!) })
-      queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId!, revisionId) })
+      invalidatePurchaseOrderQueries(queryClient, {
+        productionId: currentProductionId!,
+        vendorId: vendorId!,
+        poId: variables.id,
+      })
       queryClient.invalidateQueries({
         queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, variables.id),
       })
@@ -585,48 +658,43 @@ export function VendorDetailPage() {
     },
   })
 
-  const invalidateVendorFinance = () => {
+  const invalidateVendorFinance = (expenseId: string) => {
     if (!currentProductionId || !vendorId) return
-    queryClient.invalidateQueries({ queryKey: invoiceListKey })
-    queryClient.invalidateQueries({ queryKey: poListKey })
-    queryClient.invalidateQueries({ queryKey: ['vendor-invoice-expense-link-counts', currentProductionId, vendorId] })
-    queryClient.invalidateQueries({ queryKey: ['vendor-po-expense-link-counts', currentProductionId, vendorId] })
-    queryClient.invalidateQueries({ queryKey: ['vendor-linked-expense-ids', currentProductionId, vendorId] })
     queryClient.invalidateQueries({ queryKey: vendorRecentActivityQueryKey(currentProductionId, vendorId) })
-    queryClient.invalidateQueries({ queryKey: dashboardVendorFinanceQueryKey(currentProductionId) })
-    queryClient.invalidateQueries({ queryKey: riskWatchQueryKey(currentProductionId, revisionId) })
+    // Lists, counts, committed figures, badges, dashboards and Risk Watch.
+    invalidateExpenseFinanceQueries(queryClient, { productionId: currentProductionId, expenseId, vendorId })
   }
 
   const linkInvoiceExpenseMutation = useMutation({
     mutationFn: ({ invoiceId, expenseId }: { invoiceId: string; expenseId: string }) =>
       createVendorInvoiceExpenseLink(invoiceId, expenseId),
-    onSuccess: (_, { invoiceId }) => {
+    onSuccess: (_, { invoiceId, expenseId }) => {
       queryClient.invalidateQueries({ queryKey: vendorInvoiceExpenseLinksQueryKey(invoiceId) })
-      invalidateVendorFinance()
+      invalidateVendorFinance(expenseId)
     },
   })
   const unlinkInvoiceExpenseMutation = useMutation({
     mutationFn: ({ invoiceId, expenseId }: { invoiceId: string; expenseId: string }) =>
       deleteVendorInvoiceExpenseLink(invoiceId, expenseId),
-    onSuccess: (_, { invoiceId }) => {
+    onSuccess: (_, { invoiceId, expenseId }) => {
       queryClient.invalidateQueries({ queryKey: vendorInvoiceExpenseLinksQueryKey(invoiceId) })
-      invalidateVendorFinance()
+      invalidateVendorFinance(expenseId)
     },
   })
   const linkPOExpenseMutation = useMutation({
     mutationFn: ({ poId, expenseId }: { poId: string; expenseId: string }) =>
       createVendorPurchaseOrderExpenseLink(poId, expenseId),
-    onSuccess: (_, { poId }) => {
+    onSuccess: (_, { poId, expenseId }) => {
       queryClient.invalidateQueries({ queryKey: vendorPurchaseOrderExpenseLinksQueryKey(poId) })
-      invalidateVendorFinance()
+      invalidateVendorFinance(expenseId)
     },
   })
   const unlinkPOExpenseMutation = useMutation({
     mutationFn: ({ poId, expenseId }: { poId: string; expenseId: string }) =>
       deleteVendorPurchaseOrderExpenseLink(poId, expenseId),
-    onSuccess: (_, { poId }) => {
+    onSuccess: (_, { poId, expenseId }) => {
       queryClient.invalidateQueries({ queryKey: vendorPurchaseOrderExpenseLinksQueryKey(poId) })
-      invalidateVendorFinance()
+      invalidateVendorFinance(expenseId)
     },
   })
 
@@ -1006,8 +1074,9 @@ export function VendorDetailPage() {
                   <TableHead className="text-muted-foreground w-[88px]">Issue date</TableHead>
                   <TableHead className="text-muted-foreground w-[88px]">Due date</TableHead>
                   <TableHead className="text-right text-muted-foreground w-[90px]">Amount</TableHead>
+                  <TableHead className="text-right text-muted-foreground w-[90px]">Committed</TableHead>
+                  <TableHead className="text-right text-muted-foreground w-[90px]">Remaining</TableHead>
                   <TableHead className="text-muted-foreground w-[82px]">Status</TableHead>
-                  <TableHead className="text-muted-foreground w-[80px]">Approval</TableHead>
                   <TableHead className="text-muted-foreground w-[72px]">Invoices</TableHead>
                   <TableHead className="text-muted-foreground w-[72px]">Expenses</TableHead>
                   {!isArchived && <TableHead className="w-[88px]" />}
@@ -1016,7 +1085,7 @@ export function VendorDetailPage() {
               <TableBody>
                 {purchaseOrders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isArchived ? 9 : 10} className="text-muted-foreground text-center py-8">
+                    <TableCell colSpan={isArchived ? 10 : 11} className="text-muted-foreground text-center py-8">
                       No purchase orders yet. Add one to track vendor POs.
                     </TableCell>
                   </TableRow>
@@ -1027,6 +1096,8 @@ export function VendorDetailPage() {
                       po={po}
                       linkedInvoiceCount={invoices.filter((i) => i.po_id === po.id).length}
                       expenseLinkCount={poExpenseCounts[po.id] ?? 0}
+                      commitment={poCommitments[po.id]}
+                      amendments={poAmendments[po.id] ?? []}
                       format={format}
                       currency={currency}
                       onEdit={() => setEditPO(po)}
@@ -1360,6 +1431,7 @@ export function VendorDetailPage() {
         open={createPOOpen}
         onOpenChange={setCreatePOOpen}
         productionId={currentProductionId!}
+        productionCurrency={currency}
         vendorId={vendorId!}
         onSubmit={(payload) => createPOMutation.mutate(payload)}
         isLoading={createPOMutation.isPending}
@@ -1370,8 +1442,14 @@ export function VendorDetailPage() {
           open={!!editPO}
           onOpenChange={(open) => !open && setEditPO(null)}
           po={editPO}
+          productionCurrency={currency}
           onSubmit={(payload) =>
-            updatePOMutation.mutate({ id: editPO.id, patch: payload.patch, file: payload.file })
+            updatePOMutation.mutate({
+              id: editPO.id,
+              patch: payload.patch,
+              file: payload.file,
+              amountChangeReason: payload.amountChangeReason,
+            })
           }
           isLoading={updatePOMutation.isPending}
         />
@@ -1621,6 +1699,8 @@ function VendorPORow({
   po,
   linkedInvoiceCount,
   expenseLinkCount,
+  commitment,
+  amendments,
   format,
   currency,
   onEdit,
@@ -1632,6 +1712,10 @@ function VendorPORow({
   po: VendorPurchaseOrder
   linkedInvoiceCount: number
   expenseLinkCount: number
+  /** Committed / remaining from matched spend (see poMatching); undefined while loading. */
+  commitment: PoCommitment | undefined
+  /** Amendment trail, newest first (empty = never amended). */
+  amendments: VendorPurchaseOrderAmendment[]
   format: (amount: number, currency: string) => { formatted: string }
   currency: string
   onEdit: () => void
@@ -1671,13 +1755,29 @@ function VendorPORow({
       <TableCell className="text-muted-foreground text-sm py-2 w-[88px]">{dateFmt(po.issue_date)}</TableCell>
       <TableCell className="text-muted-foreground text-sm py-2 w-[88px]">{dateFmt(po.due_date)}</TableCell>
       <TableCell className="text-right text-sm py-2 w-[90px] tabular-nums">
-        {po.amount != null ? format(po.amount, currency).formatted : '—'}
+        <span className="inline-flex items-center justify-end gap-1">
+          {amendments.length > 0 && (
+            <PoAmendmentHistory po={po} amendments={amendments} format={format} currency={currency} />
+          )}
+          {po.amount != null ? formatPoAmount(po, po.amount, { productionCurrency: currency, format }) : '—'}
+        </span>
+      </TableCell>
+      <TableCell className="text-right text-sm py-2 w-[90px] tabular-nums text-muted-foreground">
+        {commitment ? formatPoDerivedAmount(po, commitment.committed, { productionCurrency: currency, format }) : '—'}
+      </TableCell>
+      <TableCell
+        className={cn(
+          'text-right text-sm py-2 w-[90px] tabular-nums',
+          commitment?.remaining != null && commitment.remaining < 0 ? 'font-medium text-destructive' : 'text-muted-foreground'
+        )}
+        title={commitment?.remaining != null && commitment.remaining < 0 ? 'Over-committed: matched spend exceeds the PO value' : undefined}
+      >
+        {commitment?.remaining != null
+          ? formatPoDerivedAmount(po, commitment.remaining, { productionCurrency: currency, format })
+          : '—'}
       </TableCell>
       <TableCell className="py-2 w-[82px]">
         <PurchaseOrderStatusBadge status={po.status} className="text-xs" />
-      </TableCell>
-      <TableCell className="py-2 w-[80px] text-xs text-muted-foreground">
-        {po.approval === 1 ? 'Approved' : 'Not approved'}
       </TableCell>
       <TableCell className="text-muted-foreground text-sm py-2 w-[72px]">{linkedInvoiceCount}</TableCell>
       <TableCell className="py-2 w-[72px]">
@@ -1701,6 +1801,46 @@ function VendorPORow({
         </TableCell>
       )}
     </TableRow>
+  )
+}
+
+/** History icon next to an amended PO's value; opens the amendment trail ("Increased £2,000 → £5,000 · reason"). */
+function PoAmendmentHistory({
+  po,
+  amendments,
+  format,
+  currency,
+}: {
+  po: VendorPurchaseOrder
+  amendments: VendorPurchaseOrderAmendment[]
+  format: (amount: number, currency: string) => { formatted: string }
+  currency: string
+}) {
+  // Amendments are stored in the PO's currency; show them converted with the original in brackets.
+  const money = (n: number) => formatPoAmount(po, n, { productionCurrency: currency, format })
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="text-muted-foreground hover:text-foreground"
+          aria-label={`Amendment history (${amendments.length})`}
+        >
+          <History className="size-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-3 text-left" align="end">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Amendment history</p>
+        <ul className="space-y-1.5 text-xs">
+          {amendments.map((a) => (
+            <li key={a.id}>
+              <p>{describeAmendment(a, money)}</p>
+              <p className="text-muted-foreground">{new Date(a.created_at).toLocaleDateString('en-GB')}</p>
+            </li>
+          ))}
+        </ul>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -2246,7 +2386,12 @@ function CreateInvoiceDialog({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="inv-currency">Currency</Label>
-              <Input id="inv-currency" {...form.register('currency_code')} className="mt-1" placeholder="e.g. GBP" />
+              <InvoiceCurrencySelect
+                id="inv-currency"
+                value={form.watch('currency_code')}
+                onChange={(code) => form.setValue('currency_code', code)}
+                productionCurrency={currency}
+              />
             </div>
             <div>
               <Label htmlFor="inv-status">Status</Label>
@@ -2444,7 +2589,12 @@ function EditInvoiceDialog({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="edit-inv-currency">Currency</Label>
-              <Input id="edit-inv-currency" {...form.register('currency_code')} className="mt-1" />
+              <InvoiceCurrencySelect
+                id="edit-inv-currency"
+                value={form.watch('currency_code')}
+                onChange={(code) => form.setValue('currency_code', code)}
+                productionCurrency={currency}
+              />
             </div>
             <div>
               <Label htmlFor="edit-inv-status">Status</Label>
@@ -2514,6 +2664,7 @@ function CreatePODialog({
   open,
   onOpenChange,
   productionId,
+  productionCurrency,
   vendorId,
   onSubmit,
   isLoading,
@@ -2521,6 +2672,7 @@ function CreatePODialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   productionId: string
+  productionCurrency: string
   vendorId: string
   onSubmit: (payload: {
     data: Parameters<typeof createVendorPurchaseOrder>[0]
@@ -2537,8 +2689,9 @@ function CreatePODialog({
       issue_date: '',
       due_date: '',
       amount: undefined,
+      currency_code: productionCurrency,
+      exchange_rate: '',
       status: 'draft',
-      approval: false,
       notes: '',
     },
   })
@@ -2550,15 +2703,21 @@ function CreatePODialog({
         issue_date: '',
         due_date: '',
         amount: undefined,
+        currency_code: productionCurrency,
+        exchange_rate: '',
         status: 'draft',
-        approval: false,
         notes: '',
       })
       setPendingFile(null)
     }
-  }, [open, form])
+  }, [open, form, productionCurrency])
 
   const handleSubmit = (data: POFormValues) => {
+    const currency = resolvePoCurrencyPair(data, productionCurrency)
+    if (!currency) {
+      form.setError('exchange_rate', { message: EXCHANGE_RATE_REQUIRED_MESSAGE })
+      return
+    }
     onSubmit({
       data: {
         production_id: productionId,
@@ -2568,8 +2727,9 @@ function CreatePODialog({
         issue_date: data.issue_date?.trim() || null,
         due_date: data.due_date?.trim() || null,
         amount: data.amount ?? null,
+        currency_code: currency.currency_code,
+        exchange_rate: currency.exchange_rate,
         status: data.status,
-        approval: data.approval ? 1 : 0,
         notes: data.notes?.trim() || null,
       },
       file: pendingFile,
@@ -2604,52 +2764,54 @@ function CreatePODialog({
               <Input id="po-due" type="date" {...form.register('due_date')} className="mt-1" />
             </div>
           </div>
-          <ValidatedField label="Amount" error={form.formState.errors.amount?.message} htmlFor="po-amount">
-            <Controller
-              name="amount"
-              control={form.control}
-              render={({ field }) => (
-                <MoneyAmountInput
-                  id="po-amount"
-                  mode="positive"
-                  placeholder="0"
-                  className="mt-1"
-                  value={field.value ?? null}
-                  onValueChange={field.onChange}
-                  onBlur={field.onBlur}
-                />
-              )}
-            />
-          </ValidatedField>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="po-status">Status</Label>
-              <Select
-                value={form.watch('status')}
-                onValueChange={(v) => form.setValue('status', v as POFormValues['status'])}
-              >
-                <SelectTrigger id="po-status" className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PO_STATUS_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2 pt-8">
-              <Checkbox
-                id="po-approval"
-                checked={form.watch('approval')}
-                onCheckedChange={(checked) => form.setValue('approval', checked === true)}
+          <PoCurrencyFields
+            idPrefix="po"
+            productionCurrency={productionCurrency}
+            currency={form.watch('currency_code')}
+            rate={form.watch('exchange_rate') ?? ''}
+            amount={form.watch('amount') ?? null}
+            onCurrencyChange={(code) => form.setValue('currency_code', code, { shouldDirty: true })}
+            onRateChange={(text) => {
+              form.setValue('exchange_rate', text, { shouldDirty: true })
+              form.clearErrors('exchange_rate')
+            }}
+            rateError={form.formState.errors.exchange_rate?.message}
+          >
+            <ValidatedField label="Amount (excl. tax)" error={form.formState.errors.amount?.message} htmlFor="po-amount">
+              <Controller
+                name="amount"
+                control={form.control}
+                render={({ field }) => (
+                  <MoneyAmountInput
+                    id="po-amount"
+                    mode="positive"
+                    placeholder="0.00"
+                    className="mt-1"
+                    value={field.value ?? null}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
-              <Label htmlFor="po-approval" className="text-sm font-normal cursor-pointer">
-                Approved
-              </Label>
-            </div>
+            </ValidatedField>
+          </PoCurrencyFields>
+          <div>
+            <Label htmlFor="po-status">Status</Label>
+            <Select
+              value={form.watch('status')}
+              onValueChange={(v) => form.setValue('status', v as POFormValues['status'])}
+            >
+              <SelectTrigger id="po-status" className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PO_STATUS_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label htmlFor="po-notes">Notes</Label>
@@ -2677,19 +2839,24 @@ function EditPODialog({
   open,
   onOpenChange,
   po,
+  productionCurrency,
   onSubmit,
   isLoading,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   po: VendorPurchaseOrder
+  productionCurrency: string
   onSubmit: (payload: {
     patch: Parameters<typeof updateVendorPurchaseOrder>[1]
     file?: VendorFinanceFileInput | null
+    /** Why the value changed; recorded in the PO's amendment history (only used when the amount changed). */
+    amountChangeReason?: string | null
   }) => void
   isLoading: boolean
 }) {
   const [pendingFile, setPendingFile] = useState<VendorFinanceFileInput | null>(null)
+  const [amountChangeReason, setAmountChangeReason] = useState('')
   const { data: existingDocuments = [] } = useQuery({
     queryKey: entityDocumentsQueryKey(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, po.id),
     queryFn: () => listDocumentsByEntity(DOCUMENT_ENTITY_TYPES.vendorPurchaseOrder, po.id),
@@ -2703,8 +2870,9 @@ function EditPODialog({
       issue_date: po.issue_date ?? '',
       due_date: po.due_date ?? '',
       amount: po.amount ?? undefined,
+      currency_code: po.currency_code ?? productionCurrency,
+      exchange_rate: formatExchangeRateForInput(po.exchange_rate),
       status: po.status,
-      approval: po.approval === 1,
       notes: po.notes ?? '',
     },
   })
@@ -2716,15 +2884,30 @@ function EditPODialog({
         issue_date: po.issue_date ?? '',
         due_date: po.due_date ?? '',
         amount: po.amount ?? undefined,
+        currency_code: po.currency_code ?? productionCurrency,
+        exchange_rate: formatExchangeRateForInput(po.exchange_rate),
         status: po.status,
-        approval: po.approval === 1,
         notes: po.notes ?? '',
       })
       setPendingFile(null)
+      setAmountChangeReason('')
     }
-  }, [open, po, form])
+  }, [open, po, form, productionCurrency])
+
+  const watchedAmount = form.watch('amount')
+  // Changing the currency / rate re-bases the amount, so only a same-currency value change is an "amendment".
+  const currencyChanged =
+    (form.watch('currency_code') ?? '').toUpperCase() !== (po.currency_code ?? productionCurrency).toUpperCase() ||
+    (isForeignPoCurrency(po, productionCurrency) &&
+      parseExchangeRateInput(form.watch('exchange_rate') ?? '') !== po.exchange_rate)
+  const amountChanged = watchedAmount != null && !moneyEquals(watchedAmount, po.amount ?? Number.NaN) && !currencyChanged
 
   const handleSubmit = (data: POFormValues) => {
+    const currency = resolvePoCurrencyPair(data, productionCurrency)
+    if (!currency) {
+      form.setError('exchange_rate', { message: EXCHANGE_RATE_REQUIRED_MESSAGE })
+      return
+    }
     onSubmit({
       patch: {
         po_number: data.po_number.trim(),
@@ -2732,11 +2915,13 @@ function EditPODialog({
         issue_date: data.issue_date?.trim() || null,
         due_date: data.due_date?.trim() || null,
         amount: data.amount ?? null,
+        currency_code: currency.currency_code,
+        exchange_rate: currency.exchange_rate,
         status: data.status,
-        approval: data.approval ? 1 : 0,
         notes: data.notes?.trim() || null,
       },
       file: pendingFile,
+      amountChangeReason: amountChangeReason.trim() || null,
     })
   }
 
@@ -2768,51 +2953,68 @@ function EditPODialog({
               <Input id="edit-po-due" type="date" {...form.register('due_date')} className="mt-1" />
             </div>
           </div>
-          <ValidatedField label="Amount" error={form.formState.errors.amount?.message} htmlFor="edit-po-amount">
-            <Controller
-              name="amount"
-              control={form.control}
-              render={({ field }) => (
-                <MoneyAmountInput
-                  id="edit-po-amount"
-                  mode="positive"
-                  className="mt-1"
-                  value={field.value ?? null}
-                  onValueChange={field.onChange}
-                  onBlur={field.onBlur}
-                />
-              )}
-            />
-          </ValidatedField>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="edit-po-status">Status</Label>
-              <Select
-                value={form.watch('status')}
-                onValueChange={(v) => form.setValue('status', v as POFormValues['status'])}
-              >
-                <SelectTrigger id="edit-po-status" className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PO_STATUS_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2 pt-8">
-              <Checkbox
-                id="edit-po-approval"
-                checked={form.watch('approval')}
-                onCheckedChange={(checked) => form.setValue('approval', checked === true)}
+          <PoCurrencyFields
+            idPrefix="edit-po"
+            productionCurrency={productionCurrency}
+            currency={form.watch('currency_code')}
+            rate={form.watch('exchange_rate') ?? ''}
+            amount={watchedAmount ?? null}
+            onCurrencyChange={(code) => form.setValue('currency_code', code, { shouldDirty: true })}
+            onRateChange={(text) => {
+              form.setValue('exchange_rate', text, { shouldDirty: true })
+              form.clearErrors('exchange_rate')
+            }}
+            rateError={form.formState.errors.exchange_rate?.message}
+          >
+            <ValidatedField label="Amount (excl. tax)" error={form.formState.errors.amount?.message} htmlFor="edit-po-amount">
+              <Controller
+                name="amount"
+                control={form.control}
+                render={({ field }) => (
+                  <MoneyAmountInput
+                    id="edit-po-amount"
+                    mode="positive"
+                    className="mt-1"
+                    value={field.value ?? null}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
-              <Label htmlFor="edit-po-approval" className="text-sm font-normal cursor-pointer">
-                Approved
-              </Label>
+            </ValidatedField>
+          </PoCurrencyFields>
+          {amountChanged && (
+            <div data-testid="po-amount-change-reason">
+              <Label htmlFor="edit-po-amount-reason">Reason for the change</Label>
+              <Input
+                id="edit-po-amount-reason"
+                value={amountChangeReason}
+                onChange={(e) => setAmountChangeReason(e.target.value)}
+                placeholder="Optional, e.g. client uplift"
+                className="mt-1"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                The change is recorded in this PO&apos;s amendment history.
+              </p>
             </div>
+          )}
+          <div>
+            <Label htmlFor="edit-po-status">Status</Label>
+            <Select
+              value={form.watch('status')}
+              onValueChange={(v) => form.setValue('status', v as POFormValues['status'])}
+            >
+              <SelectTrigger id="edit-po-status" className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PO_STATUS_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label htmlFor="edit-po-notes">Notes</Label>

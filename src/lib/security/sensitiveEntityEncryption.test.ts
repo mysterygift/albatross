@@ -79,6 +79,7 @@ describe('sensitive entity field encryption', () => {
     const location = await createLocation({
       production_id: PROD, name: 'Private Home', booked_status: 'hold', address: '1 Secret Street',
       what3words: 'private.home.entry', parking_info: 'Rear gate', notes: 'Owner details',
+      contact_name: 'Pat Owner', contact_email: 'pat@home.test', contact_phone: '+44 7002',
     })
     const vendor = await createVendor({
       production_id: PROD, company_name: 'Identity Ltd', primary_contact_full_name: 'Morgan Lee',
@@ -94,6 +95,9 @@ describe('sensitive entity field encryption', () => {
     expect([rawLocation.name, rawLocation.address, rawLocation.what3words]).toEqual(
       expect.arrayContaining([expect.stringMatching(/^v1:/), expect.stringMatching(/^v1:/), expect.stringMatching(/^v1:/)])
     )
+    expect([rawLocation.contact_name, rawLocation.contact_email, rawLocation.contact_phone]).toEqual([
+      expect.stringMatching(/^v1:/), expect.stringMatching(/^v1:/), expect.stringMatching(/^v1:/),
+    ])
     expect([rawVendor.company_name, rawVendor.primary_contact_full_name, rawVendor.primary_contact_email]).toEqual(
       expect.arrayContaining([expect.stringMatching(/^v1:/), expect.stringMatching(/^v1:/), expect.stringMatching(/^v1:/)])
     )
@@ -103,13 +107,16 @@ describe('sensitive entity field encryption', () => {
     const persistedPayloads = outbox.map((row) => row.payload_json).join('\n')
     expect(persistedPayloads).not.toContain('zoe@example.test')
     expect(persistedPayloads).not.toContain('1 Secret Street')
+    expect(persistedPayloads).not.toContain('pat@home.test')
     expect(persistedPayloads).not.toContain('morgan@identity.test')
 
     expect((await listPeopleByProduction(PROD)).map((person) => person.name)).toEqual(['Amy Person', 'Zoe Person'])
     expect((await listLocationsByProduction(PROD))[0]?.address).toBe('1 Secret Street')
+    expect((await listLocationsByProduction(PROD))[0]?.contact_email).toBe('pat@home.test')
     expect((await listVendors(PROD))[0]?.primary_contact_email).toBe('morgan@identity.test')
     expect((await updatePerson(zoe.id, { agent_phone: '+44 7999' })).agent_phone).toBe('+44 7999')
     expect((await updateLocation(location.id, { parking_info: 'Front gate' })).parking_info).toBe('Front gate')
+    expect((await updateLocation(location.id, { contact_phone: '+44 7003' })).contact_phone).toBe('+44 7003')
     expect((await updateVendor(vendor.id, { primary_contact_full_name: 'Taylor Lee' })).primary_contact_full_name).toBe('Taylor Lee')
   })
 

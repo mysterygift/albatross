@@ -4,7 +4,7 @@ import {
   filterPositiveIntegerInput,
   formatIntegerForInput,
   formatMoneyForInput,
-  hasMaxTwoDecimalPlaces,
+  formatMoneyFixedForInput,
   optionalNonNegativeMoneyField,
   optionalPositiveIntegerField,
   optionalPositiveMoneyField,
@@ -59,22 +59,17 @@ describe('parsePositiveIntegerInput', () => {
   })
 })
 
-describe('hasMaxTwoDecimalPlaces', () => {
-  it('accepts up to 2 decimal places', () => {
-    expect(hasMaxTwoDecimalPlaces(12.34)).toBe(true)
-    expect(hasMaxTwoDecimalPlaces(12.3)).toBe(true)
-    expect(hasMaxTwoDecimalPlaces(12)).toBe(true)
-  })
-
-  it('rejects more than 2 decimal places', () => {
-    expect(hasMaxTwoDecimalPlaces(12.345)).toBe(false)
-  })
-})
-
 describe('format helpers', () => {
   it('formatMoneyForInput handles null', () => {
     expect(formatMoneyForInput(null)).toBe('')
     expect(formatMoneyForInput(12.5)).toBe('12.5')
+  })
+
+  it('formatMoneyFixedForInput always shows 2dp', () => {
+    expect(formatMoneyFixedForInput(null)).toBe('')
+    expect(formatMoneyFixedForInput(1250)).toBe('1250.00')
+    expect(formatMoneyFixedForInput(12.5)).toBe('12.50')
+    expect(formatMoneyFixedForInput(1.005)).toBe('1.01')
   })
 
   it('formatIntegerForInput truncates', () => {
@@ -93,6 +88,14 @@ describe('Zod field builders', () => {
     const res = schema.safeParse('12.34')
     expect(res.success).toBe(true)
     if (res.success) expect(res.data).toBe(12.34)
+  })
+
+  it('money fields round to 2dp instead of rejecting extra decimals', () => {
+    const res = requiredPositiveMoneyField().safeParse('12.345')
+    expect(res.success).toBe(true)
+    if (res.success) expect(res.data).toBe(12.35)
+    const opt = optionalNonNegativeMoneyField().safeParse('0.1')
+    expect(opt.success && opt.data).toBe(0.1)
   })
 
   it('requiredPositiveMoneyField rejects zero', () => {

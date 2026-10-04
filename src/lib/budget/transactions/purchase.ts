@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { hasMaxTwoDecimalPlaces } from '@/lib/budget/fieldValidation'
+import { roundMoney } from '@/lib/money/roundMoney'
 
 const intBool = z
   .union([z.boolean(), z.number().int()])
@@ -21,7 +21,7 @@ export const purchaseDetailsSchema = z.object({
     .number()
     .finite()
     .positive('Purchase amount must be greater than 0')
-    .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' })
+    .transform(roundMoney)
     .optional()
     .default(0),
 })

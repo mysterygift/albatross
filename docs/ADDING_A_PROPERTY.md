@@ -84,7 +84,6 @@ export type Location = {
   address: string | null
   what3words: string | null   // new property
   availability_constraints: string | null
-  permit_fee: number | null
   location_fee: number | null
   notes: string | null
 } & SoftDeletable
@@ -116,7 +115,7 @@ In `LocationInsert` (or equivalent), include the new field in the optional `Part
 
 ```ts
 type LocationInsert = Pick<Location, 'production_id' | 'name' | 'booked_status'> &
-  Partial<Pick<Location, 'address' | 'what3words' | 'availability_constraints' | 'permit_fee' | 'location_fee' | 'notes'>>
+  Partial<Pick<Location, 'address' | 'what3words' | 'availability_constraints' | 'location_fee' | 'notes'>>
 ```
 
 ### createLocation INSERT
@@ -125,8 +124,8 @@ Add the column name to the INSERT column list and a corresponding `$N` placehold
 
 ```ts
 await db.execute(
-  `INSERT INTO ${TABLE} (id, production_id, name, booked_status, address, what3words, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at)
-   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+  `INSERT INTO ${TABLE} (id, production_id, name, booked_status, address, what3words, availability_constraints, location_fee, notes, created_at, updated_at)
+   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
   [
     id,
     data.production_id,
@@ -135,7 +134,6 @@ await db.execute(
     data.address ?? null,
     data.what3words ?? null,   // same position as column list
     data.availability_constraints ?? null,
-    data.permit_fee ?? null,
     data.location_fee ?? null,
     data.notes ?? null,
     ts,
@@ -146,10 +144,10 @@ await db.execute(
 
 ### updateLocation
 
-Add the field name to the `allowed` array so updates can set it. The dynamic SET clause iterates over `allowed`; no extra logic is needed unless the column type needs coercion (e.g. for REAL columns, coerce empty string/NaN to null — see `permit_fee` / `location_fee` in [src/lib/db/repositories/location.ts](src/lib/db/repositories/location.ts)):
+Add the field name to the `allowed` array so updates can set it. The dynamic SET clause iterates over `allowed`; no extra logic is needed unless the column type needs coercion (e.g. for REAL columns, coerce empty string/NaN to null — see `location_fee` in [src/lib/db/repositories/location.ts](src/lib/db/repositories/location.ts)):
 
 ```ts
-const allowed = ['name', 'booked_status', 'address', 'what3words', 'availability_constraints', 'permit_fee', 'location_fee', 'notes'] as const
+const allowed = ['name', 'booked_status', 'address', 'what3words', 'availability_constraints', 'location_fee', 'notes'] as const
 ```
 
 **Optional:** If the entity is duplicated elsewhere (e.g. in `duplicateProduction`), ensure the new field is copied if applicable.
@@ -171,7 +169,6 @@ const locationSchema = z.object({
   address: z.string().optional(),
   what3words: z.string().optional(),   // new field
   availability_constraints: z.string().optional(),
-  permit_fee: z.coerce.number().optional(),
   location_fee: z.coerce.number().optional(),
   notes: z.string().optional(),
 })
@@ -231,4 +228,4 @@ Before considering the feature done, confirm:
 
 2. **INSERT column list and values array order must match.** The column list and the values you pass to `db.execute` must be in the same order; otherwise data goes into the wrong columns or the bind count is wrong.
 
-3. **REAL/numeric fields:** Form number inputs can submit empty string. Binding `""` to a REAL column can cause the SQL layer to throw. In the repository, coerce empty string or NaN to `null` for numeric fields (see `permit_fee` / `location_fee` in [src/lib/db/repositories/location.ts](src/lib/db/repositories/location.ts)).
+3. **REAL/numeric fields:** Form number inputs can submit empty string. Binding `""` to a REAL column can cause the SQL layer to throw. In the repository, coerce empty string or NaN to `null` for numeric fields (see `location_fee` in [src/lib/db/repositories/location.ts](src/lib/db/repositories/location.ts)).

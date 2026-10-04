@@ -313,7 +313,7 @@ describe('postgres financial/operational/asset-heavy module validation', () => {
         vendor_id: vendor.id,
         po_number: 'PO-100',
         amount: 1000.25,
-        approval: 1,
+        status: 'approved',
       })
       expect(po.amount).toBeCloseTo(1000.25, 6)
       expect(po.approval).toBe(1)

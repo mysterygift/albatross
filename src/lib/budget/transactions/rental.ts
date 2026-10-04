@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import {
-  hasMaxTwoDecimalPlaces,
   nullablePositiveIntegerSchema,
   nullablePositiveMoneySchema,
   POSITIVE_INTEGER_MESSAGE,
@@ -54,13 +53,6 @@ export const rentalDetailsSchema = z
         code: z.ZodIssueCode.custom,
         path: ['rental_rate_amount'],
         message: 'Enter a positive rate amount',
-      })
-    }
-    if (rate != null && !hasMaxTwoDecimalPlaces(rate)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['rental_rate_amount'],
-        message: 'Amount must have at most 2 decimal places',
       })
     }
   })

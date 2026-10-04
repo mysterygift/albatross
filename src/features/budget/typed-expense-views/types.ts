@@ -30,6 +30,11 @@ export type TypedExpenseReadPropsUnknown = TypedExpenseReadProps<unknown>
 /** Imperative handle for Log Spend shell: trigger form submit from shared footer. */
 export type LogSpendEditorHandle = {
   submit: () => void
+  /**
+   * Push a vendor id into the editor's form (e.g. when a PO is picked in "PO & documents").
+   * Only implemented by editors with a vendor field; the editor then reports it back via onVendorIdChange.
+   */
+  setVendorId?: (vendorId: string | null) => void
 }
 
 export type TypedExpenseEditProps<T = unknown> = {
@@ -45,4 +50,6 @@ export type TypedExpenseEditProps<T = unknown> = {
   editorRef?: RefObject<LogSpendEditorHandle | null>
   /** Log Spend: notify parent when vendor selection changes. */
   onVendorIdChange?: (vendorId: string | null) => void
+  /** Log Spend: live expense amount as the form is filled in (null when not yet valid). */
+  onAmountChange?: (amount: number | null) => void
 }

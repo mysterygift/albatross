@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ValidatedField } from '@/components/budget/ValidatedField'
 import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
-import { hasMaxTwoDecimalPlaces, NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
+import { NON_NEGATIVE_MONEY_MESSAGE } from '@/lib/budget/fieldValidation'
 import { parseAllowDetails, type AllowDetails } from '@/lib/budget/transactions/allow'
 import { ExpenseEditorFooter } from '../expense-shared'
 import type { TypedExpenseEditProps } from './types'
@@ -20,8 +20,7 @@ const allowEditSchema = z.object({
       z
         .number()
         .finite(NON_NEGATIVE_MONEY_MESSAGE)
-        .nonnegative(NON_NEGATIVE_MONEY_MESSAGE)
-        .refine(hasMaxTwoDecimalPlaces, { message: 'Amount must have at most 2 decimal places' }),
+        .nonnegative(NON_NEGATIVE_MONEY_MESSAGE),
     ])
     .optional(),
   status: z.enum(['open', 'resolved']).default('open'),

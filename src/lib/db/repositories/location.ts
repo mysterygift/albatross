@@ -2,6 +2,7 @@ import { getDb, now, uuid } from '../client'
 import { tutorialEmitted } from '@/features/tutorial/engine/events'
 import { outboxPush } from '../outbox'
 import type { Location } from '../types'
+import { deleteDocument, listDocumentsByEntity } from './document'
 import { isClientEncryptionEnabled } from '@/lib/security/dataEncryptionContext'
 import { requireSensitiveDataAccess } from '@/lib/security/sensitiveDataAccess'
 import {
@@ -23,9 +24,11 @@ async function rowToLocation(r: Record<string, unknown>, encryptionEnabled: bool
     what3words: fields.what3words as string | null,
     parking_info: fields.parking_info as string | null,
     availability_constraints: fields.availability_constraints as string | null,
-    permit_fee: r.permit_fee as number | null,
     location_fee: r.location_fee as number | null,
     notes: fields.notes as string | null,
+    contact_name: fields.contact_name as string | null,
+    contact_email: fields.contact_email as string | null,
+    contact_phone: fields.contact_phone as string | null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
@@ -59,7 +62,7 @@ type LocationInsert = Pick<Location, 'production_id' | 'name' | 'booked_status'>
   Partial<
     Pick<
       Location,
-      'address' | 'what3words' | 'parking_info' | 'availability_constraints' | 'permit_fee' | 'location_fee' | 'notes'
+      'address' | 'what3words' | 'parking_info' | 'availability_constraints' | 'location_fee' | 'notes' | 'contact_name' | 'contact_email' | 'contact_phone'
     >
   >
 
@@ -70,8 +73,8 @@ export async function createLocation(data: LocationInsert): Promise<Location> {
   const ts = now()
   const stored: Record<string, unknown> = await isClientEncryptionEnabled(db) ? await encryptLocationFields(data) : data
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, name, name_sort_key, booked_status, address, what3words, parking_info, availability_constraints, permit_fee, location_fee, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    `INSERT INTO ${TABLE} (id, production_id, name, name_sort_key, booked_status, address, what3words, parking_info, availability_constraints, location_fee, notes, contact_name, contact_email, contact_phone, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
     [
       id,
       data.production_id,
@@ -82,9 +85,11 @@ export async function createLocation(data: LocationInsert): Promise<Location> {
       stored.what3words ?? null,
       stored.parking_info ?? null,
       stored.availability_constraints ?? null,
-      data.permit_fee ?? null,
       data.location_fee ?? null,
       stored.notes ?? null,
+      stored.contact_name ?? null,
+      stored.contact_email ?? null,
+      stored.contact_phone ?? null,
       ts,
       ts,
     ]
@@ -110,9 +115,11 @@ export async function updateLocation(
     'what3words',
     'parking_info',
     'availability_constraints',
-    'permit_fee',
     'location_fee',
     'notes',
+    'contact_name',
+    'contact_email',
+    'contact_phone',
   ] as const
   const protectedUpdates = Object.fromEntries(
     LOCATION_PROTECTED_FIELDS.filter((field) => data[field] !== undefined).map((field) => [field, data[field]])
@@ -130,7 +137,7 @@ export async function updateLocation(
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
       const raw = data[k]
-      if (k === 'permit_fee' || k === 'location_fee') {
+      if (k === 'location_fee') {
         const n = raw === '' || raw == null ? null : Number(raw)
         vals.push(n == null || Number.isNaN(n) ? null : n)
       } else if ((LOCATION_PROTECTED_FIELDS as readonly string[]).includes(k)) {
@@ -156,9 +163,16 @@ export async function updateLocation(
   return (await getLocationById(id))!
 }
 
+/** Entity types of documents attached to a location (entity_id = location id). */
+const LOCATION_DOCUMENT_ENTITY_TYPES = ['permit', 'location_release'] as const
+
 export async function deleteLocation(id: string): Promise<void> {
   const db = await getDb()
   const ts = now()
+  for (const entityType of LOCATION_DOCUMENT_ENTITY_TYPES) {
+    const docs = await listDocumentsByEntity(entityType, id)
+    for (const doc of docs) await deleteDocument(doc.id)
+  }
   await db.execute(
     `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
     [ts, ts, id]
