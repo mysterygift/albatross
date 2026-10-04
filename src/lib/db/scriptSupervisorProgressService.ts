@@ -45,7 +45,7 @@ export async function loadShootProgress(productionId: string): Promise<ShootProg
   const db = await getDb()
   const [sceneRows, aggRows, markRows, dayRows, dayCountRows, scheduledRows] = await Promise.all([
     db.select<Record<string, unknown>[]>(
-      `SELECT id, scene_number, title, page_eighths, episode_id FROM scenes
+      `SELECT id, scene_number, title, page_eighths, episode_id, duration_minutes FROM scenes
        WHERE production_id = $1 AND deleted_at IS NULL`,
       [productionId]
     ),
@@ -63,7 +63,7 @@ export async function loadShootProgress(productionId: string): Promise<ShootProg
       [productionId]
     ),
     db.select<Record<string, unknown>[]>(
-      `SELECT scene_id, marked_status, completed_shoot_day_id, credited_eighths, notes
+      `SELECT scene_id, marked_status, completed_shoot_day_id, credited_eighths, timed_seconds, notes
        FROM script_supervisor_scene_progress WHERE production_id = $1`,
       [productionId]
     ),
@@ -104,6 +104,7 @@ export async function loadShootProgress(productionId: string): Promise<ShootProg
       title: (r.title as string | null) ?? null,
       page_eighths: numOrNull(r.page_eighths),
       episode_id: (r.episode_id as string | null) ?? null,
+      duration_minutes: numOrNull(r.duration_minutes),
     }))
     .sort((a, b) => compareSceneNumbers(a.scene_number, b.scene_number))
 
@@ -130,6 +131,7 @@ export async function loadShootProgress(productionId: string): Promise<ShootProg
         marked_status: (r.marked_status as SceneMarkedStatus | null) ?? null,
         completed_shoot_day_id: (r.completed_shoot_day_id as string | null) ?? null,
         credited_eighths: numOrNull(r.credited_eighths),
+        timed_seconds: numOrNull(r.timed_seconds),
         notes: (r.notes as string | null) ?? null,
       },
     ])

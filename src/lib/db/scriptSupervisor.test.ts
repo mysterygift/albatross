@@ -69,7 +69,7 @@ import {
   updateSlate,
   updateTake,
 } from '@/lib/db/repositories/scriptSupervisor'
-import { setSceneProgress } from '@/lib/db/repositories/scriptSupervisor'
+import { getDayLog, saveDayLog, setSceneProgress } from '@/lib/db/repositories/scriptSupervisor'
 import { loadShootProgress } from '@/lib/db/scriptSupervisorProgressService'
 
 function applyAllMigrations(db: Database): void {
@@ -248,5 +248,31 @@ describe('shooting progress (SS4)', () => {
     await expect(setSceneProgress(production.id, scene.id, { marked_status: 'complete' })).rejects.toThrow(
       'Choose the shoot day the scene was completed on'
     )
+  })
+})
+
+describe('day log and scene timing (SS5)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    dataSourceOverride = null
+  })
+
+  it('saves actual times as a patch and normalises them to HH:MM', async () => {
+    const { production, day1 } = await setup()
+    await saveDayLog(production.id, day1.id, { first_shot_time: '810', remarks: ' Rain delay ' })
+    await saveDayLog(production.id, day1.id, { wrap_time: '19:45' })
+    const log = await getDayLog(day1.id)
+    expect(log).toMatchObject({ first_shot_time: '08:10', wrap_time: '19:45', remarks: 'Rain delay', call_time: null })
+    await expect(saveDayLog(production.id, day1.id, { call_time: '7am' })).rejects.toThrow('is not a time')
+  })
+
+  it('keeps earlier scene marks when only timing or notes change', async () => {
+    const { production, scene, day1 } = await setup()
+    await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id })
+    await setSceneProgress(production.id, scene.id, { marked_status: 'complete', completed_shoot_day_id: day1.id })
+    await setSceneProgress(production.id, scene.id, { timed_seconds: 95 })
+    await setSceneProgress(production.id, scene.id, { notes: 'Good' })
+    const row = (await loadShootProgress(production.id)).rows.find((r) => r.scene.id === scene.id)!
+    expect(row).toMatchObject({ status: 'complete', completedShootDayId: day1.id, timedSeconds: 95, notes: 'Good' })
   })
 })

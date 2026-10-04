@@ -12,11 +12,11 @@ import {
 } from './progress'
 
 const scene = (id: string, page_eighths: number | null): SceneForProgress => ({
-  id, scene_number: id, title: null, page_eighths, episode_id: null,
+  id, scene_number: id, title: null, page_eighths, episode_id: null, duration_minutes: null,
 })
 const agg = (slates: number): SceneSlateAggregate => ({ slates, takes: slates * 2, prints: slates, lastShootDate: '2026-10-07', lastDayNumber: 14 })
 const mark = (over: Partial<SceneProgressMark>): SceneProgressMark => ({
-  marked_status: null, completed_shoot_day_id: null, credited_eighths: null, notes: null, ...over,
+  marked_status: null, completed_shoot_day_id: null, credited_eighths: null, timed_seconds: null, notes: null, ...over,
 })
 
 describe('scene progress derivation (SS4)', () => {

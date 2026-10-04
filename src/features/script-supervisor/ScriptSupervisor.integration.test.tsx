@@ -11,7 +11,7 @@ import type { Slate, Take } from '@/lib/db/types'
 const store = vi.hoisted(() => ({
   slates: [] as Slate[],
   takes: [] as Take[],
-  marks: new Map<string, { marked_status: 'complete' | 'omitted' | null; completed_shoot_day_id: string | null; credited_eighths: number | null; notes: string | null }>(),
+  marks: new Map<string, { marked_status: 'complete' | 'omitted' | null; completed_shoot_day_id: string | null; credited_eighths: number | null; timed_seconds: number | null; notes: string | null }>(),
   clock: 0,
 }))
 
@@ -65,6 +65,8 @@ vi.mock('@/lib/db/repositories/scriptSupervisor', () => {
       return t
     },
     softDeleteTake: vi.fn(),
+    getDayLog: async () => null,
+    saveDayLog: vi.fn(),
     setSceneProgress: async (
       _productionId: string,
       sceneId: string,
@@ -74,6 +76,7 @@ vi.mock('@/lib/db/repositories/scriptSupervisor', () => {
         marked_status: input.marked_status,
         completed_shoot_day_id: input.completed_shoot_day_id ?? null,
         credited_eighths: input.credited_eighths ?? null,
+        timed_seconds: null,
         notes: null,
       })
     },
@@ -85,8 +88,8 @@ vi.mock('@/lib/db/scriptSupervisorProgressService', async () => {
   return {
     loadShootProgress: async () => {
       const scenes = [
-        { id: 'sc23', scene_number: '23', title: 'Edit suite', page_eighths: 11, episode_id: null },
-        { id: 'sc24', scene_number: '24', title: 'Corridor', page_eighths: 4, episode_id: null },
+        { id: 'sc23', scene_number: '23', title: 'Edit suite', page_eighths: 11, episode_id: null, duration_minutes: null },
+        { id: 'sc24', scene_number: '24', title: 'Corridor', page_eighths: 4, episode_id: null, duration_minutes: null },
       ]
       const aggregates = new Map<string, { slates: number; takes: number; prints: number; lastShootDate: string | null; lastDayNumber: number | null }>()
       for (const sc of scenes) {
@@ -100,6 +103,13 @@ vi.mock('@/lib/db/scriptSupervisorProgressService', async () => {
     },
   }
 })
+
+vi.mock('@/lib/documents/persistDocument', () => ({
+  persistProductionDocument: vi.fn(),
+  documentsQueryKey: (id: string) => ['documents', id],
+}))
+vi.mock('@/lib/files', () => ({ saveFileWithDialog: vi.fn() }))
+vi.mock('@/lib/pdf/dailyProgressReport', () => ({ generateDailyProgressReportPdf: vi.fn(async () => new Uint8Array()) }))
 
 vi.mock('@/lib/db/repositories/schedule', () => ({
   listShootDaysByProduction: async () => [

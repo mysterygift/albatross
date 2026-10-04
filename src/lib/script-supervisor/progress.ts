@@ -28,6 +28,8 @@ export type SceneProgressMark = {
   marked_status: SceneMarkedStatus | null
   completed_shoot_day_id: string | null
   credited_eighths: number | null
+  /** Screen time timed by the script supervisor, in seconds. */
+  timed_seconds: number | null
   notes: string | null
 }
 
@@ -37,6 +39,8 @@ export type SceneForProgress = {
   title: string | null
   page_eighths: number | null
   episode_id: string | null
+  /** Pre-timed estimate from the schedule, in minutes. */
+  duration_minutes: number | null
 }
 
 export type SceneProgressRow = {
@@ -53,7 +57,16 @@ export type SceneProgressRow = {
   totalEighths: number
   completedShootDayId: string | null
   creditedEighths: number | null
+  /** Timed screen time in seconds, when the script supervisor has timed the scene. */
+  timedSeconds: number | null
+  /** Pre-timed estimate in seconds (0 when unknown). */
+  estimatedSeconds: number
   notes: string | null
+}
+
+/** Screen time to report for a scene: timed when known, else the estimate. */
+export function sceneScreenSeconds(row: Pick<SceneProgressRow, 'timedSeconds' | 'estimatedSeconds'>): number {
+  return row.timedSeconds != null ? row.timedSeconds : row.estimatedSeconds
 }
 
 export function deriveSceneStatus(slateCount: number, mark: SceneProgressMark | null | undefined): SceneProgressStatus {
@@ -97,6 +110,9 @@ export function buildSceneProgressRows(
       totalEighths: scene.page_eighths != null && scene.page_eighths > 0 ? scene.page_eighths : 0,
       completedShootDayId: mark?.completed_shoot_day_id ?? null,
       creditedEighths: mark?.credited_eighths ?? null,
+      timedSeconds: mark?.timed_seconds ?? null,
+      estimatedSeconds:
+        scene.duration_minutes != null && scene.duration_minutes > 0 ? Math.round(scene.duration_minutes * 60) : 0,
       notes: mark?.notes ?? null,
     }
   })
@@ -150,4 +166,25 @@ export const SCENE_STATUS_LABEL: Record<SceneProgressStatus, string> = {
   part_shot: 'Part shot',
   complete: 'Complete',
   omitted: 'Omitted',
+}
+
+/** Screen time as m:ss (h:mm:ss past an hour). */
+export function formatScreenTime(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '—'
+  const total = Math.round(seconds)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const sec = String(total % 60).padStart(2, '0')
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`
+}
+
+/** Parses '1:35', '95' (seconds) or '1:02:05'; null when blank or invalid. */
+export function parseScreenTime(input: string): number | null {
+  const raw = input.trim()
+  if (!raw) return null
+  const parts = raw.split(':')
+  if (parts.length > 3 || parts.some((p) => !/^\d+$/.test(p))) return null
+  const nums = parts.map(Number)
+  if (nums.length > 1 && nums.slice(1).some((n) => n >= 60)) return null
+  return nums.reduce((acc, n) => acc * 60 + n, 0)
 }

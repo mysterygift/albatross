@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Info, Plus, Tablet } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useCurrentProduction } from '@/features/productions/context'
+import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
+import { documentsQueryKey, persistProductionDocument } from '@/lib/documents/persistDocument'
+import { saveFileWithDialog } from '@/lib/files'
+import { generateDailyProgressReportPdf } from '@/lib/pdf/dailyProgressReport'
+import { buildDailyProgressReport, dailyProgressReportFileName } from '@/lib/script-supervisor/dailyProgressReport'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
 import { listScenesByProduction, listShootDaysByProduction } from '@/lib/db/repositories/schedule'
 import { SCRIPT_SUPERVISOR_REMOTE_ERROR } from '@/lib/db/repositories/scriptSupervisor'
@@ -33,6 +38,8 @@ import { cn } from '@/lib/utils'
 import {
   useCreateSlate,
   useCreateTake,
+  useDayLog,
+  useSaveDayLog,
   useNextSlatePreview,
   useScenesForShootDay,
   useScriptSupervisorSettings,
@@ -43,6 +50,7 @@ import {
   useShootProgress,
   useUpdateTake,
 } from './hooks'
+import { DayReportCard } from './DayReportCard'
 import { ProgressView } from './ProgressView'
 import { SceneStatusPip } from './SceneStatusPip'
 import { SlatePanel } from './SlatePanel'
@@ -61,7 +69,8 @@ function errorMessage(...errors: unknown[]): string | null {
 
 /** Script Supervisor workspace (SS3): log slates and takes against a stripboard shoot day. */
 export function ScriptSupervisorPage() {
-  const { currentProductionId } = useCurrentProduction()
+  const { currentProductionId, currentProduction } = useCurrentProduction()
+  const queryClient = useQueryClient()
   const { data: dataSource } = useEffectiveDataSourceForProduction(currentProductionId)
   const [touch, toggleTouch] = useTouchLayout()
 
@@ -108,6 +117,57 @@ export function ScriptSupervisorPage() {
     [progress]
   )
   const sceneStatus = (id: string): SceneProgressStatus => statusBySceneId.get(id) ?? 'not_shot'
+
+  const { data: dayLog } = useDayLog(dayId)
+  const saveDayLog = useSaveDayLog()
+  const exportDpr = useMutation({
+    mutationFn: async () => {
+      const day = days.find((d) => d.id === dayId)
+      if (!currentProductionId || !day || !progress) throw new Error('Choose a shoot day first')
+      const wildTracks = slates
+        .filter((s) => s.sound_mode === 'wild_track')
+        .map((s) =>
+          [
+            `Slate ${slateDisplayLabel(s, s.scene_id ? sceneNumberById.get(s.scene_id) : null)}`,
+            s.scene_id ? `Sc ${sceneNumberById.get(s.scene_id) ?? '?'}` : null,
+            s.description,
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        )
+      const data = buildDailyProgressReport({
+        productionName: currentProduction?.name ?? 'Production',
+        shootDayId: day.id,
+        shootDate: day.shoot_date,
+        dayNumber: day.day_number,
+        totalShootDays: days.length,
+        plannedCallTime: day.call_time,
+        plannedWrapTime: day.wrap_time,
+        dayLog: dayLog ?? null,
+        rows: progress.rows,
+        days: progress.days,
+        scheduledSceneIds: dayScenes.map((sc) => sc.id),
+        wildTracks,
+      })
+      const bytes = new Uint8Array(await generateDailyProgressReportPdf(data))
+      const fileName = dailyProgressReportFileName(day.day_number, day.shoot_date)
+      await persistProductionDocument({
+        productionId: currentProductionId,
+        fileName,
+        bytes,
+        mimeType: 'application/pdf',
+        entityType: DOCUMENT_ENTITY_TYPES.dailyProgressReport,
+        entityId: day.id,
+      })
+      await saveFileWithDialog(
+        { defaultPath: fileName, filters: [{ name: 'PDF', extensions: ['pdf'] }], title: 'Export daily progress report' },
+        bytes
+      )
+    },
+    onSuccess: () => {
+      if (currentProductionId) void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+    },
+  })
 
   const [rolling, setRolling] = useState<{ slateId: string; since: number } | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
@@ -230,7 +290,9 @@ export function ScriptSupervisorPage() {
     updateSlate.error,
     createTake.error,
     updateTake.error,
-    setSceneProgress.error
+    setSceneProgress.error,
+    saveDayLog.error,
+    exportDpr.error
   )
   const selectedSceneComplete = sceneId ? sceneStatus(sceneId) === 'complete' : false
   const toggleSceneComplete = () => {
@@ -330,6 +392,22 @@ export function ScriptSupervisorPage() {
             setChosenSceneId(id)
             setMode('log')
           }}
+          header={
+            chosenDay ? (
+              <DayReportCard
+                dayLabel={chosenDay.day_number != null ? `Day ${chosenDay.day_number}` : chosenDay.shoot_date}
+                dayLog={dayLog}
+                plannedCallTime={chosenDay.call_time}
+                plannedWrapTime={chosenDay.wrap_time}
+                onSave={(patch) =>
+                  saveDayLog.mutate({ productionId: currentProductionId, shootDayId: chosenDay.id, patch })
+                }
+                onExport={() => exportDpr.mutate()}
+                exporting={exportDpr.isPending}
+                touch={touch}
+              />
+            ) : null
+          }
         />
       ) : !daysLoading && days.length === 0 ? (
         <p className="text-muted-foreground">

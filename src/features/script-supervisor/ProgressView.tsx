@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { Input } from '@/components/ui/input'
 import { SegmentedControl } from '@/components/ui/segmented-control'
@@ -23,6 +23,8 @@ import type { SceneProgressInput } from '@/lib/db/repositories/scriptSupervisor'
 import {
   SCENE_STATUS_LABEL,
   formatPageEighths,
+  formatScreenTime,
+  parseScreenTime,
   type SceneProgressRow,
   type SceneProgressStatus,
 } from '@/lib/script-supervisor/progress'
@@ -40,6 +42,8 @@ export type ProgressViewProps = {
   fallbackDayId: string | null
   onSetProgress: (sceneId: string, input: SceneProgressInput) => void
   onOpenScene: (sceneId: string) => void
+  /** Rendered above the stats (the day report card). */
+  header?: ReactNode
 }
 
 function dayLabel(d: { dayNumber: number | null; shootDate: string }): string {
@@ -106,6 +110,30 @@ function DayBars({ days }: { days: DayProgress[] }) {
   )
 }
 
+function TimedInput({ row, onCommit }: { row: SceneProgressRow; onCommit: (seconds: number | null) => void }) {
+  const [invalid, setInvalid] = useState(false)
+  return (
+    <Input
+      aria-label={`Timed screen time for scene ${row.scene.scene_number}, minutes and seconds`}
+      aria-invalid={invalid || undefined}
+      key={`${row.scene.id}:${row.timedSeconds ?? ''}`}
+      defaultValue={row.timedSeconds != null ? formatScreenTime(row.timedSeconds) : ''}
+      placeholder={row.estimatedSeconds > 0 ? `${formatScreenTime(row.estimatedSeconds)} est.` : 'm:ss'}
+      className={cn('h-8 w-24 font-mono text-xs', invalid && 'border-destructive')}
+      onBlur={(e) => {
+        const raw = e.currentTarget.value
+        const next = parseScreenTime(raw)
+        if (raw.trim() !== '' && next == null) {
+          setInvalid(true)
+          return
+        }
+        setInvalid(false)
+        if (next !== row.timedSeconds) onCommit(next)
+      }}
+    />
+  )
+}
+
 function CreditInput({ row, onCommit }: { row: SceneProgressRow; onCommit: (eighths: number | null) => void }) {
   return (
     <Input
@@ -126,7 +154,7 @@ function CreditInput({ row, onCommit }: { row: SceneProgressRow; onCommit: (eigh
 }
 
 /** Review mode (SS4): what has been shot so far, per scene and per day. */
-export function ProgressView({ progress, isLoading, fallbackDayId, onSetProgress, onOpenScene }: ProgressViewProps) {
+export function ProgressView({ progress, isLoading, fallbackDayId, onSetProgress, onOpenScene, header }: ProgressViewProps) {
   const [filter, setFilter] = useState<Filter>('all')
 
   if (isLoading || !progress) {
@@ -144,22 +172,18 @@ export function ProgressView({ progress, isLoading, fallbackDayId, onSetProgress
 
   const setMark = (r: SceneProgressRow, value: string) => {
     if (value === 'omitted') {
-      onSetProgress(r.scene.id, { marked_status: 'omitted', credited_eighths: r.creditedEighths, notes: r.notes })
+      onSetProgress(r.scene.id, { marked_status: 'omitted' })
     } else if (value === 'complete') {
       const dayId = (r.lastShootDate ? dayIdByDate.get(r.lastShootDate) : null) ?? fallbackDayId
-      onSetProgress(r.scene.id, {
-        marked_status: 'complete',
-        completed_shoot_day_id: dayId,
-        credited_eighths: r.creditedEighths,
-        notes: r.notes,
-      })
+      onSetProgress(r.scene.id, { marked_status: 'complete', completed_shoot_day_id: dayId })
     } else {
-      onSetProgress(r.scene.id, { marked_status: null, credited_eighths: r.creditedEighths, notes: r.notes })
+      onSetProgress(r.scene.id, { marked_status: null })
     }
   }
 
   return (
     <div className="space-y-4">
+      {header}
       <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(200px,1fr))]">
         <StatTile
           label="Pages shot"
@@ -199,7 +223,7 @@ export function ProgressView({ progress, isLoading, fallbackDayId, onSetProgress
           />
         </div>
         <div className="overflow-x-auto">
-          <Table className="min-w-[860px]">
+          <Table className="min-w-[960px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Scene</TableHead>
@@ -210,6 +234,7 @@ export function ProgressView({ progress, isLoading, fallbackDayId, onSetProgress
                 <TableHead className="text-right">Takes</TableHead>
                 <TableHead className="text-right">Prints</TableHead>
                 <TableHead className="text-right">Shot</TableHead>
+                <TableHead>Timed</TableHead>
                 <TableHead>Last shot</TableHead>
                 <TableHead>Mark</TableHead>
               </TableRow>
@@ -217,7 +242,7 @@ export function ProgressView({ progress, isLoading, fallbackDayId, onSetProgress
             <TableBody>
               {visible.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-muted-foreground">
+                  <TableCell colSpan={11} className="text-muted-foreground">
                     No scenes match this filter.
                   </TableCell>
                 </TableRow>
@@ -255,12 +280,21 @@ export function ProgressView({ progress, isLoading, fallbackDayId, onSetProgress
                         <CreditInput
                           row={r}
                           onCommit={(eighths) =>
-                            onSetProgress(r.scene.id, { marked_status: null, credited_eighths: eighths, notes: r.notes })
+                            onSetProgress(r.scene.id, { credited_eighths: eighths })
                           }
                         />
                       </span>
                     ) : (
                       <span className="font-mono">{formatPageEighths(r.shotEighths)}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {r.status === 'complete' ? (
+                      <TimedInput row={r} onCommit={(seconds) => onSetProgress(r.scene.id, { timed_seconds: seconds })} />
+                    ) : (
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {r.estimatedSeconds > 0 ? `${formatScreenTime(r.estimatedSeconds)} est.` : '—'}
+                      </span>
                     )}
                   </TableCell>
                   <TableCell className="font-mono text-muted-foreground">

@@ -782,66 +782,110 @@ export async function softDeleteTake(id: string): Promise<void> {
   })
 }
 
-// ─── Scene progress marks (SS4) ─────────────────────────────────────────────
+// ─── Scene progress marks (SS4, SS5) ────────────────────────────────────────
 
 const SCENE_PROGRESS = 'script_supervisor_scene_progress'
 
+/**
+ * A patch: fields left undefined keep their saved value.
+ * `marked_status`: 'complete', 'omitted', or null to clear the mark (status falls back to not shot / part shot).
+ */
 export type SceneProgressInput = {
-  /** 'complete', 'omitted', or null to clear the mark (status falls back to not shot / part shot). */
-  marked_status: 'complete' | 'omitted' | null
+  marked_status?: 'complete' | 'omitted' | null
   /** Day the scene was completed; required when marking complete. */
   completed_shoot_day_id?: string | null
   /** Part-shot page credit in eighths. */
   credited_eighths?: number | null
+  /** Screen time timed by the script supervisor, in seconds. */
+  timed_seconds?: number | null
   notes?: string | null
 }
 
+type SceneProgressRowDb = {
+  marked_status: 'complete' | 'omitted' | null
+  completed_shoot_day_id: string | null
+  credited_eighths: number | null
+  timed_seconds: number | null
+  notes: string | null
+}
+
+async function getSceneProgressRow(sceneId: string): Promise<SceneProgressRowDb | null> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT marked_status, completed_shoot_day_id, credited_eighths, timed_seconds, notes FROM ${SCENE_PROGRESS} WHERE scene_id = $1`,
+    [sceneId]
+  )
+  const r = rows[0]
+  if (!r) return null
+  return {
+    marked_status: (r.marked_status as SceneProgressRowDb['marked_status']) ?? null,
+    completed_shoot_day_id: str(r.completed_shoot_day_id),
+    credited_eighths: r.credited_eighths != null ? coerceNumber(r.credited_eighths, 0) : null,
+    timed_seconds: r.timed_seconds != null ? coerceNumber(r.timed_seconds, 0) : null,
+    notes: str(r.notes),
+  }
+}
+
+async function assertShootDayInProduction(shootDayId: string, productionId: string): Promise<void> {
+  const db = await getDb()
+  const dayRows = await db.select<Array<{ production_id: string }>>(
+    `SELECT production_id FROM shoot_days WHERE id = $1 AND deleted_at IS NULL`,
+    [shootDayId]
+  )
+  if (dayRows.length === 0) throw new Error('Shoot day not found')
+  if (dayRows[0]!.production_id !== productionId) throw new Error('Shoot day belongs to a different production')
+}
+
+function assertWholeNonNegative(value: number | null | undefined, message: string): void {
+  if (value != null && (!Number.isInteger(value) || value < 0)) throw new Error(message)
+}
+
 /**
- * Records the script supervisor's mark for a scene: complete (on a shoot day), omitted, or cleared,
- * plus an optional part-shot page credit. One row per scene, upserted.
+ * Records the script supervisor's marks for a scene (one row per scene, upserted as a patch): complete on a
+ * shoot day, omitted or cleared; a part-shot page credit; timed screen time; notes.
  */
 export async function setSceneProgress(productionId: string, sceneId: string, input: SceneProgressInput): Promise<void> {
   await assertLocalProduction(productionId)
   if (input.marked_status != null && !['complete', 'omitted'].includes(input.marked_status)) {
     throw new Error('Scene mark must be complete, omitted or cleared')
   }
+  assertWholeNonNegative(input.credited_eighths, 'Pages credited must be a whole number of eighths, zero or more')
+  assertWholeNonNegative(input.timed_seconds, 'Screen time must be a whole number of seconds, zero or more')
   await getSceneNumber(sceneId, productionId)
 
-  const completedDayId = input.marked_status === 'complete' ? input.completed_shoot_day_id ?? null : null
-  if (input.marked_status === 'complete') {
+  const existing = await getSceneProgressRow(sceneId)
+  const pick = <K extends keyof SceneProgressRowDb>(key: K): SceneProgressRowDb[K] =>
+    (input[key] !== undefined ? input[key] : existing?.[key] ?? null) as SceneProgressRowDb[K]
+
+  const markedStatus = pick('marked_status')
+  let completedDayId = markedStatus === 'complete' ? pick('completed_shoot_day_id') : null
+  if (markedStatus === 'complete') {
     if (!completedDayId) throw new Error('Choose the shoot day the scene was completed on')
-    const db = await getDb()
-    const dayRows = await db.select<Array<{ production_id: string }>>(
-      `SELECT production_id FROM shoot_days WHERE id = $1 AND deleted_at IS NULL`,
-      [completedDayId]
-    )
-    if (dayRows.length === 0) throw new Error('Shoot day not found')
-    if (dayRows[0]!.production_id !== productionId) throw new Error('Shoot day belongs to a different production')
-  }
-  const credit = input.credited_eighths
-  if (credit != null && (!Number.isInteger(credit) || credit < 0)) {
-    throw new Error('Pages credited must be a whole number of eighths, zero or more')
+    await assertShootDayInProduction(completedDayId, productionId)
+  } else {
+    completedDayId = null
   }
 
   const ts = now()
   const row = {
     scene_id: sceneId,
     production_id: productionId,
-    marked_status: input.marked_status,
+    marked_status: markedStatus,
     completed_shoot_day_id: completedDayId,
-    credited_eighths: credit ?? null,
-    notes: input.notes ?? null,
+    credited_eighths: pick('credited_eighths'),
+    timed_seconds: pick('timed_seconds'),
+    notes: pick('notes'),
   }
   const statements: Stmt[] = [
     { sql: 'BEGIN', bindValues: [] },
     {
-      sql: `INSERT INTO ${SCENE_PROGRESS} (scene_id, production_id, marked_status, completed_shoot_day_id, credited_eighths, notes, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      sql: `INSERT INTO ${SCENE_PROGRESS} (scene_id, production_id, marked_status, completed_shoot_day_id, credited_eighths, timed_seconds, notes, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (scene_id) DO UPDATE SET marked_status = $3, completed_shoot_day_id = $4,
-              credited_eighths = $5, notes = $6, updated_at = $8`,
+              credited_eighths = $5, timed_seconds = $6, notes = $7, updated_at = $9`,
       bindValues: [
-        row.scene_id, row.production_id, row.marked_status, row.completed_shoot_day_id, row.credited_eighths, row.notes,
-        ts, ts,
+        row.scene_id, row.production_id, row.marked_status, row.completed_shoot_day_id, row.credited_eighths,
+        row.timed_seconds, row.notes, ts, ts,
       ],
     },
     outboxStatementForRow({ entity: SCENE_PROGRESS, entityId: sceneId, operation: 'update', payloadJson: JSON.stringify(row) }),
@@ -851,4 +895,94 @@ export async function setSceneProgress(productionId: string, sceneId: string, in
     const db = await getDb()
     await executeBatch(db, statements)
   })
+}
+
+// ─── Day log: actual times and remarks (SS5) ────────────────────────────────
+
+const DAY_LOGS = 'script_supervisor_day_logs'
+
+export const DAY_LOG_TIME_FIELDS = [
+  'call_time',
+  'first_shot_time',
+  'lunch_start_time',
+  'lunch_end_time',
+  'first_shot_after_lunch_time',
+  'camera_wrap_time',
+  'wrap_time',
+] as const
+
+export type DayLogTimeField = (typeof DAY_LOG_TIME_FIELDS)[number]
+
+export type ScriptSupervisorDayLog = { shoot_day_id: string; production_id: string; remarks: string | null } & Record<
+  DayLogTimeField,
+  string | null
+>
+
+export type DayLogPatch = Partial<Record<DayLogTimeField, string | null>> & { remarks?: string | null }
+
+/** HH:MM (24-hour); accepts 'H:MM' and 'HMM'/'HHMM'. Returns null for blank input; throws on anything else. */
+export function normaliseDayLogTime(value: string | null | undefined): string | null {
+  const raw = (value ?? '').trim()
+  if (!raw) return null
+  const m = raw.match(/^(\d{1,2}):?(\d{2})$/)
+  if (!m) throw new Error(`“${raw}” is not a time. Use 24-hour HH:MM, for example 08:15.`)
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (h > 23 || min > 59) throw new Error(`“${raw}” is not a time. Use 24-hour HH:MM, for example 08:15.`)
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+}
+
+/** The day's actual times and remarks; all null when nothing has been logged. */
+export async function getDayLog(shootDayId: string): Promise<ScriptSupervisorDayLog | null> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${DAY_LOGS} WHERE shoot_day_id = $1`, [shootDayId])
+  const r = rows[0]
+  if (!r) return null
+  const log: Record<string, unknown> = {
+    shoot_day_id: r.shoot_day_id as string,
+    production_id: r.production_id as string,
+    remarks: str(r.remarks),
+  }
+  for (const f of DAY_LOG_TIME_FIELDS) log[f] = str(r[f])
+  return log as ScriptSupervisorDayLog
+}
+
+/** Saves actual times / remarks for a shoot day as a patch (undefined fields keep their saved value). */
+export async function saveDayLog(productionId: string, shootDayId: string, patch: DayLogPatch): Promise<ScriptSupervisorDayLog> {
+  await assertLocalProduction(productionId)
+  await assertShootDayInProduction(shootDayId, productionId)
+  const existing = await getDayLog(shootDayId)
+  const next: Record<string, string | null> = {}
+  for (const f of DAY_LOG_TIME_FIELDS) {
+    next[f] = patch[f] !== undefined ? normaliseDayLogTime(patch[f]) : existing?.[f] ?? null
+  }
+  const remarks = patch.remarks !== undefined ? (patch.remarks?.trim() || null) : existing?.remarks ?? null
+
+  const ts = now()
+  const cols = [...DAY_LOG_TIME_FIELDS, 'remarks'] as const
+  const values = [...DAY_LOG_TIME_FIELDS.map((f) => next[f]), remarks]
+  // $1 shoot_day_id, $2 production_id, $3..$10 fields, $11 created, $12 updated
+  const placeholders = cols.map((_, i) => `$${i + 3}`).join(', ')
+  const updates = cols.map((c, i) => `${c} = $${i + 3}`).join(', ')
+  const statements: Stmt[] = [
+    { sql: 'BEGIN', bindValues: [] },
+    {
+      sql: `INSERT INTO ${DAY_LOGS} (shoot_day_id, production_id, ${cols.join(', ')}, created_at, updated_at)
+            VALUES ($1, $2, ${placeholders}, $${cols.length + 3}, $${cols.length + 4})
+            ON CONFLICT (shoot_day_id) DO UPDATE SET ${updates}, updated_at = $${cols.length + 4}`,
+      bindValues: [shootDayId, productionId, ...values, ts, ts],
+    },
+    outboxStatementForRow({
+      entity: DAY_LOGS,
+      entityId: shootDayId,
+      operation: 'update',
+      payloadJson: JSON.stringify({ ...next, remarks }),
+    }),
+    { sql: 'COMMIT', bindValues: [] },
+  ]
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    await executeBatch(db, statements)
+  })
+  return (await getDayLog(shootDayId))!
 }

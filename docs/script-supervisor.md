@@ -54,7 +54,7 @@ Migration [`0087_script_supervisor_slating_system.sql`](../src-tauri/migrations/
   preference in local storage (`useTouchLayout`), not production data.
 - Remote-server productions see a notice instead of the workspace.
 
-Not yet: Daily Progress Report (SS5), tramlines (SS6–SS7), demo seed data.
+Not yet: tramlines (SS6–SS7), demo seed data.
 
 ## SS4 — scene status and progress
 
@@ -79,6 +79,32 @@ Everything else is derived ([`progress.ts`](../src/lib/script-supervisor/progres
   pages; a scene table (natural scene order, filterable) with slates, takes, prints, pages shot, last shot day,
   an inline part-shot credit, and a Complete / Omitted / Not marked control.
 - Marking a scene here does not change `script_sections.status` (SB1); keeping the two in step is a later decision.
+
+## SS5 — Daily Progress Report
+
+Migration [`0089_script_supervisor_day_log.sql`](../src-tauri/migrations/0089_script_supervisor_day_log.sql):
+
+- `script_supervisor_day_logs` (one row per shoot day): **actual** unit call, first shot, lunch / back from lunch,
+  first shot after lunch, camera wrap, unit wrap (HH:MM) and remarks. `shoot_days.call_time`, `wrap_time` and
+  `meal_times_json` stay the **planned** schedule; the report shows a planned time, labelled, only when no actual
+  time was logged.
+- `script_supervisor_scene_progress.timed_seconds`: screen time the script supervisor timed for a completed scene.
+  `setSceneProgress` is now a patch: fields left undefined keep their saved value.
+
+Report ([`dailyProgressReport.ts`](../src/lib/script-supervisor/dailyProgressReport.ts) builds the data;
+[`pdf/dailyProgressReport.ts`](../src/lib/pdf/dailyProgressReport.ts) renders A4 with pdf-lib):
+
+| Row | Script | Previously / Today / To date | To do |
+| --- | --- | --- | --- |
+| Scenes | scenes not omitted | completed before / on / up to this day | script − to date |
+| Pages | their eighths | completions, plus part-shot credit on the day the scene was last shot | script − to date |
+| Minutes | sum of schedule estimates | timed screen time of completions, else the estimate (footnoted) | script − to date |
+| Setups, takes | — | slates and takes logged per day | — |
+
+Also: times, the day's scenes (strip order, plus scenes completed but not scheduled) with status, scenes completed
+today, wild tracks, remarks. **Review → Daily progress report** holds the actual-time fields and **Export PDF**, which
+saves a copy to Documents → Set paperwork (`daily_progress_report`) and opens a save dialog. Review's scene table
+gains a **Timed** column (m:ss) for completed scenes.
 
 ## Rules
 

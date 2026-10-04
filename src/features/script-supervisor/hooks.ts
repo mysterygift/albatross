@@ -11,7 +11,10 @@ import {
   createTake,
   getNextSlatePreview,
   getScriptSupervisorSettings,
+  getDayLog,
+  saveDayLog,
   setSceneProgress,
+  type DayLogPatch,
   setSlatingSystem,
   type SceneProgressInput,
   listScenesForShootDay,
@@ -158,5 +161,21 @@ export function useSetSceneProgress() {
   return useInvalidatingMutation(
     ({ productionId, sceneId, input }: { productionId: string; sceneId: string; input: SceneProgressInput }) =>
       setSceneProgress(productionId, sceneId, input)
+  )
+}
+
+/** Actual times and remarks the script supervisor logged for a shoot day (SS5). */
+export function useDayLog(shootDayId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['script-supervisor', 'day-log', shootDayId ?? null],
+    queryFn: () => getDayLog(shootDayId!),
+    enabled: !!shootDayId,
+  })
+}
+
+export function useSaveDayLog() {
+  return useInvalidatingMutation(
+    ({ productionId, shootDayId, patch }: { productionId: string; shootDayId: string; patch: DayLogPatch }) =>
+      saveDayLog(productionId, shootDayId, patch)
   )
 }
