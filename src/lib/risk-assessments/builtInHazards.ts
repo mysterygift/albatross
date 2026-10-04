@@ -40,7 +40,7 @@ export const BUILT_IN_HAZARDS: readonly BuiltInHazard[] = [
     key: 'drone-flying',
     name: 'Flying Drones (Internal and External)',
     description:
-      'Flying drones indoors and outdoors in the designated filming spaces, by licensed operators working with all involved personnel and the Maverick crew.',
+      'Flying drones indoors and outdoors in the designated filming spaces, by licensed operators working with all involved personnel.',
     risks: [
       'Collisions with people and property (tree branches, power lines, warehouse racking and machinery).',
       'Loss of control owing to loss of GPS connection.',
