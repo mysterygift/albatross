@@ -60,7 +60,7 @@ import {
   shootingBlocMastheadLabelForCallSheet,
 } from '@/lib/call-sheets/callSheetEpisodic'
 import { generateCallSheetPdf, parseCallSheetWeatherJson } from '@/lib/pdf/callSheet'
-import type { CallSheetData } from '@/lib/pdf/callSheet'
+import type { CallSheetData, CallSheetPaperSize } from '@/lib/pdf/callSheet'
 import { selectPrimaryCallSheetContacts } from '@/lib/call-sheets/primaryContacts'
 import {
   buildCallSheetStripFromStripboard,
@@ -121,6 +121,7 @@ export function CallSheetsPage() {
   const canLoadProjectData = !authSession.authSupported || !!authSession.currentUser
   const [shootDayId, setShootDayId] = useState<string | null>(null)
   const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
+  const [paperSize, setPaperSize] = useState<CallSheetPaperSize>('A4')
   const [weatherSummary, setWeatherSummary] = useState('')
   const [sunriseManual, setSunriseManual] = useState('')
   const [sunsetManual, setSunsetManual] = useState('')
@@ -730,6 +731,8 @@ export function CallSheetsPage() {
       shootDate: shootDay.shoot_date,
       unitName,
       dayNumber: shootDay.day_number ?? null,
+      totalDays: shootDays.length || null,
+      paperSize,
       callTime: shootDay.call_time ?? null,
       wrapTime: shootDay.wrap_time ?? null,
       dayNotes: shootDay.notes ?? null,
@@ -808,6 +811,7 @@ export function CallSheetsPage() {
     sunsetManual,
     weatherSummary,
     weatherFromDay,
+    paperSize,
   ])
 
   const distributionContext = useMemo(() => {
@@ -1022,6 +1026,18 @@ export function CallSheetsPage() {
                       </SelectItem>
                     )
                   })}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Paper size</Label>
+              <Select value={paperSize} onValueChange={(v) => setPaperSize(v as CallSheetPaperSize)}>
+                <SelectTrigger className="w-full bg-input border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="A4">A4</SelectItem>
+                  <SelectItem value="Letter">US Letter</SelectItem>
                 </SelectContent>
               </Select>
             </div>
