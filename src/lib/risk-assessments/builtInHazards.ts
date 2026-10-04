@@ -36,6 +36,32 @@ export const BUILT_IN_HAZARDS: readonly BuiltInHazard[] = [
     severity_after: 2,
     probability_after: 2,
   },
+  {
+    key: 'drone-flying',
+    name: 'Flying Drones (Internal and External)',
+    description:
+      'Flying drones indoors and outdoors in the designated filming spaces, by licensed operators working with all involved personnel and the Maverick crew.',
+    risks: [
+      'Collisions with people and property (tree branches, power lines, warehouse racking and machinery).',
+      'Loss of control owing to loss of GPS connection.',
+    ].join('\n'),
+    outcomes: 'Serious injury to people, damage to property and equipment, loss of the drone.',
+    control_measures: [
+      'Drones will only be flown by competent licensed operators in line with CAA regulations and UK law.',
+      'All personnel will be kept clear of designated take-off and landing zones.',
+      'Visual line of sight will be maintained with the drone at all times by either the pilot or a designated spotter.',
+      'All movements will be broken down step by step and coordinated with on-site personnel before filming.',
+      'Drones will maintain a minimum distance of 5m above all personnel at all times.',
+      'If loss of GPS connection occurs and it becomes clear that control of drones cannot be maintained, all drone operation will cease.',
+    ].join('\n'),
+    at_risk_crew: 1,
+    at_risk_cast: 1,
+    at_risk_public: 0,
+    severity_before: 5,
+    probability_before: 3,
+    severity_after: 4,
+    probability_after: 1,
+  },
 ]
 
 export function getBuiltInHazard(key: string): BuiltInHazard | undefined {

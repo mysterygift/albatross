@@ -31,7 +31,7 @@ SQLite migration [`0092_risk_assessments.sql`](../src-tauri/migrations/0092_risk
 | `risk_assessment_hazards` | Ordered hazards: name, description, risks, outcomes, control measures (multi-line, one item per line), `at_risk_crew/cast/public`, and the four ratings (`severity_before`, `probability_before`, `severity_after`, `probability_after`, each `CHECK 1..5`). |
 | `hazard_templates` | Project-scoped reusable hazards, `UNIQUE(production_id, name)`. Hard-deleted so a name can be reused. |
 
-Built-in templates are code, not data: [`builtInHazards.ts`](../src/lib/risk-assessments/builtInHazards.ts) (starting with *Manual Handling*: crew at risk, 4×3 before = 12 red, 2×2 after = 4 green). Add more entries to that array.
+Built-in templates are code, not data: [`builtInHazards.ts`](../src/lib/risk-assessments/builtInHazards.ts) (*Manual Handling*: crew at risk, 4×3 before = 12 red, 2×2 after = 4 green; *Flying Drones (Internal and External)*: crew and cast at risk, 5×3 before = 15 red, 4×1 after = 4 green). Add more entries to that array.
 
 First aiders are a per-RAMS manual list (name, phone, email); **Add from crew** only prefills a row from People, nothing is linked. Hospital / police are manual fields, prefilled from the shoot day's `hospital_*` / `police_station_*` when the RAMS is created.
 
