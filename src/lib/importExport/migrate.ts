@@ -3,6 +3,7 @@ import { ApfInvalidDataError, ApfMigrationError } from '@/lib/importExport/error
 import type { ApfManifestV1 } from '@/lib/importExport/manifest'
 import type { ApfV1DataFile, ApfV1Tables } from '@/lib/importExport/payload'
 import { assertApfManifestDataFormatVersionAligned } from '@/lib/importExport/payload'
+import { APF_V9_TABLE_KEYS } from '@/lib/importExport/tableKeys'
 
 export type ApfMigrationContext = {
   manifest: ApfManifestV1
@@ -220,6 +221,29 @@ const migrateV7ToV8: ApfFileMigrator = {
   },
 }
 
+/**
+ * v9 adds the script sections / sides builder tables (`script_versions`, `script_pages`, `script_sections`,
+ * `script_section_ranges`, `script_section_characters`, `shot_script_sections`, `shoot_day_sides_exports`) and the
+ * script supervisor tables (slates, takes, scene progress, day logs, script elements, tramlines, annotations,
+ * continuity media, revision items). Older payloads get empty tables.
+ *
+ * `shoot_day_units.movement_order_json` and `shoot_days.movement_pins_json` also arrive in v9 files; they are plain
+ * columns, so older rows simply import with NULL (the importer only inserts columns present in the row).
+ */
+const migrateV8ToV9: ApfFileMigrator = {
+  fromVersion: 8,
+  toVersion: 9,
+  migrate: (ctx) => {
+    const next = cloneCtx(ctx)
+    next.manifest.formatVersion = 9
+    next.data.formatVersion = 9
+    for (const key of APF_V9_TABLE_KEYS) {
+      if (!Array.isArray(next.data.tables[key])) next.data.tables[key] = []
+    }
+    return next
+  },
+}
+
 /** Registered migrators for older `.apf` payloads (sequential v → v+1). */
 export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [
   migrateV1ToV2,
@@ -229,6 +253,7 @@ export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [
   migrateV5ToV6,
   migrateV6ToV7,
   migrateV7ToV8,
+  migrateV8ToV9,
 ]
 
 /**

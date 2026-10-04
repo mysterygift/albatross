@@ -126,6 +126,41 @@ function sortBudgetRevisionsByParent(rows: ApfTableRow[]): ApfTableRow[] {
   return out
 }
 
+/**
+ * Orders rows so each row's self-referencing `column` parent is inserted first. A parent that is not in the
+ * payload, or a cycle, leaves the link cleared so the FK cannot fail.
+ */
+function sortRowsByParentColumn(rows: ApfTableRow[], column: string): ApfTableRow[] {
+  const ids = new Set(rows.map((r) => String(r.id)))
+  const out: ApfTableRow[] = []
+  const seen = new Set<string>()
+  const parentOf = (r: ApfTableRow): string | null => (r[column] != null ? String(r[column]) : null)
+  while (out.length < rows.length) {
+    let added = false
+    for (const r of rows) {
+      const id = String(r.id)
+      if (seen.has(id)) continue
+      const parent = parentOf(r)
+      if (parent == null || !ids.has(parent) || seen.has(parent)) {
+        out.push(!ids.has(parent ?? '') && parent != null ? { ...r, [column]: null } : r)
+        seen.add(id)
+        added = true
+      }
+    }
+    if (!added) {
+      for (const r of rows) {
+        const id = String(r.id)
+        if (!seen.has(id)) {
+          out.push({ ...r, [column]: null })
+          seen.add(id)
+        }
+      }
+      break
+    }
+  }
+  return out
+}
+
 function orderRowsForTable(table: ApfV1TableKey, rows: ApfTableRow[]): ApfTableRow[] {
   if (table === 'production_tasks') {
     return sortRowsByParentTaskId(rows)
@@ -135,6 +170,12 @@ function orderRowsForTable(table: ApfV1TableKey, rows: ApfTableRow[]): ApfTableR
   }
   if (table === 'budget_revisions') {
     return sortBudgetRevisionsByParent(rows)
+  }
+  if (table === 'script_versions') {
+    return sortRowsByParentColumn(rows, 'previous_script_version_id')
+  }
+  if (table === 'tramlines' || table === 'script_annotations') {
+    return sortRowsByParentColumn(rows, 'carried_from_id')
   }
   return rows
 }

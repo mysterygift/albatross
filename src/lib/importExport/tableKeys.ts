@@ -1,4 +1,31 @@
 /**
+ * Tables added in formatVersion 9: script sections / sides builder, then script supervisor.
+ * Parents come before children; self-referencing tables (`script_versions`, `tramlines`, `script_annotations`)
+ * are ordered row-by-row in `planImportStatements`.
+ */
+export const APF_V9_TABLE_KEYS = [
+  'script_versions',
+  'script_pages',
+  'script_sections',
+  'script_section_ranges',
+  'script_section_characters',
+  'shot_script_sections',
+  'shoot_day_sides_exports',
+  'production_script_supervisor_settings',
+  'slates',
+  'takes',
+  'script_supervisor_scene_progress',
+  'script_supervisor_day_logs',
+  'script_elements',
+  'tramlines',
+  'tramline_segments',
+  'script_annotations',
+  'script_annotation_takes',
+  'continuity_media',
+  'script_revision_items',
+] as const
+
+/**
  * v1 table keys for `data/production.json` → `tables`.
  * Names match SQLite table names per docs/project-import-export-audit.md §2 (INCLUDE set).
  * Order matches audit §3 import layers for documentation; export/import need not sort JSON by this array.
@@ -72,6 +99,7 @@ export const APF_V1_TABLE_KEYS = [
   'risk_assessments',
   'risk_assessment_units',
   'risk_assessment_hazards',
+  ...APF_V9_TABLE_KEYS,
 ] as const
 
 export type ApfV1TableKey = (typeof APF_V1_TABLE_KEYS)[number]
