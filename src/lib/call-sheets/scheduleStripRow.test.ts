@@ -104,6 +104,6 @@ describe('formatCallSheetSynopsis', () => {
       scene_title: 'Arrival',
       scene_description: 'Taxi pulls up',
     }
-    expect(formatCallSheetSynopsis(strip)).toBe('EXT. STREET · Arrival · Taxi pulls up')
+    expect(formatCallSheetSynopsis(strip)).toBe('EXT. STREET | Arrival | Taxi pulls up')
   })
 })
