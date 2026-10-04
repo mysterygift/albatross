@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { APF_MANIFEST_ENTRY_PATH, APF_V1_DATA_ENTRY_PATH } from '@/lib/importExport/constants'
+import { APF_MANIFEST_ENTRY_PATH, APF_V1_DATA_ENTRY_PATH, CURRENT_APF_FORMAT_VERSION } from '@/lib/importExport/constants'
 import {
   ApfArchiveLayoutError,
   ApfNotZipPayloadError,
@@ -81,7 +81,7 @@ describe('parseApfArchiveBytes', () => {
     const bytes = buildMinimalProductionZip()
     expect(isLikelyZipPayload(bytes)).toBe(true)
     const { normalized } = parseApfArchiveBytes(bytes)
-    expect(normalized.data.formatVersion).toBe(2)
+    expect(normalized.data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
   })
 
   it('rejects non-zip content even if caller named it .apf', () => {

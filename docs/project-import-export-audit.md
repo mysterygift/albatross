@@ -131,6 +131,32 @@ All of the following are either keyed by `production_id` or hang off rows that a
 | `cue_sheets` | `id` | `production_id` | `documents` (`document_id`, nullable) |
 | `script_documents` | `id` | `production_id` | `documents` (`document_id`, nullable) |
 
+### 2.11b Script sections, sides & script supervisor (format v9)
+
+| Table | PK | Scoped by | Important FKs |
+|-------|----|-----------|---------------|
+| `script_versions` | `id` | `production_id` | `episodes` (nullable), self (`previous_script_version_id`, nullable) |
+| `script_pages` | `id` | indirect | `script_versions`, `scenes` (nullable) |
+| `script_sections` | `id` | `production_id` | `script_versions`, `scenes`, `episodes` (nullable) |
+| `script_section_ranges` | `id` | indirect | `script_sections` |
+| `script_section_characters` | `id` | indirect | `script_sections`, `people` (nullable) |
+| `shot_script_sections` | `id` | indirect | `shots`, `script_sections` |
+| `shoot_day_sides_exports` | `id` | `production_id` | `shoot_days`, `units` / `documents` / `script_versions` (nullable) |
+| `production_script_supervisor_settings` | `production_id` | `production_id` | no `deleted_at`; one row per production |
+| `slates` | `id` | `production_id` | `shoot_days`; `units`, `scenes`, `shots` (nullable) |
+| `takes` | `id` | indirect | `slates` |
+| `script_supervisor_scene_progress` | `scene_id` | `production_id` | `scenes`; `shoot_days` (`completed_shoot_day_id`, nullable); no `deleted_at` |
+| `script_supervisor_day_logs` | `shoot_day_id` | `production_id` | `shoot_days`; no `deleted_at` |
+| `script_elements` | `id` | `production_id` | `script_versions`, `scenes` (nullable), `script_pages` (nullable) |
+| `tramlines` | `id` | `production_id` | `slates`, `script_versions`, `script_elements` (start / end), self (`carried_from_id`, nullable) |
+| `tramline_segments` | `id` | indirect | `tramlines`, `script_elements`; no `deleted_at` |
+| `script_annotations` | `id` | `production_id` | `script_versions`, `script_elements`, `slates` (nullable), self (`carried_from_id`, nullable) |
+| `script_annotation_takes` | `(annotation_id, take_id)` | indirect | `script_annotations`, `takes`; no `id`, no `deleted_at` |
+| `continuity_media` | `id` | `production_id` | `documents` (`entity_type = 'continuity_photo'`); `slates`, `takes`, `scenes` (nullable) |
+| `script_revision_items` | `id` | `production_id` | `scenes`, `script_versions` (from / to); `item_id` / `new_item_id` are logical links to tramlines / annotations |
+
+Rows whose required parent was not exported are dropped, and optional links to a parent that was not exported are cleared (`pruneOrphanedRows.ts`, mirroring the FK `CASCADE` / `SET NULL` actions). Not yet included: `storyboard_imports` / `storyboard_images` (image bytes live under `storage_key`, not in `documents`).
+
 ### 2.12 Reporting & display layers (still canonical user data)
 
 | Table | PK | Scoped by | Important FKs |
@@ -209,6 +235,8 @@ Canonical order (copy for audits; code is source of truth):
 52. `cue_sheets`  
 53. `call_sheets`  
 54. `script_documents`  
+55. `hazard_templates`, `risk_assessments`, `risk_assessment_units`, `risk_assessment_hazards` (format v8)  
+56. Format v9, in this order: `script_versions` (rows sorted so **`previous_script_version_id`** parents insert first), `script_pages`, `script_sections`, `script_section_ranges`, `script_section_characters`, `shot_script_sections`, `shoot_day_sides_exports`, `production_script_supervisor_settings`, `slates`, `takes`, `script_supervisor_scene_progress`, `script_supervisor_day_logs`, `script_elements`, `tramlines` (sorted by **`carried_from_id`**), `tramline_segments`, `script_annotations` (sorted by **`carried_from_id`**), `script_annotation_takes`, `continuity_media`, `script_revision_items`  
 
 **Cycles:** None identified for **included** tables aside from **self-edges** (`budget_accounts`, `production_tasks`), handled by per-table row ordering in code.
 
@@ -275,6 +303,8 @@ Only include these when their referenced parents are included and non-deleted.
 | `cue_sheets` | `document_id` | Generated cue sheet PDF (or similar) stored as a `documents` row. |
 | `call_sheets` | `generated_document_id` | Generated call sheet output. |
 | `script_documents` | `document_id` | Script upload linkage. |
+| `shoot_day_sides_exports` | `document_id` | Generated sides PDF (nullable). |
+| `continuity_media` | `document_id` | Continuity photo (`entity_type = 'continuity_photo'`); required, so the row is dropped if the document is not exported. |
 
 **Import/export:** Bundle bytes for every exported `documents` row (active only). On import, copy into app storage (same attachment layout as duplicate production) and **rewrite `documents.file_path`**. Then insert `documents` before `cue_sheets` / `call_sheets` / `script_documents` that reference them.
 

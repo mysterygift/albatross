@@ -83,7 +83,9 @@ Registered file-level migrators (`src/lib/importExport/migrate.ts`):
 | v6 → v7 | `vendor_purchase_orders.currency_code` / `exchange_rate` (NULL = production currency; matches SQLite migration 0090). `approval` is derived from `status`: POs ticked approved but still draft / issued become `approved`, then `approval` is set from status. |
 | v7 → v8 | New tables `hazard_templates`, `risk_assessments`, `risk_assessment_units`, `risk_assessment_hazards` (matches SQLite migration 0092; see [risk-assessments.md](risk-assessments.md)). Older files import with none. `risk_assessments.generated_document_id` is exported as NULL when its PDF document is not part of the export. |
 
-Exports from current builds write **`formatVersion` 8** and omit `scenes.heading`. Imports of v1–v7 packages run the chain above before INSERT planning.
+| v8 → v9 | New tables for the script sections / sides builder (`script_versions`, `script_pages`, `script_sections`, `script_section_ranges`, `script_section_characters`, `shot_script_sections`, `shoot_day_sides_exports`; migrations 0075–0077) and the script supervisor (`production_script_supervisor_settings`, `slates`, `takes`, `script_supervisor_scene_progress`, `script_supervisor_day_logs`, `script_elements`, `tramlines`, `tramline_segments`, `script_annotations`, `script_annotation_takes`, `continuity_media`, `script_revision_items`; migrations 0093–0099; see [script-supervisor.md](script-supervisor.md), [script-sections-and-sides.md](script-sections-and-sides.md)). Older files import with none. Also carries `shoot_day_units.movement_order_json` and `shoot_days.movement_pins_json` (migrations 0100–0101): plain columns, NULL when absent. Continuity photos and sides PDFs are ordinary `documents` rows, so their bytes are bundled like any other document. |
+
+Exports from current builds write **`formatVersion` 9** and omit `scenes.heading`. Imports of v1–v8 packages run the chain above before INSERT planning.
 
 ### 4.4 Compatibility rules
 
@@ -187,6 +189,7 @@ Implemented in TypeScript. **Import** still needs a zip reader in a later phase;
 | Document path helpers | `src/lib/importExport/documentPaths.ts` |
 | Public exports | `src/lib/importExport/index.ts` |
 | Export: load SQL | `src/lib/importExport/exportLoadProductionData.ts` |
+| Export: drop rows whose parent was not exported (v9 tables) | `src/lib/importExport/pruneOrphanedRows.ts` |
 | Export: payload + manifest | `src/lib/importExport/buildExportPayload.ts`, `buildExportManifest.ts` |
 | Export: document bytes | `src/lib/importExport/collectApfDocumentFiles.ts` |
 | Export: ZIP bytes | `src/lib/importExport/buildApfArchive.ts` (uses `fflate`) |
@@ -418,4 +421,5 @@ Verified behaviours:
 | 2026-10-03 | **formatVersion 5:** add `vendor_purchase_order_amendments` table and `vendor_purchase_order_expenses.allocated_amount`; v4→v5 migrator adds the empty table. |
 | 2026-10-04 | **formatVersion 7:** `vendor_purchase_orders.currency_code` / `exchange_rate`; `approval` derived from `status`; v6→v7 migrator backfills NULL currency and derives approval. |
 | 2026-10-04 | **formatVersion 8:** add risk assessment tables (`risk_assessments`, `risk_assessment_units`, `risk_assessment_hazards`) and project `hazard_templates`; v7→v8 migrator adds empty tables. |
+| 2026-10-05 | **formatVersion 9:** add script sections / sides builder and script supervisor tables (19 tables, see §4.3); movement order / pin columns ride along; v8→v9 migrator adds empty tables. Export prunes child rows whose parent was soft-deleted or filtered out; import orders self-referencing rows (`previous_script_version_id`, `carried_from_id`) parent-first. |
 | 2026-10-03 | **formatVersion 6:** add `expense_receipts` (receipt date / amount / reference per `expense_receipt` document); v5→v6 migrator adds the empty table. |

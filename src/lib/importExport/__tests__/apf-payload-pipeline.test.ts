@@ -16,6 +16,7 @@ import { ApfInvalidDataError, ApfUnknownFormatVersionError, ApfUnsupportedFormat
 import { migrateApfToCurrentVersion, migrateScenesDropHeading } from '@/lib/importExport/migrate'
 import { normalizeApfManifestAndData } from '@/lib/importExport/pipeline'
 import { parseApfV1DataFileJson } from '@/lib/importExport/payload'
+import { APF_V9_TABLE_KEYS } from '@/lib/importExport/tableKeys'
 import { buildFixtureDataAndManifest, emptyApfTables, minimalProductionRow, TEST_PRODUCTION_ID } from '@/test/apf/fixtures'
 
 describe('getApfFormatCompatibility', () => {
@@ -225,6 +226,33 @@ describe('migrateApfToCurrentVersion', () => {
     expect(rows['approved']).toMatchObject({ status: 'approved', approval: 1 })
     expect(rows['closed']).toMatchObject({ status: 'closed', approval: 1 })
     expect(rows['cancelled']).toMatchObject({ status: 'cancelled', approval: 0 })
+  })
+
+  it('v8→v9 adds the script sections and script supervisor tables as empty arrays', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    const { manifest: m9, dataFile: d9 } = buildFixtureDataAndManifest({ tables })
+    const manifest = { ...m9, formatVersion: 8 as const }
+    const data = JSON.parse(JSON.stringify(d9)) as (typeof d9 & { formatVersion: number })
+    data.formatVersion = 8
+    for (const key of APF_V9_TABLE_KEYS) delete (data.tables as Record<string, unknown>)[key]
+
+    const out = migrateApfToCurrentVersion({ manifest, data: data as typeof d9 })
+    expect(out.manifest.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
+    for (const key of APF_V9_TABLE_KEYS) expect(out.data.tables[key]).toEqual([])
+  })
+
+  it('normalizes a v8 file that has none of the v9 table keys', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    const { manifest, dataFile } = buildFixtureDataAndManifest({ tables })
+    const rawData = JSON.parse(JSON.stringify(dataFile)) as { formatVersion: number; tables: Record<string, unknown> }
+    rawData.formatVersion = 8
+    for (const key of APF_V9_TABLE_KEYS) delete rawData.tables[key]
+
+    const out = normalizeApfManifestAndData({ ...manifest, formatVersion: 8 }, rawData)
+    expect(out.data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
+    expect(out.data.tables.slates).toEqual([])
   })
 
   it('v3→v4 backfills scenes.title from heading and removes heading', () => {
