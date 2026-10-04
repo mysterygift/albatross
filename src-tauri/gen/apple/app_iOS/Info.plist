@@ -62,15 +62,15 @@
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.albatross.apf</string>
+			<key>UTTypeDescription</key>
+			<string>Albatross Project File</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
 				<string>public.archive</string>
 			</array>
-			<key>UTTypeDescription</key>
-			<string>Albatross Project File</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.albatross.apf</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
