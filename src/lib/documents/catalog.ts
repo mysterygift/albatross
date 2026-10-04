@@ -272,8 +272,22 @@ export function getManualUploadEntityType(categoryId: DocumentCategoryId): strin
   return MANUAL_UPLOAD_ENTITY_TYPE_BY_CATEGORY[categoryId]
 }
 
-/** General uploads (null) and category manual uploads can be removed from Documents. */
-export function isDeletableManualUpload(entityType: string | null): boolean {
+/** Categories where every document, including generated exports, can be removed from Documents. */
+const FULLY_DELETABLE_CATEGORY_IDS: readonly DocumentCategoryId[] = [
+  'general',
+  'finance',
+  'music',
+  'set-paperwork',
+]
+
+/**
+ * Whether a document can be permanently deleted from Documents: general uploads (null), manual
+ * uploads in any category, and every document type in the categories above.
+ */
+export function isDeletableDocument(entityType: string | null): boolean {
   if (entityType == null) return true
-  return entityType.startsWith('manual_upload_')
+  if (entityType.startsWith('manual_upload_')) return true
+  return FULLY_DELETABLE_CATEGORY_IDS.some((id) =>
+    getDocumentCategory(id).entityTypes.includes(entityType)
+  )
 }

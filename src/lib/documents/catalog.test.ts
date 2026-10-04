@@ -7,6 +7,7 @@ import {
   getDocumentSourceRoute,
   getDocumentTypeLabel,
   getManualUploadEntityType,
+  isDeletableDocument,
   isDocumentCategorySlug,
 } from '@/lib/documents/catalog'
 
@@ -56,5 +57,32 @@ describe('document catalog', () => {
     expect(getManualUploadEntityType('deliverables')).toBe(
       DOCUMENT_ENTITY_TYPES.manualUploadDeliverable
     )
+  })
+
+  it('allows deleting general uploads, manual uploads, and finance, music and set paperwork documents', () => {
+    const T = DOCUMENT_ENTITY_TYPES
+    const deletable = [
+      null,
+      T.budgetCsv,
+      T.costReportPdf,
+      T.vendorInvoice,
+      T.vendorPurchaseOrder,
+      T.expenseReceipt,
+      T.cueSheet,
+      T.callSheet,
+      T.callSheetPersonalized,
+      T.movementOrder,
+      T.movementOrderPersonalized,
+      T.manualUploadSchedule,
+      T.manualUploadDeliverable,
+    ]
+    for (const entityType of deletable) expect(isDeletableDocument(entityType)).toBe(true)
+  })
+
+  it('keeps other generated documents and unknown types non-deletable', () => {
+    const T = DOCUMENT_ENTITY_TYPES
+    const kept = [T.script, T.sidesExport, T.deliverable, T.locationRelease, T.permit, T.doodPdf]
+    for (const entityType of kept) expect(isDeletableDocument(entityType)).toBe(false)
+    expect(isDeletableDocument('something_new')).toBe(false)
   })
 })

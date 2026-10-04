@@ -144,13 +144,23 @@ export async function getDocumentFileRef(
 }
 
 /**
- * Permanently removes the document row (no `deleted_at` tombstone). Linked rows (receipts, sides
- * exports, etc.) are handled by the table's FK rules. Does not touch the file on disk; see
- * `hardDeleteDocument` in `@/lib/documents/hardDeleteDocument`.
+ * Permanently removes the document row (no `deleted_at` tombstone). Expense receipts that point
+ * at it are removed too (their FK cascades, so they are deleted explicitly to get an outbox entry);
+ * other linked rows (call sheets, cue sheets, sides exports, etc.) are cleared by the table's
+ * `SET NULL` FK rules. Does not touch the file on disk; see `hardDeleteDocument` in
+ * `@/lib/documents/hardDeleteDocument`.
  */
 export async function hardDeleteDocumentRow(id: string): Promise<void> {
   const db = await getDb()
+  const receipts = await db.select<Record<string, unknown>[]>(
+    `SELECT id FROM expense_receipts WHERE document_id = $1`,
+    [id]
+  )
+  if (receipts.length > 0) {
+    await db.execute(`DELETE FROM expense_receipts WHERE document_id = $1`, [id])
+  }
   await db.execute(`DELETE FROM ${TABLE} WHERE id = $1`, [id])
+  for (const r of receipts) await outboxPush('expense_receipts', r.id as string, 'delete', null)
   await outboxPush(TABLE, id, 'delete', null)
 }
 

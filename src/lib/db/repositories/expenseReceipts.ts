@@ -46,9 +46,9 @@ export function invalidateExpenseReceiptQueries(
   queryClient: QueryClient,
   args: { productionId: string; expenseId?: string }
 ): void {
-  if (args.expenseId) {
-    void queryClient.invalidateQueries({ queryKey: expenseReceiptsQueryKey(args.expenseId) })
-  }
+  void queryClient.invalidateQueries({
+    queryKey: args.expenseId ? expenseReceiptsQueryKey(args.expenseId) : ['expense-receipts'],
+  })
   void queryClient.invalidateQueries({ queryKey: expenseReceiptStatusBaseQueryKey(args.productionId) })
   void queryClient.invalidateQueries({ queryKey: ['documents', args.productionId] })
 }

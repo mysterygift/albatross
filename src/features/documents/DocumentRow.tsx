@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { EnrichedDocument } from '@/lib/documents/enrichDocuments'
-import { getDocumentSourceRoute, isDeletableManualUpload } from '@/lib/documents/catalog'
+import { getDocumentSourceRoute, isDeletableDocument } from '@/lib/documents/catalog'
 
 type DocumentRowProps = {
   doc: EnrichedDocument
@@ -65,7 +65,7 @@ export function DocumentRow({
           <ExternalLink className="mr-1 size-4" />
           Open
         </Button>
-        {onDelete && isDeletableManualUpload(doc.entity_type) && (
+        {onDelete && isDeletableDocument(doc.entity_type) && (
           <Button
             variant="ghost"
             size="sm"

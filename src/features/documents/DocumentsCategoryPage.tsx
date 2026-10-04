@@ -14,9 +14,11 @@ import { useCurrentProduction } from '@/features/productions/context'
 import { useHighlightParam } from '@/features/search/useHighlightParam'
 import { DocumentGroupSection } from '@/features/documents/DocumentGroupSection'
 import { useEnrichedDocuments } from '@/features/documents/useEnrichedDocuments'
+import { invalidateExpenseReceiptQueries } from '@/lib/db/repositories/expenseReceipts'
 import { hardDeleteDocument } from '@/lib/documents/hardDeleteDocument'
 import { getFileUrl, openInSystem, resolveAppDataPath } from '@/lib/files'
 import {
+  DOCUMENT_ENTITY_TYPES,
   getDocumentCategory,
   isDocumentCategorySlug,
   type DocumentCategoryId,
@@ -41,6 +43,8 @@ export function DocumentsCategoryPage() {
     onSuccess: () => {
       if (currentProductionId) {
         queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
+        // Deleting a receipt document also removes the receipt record on its expense.
+        invalidateExpenseReceiptQueries(queryClient, { productionId: currentProductionId })
       }
     },
   })
@@ -135,6 +139,8 @@ export function DocumentsCategoryPage() {
             <span className="font-medium text-foreground">{pendingDeleteDoc?.file_name}</span> will
             be permanently deleted. This can&apos;t be undone, and the document can&apos;t be
             retrieved once it&apos;s been deleted.
+            {pendingDeleteDoc?.entity_type === DOCUMENT_ENTITY_TYPES.expenseReceipt &&
+              ' It will also be removed from the expense it was attached to.'}
           </>
         }
         confirmLabel="Delete document"
