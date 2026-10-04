@@ -1,7 +1,7 @@
 import { RequireProduction } from '@/components/require-production'
 import { PageHeader } from '@/components/page-header'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState, useEffect, type SetStateAction } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
@@ -23,15 +23,6 @@ import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import { listShootDayUnitsByProduction } from '@/lib/db/repositories/shoot-day-units'
 import { createBooking, deleteBooking, updateBooking } from '@/lib/db/repositories/booking'
 import {
-  useReactTable,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
-  flexRender,
-  type ColumnDef,
-  type SortingState,
-} from '@tanstack/react-table'
-import {
   Table,
   TableBody,
   TableCell,
@@ -41,7 +32,6 @@ import {
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -57,46 +47,20 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
-import { Plus, Trash2, Calendar, List, AlertTriangle, UserMinus, Pencil, Settings } from 'lucide-react'
+import { Plus, AlertTriangle, UserMinus, Settings } from 'lucide-react'
 import { getBookingCoverageByShootDay } from '@/lib/people/bookingIntelligence'
 import type { Booking } from '@/lib/db/types'
-import type { BookingIntelligenceSummary } from '@/lib/people/bookingIntelligence'
 import type { Person } from '@/lib/db/types'
-import type { ShootDay } from '@/lib/db/types'
-import type { Unit } from '@/lib/db/types'
 import { BookingsCalendarView, type BookingChanges } from '@/features/people/components/bookings/BookingsCalendarView'
 import { BookingColorSettingsDialog } from '@/features/people/components/bookings/BookingColorSettingsDialog'
 import {
   getDefaultColorConfig,
   loadColorConfig,
   mergeConfigWithDefaults,
-  resolvePersonColor,
   saveColorConfig,
   type BookingColorConfig,
 } from '@/features/people/lib/bookingCalendarColors'
-
-const PEOPLE_BOOKINGS_VIEW_KEY = 'peopleBookingsView'
-type ViewMode = 'calendar' | 'list'
-
-function getStoredView(): ViewMode {
-  try {
-    const v = localStorage.getItem(PEOPLE_BOOKINGS_VIEW_KEY)
-    if (v === 'calendar' || v === 'list') return v
-  } catch {
-    // Ignore storage access failures and fall back to default view.
-  }
-  return 'calendar'
-}
-
-function setStoredView(view: ViewMode) {
-  try {
-    localStorage.setItem(PEOPLE_BOOKINGS_VIEW_KEY, view)
-  } catch {
-    // Ignore storage access failures.
-  }
-}
 
 function formatPersonBookingLabel(person: Person): string {
   const meta = [
@@ -110,7 +74,6 @@ function formatPersonBookingLabel(person: Person): string {
 export function BookingsPage() {
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
-  const [view, setView] = useState<ViewMode>(getStoredView)
   const [open, setOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
   const [personId, setPersonId] = useState('')
@@ -120,18 +83,12 @@ export function BookingsPage() {
   const [filterUnit, setFilterUnit] = useState<string>('all')
   const [filterDepartment, setFilterDepartment] = useState<string>('all')
   const [filterCastCrew, setFilterCastCrew] = useState<string>('all')
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'date', desc: false }])
-  const [globalFilter, setGlobalFilter] = useState('')
   const [colorOverride, setColorOverride] = useState<{
     productionId: string
     config: BookingColorConfig
   } | null>(null)
   const [colorSettingsOpen, setColorSettingsOpen] = useState(false)
   const queryClient = useQueryClient()
-
-  useEffect(() => {
-    setStoredView(view)
-  }, [view])
 
   const { data: bookings = [] } = useQuery({
     queryKey: ['bookings', currentProductionId],
@@ -210,33 +167,11 @@ export function BookingsPage() {
     enabled: !!currentProductionId,
   })
 
-  const shootDayById = useMemo(() => {
-    const m = new Map<string, ShootDay>()
-    for (const d of shootDays) m.set(d.id, d)
-    return m
-  }, [shootDays])
-
   const personById = useMemo(() => {
     const m = new Map<string, Person>()
     for (const p of people) m.set(p.id, p)
     return m
   }, [people])
-
-  const unitById = useMemo(() => {
-    const m = new Map<string, Unit>()
-    for (const u of units) m.set(u.id, u)
-    return m
-  }, [units])
-
-  const shootDayToUnitIds = useMemo(() => {
-    const m = new Map<string, string[]>()
-    for (const sdu of shootDayUnits) {
-      const arr = m.get(sdu.shoot_day_id) ?? []
-      if (!arr.includes(sdu.unit_id)) arr.push(sdu.unit_id)
-      m.set(sdu.shoot_day_id, arr)
-    }
-    return m
-  }, [shootDayUnits])
 
   const filteredBookings = useMemo(() => {
     let list = bookings
@@ -336,21 +271,6 @@ export function BookingsPage() {
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: async (bookingId: string) => {
-      if (authSession.authSupported && authSession.currentUser) {
-        const db = await getDb()
-        return deleteBookingForActor({ db, actor: authSession.currentUser, bookingId })
-      }
-      return deleteBooking(bookingId)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['bookings'] })
-      queryClient.invalidateQueries({ queryKey: ['booking-intelligence', currentProductionId] })
-      queryClient.invalidateQueries({ queryKey: ['person-booking-need'] })
-    },
-  })
-
   const storedColorConfig = useMemo(
     () =>
       currentProductionId
@@ -430,15 +350,6 @@ export function BookingsPage() {
     setOpen(true)
   }
 
-  const getPersonName = (id: string) => personById.get(id)?.name ?? '—'
-  const getDayLabel = (id: string | null) =>
-    id ? shootDayById.get(id)?.shoot_date ?? '—' : '—'
-  const getUnitLabels = (shootDayId: string | null) => {
-    if (!shootDayId) return '—'
-    const ids = shootDayToUnitIds.get(shootDayId) ?? []
-    return ids.map((id) => unitById.get(id)?.name ?? id).join(', ') || '—'
-  }
-
   const departments = useMemo(() => {
     const set = new Set<string>()
     for (const p of people) if (p.department) set.add(p.department)
@@ -482,18 +393,6 @@ export function BookingsPage() {
         title="Bookings"
         actions={
           <>
-            <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)}>
-              <TabsList className="border border-border bg-muted/30">
-                <TabsTrigger value="calendar" className="gap-2 data-[state=active]:bg-mint-600 data-[state=active]:text-white data-[state=active]:border-transparent">
-                  <Calendar className="size-4" />
-                  Calendar
-                </TabsTrigger>
-                <TabsTrigger value="list" className="gap-2 data-[state=active]:bg-mint-600 data-[state=active]:text-white data-[state=active]:border-transparent">
-                  <List className="size-4" />
-                  List
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
             <Button
               variant="outline"
               size="icon"
@@ -681,8 +580,7 @@ export function BookingsPage() {
         </Card>
       )}
 
-      {view === 'calendar' && (
-        <BookingsCalendarView
+      <BookingsCalendarView
           bookings={filteredBookings}
           allBookings={bookings}
           shootDays={shootDays}
@@ -701,37 +599,6 @@ export function BookingsPage() {
           onApplyChanges={applyBookingChanges}
           onEditBooking={openEditBooking}
         />
-      )}
-
-      {view === 'list' && (
-        <BookingsListView
-          bookings={filteredBookings}
-          people={people}
-          getPersonName={getPersonName}
-          getDayLabel={getDayLabel}
-          getUnitLabels={getUnitLabels}
-          deleteMutation={deleteMutation}
-          sorting={sorting}
-          setSorting={setSorting}
-          globalFilter={globalFilter}
-          setGlobalFilter={setGlobalFilter}
-          bookingIntelligence={bookingIntelligence ?? undefined}
-          shootDayById={shootDayById}
-          personColor={(personId) => {
-            const p = personById.get(personId)
-            return p ? resolvePersonColor(p, activeColorConfig) : null
-          }}
-          openAddBookingWithPrefill={(pId, dayId) => {
-            setPersonId(pId)
-            setShootDayId(dayId)
-            setRole('')
-            setNotes('')
-            setEditingBooking(null)
-            setOpen(true)
-          }}
-          onEditBooking={openEditBooking}
-        />
-      )}
 
       <BookingColorSettingsDialog
         open={colorSettingsOpen}
@@ -741,253 +608,5 @@ export function BookingsPage() {
         onSave={handleSaveColors}
       />
     </div>
-  )
-}
-
-function BookingsListView({
-  bookings,
-  people,
-  getPersonName,
-  getDayLabel,
-  getUnitLabels,
-  deleteMutation,
-  sorting,
-  setSorting,
-  globalFilter,
-  setGlobalFilter,
-  bookingIntelligence,
-  shootDayById,
-  personColor,
-  openAddBookingWithPrefill,
-  onEditBooking,
-}: {
-  bookings: Booking[]
-  people: Person[]
-  getPersonName: (id: string) => string
-  getDayLabel: (id: string | null) => string
-  getUnitLabels: (id: string | null) => string
-  deleteMutation: { mutate: (id: string) => void; isPending: boolean }
-  sorting: SortingState
-  setSorting: (updaterOrValue: SetStateAction<SortingState>) => void
-  globalFilter: string
-  setGlobalFilter: (s: string) => void
-  bookingIntelligence?: BookingIntelligenceSummary
-  shootDayById: Map<string, ShootDay>
-  personColor: (personId: string) => string | null
-  openAddBookingWithPrefill: (personId: string, shootDayId: string) => void
-  onEditBooking: (booking: Booking) => void
-}) {
-  type Row = Booking & {
-    personName: string
-    department: string | null
-    dateLabel: string
-    unitLabel: string
-    bookingStatus: 'properly_booked' | 'booked_but_not_needed' | null
-  }
-  const rows: Row[] = useMemo(() => {
-    const covByDay = bookingIntelligence?.byShootDay
-    return bookings.map((b) => {
-      const coverage = b.shoot_day_id && covByDay ? covByDay.get(b.shoot_day_id) : null
-      const bookedButNotNeeded =
-        coverage?.bookedButNotNeeded.has(b.person_id) ?? false
-      const properlyBooked =
-        coverage?.properlyBooked.has(b.person_id) ?? false
-      let bookingStatus: Row['bookingStatus'] = null
-      if (coverage) {
-        if (bookedButNotNeeded) bookingStatus = 'booked_but_not_needed'
-        else if (properlyBooked) bookingStatus = 'properly_booked'
-      }
-      return {
-        ...b,
-        personName: getPersonName(b.person_id),
-        department: people.find((p) => p.id === b.person_id)?.department ?? null,
-        dateLabel: getDayLabel(b.shoot_day_id),
-        unitLabel: getUnitLabels(b.shoot_day_id),
-        bookingStatus,
-      }
-    })
-  }, [bookings, people, getPersonName, getDayLabel, getUnitLabels, bookingIntelligence])
-
-  const neededButNotBookedList = useMemo(() => {
-    if (!bookingIntelligence) return []
-    const list: { personId: string; shootDayId: string; personName: string; dayLabel: string }[] = []
-    for (const [dayId, cov] of bookingIntelligence.byShootDay) {
-      const day = shootDayById.get(dayId)
-      const dayLabel = day ? day.shoot_date : dayId
-      for (const pid of cov.neededButNotBooked) {
-        list.push({
-          personId: pid,
-          shootDayId: dayId,
-          personName: getPersonName(pid),
-          dayLabel,
-        })
-      }
-    }
-    return list
-  }, [bookingIntelligence, shootDayById, getPersonName])
-
-  const columns: ColumnDef<Row>[] = useMemo(
-    () => [
-      {
-        accessorKey: 'personName',
-        header: 'Person',
-        cell: ({ row }) => {
-          const color = personColor(row.original.person_id)
-          return (
-            <span className="flex items-center gap-2">
-              {color && (
-                <span
-                  className="size-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: color }}
-                  aria-hidden
-                />
-              )}
-              <span>{row.original.personName}</span>
-            </span>
-          )
-        },
-      },
-      {
-        id: 'roleDepartment',
-        header: 'Role / Department',
-        cell: ({ row }) => {
-          const b = row.original
-          const p = people.find((x) => x.id === b.person_id)
-          const role = b.role ?? null
-          const dept = p?.department ?? null
-          if (!role && !dept) return '—'
-          if (role && dept) return `${role} · ${dept}`
-          return (role ?? dept) ?? '—'
-        },
-      },
-      { accessorKey: 'dateLabel', header: 'Date / Range', id: 'date' },
-      { accessorKey: 'unitLabel', header: 'Unit' },
-      { accessorKey: 'notes', header: 'Notes', cell: ({ getValue }) => (getValue() as string) ?? '—' },
-      {
-        id: 'status',
-        header: 'Status',
-        cell: ({ row }) => {
-          const s = row.original.bookingStatus
-          if (s === 'properly_booked') return <span className="font-medium text-mint-600 dark:text-mint-400">Properly booked</span>
-          if (s === 'booked_but_not_needed') return <span className="text-muted-foreground">Booked but not needed</span>
-          return <span className="text-muted-foreground">Booked</span>
-        },
-      },
-      {
-        id: 'actions',
-        cell: ({ row }) => (
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() => onEditBooking(row.original)}
-              aria-label="Edit booking"
-            >
-              <Pencil className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => deleteMutation.mutate(row.original.id)}
-              disabled={deleteMutation.isPending}
-              aria-label="Delete booking"
-            >
-              <Trash2 className="size-4 text-destructive" />
-            </Button>
-          </div>
-        ),
-      },
-    ],
-    [people, deleteMutation, onEditBooking, personColor]
-  )
-
-  const table = useReactTable({
-    data: rows,
-    columns,
-    state: { sorting, globalFilter },
-    onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-  })
-
-  return (
-    <>
-      {neededButNotBookedList.length > 0 && (
-        <Card className="rounded-lg border-amber-500/30 bg-amber-500/5 dark:border-amber-600/40 dark:bg-amber-950/30">
-          <CardHeader className="py-2 px-4">
-            <CardTitle className="text-sm font-medium flex items-center gap-2 text-amber-800 dark:text-amber-200">
-              <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
-              Needed but not booked ({neededButNotBookedList.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="py-2 px-4">
-            <div className="flex flex-wrap gap-2">
-              {neededButNotBookedList.slice(0, 12).map((item) => (
-                <Badge
-                  key={`${item.personId}-${item.shootDayId}`}
-                  variant="outline"
-                  className="gap-1.5 pr-1 border-amber-500/40 bg-amber-500/10 text-foreground"
-                >
-                  <span className="truncate max-w-[120px]">{item.personName}</span>
-                  <span className="text-muted-foreground">· {item.dayLabel}</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 px-1.5 text-xs text-mint-600 dark:text-mint-400 hover:bg-mint-500/15 focus-visible:ring-mint-500/50"
-                    onClick={() => openAddBookingWithPrefill(item.personId, item.shootDayId)}
-                  >
-                    Add booking
-                  </Button>
-                </Badge>
-              ))}
-              {neededButNotBookedList.length > 12 && (
-                <span className="text-xs text-muted-foreground self-center">
-                  +{neededButNotBookedList.length - 12} more
-                </span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      <div className="flex items-center gap-2">
-        <Input
-          placeholder="Search people, date, unit..."
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          className="max-w-xs focus-visible:ring-mint-500/50 focus-visible:border-mint-500"
-        />
-      </div>
-      <Card className="rounded-lg border-border bg-card overflow-hidden">
-        <Table>
-          <TableHeader className="bg-muted/30 [&_tr]:border-border">
-            {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id} className="border-border hover:bg-transparent">
-                {hg.headers.map((h) => (
-                  <TableHead key={h.id} className="text-foreground">
-                    {typeof h.column.columnDef.header === 'string'
-                      ? h.column.columnDef.header
-                      : flexRender(h.column.columnDef.header, h.getContext())}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody className="[&_tr]:border-border">
-            {table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id} className="border-border">
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
-    </>
   )
 }
