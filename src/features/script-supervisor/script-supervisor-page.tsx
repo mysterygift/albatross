@@ -51,6 +51,8 @@ import {
   useDayLog,
   useLinedScene,
   useLiningMutations,
+  useMarkRevisionReviewed,
+  useRevisionReview,
   useAnnotationMutations,
   usePhotoMutations,
   useSceneAnnotations,
@@ -83,6 +85,7 @@ import { SceneStatusPip } from './SceneStatusPip'
 import { SlatePanel } from './SlatePanel'
 import { AnnotationDialog, type AnnotationDialogState } from './AnnotationDialog'
 import { SlateNotesPanel } from './SlateNotesPanel'
+import { RevisionReview, revisionRecorded, revisionSummary } from './RevisionReview'
 import { useTouchLayout } from './useTouchLayout'
 
 function localIsoDate(d = new Date()): string {
@@ -269,6 +272,11 @@ export function ScriptSupervisorPage() {
 
   const sceneNumberById = useMemo(() => new Map(allScenes.map((s) => [s.id, s.scene_number])), [allScenes])
   const labelOf = (s: Slate) => slateDisplayLabel(s, s.scene_id ? sceneNumberById.get(s.scene_id) : null)
+
+  // ─── Revisions (SS10) ──────────────────────────────────────────────────────
+  const { data: revision } = useRevisionReview(currentProductionId, sceneId, middleView === 'script' && !!linedScene)
+  const markReviewed = useMarkRevisionReviewed()
+  const revisionWasRecorded = revision ? revisionRecorded(revision) : false
 
   // ─── Lining (SS7) ──────────────────────────────────────────────────────────
   const lining = useLiningMutations()
@@ -504,7 +512,8 @@ export function ScriptSupervisorPage() {
     lining.remove.error,
     lining.restore.error,
     photos.add.error,
-    photos.remove.error
+    photos.remove.error,
+    markReviewed.error
   )
   const selectedSceneComplete = sceneId ? sceneStatus(sceneId) === 'complete' : false
   const toggleSceneComplete = () => {
@@ -738,8 +747,21 @@ export function ScriptSupervisorPage() {
           />
           {middleView === 'script' ? (
             <>
+            {revision && (revision.items.length > 0 || revision.relined > 0) && (
+              <RevisionReview
+                review={revision}
+                touch={touch}
+                busy={markReviewed.isPending}
+                daySlateIds={new Set(slateIds)}
+                onSelectSlate={(id) => {
+                  setChosenSlateId(id)
+                  setSelectedTakeId(null)
+                }}
+                onReviewed={(id) => markReviewed.mutate(id)}
+              />
+            )}
             {linedScene && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -752,6 +774,9 @@ export function ScriptSupervisorPage() {
                   {lastUndo ? `Undo ${lastUndo.label}` : 'Undo'}
                 </Button>
                 {!currentSlate && <span className="text-xs text-muted-foreground">Create a slate to line it.</span>}
+                {revision && revisionWasRecorded && revision.items.length === 0 && revision.relined === 0 && (
+                  <span className="text-xs text-muted-foreground">{revisionSummary(revision)}</span>
+                )}
                 <span className="flex-1" />
                 <Button
                   type="button"

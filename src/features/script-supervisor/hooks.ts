@@ -20,8 +20,12 @@ import {
 } from '@/lib/db/repositories/scriptAnnotations'
 import { addContinuityPhotos, type AddContinuityPhotosInput } from './continuityPhotos'
 import {
+  loadLinedSceneWithRevisions,
+  loadRevisionReview,
+  markRevisionItemReviewed,
+} from '@/lib/db/repositories/scriptRevisions'
+import {
   createTramline,
-  loadLinedScene,
   restoreTramline,
   setTramlineSegments,
   softDeleteTramline,
@@ -207,9 +211,23 @@ export function useSaveDayLog() {
 export function useLinedScene(productionId: string | null | undefined, sceneId: string | null | undefined) {
   return useQuery({
     queryKey: ['script-supervisor', 'lined-scene', productionId ?? null, sceneId ?? null],
-    queryFn: () => loadLinedScene(productionId!, sceneId!),
+    // Carries tramlines and notes onto a newer draft first (SS10).
+    queryFn: () => loadLinedSceneWithRevisions(productionId!, sceneId!),
     enabled: !!productionId && !!sceneId,
   })
+}
+
+/** Revision review list for a scene's latest draft (SS10). */
+export function useRevisionReview(productionId: string | null | undefined, sceneId: string | null | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['script-supervisor', 'revision-review', productionId ?? null, sceneId ?? null],
+    queryFn: () => loadRevisionReview(productionId!, sceneId!),
+    enabled: enabled && !!productionId && !!sceneId,
+  })
+}
+
+export function useMarkRevisionReviewed() {
+  return useInvalidatingMutation((id: string) => markRevisionItemReviewed(id))
 }
 
 /** Two-tramline check for the scenes slated on a day (SS9). */

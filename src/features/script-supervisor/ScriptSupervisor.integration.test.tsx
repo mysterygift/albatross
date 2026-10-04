@@ -129,6 +129,11 @@ vi.mock('@/lib/db/repositories/scriptLining', () => ({
   softDeleteTramline: vi.fn(),
   restoreTramline: vi.fn(),
 }))
+vi.mock('@/lib/db/repositories/scriptRevisions', () => ({
+  loadLinedSceneWithRevisions: async () => null,
+  loadRevisionReview: async () => null,
+  markRevisionItemReviewed: vi.fn(),
+}))
 vi.mock('@/lib/pdf/dailyProgressReport', () => ({ generateDailyProgressReportPdf: vi.fn(async () => new Uint8Array()) }))
 
 vi.mock('@/lib/db/repositories/schedule', () => ({

@@ -1,11 +1,13 @@
 /**
  * Script Supervisor exports (SS9): loads what the continuity sheets, editor's log and marked-up script need.
- * Local SQLite only; read-only apart from `loadLinedScene` generating script elements on first use.
+ * Local SQLite only; read-only apart from loading a lined scene, which generates script elements on first use and
+ * carries tramlines and notes onto a newer draft (SS10).
  */
 import { getDb } from './client'
 import { listSlatesByShootDay, listTakesBySlateIds } from './repositories/scriptSupervisor'
 import { listAnnotationsForScene, listAnnotationsForSlate, listContinuityMediaForSlate } from './repositories/scriptAnnotations'
-import { getScriptElementExcerpts, loadLinedScene } from './repositories/scriptLining'
+import { getScriptElementExcerpts } from './repositories/scriptLining'
+import { loadLinedSceneWithRevisions } from './repositories/scriptRevisions'
 import { annotationsByElement } from '@/lib/script-supervisor/annotations'
 import type { ContinuitySlateInput } from '@/lib/script-supervisor/continuitySheets'
 import { layoutLinedScript } from '@/lib/script-supervisor/lining'
@@ -84,7 +86,7 @@ export async function loadMarkedUpScenes(
   const out: MarkedUpSceneInput[] = []
   const missing: ExportScene[] = []
   for (const scene of scenes) {
-    const lined = await loadLinedScene(productionId, scene.sceneId)
+    const lined = await loadLinedSceneWithRevisions(productionId, scene.sceneId)
     if (!lined || lined.elements.length === 0) {
       missing.push(scene)
       continue
@@ -114,7 +116,7 @@ export async function loadDayCoverage(productionId: string, shootDayId: string):
   const scenes = await listScenesShotOnDay(shootDayId)
   const out: SceneCoverage[] = []
   for (const scene of scenes) {
-    const lined = await loadLinedScene(productionId, scene.sceneId)
+    const lined = await loadLinedSceneWithRevisions(productionId, scene.sceneId)
     if (!lined || lined.elements.length === 0) {
       out.push({ ...scene, state: 'no_script', tramlines: 0, underCovered: 0 })
       continue

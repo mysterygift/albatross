@@ -192,6 +192,50 @@ Every export saves a copy to Documents → Set paperwork, then opens a save dial
   than two tramlines), *not lined yet* or *not in an imported script*. Tap a scene to open its script.
 - Scenes not in an imported script are left out of the day's marked-up script and listed after the export.
 
+## SS10 — revisions: carrying tramlines and notes onto a new draft
+
+Migration [`0092_script_supervisor_revisions.sql`](../src-tauri/migrations/0092_script_supervisor_revisions.sql):
+`tramlines.carried_from_id` and `script_annotations.carried_from_id` link a carried row to the one it came from, and
+`script_revision_items` records one row per earlier tramline or note per new version: `carried`, `moved` (placed,
+but its lines changed), `unmatched` (couldn't be placed) or `already_lined`, with the reasons and `reviewed_at`.
+
+- **When**: whenever a scene's lining is loaded (Script view, exports, the two-tramline check),
+  [`loadLinedSceneWithRevisions`](../src/lib/db/repositories/scriptRevisions.ts) first runs `carryForwardScene`.
+  If the scene's latest script version is newer than some of its tramlines or notes, they are re-created on the new
+  version in one serialized transaction. It is idempotent: an item that already has a carried child, or a record for
+  the target version, is skipped. Earlier rows stay on their version as history. Drafts imported before SS10 are
+  handled the same way.
+- **Matching** ([`revisionRemap.ts`](../src/lib/script-supervisor/revisionRemap.ts)), within the scene:
+  - Unchanged lines are paired by the longest common subsequence of type, speaker and normalised text. Case,
+    spacing, quote and dash styles and `(CONT'D)` are ignored, and repeated lines pair up in order.
+  - Reworded lines are then paired between those anchors when they are the same type and speaker and share enough
+    words (Dice ≥ 0.5, or two or more shared words making up half the shorter line).
+- **Tramlines** keep the run between the first and last of their lines that survive.
+  - Off-camera and gap marks follow their lines.
+  - Lines added inside the run are marked **not covered**, since they were never filmed, so the two-tramline check
+    flags them.
+  - Any cut, reworded or added line makes the tramline `moved`. No surviving line makes it `unmatched`.
+  - A slate already lined on the new draft is recorded as `already_lined`.
+- **Notes** move to the same line (`carried`), a reworded line (`moved`), or are `unmatched` when the line was cut.
+  Take links are copied.
+- **No tramline is silently lost.** Every live earlier tramline gets exactly one record per new version, which is
+  tested. **Script view → Script revision** lists moved and unmatched items: the label, why, and the line it was on
+  in the earlier draft.
+  - *Checked* (moved) or *Dismiss* (unmatched) sets `reviewed_at`.
+  - *Select slate* picks an unmatched slate from the selected day so it can be lined again.
+  - Once a slate is lined again on the new draft, its item leaves the list ("lined again").
+  - With nothing to check, a one-line summary sits by the Undo button.
+- **Chains**: when a third draft arrives, the second draft's rows are carried and the first draft's rows are skipped
+  (they have children). A carried tramline deleted on the newer draft is not brought back. An unmatched item that
+  wasn't dismissed is tried again against the next draft.
+
+## Known limits
+
+- Matching is per scene. A line moved to another scene is reported as unmatched in its old scene, and a renumbered
+  scene is a different scene.
+- The carry runs when a scene is opened or exported, not at import time. The review list is per scene in the
+  Script view; there is no production-wide list yet.
+
 ## Rules
 
 - **Local SQLite only**, like the SB1 script-section tables. Writes throw `SCRIPT_SUPERVISOR_REMOTE_ERROR`
@@ -203,10 +247,3 @@ Every export saves a copy to Documents → Set paperwork, then opens a save dial
   cascades to `slates` → `takes` (checked by `verifyCascades`).
 - **Not duplicated** with a production: slates and takes are a record of what was shot, so
   `duplicateProduction` leaves them behind.
-
-## Known gap before lining (SS6)
-
-The script parser's `ScriptElement[]` (action, character, dialogue…) is **in-memory only**; `script_pages`
-stores page text, not elements. Tramlines need stable element ids, so SS6 must first persist elements
-(e.g. a `script_elements` table written by `generateScriptVersionFromScenes`) and carry them through
-revision reconciliation.

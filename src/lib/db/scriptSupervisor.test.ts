@@ -98,6 +98,12 @@ import {
 } from '@/lib/db/scriptSupervisorExportService'
 import { buildContinuitySheets, buildEditorsLogCsv } from '@/lib/script-supervisor/continuitySheets'
 import { planMarkedUpScript } from '@/lib/script-supervisor/markedUpScript'
+import {
+  carryForwardScene,
+  loadLinedSceneWithRevisions,
+  loadRevisionReview,
+  markRevisionItemReviewed,
+} from '@/lib/db/repositories/scriptRevisions'
 
 function applyAllMigrations(db: Database): void {
   const dir = join(process.cwd(), 'src-tauri/migrations')
@@ -502,5 +508,93 @@ describe('exports (SS9)', () => {
       ['23', 'under', 2],
       ['24', 'no_script', 0],
     ])
+  })
+})
+
+describe('revisions (SS10)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    dataSourceOverride = null
+  })
+
+  const DRAFT_1 =
+    'INT. EDIT SUITE - NIGHT\n\nMonitors glow.\n\nELENA\nThere is no cutaway.\n\nMARCUS\nSince lunch.\n\nBeat.\n\nELENA\nEvery take but one.'
+  const DRAFT_2 =
+    'INT. EDIT SUITE - NIGHT\n\nMonitors glow.\n\nELENA\nThere’s no cutaway. Nobody shot one.\n\nBeat.\n\nShe rewinds again.\n\nELENA\nEvery take but one.'
+
+  async function addVersion(productionId: string, sceneId: string, id: string, createdAt: string, content: string, label: string | null = null) {
+    await dbAdapter.execute(
+      `INSERT INTO script_versions (id, production_id, is_locked, version_label, created_at, updated_at) VALUES ($1, $2, 0, $3, $4, $4)`,
+      [id, productionId, label, createdAt]
+    )
+    await dbAdapter.execute(
+      `INSERT INTO script_pages (id, script_version_id, scene_id, page_number, page_index, content, created_at, updated_at)
+       VALUES ($1, $2, $3, '31', 0, $4, $5, $5)`,
+      [`pg-${id}`, id, sceneId, content, createdAt]
+    )
+  }
+
+  it('carries tramlines and notes onto a new draft and lists what could not be placed', async () => {
+    const { production, scene, day1 } = await setup()
+    await addVersion(production.id, scene.id, 'v1', '2026-10-01T00:00:00Z', DRAFT_1, 'White')
+    const e1 = (await loadLinedScene(production.id, scene.id))!.elements
+    const master = await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id, shot_code: 'WS' })
+    const single = await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id, shot_code: 'MCU' })
+    const tMaster = await createTramline({ slateId: master.id, scriptVersionId: 'v1', startElementId: e1[1]!.id, endElementId: e1[5]!.id })
+    const tSingle = await createTramline({ slateId: single.id, scriptVersionId: 'v1', startElementId: e1[3]!.id, endElementId: e1[3]!.id })
+    await createAnnotation({ elementId: e1[5]!.id, kind: 'vfx', text: 'Screen' })
+    await createAnnotation({ elementId: e1[3]!.id, kind: 'note', text: 'Marcus line' })
+
+    await addVersion(production.id, scene.id, 'v2', '2026-10-02T00:00:00Z', DRAFT_2, 'Blue')
+    const lined = await loadLinedSceneWithRevisions(production.id, scene.id)
+    expect(lined!.scriptVersionId).toBe('v2')
+    const e2 = lined!.elements
+    expect(lined!.tramlines.map((t) => t.slateId)).toEqual([master.id])
+    const carried = lined!.tramlines[0]!
+    expect([carried.startElementId, carried.endElementId]).toEqual([e2[1]!.id, e2[5]!.id])
+    // A line added inside the run can't have been filmed.
+    expect(carried.segments.get(e2[4]!.id)).toBe('not_covered')
+
+    // No tramline silently lost: each earlier tramline has exactly one record for the new draft.
+    const records = await dbAdapter.select<Array<{ item_id: string; outcome: string }>>(
+      `SELECT item_id, outcome FROM script_revision_items WHERE item_type = 'tramline' AND to_script_version_id = 'v2'`
+    )
+    expect(records.map((r) => [r.item_id, r.outcome]).sort()).toEqual([[tMaster, 'moved'], [tSingle, 'unmatched']].sort())
+
+    const review = await loadRevisionReview(production.id, scene.id)
+    expect(review).toMatchObject({ fromLabel: 'White', toLabel: 'Blue' })
+    expect(review!.items.map((i) => [i.itemType, i.outcome, i.label]).sort()).toEqual(
+      [['tramline', 'moved', '1 WS'], ['tramline', 'unmatched', '2 MCU'], ['annotation', 'unmatched', 'Note: Marcus line']].sort()
+    )
+    expect(review!.items.find((i) => i.label === '2 MCU')!.wasOn).toBe('MARCUS: Since lunch.')
+    expect((await listAnnotationsForScene('v2', scene.id)).map((a) => a.text)).toEqual(['Screen'])
+
+    // Running again changes nothing.
+    const again = await carryForwardScene(production.id, scene.id)
+    expect(again!.tramlines).toEqual({ carried: 0, moved: 0, unmatched: 0, already_lined: 0 })
+
+    // Lining the slate again resolves it; checking the moved one clears it.
+    await createTramline({ slateId: single.id, scriptVersionId: 'v2', startElementId: e2[2]!.id, endElementId: e2[2]!.id })
+    let after = await loadRevisionReview(production.id, scene.id)
+    expect(after!.relined).toBe(1)
+    await markRevisionItemReviewed(after!.items.find((i) => i.label === '1 WS')!.id)
+    after = await loadRevisionReview(production.id, scene.id)
+    expect(after!.items.map((i) => i.label)).toEqual(['Note: Marcus line'])
+  })
+
+  it('does not bring back a carried tramline that was deleted on the newer draft', async () => {
+    const { production, scene, day1 } = await setup()
+    await addVersion(production.id, scene.id, 'v1', '2026-10-01T00:00:00Z', DRAFT_2)
+    const e1 = (await loadLinedScene(production.id, scene.id))!.elements
+    const slate = await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id })
+    await createTramline({ slateId: slate.id, scriptVersionId: 'v1', startElementId: e1[1]!.id, endElementId: e1[2]!.id })
+    await addVersion(production.id, scene.id, 'v2', '2026-10-02T00:00:00Z', DRAFT_2)
+    const v2 = await loadLinedSceneWithRevisions(production.id, scene.id)
+    expect(v2!.tramlines).toHaveLength(1)
+    await softDeleteTramline(v2!.tramlines[0]!.id)
+    await addVersion(production.id, scene.id, 'v3', '2026-10-03T00:00:00Z', DRAFT_2)
+    const v3 = await loadLinedSceneWithRevisions(production.id, scene.id)
+    expect(v3!.scriptVersionId).toBe('v3')
+    expect(v3!.tramlines).toHaveLength(0)
   })
 })
