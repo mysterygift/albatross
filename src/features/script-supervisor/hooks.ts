@@ -11,6 +11,7 @@ import {
   getNextSlatePreview,
   getScriptSupervisorSettings,
   setSlatingSystem,
+  listScenesForShootDay,
   listSlatesByScene,
   listSlatesByShootDay,
   listTakesBySlateIds,
@@ -35,6 +36,15 @@ export const scriptSupervisorKeys = {
     ['script-supervisor', 'slate-count', productionId ?? null] as const,
   nextSlate: (productionId: string | null | undefined, prefix: string, sceneId: string | null | undefined) =>
     ['script-supervisor', 'next-slate', productionId ?? null, prefix, sceneId ?? null] as const,
+}
+
+/** Scenes on a shoot day's stripboard, in strip order. */
+export function useScenesForShootDay(shootDayId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['script-supervisor', 'day-scenes', shootDayId ?? null],
+    queryFn: () => listScenesForShootDay(shootDayId!),
+    enabled: !!shootDayId,
+  })
 }
 
 /** Production slating system (UK default) — SS2. */

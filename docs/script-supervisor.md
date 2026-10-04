@@ -38,6 +38,24 @@ Migration [`0087_script_supervisor_slating_system.sql`](../src-tauri/migrations/
 - The setting **locks once any live slate exists** (`SLATING_SYSTEM_LOCKED_ERROR`), so a shoot never mixes systems.
 - `getNextSlatePreview` returns the label the next "New slate" will get (UK `217`, US `23B`) for the UI.
 
+## SS3 — slate panel
+
+**Schedule → Script Supervisor** ([`script-supervisor-page.tsx`](../src/features/script-supervisor/script-supervisor-page.tsx),
+[`SlatePanel.tsx`](../src/features/script-supervisor/SlatePanel.tsx)):
+
+- Shoot day picker (opens today's day, else the latest past day). The day's scenes come from the stripboard
+  (`listScenesForShootDay`: SCENE strips directly, SHOT strips via their planned shot); any other scene can be picked.
+- **New slate (N)** shows the next label (UK `217`, US `23B`) and carries camera, lens, stop, filter, sound mode,
+  rolls, INT/EXT and day/night over from the previous slate (`carryOverFields`). Shot type, code and description start blank.
+- Slate setup fields save on blur. **Roll / Cut (Space)** runs a stopwatch and logs the take with its duration.
+  **Print / Hold / NG (P / H / G)** mark the selected take, else the latest; NG shows reason chips.
+  Shortcuts are ignored while typing. Switching slate is disabled while rolling.
+- **Tablet layout** toggle (Lucide `Tablet` icon) enlarges targets and compacts the scene rail; it is a per-device
+  preference in local storage (`useTouchLayout`), not production data.
+- Remote-server productions see a notice instead of the workspace.
+
+Not yet: scene status / progress (SS4), Daily Progress Report (SS5), tramlines (SS6–SS7), demo seed data.
+
 ## Rules
 
 - **Local SQLite only**, like the SB1 script-section tables. Writes throw `SCRIPT_SUPERVISOR_REMOTE_ERROR`

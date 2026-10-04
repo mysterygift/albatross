@@ -1,0 +1,408 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { Info, Plus, Tablet } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { useCurrentProduction } from '@/features/productions/context'
+import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
+import { listScenesByProduction, listShootDaysByProduction } from '@/lib/db/repositories/schedule'
+import { SCRIPT_SUPERVISOR_REMOTE_ERROR } from '@/lib/db/repositories/scriptSupervisor'
+import type { UpdateSlateInput } from '@/lib/db/repositories/scriptSupervisor'
+import type { Slate, TakeNgReason, TakeStatus } from '@/lib/db/types'
+import { slateDisplayLabel } from '@/lib/script-supervisor/slateNumbering'
+import {
+  carryOverFields,
+  isTypingTarget,
+  latestSlate,
+  pickDefaultShootDay,
+  printedTakeNumbers,
+  takeToMark,
+} from '@/lib/script-supervisor/slatePanel'
+import { cn } from '@/lib/utils'
+
+import {
+  useCreateSlate,
+  useCreateTake,
+  useNextSlatePreview,
+  useScenesForShootDay,
+  useScriptSupervisorSettings,
+  useSlatesForShootDay,
+  useTakesForSlates,
+  useUpdateSlate,
+  useUpdateTake,
+} from './hooks'
+import { SlatePanel } from './SlatePanel'
+import { useTouchLayout } from './useTouchLayout'
+
+function localIsoDate(d = new Date()): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+
+function errorMessage(...errors: unknown[]): string | null {
+  for (const e of errors) if (e instanceof Error) return e.message
+  return null
+}
+
+/** Script Supervisor workspace (SS3): log slates and takes against a stripboard shoot day. */
+export function ScriptSupervisorPage() {
+  const { currentProductionId } = useCurrentProduction()
+  const { data: dataSource } = useEffectiveDataSourceForProduction(currentProductionId)
+  const [touch, toggleTouch] = useTouchLayout()
+
+  const { data: days = [], isLoading: daysLoading } = useQuery({
+    queryKey: ['shoot-days', currentProductionId],
+    queryFn: () => listShootDaysByProduction(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+  const { data: allScenes = [] } = useQuery({
+    queryKey: ['scenes', currentProductionId],
+    queryFn: () => listScenesByProduction(currentProductionId!),
+    enabled: !!currentProductionId,
+  })
+
+  const [chosenDayId, setChosenDayId] = useState<string | null>(null)
+  const dayId = chosenDayId ?? pickDefaultShootDay(days, localIsoDate())?.id ?? null
+  const { data: slates = [] } = useSlatesForShootDay(dayId)
+  const { data: dayScenes = [] } = useScenesForShootDay(dayId)
+  const { data: settings } = useScriptSupervisorSettings(currentProductionId)
+
+  const [chosenSceneId, setChosenSceneId] = useState<string | null>(null)
+  const sceneId = chosenSceneId ?? dayScenes[0]?.id ?? null
+
+  const [chosenSlateId, setChosenSlateId] = useState<string | null>(null)
+  const currentSlate = slates.find((s) => s.id === chosenSlateId) ?? latestSlate(slates)
+  const [selectedTakeId, setSelectedTakeId] = useState<string | null>(null)
+
+  const slateIds = useMemo(() => slates.map((s) => s.id), [slates])
+  const { data: dayTakes = [] } = useTakesForSlates(slateIds)
+  const currentTakes = currentSlate ? dayTakes.filter((t) => t.slate_id === currentSlate.id) : []
+
+  const { data: preview } = useNextSlatePreview(currentProductionId, { sceneId })
+
+  const createSlate = useCreateSlate()
+  const updateSlate = useUpdateSlate()
+  const createTake = useCreateTake()
+  const updateTake = useUpdateTake()
+
+  const [rolling, setRolling] = useState<{ slateId: string; since: number } | null>(null)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    if (!rolling) return
+    const timer = window.setInterval(() => setNowMs(Date.now()), 250)
+    return () => window.clearInterval(timer)
+  }, [rolling])
+
+  const sceneNumberById = useMemo(() => new Map(allScenes.map((s) => [s.id, s.scene_number])), [allScenes])
+  const labelOf = (s: Slate) => slateDisplayLabel(s, s.scene_id ? sceneNumberById.get(s.scene_id) : null)
+
+  const isUs = settings?.slating_system === 'us'
+  const busy = createSlate.isPending || createTake.isPending || updateTake.isPending
+  const canCreateSlate =
+    !!currentProductionId && !!dayId && !(isUs && !sceneId) && !createSlate.isPending && !rolling
+
+  const handleNewSlate = () => {
+    if (!canCreateSlate) return
+    createSlate.mutate(
+      {
+        production_id: currentProductionId!,
+        shoot_day_id: dayId!,
+        scene_id: sceneId,
+        ...carryOverFields(latestSlate(slates)),
+      },
+      {
+        onSuccess: (slate) => {
+          setChosenSlateId(slate.id)
+          setSelectedTakeId(null)
+        },
+      }
+    )
+  }
+
+  const handleRollCut = () => {
+    if (rolling) {
+      const durationMs = Date.now() - rolling.since
+      const slateId = rolling.slateId
+      setRolling(null)
+      createTake.mutate({ slateId, fields: { duration_ms: durationMs } }, { onSuccess: () => setSelectedTakeId(null) })
+      return
+    }
+    if (!currentSlate) return
+    const now = Date.now()
+    setNowMs(now)
+    setRolling({ slateId: currentSlate.id, since: now })
+  }
+
+  const handleMark = (status: Exclude<TakeStatus, 'pending'>) => {
+    const target = takeToMark(currentTakes, selectedTakeId)
+    if (target) updateTake.mutate({ id: target.id, patch: { status } })
+  }
+
+  const handleNgReason = (reason: TakeNgReason) => {
+    const target = takeToMark(currentTakes, selectedTakeId)
+    if (target) updateTake.mutate({ id: target.id, patch: { status: 'ng', ng_reason: reason } })
+  }
+
+  const handleUpdateSlate = (patch: UpdateSlateInput) => {
+    if (currentSlate) updateSlate.mutate({ id: currentSlate.id, patch })
+  }
+
+  // Single-key shortcuts (N, Space, P, H, G) — ignored while typing or with modifier keys.
+  const shortcuts = useRef({ handleNewSlate, handleRollCut, handleMark })
+  shortcuts.current = { handleNewSlate, handleRollCut, handleMark }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return
+      const target = e.target as HTMLElement | null
+      const onButton = target?.tagName?.toLowerCase() === 'button'
+      switch (e.key.toLowerCase()) {
+        case 'n':
+          e.preventDefault()
+          shortcuts.current.handleNewSlate()
+          break
+        case ' ':
+          if (onButton) return // let Space activate the focused button as usual
+          e.preventDefault()
+          shortcuts.current.handleRollCut()
+          break
+        case 'p':
+          shortcuts.current.handleMark('print')
+          break
+        case 'h':
+          shortcuts.current.handleMark('hold')
+          break
+        case 'g':
+          shortcuts.current.handleMark('ng')
+          break
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  if (!currentProductionId) {
+    return (
+      <div className="space-y-2">
+        <h1 className="text-2xl">Script Supervisor</h1>
+        <p className="text-muted-foreground">Select a production first.</p>
+      </div>
+    )
+  }
+
+  if (dataSource === 'remote_server') {
+    return (
+      <div className="space-y-3">
+        <h1 className="text-2xl">Script Supervisor</h1>
+        <div role="status" className="flex gap-2 items-start rounded-lg border border-border bg-card px-4 py-3 text-sm">
+          <Info className="size-4 shrink-0 mt-0.5" aria-hidden />
+          <span>{SCRIPT_SUPERVISOR_REMOTE_ERROR}</span>
+        </div>
+      </div>
+    )
+  }
+
+  const error = errorMessage(createSlate.error, updateSlate.error, createTake.error, updateTake.error)
+  const otherScenes = allScenes.filter((s) => !dayScenes.some((d) => d.id === s.id))
+  const chosenDay = days.find((d) => d.id === dayId)
+
+  return (
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl mr-2">Script Supervisor</h1>
+        {days.length > 0 && (
+          <Select
+            value={dayId ?? undefined}
+            onValueChange={(v) => {
+              setChosenDayId(v)
+              setChosenSceneId(null)
+              setChosenSlateId(null)
+              setSelectedTakeId(null)
+            }}
+          >
+            <SelectTrigger aria-label="Shoot day" className={cn('w-[220px]', touch && 'h-11 text-base')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[...days]
+                .sort((a, b) => a.shoot_date.localeCompare(b.shoot_date))
+                .map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.day_number != null ? `Day ${d.day_number} · ` : ''}
+                    {d.shoot_date}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        )}
+        <span className="text-xs text-muted-foreground">{isUs ? 'US slating' : 'UK slating'}</span>
+        <div className="flex-1" />
+        <Button
+          type="button"
+          variant="outline"
+          size={touch ? 'icon-lg' : 'icon'}
+          aria-label="Tablet layout"
+          title="Tablet layout"
+          aria-pressed={touch}
+          onClick={toggleTouch}
+          className={cn(touch && 'border-primary/60 bg-primary/15 text-primary')}
+        >
+          <Tablet aria-hidden />
+        </Button>
+        <Button
+          type="button"
+          size={touch ? 'lg' : 'default'}
+          disabled={!canCreateSlate}
+          aria-keyshortcuts="N"
+          title={isUs && !sceneId ? 'Choose a scene first' : undefined}
+          onClick={handleNewSlate}
+        >
+          <Plus aria-hidden />
+          New slate
+          {preview && <span className="font-mono">{preview.label}</span>}
+        </Button>
+      </header>
+
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+
+      {!daysLoading && days.length === 0 ? (
+        <p className="text-muted-foreground">
+          No shoot days yet. Add days on the <Link to="/schedule/stripboard">stripboard</Link> to start logging.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-4 items-start">
+          <nav
+            aria-label="Scenes"
+            className={cn('shrink-0 space-y-2', touch ? 'w-[88px]' : 'w-[220px]')}
+          >
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              {chosenDay?.day_number != null ? `Day ${chosenDay.day_number}` : 'Today'} · scenes
+            </p>
+            {dayScenes.length === 0 && (
+              <p className="text-sm text-muted-foreground">Nothing on the stripboard for this day.</p>
+            )}
+            <ul className="space-y-1">
+              {dayScenes.map((s) => {
+                const active = s.id === sceneId
+                return (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setChosenSceneId(s.id)}
+                      className={cn(
+                        'w-full rounded-lg text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                        touch ? 'h-14 px-2 text-center' : 'px-2 py-2',
+                        active ? 'bg-primary/15 shadow-[inset_2px_0_0_var(--color-primary)]' : 'hover:bg-muted/40'
+                      )}
+                    >
+                      <span className="font-mono font-semibold">{s.scene_number}</span>
+                      {!touch && s.title && (
+                        <span className="ml-2 text-xs text-muted-foreground truncate">{s.title}</span>
+                      )}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+            {!touch && otherScenes.length > 0 && (
+              <Select value="" onValueChange={(v) => setChosenSceneId(v)}>
+                <SelectTrigger aria-label="Another scene" className="w-full">
+                  <SelectValue placeholder="Another scene…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {otherScenes.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.scene_number}
+                      {s.title ? ` · ${s.title}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {sceneId && !dayScenes.some((d) => d.id === sceneId) && (
+              <p className="text-xs text-muted-foreground">
+                Logging against unscheduled scene {sceneNumberById.get(sceneId)}.
+              </p>
+            )}
+          </nav>
+
+          <section aria-label="Slates on this day" className="flex-1 min-w-[240px] space-y-2">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              {slates.length} {slates.length === 1 ? 'slate' : 'slates'}
+            </p>
+            <ul className="space-y-1">
+              {[...slates].reverse().map((s) => {
+                const active = currentSlate?.id === s.id
+                const prints = printedTakeNumbers(dayTakes.filter((t) => t.slate_id === s.id))
+                return (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      aria-pressed={active}
+                      disabled={!!rolling && !active}
+                      onClick={() => {
+                        setChosenSlateId(s.id)
+                        setSelectedTakeId(null)
+                      }}
+                      className={cn(
+                        'w-full rounded-lg text-left flex items-center gap-3 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50',
+                        touch ? 'min-h-14 px-3' : 'px-3 py-2',
+                        active ? 'bg-primary/15 shadow-[inset_2px_0_0_var(--color-primary)]' : 'hover:bg-muted/40'
+                      )}
+                    >
+                      <span className="font-mono font-semibold w-14">{labelOf(s)}</span>
+                      <span className="flex-1 min-w-0 truncate text-sm">
+                        {[s.shot_code, s.description].filter(Boolean).join(' ') || (
+                          <span className="text-muted-foreground">No description</span>
+                        )}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {s.scene_id ? `Sc ${sceneNumberById.get(s.scene_id) ?? '?'}` : 'No scene'}
+                      </span>
+                      <span className="font-mono text-xs w-16 text-right">
+                        {prints.length > 0 ? `Print ${prints.join(',')}` : ''}
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+
+          <div className={cn('w-full', touch ? 'lg:w-[420px]' : 'lg:w-[380px]')}>
+            <SlatePanel
+              slate={currentSlate}
+              slateLabel={currentSlate ? labelOf(currentSlate) : null}
+              sceneLabel={currentSlate?.scene_id ? sceneNumberById.get(currentSlate.scene_id) ?? null : null}
+              takes={currentTakes}
+              selectedTakeId={selectedTakeId}
+              onSelectTake={setSelectedTakeId}
+              rollingSinceMs={rolling && currentSlate && rolling.slateId === currentSlate.id ? rolling.since : null}
+              nowMs={nowMs}
+              onRollCut={handleRollCut}
+              onMark={handleMark}
+              onNgReason={handleNgReason}
+              onUpdateSlate={handleUpdateSlate}
+              onUpdateTakeRemarks={(id, remarks) => updateTake.mutate({ id, patch: { remarks } })}
+              touch={touch}
+              busy={busy}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

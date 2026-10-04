@@ -236,6 +236,45 @@ export async function listSlatesByScene(sceneId: string): Promise<Slate[]> {
   return rows.map(rowToSlate)
 }
 
+/** A scene on a shoot day's stripboard, in strip order. */
+export type ShootDayScene = {
+  id: string
+  scene_number: string
+  title: string | null
+  int_ext: string | null
+  day_night: string | null
+  page_eighths: number | null
+}
+
+/**
+ * Scenes scheduled on a shoot day: SCENE strips directly, SHOT strips through their planned shot's scene.
+ * Ordered by the first strip that brings each scene onto the day.
+ */
+export async function listScenesForShootDay(shootDayId: string): Promise<ShootDayScene[]> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT sc.id, sc.scene_number, sc.title, sc.int_ext, sc.day_night, sc.page_eighths, MIN(st.sort_index) AS first_sort
+     FROM stripboard_strips st
+     LEFT JOIN shots sh ON sh.id = st.shot_id AND sh.deleted_at IS NULL
+     INNER JOIN scenes sc ON sc.id = CASE
+         WHEN st.strip_type = 'SCENE' THEN st.scene_id
+         WHEN st.strip_type = 'SHOT' THEN sh.scene_id
+       END
+     WHERE st.shoot_day_id = $1 AND st.deleted_at IS NULL AND sc.deleted_at IS NULL
+     GROUP BY sc.id, sc.scene_number, sc.title, sc.int_ext, sc.day_night, sc.page_eighths
+     ORDER BY first_sort, sc.scene_number`,
+    [shootDayId]
+  )
+  return rows.map((r) => ({
+    id: r.id as string,
+    scene_number: r.scene_number as string,
+    title: str(r.title),
+    int_ext: str(r.int_ext),
+    day_night: str(r.day_night),
+    page_eighths: r.page_eighths != null ? coerceNumber(r.page_eighths, 0) : null,
+  }))
+}
+
 /** Live takes for several slates in one query (avoids one select per slate). */
 export async function listTakesBySlateIds(slateIds: readonly string[]): Promise<Take[]> {
   if (slateIds.length === 0) return []
