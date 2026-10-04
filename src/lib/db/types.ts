@@ -1041,17 +1041,31 @@ export type SlateShotType = 'master' | 'single' | 'multiple' | 'insert' | 'other
 
 export type SlateSoundMode = 'sync' | 'mute' | 'wild_track'
 
-/** One camera setup on the day (UK: a slate number). Local SQLite only. */
+/** Per-production slating convention (SS2). UK consecutive is the default. */
+export type SlatingSystem = 'uk' | 'us'
+
+export type ProductionScriptSupervisorSettings = {
+  production_id: string
+  slating_system: SlatingSystem
+  created_at: string
+  updated_at: string
+}
+
+/** One camera setup on the day (UK: a slate number; US: scene + setup letter). Local SQLite only. */
 export type Slate = {
   id: string
   production_id: string
+  /** System the slate was created under; labels never change if the production setting changes later. */
+  slating_system: SlatingSystem
   /** Stripboard shoot day this setup was shot on. */
   shoot_day_id: string
   unit_id: string | null
   scene_id: string | null
   /** Planned shot from the shot list this setup realises, when known. */
   shot_id: string | null
+  /** UK series prefix; always '' for US slates. */
   slate_prefix: SlatePrefix
+  /** UK: consecutive slate number. US: setup ordinal within the scene (1 = scene alone, 2 = A, 3 = B…). */
   slate_number: number
   shot_type: SlateShotType | null
   /** Short description written beside the tramline, e.g. 'MS', '2S', 'CU'. */

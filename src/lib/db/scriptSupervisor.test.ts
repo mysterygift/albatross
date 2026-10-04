@@ -56,7 +56,11 @@ import { createProduction } from '@/lib/db/repositories/production'
 import { createScene, createShootDayWithDefaultMainUnit } from '@/lib/db/repositories/schedule'
 import {
   SCRIPT_SUPERVISOR_REMOTE_ERROR,
+  SLATING_SYSTEM_LOCKED_ERROR,
   createSlate,
+  getNextSlatePreview,
+  getSlatingSystem,
+  setSlatingSystem,
   createTake,
   listSlatesByScene,
   listSlatesByShootDay,
@@ -165,5 +169,43 @@ describe('script supervisor slates and takes (SS1)', () => {
     await expect(createSlate({ production_id: production.id, shoot_day_id: day1.id })).rejects.toThrow(
       SCRIPT_SUPERVISOR_REMOTE_ERROR
     )
+  })
+})
+
+describe('slating system per production (SS2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    dataSourceOverride = null
+  })
+
+  it('defaults to UK and locks once a slate is logged', async () => {
+    const { production, day1 } = await setup()
+    expect(await getSlatingSystem(production.id)).toBe('uk')
+
+    const slate = await createSlate({ production_id: production.id, shoot_day_id: day1.id })
+    await expect(setSlatingSystem(production.id, 'us')).rejects.toThrow(SLATING_SYSTEM_LOCKED_ERROR)
+
+    await softDeleteSlate(slate.id)
+    await setSlatingSystem(production.id, 'us')
+    expect(await getSlatingSystem(production.id)).toBe('us')
+  })
+
+  it('numbers US slates by scene and setup letter', async () => {
+    const { production, scene, day1 } = await setup()
+    await setSlatingSystem(production.id, 'us')
+    const base = { production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id }
+
+    await expect(createSlate({ production_id: production.id, shoot_day_id: day1.id })).rejects.toThrow(
+      'US slating needs a scene'
+    )
+    const master = await createSlate(base)
+    const a = await createSlate(base)
+    expect([master.slating_system, master.slate_number, a.slate_number]).toEqual(['us', 1, 2])
+    expect((await getNextSlatePreview(production.id, { sceneId: scene.id }))?.label).toBe('23B')
+
+    await expect(createSlate({ ...base, setup_letter: 'A' })).rejects.toThrow('Slate 23A is already in use')
+    await expect(createSlate({ ...base, setup_letter: 'I' })).rejects.toThrow('not a setup letter')
+    const d = await createSlate({ ...base, setup_letter: 'd' })
+    expect(d.slate_number).toBe(5)
   })
 })

@@ -3,9 +3,14 @@
  * Every mutation invalidates the whole ['script-supervisor'] key so day, scene and take views stay in step.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { SlatingSystem } from '@/lib/db/types'
 import {
+  countLiveSlates,
   createSlate,
   createTake,
+  getNextSlatePreview,
+  getScriptSupervisorSettings,
+  setSlatingSystem,
   listSlatesByScene,
   listSlatesByShootDay,
   listTakesBySlateIds,
@@ -25,6 +30,48 @@ export const scriptSupervisorKeys = {
   slatesByScene: (sceneId: string | null | undefined) =>
     ['script-supervisor', 'slates', 'scene', sceneId ?? null] as const,
   takes: (slateIds: readonly string[]) => ['script-supervisor', 'takes', [...slateIds].sort()] as const,
+  settings: (productionId: string | null | undefined) => ['script-supervisor', 'settings', productionId ?? null] as const,
+  slateCount: (productionId: string | null | undefined) =>
+    ['script-supervisor', 'slate-count', productionId ?? null] as const,
+  nextSlate: (productionId: string | null | undefined, prefix: string, sceneId: string | null | undefined) =>
+    ['script-supervisor', 'next-slate', productionId ?? null, prefix, sceneId ?? null] as const,
+}
+
+/** Production slating system (UK default) — SS2. */
+export function useScriptSupervisorSettings(productionId: string | null | undefined) {
+  return useQuery({
+    queryKey: scriptSupervisorKeys.settings(productionId),
+    queryFn: () => getScriptSupervisorSettings(productionId!),
+    enabled: !!productionId,
+  })
+}
+
+/** Number of live slates; the slating system is locked while this is above zero. */
+export function useLiveSlateCount(productionId: string | null | undefined) {
+  return useQuery({
+    queryKey: scriptSupervisorKeys.slateCount(productionId),
+    queryFn: () => countLiveSlates(productionId!),
+    enabled: !!productionId,
+  })
+}
+
+/** Label the next "New slate" will get (UK '217', US '23B'); null when US has no scene chosen. */
+export function useNextSlatePreview(
+  productionId: string | null | undefined,
+  opts: { prefix?: string; sceneId?: string | null } = {}
+) {
+  const prefix = opts.prefix ?? ''
+  return useQuery({
+    queryKey: scriptSupervisorKeys.nextSlate(productionId, prefix, opts.sceneId),
+    queryFn: () => getNextSlatePreview(productionId!, { prefix, sceneId: opts.sceneId }),
+    enabled: !!productionId,
+  })
+}
+
+export function useSetSlatingSystem() {
+  return useInvalidatingMutation(({ productionId, system }: { productionId: string; system: SlatingSystem }) =>
+    setSlatingSystem(productionId, system)
+  )
 }
 
 export function useSlatesForShootDay(shootDayId: string | null | undefined) {

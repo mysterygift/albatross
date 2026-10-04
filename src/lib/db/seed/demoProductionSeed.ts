@@ -242,6 +242,7 @@ export async function verifyCascades(): Promise<{ ok: boolean; message: string; 
     'script_sections',
     'shoot_day_sides_exports',
     'slates',
+    'production_script_supervisor_settings',
   ]
   try {
     const result = await runInSerializedTransaction(async () => {

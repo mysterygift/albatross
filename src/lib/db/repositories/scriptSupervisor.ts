@@ -1,38 +1,50 @@
 /**
- * Script Supervisor (SS1): slates (camera setups) and takes.
+ * Script Supervisor: slates (camera setups), takes, and the per-production slating setting.
  *
  * Local SQLite only, like the SB1 script-section tables: writes refuse productions whose effective
  * data source is `remote_server`, and nothing here is published or exported yet.
  * Multi-statement writes follow DATABASE_LAYER.md §4 (runInSerializedTransaction + one executeBatch,
  * outbox rows in the same batch).
+ *
+ * Slating (SS2): UK consecutive numbers per unit series (default) or US scene + setup letter, chosen per
+ * production. Each slate stores the system it was created under. See `slateNumbering.ts`.
  */
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxStatementForRow, type OutboxRow } from '../outbox'
 import { getEffectiveDataSourceForProduction } from '../projectDataSource'
 import { coerceBoolean, coerceNumber } from '../sqlValueCoercion'
 import type {
+  ProductionScriptSupervisorSettings,
   Slate,
   SlateShotType,
   SlateSoundMode,
+  SlatingSystem,
   Take,
   TakeNgReason,
   TakeStatus,
 } from '../types'
 import {
-  formatSlateLabel,
+  DEFAULT_SLATING_SYSTEM,
   nextConsecutiveSlateNumber,
   nextTakeNumber,
   normaliseSlatePrefix,
+  slateDisplayLabel,
+  usOrdinalForSetupLetter,
 } from '@/lib/script-supervisor/slateNumbering'
 
 const SLATES = 'slates'
 const TAKES = 'takes'
+const SETTINGS = 'production_script_supervisor_settings'
 
 type Stmt = { sql: string; bindValues: unknown[] }
 
 export const SCRIPT_SUPERVISOR_REMOTE_ERROR =
   'Script supervisor logs are stored on this device only and are not available for server-published productions.'
 
+export const SLATING_SYSTEM_LOCKED_ERROR =
+  'The slating system can’t be changed once slates are logged. Delete this production’s slates first.'
+
+const SLATING_SYSTEMS: readonly SlatingSystem[] = ['uk', 'us']
 const SHOT_TYPES: readonly SlateShotType[] = ['master', 'single', 'multiple', 'insert', 'other']
 const SOUND_MODES: readonly SlateSoundMode[] = ['sync', 'mute', 'wild_track']
 const TAKE_STATUSES: readonly TakeStatus[] = ['pending', 'print', 'hold', 'ng', 'incomplete']
@@ -46,6 +58,7 @@ function rowToSlate(r: Record<string, unknown>): Slate {
   return {
     id: r.id as string,
     production_id: r.production_id as string,
+    slating_system: (r.slating_system as SlatingSystem | null) ?? 'uk',
     shoot_day_id: r.shoot_day_id as string,
     unit_id: str(r.unit_id),
     scene_id: str(r.scene_id),
@@ -59,7 +72,7 @@ function rowToSlate(r: Record<string, unknown>): Slate {
     lens: str(r.lens),
     stop: str(r.stop),
     filter: str(r.filter),
-    sound_mode: ((r.sound_mode as SlateSoundMode | null) ?? 'sync'),
+    sound_mode: (r.sound_mode as SlateSoundMode | null) ?? 'sync',
     int_ext: str(r.int_ext),
     day_night: str(r.day_night),
     camera_roll: str(r.camera_roll),
@@ -111,6 +124,85 @@ function assertDuration(value: number | null | undefined): void {
   }
 }
 
+function ordinalForLetterOrThrow(letter: string): number {
+  const ordinal = usOrdinalForSetupLetter(letter)
+  if (ordinal == null) {
+    throw new Error(`“${letter.trim()}” is not a setup letter. Use A–Z without I or O (or leave blank for the master).`)
+  }
+  return ordinal
+}
+
+// ─── Slating setting (SS2) ──────────────────────────────────────────────────
+
+/** The production's slating system; UK when nothing has been saved. */
+export async function getScriptSupervisorSettings(productionId: string): Promise<ProductionScriptSupervisorSettings> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${SETTINGS} WHERE production_id = $1`, [
+    productionId,
+  ])
+  const row = rows[0]
+  if (row) {
+    return {
+      production_id: row.production_id as string,
+      slating_system: (row.slating_system as SlatingSystem | null) ?? DEFAULT_SLATING_SYSTEM,
+      created_at: row.created_at as string,
+      updated_at: row.updated_at as string,
+    }
+  }
+  const ts = now()
+  return { production_id: productionId, slating_system: DEFAULT_SLATING_SYSTEM, created_at: ts, updated_at: ts }
+}
+
+export async function getSlatingSystem(productionId: string): Promise<SlatingSystem> {
+  return (await getScriptSupervisorSettings(productionId)).slating_system
+}
+
+export async function countLiveSlates(productionId: string): Promise<number> {
+  const db = await getDb()
+  const rows = await db.select<Array<{ n: unknown }>>(
+    `SELECT COUNT(*) AS n FROM ${SLATES} WHERE production_id = $1 AND deleted_at IS NULL`,
+    [productionId]
+  )
+  return coerceNumber(rows[0]?.n, 0)
+}
+
+/**
+ * Sets the production's slating system. Locked once any live slate exists, so a shoot never mixes
+ * systems by accident; setting the current value again is a no-op.
+ */
+export async function setSlatingSystem(
+  productionId: string,
+  system: SlatingSystem
+): Promise<ProductionScriptSupervisorSettings> {
+  assertOneOf(system, SLATING_SYSTEMS, 'Slating system')
+  await assertLocalProduction(productionId)
+  const current = await getScriptSupervisorSettings(productionId)
+  if (current.slating_system === system) return current
+  if ((await countLiveSlates(productionId)) > 0) throw new Error(SLATING_SYSTEM_LOCKED_ERROR)
+
+  const ts = now()
+  const statements: Stmt[] = [
+    { sql: 'BEGIN', bindValues: [] },
+    {
+      sql: `INSERT INTO ${SETTINGS} (production_id, slating_system, created_at, updated_at) VALUES ($1, $2, $3, $4)
+            ON CONFLICT (production_id) DO UPDATE SET slating_system = $2, updated_at = $4`,
+      bindValues: [productionId, system, ts, ts],
+    },
+    outboxStatementForRow({
+      entity: SETTINGS,
+      entityId: productionId,
+      operation: 'update',
+      payloadJson: JSON.stringify({ slating_system: system }),
+    }),
+    { sql: 'COMMIT', bindValues: [] },
+  ]
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    await executeBatch(db, statements)
+  })
+  return getScriptSupervisorSettings(productionId)
+}
+
 // ─── Reads ──────────────────────────────────────────────────────────────────
 
 export async function getSlateById(id: string): Promise<Slate | null> {
@@ -122,23 +214,23 @@ export async function getSlateById(id: string): Promise<Slate | null> {
   return rows[0] ? rowToSlate(rows[0]) : null
 }
 
-/** Live slates logged on a shoot day, in slating order (series, then number). */
+/** Live slates logged on a shoot day, in the order they were created. */
 export async function listSlatesByShootDay(shootDayId: string): Promise<Slate[]> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${SLATES} WHERE shoot_day_id = $1 AND deleted_at IS NULL
-     ORDER BY slate_prefix, slate_number`,
+     ORDER BY created_at, slate_prefix, slate_number`,
     [shootDayId]
   )
   return rows.map(rowToSlate)
 }
 
-/** Live slates covering a scene across all shoot days, in slating order. */
+/** Live slates covering a scene across all shoot days, in the order they were created. */
 export async function listSlatesByScene(sceneId: string): Promise<Slate[]> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${SLATES} WHERE scene_id = $1 AND deleted_at IS NULL
-     ORDER BY slate_prefix, slate_number`,
+     ORDER BY created_at, slate_prefix, slate_number`,
     [sceneId]
   )
   return rows.map(rowToSlate)
@@ -157,29 +249,88 @@ export async function listTakesBySlateIds(slateIds: readonly string[]): Promise<
   return rows.map(rowToTake)
 }
 
-/** Next consecutive slate number for a series (UK slating, SS1 default). */
+async function getSceneNumber(sceneId: string, productionId: string): Promise<string> {
+  const db = await getDb()
+  const rows = await db.select<Array<{ scene_number: string; production_id: string }>>(
+    `SELECT scene_number, production_id FROM scenes WHERE id = $1 AND deleted_at IS NULL`,
+    [sceneId]
+  )
+  if (rows.length === 0) throw new Error('Scene not found')
+  if (rows[0]!.production_id !== productionId) throw new Error('Scene belongs to a different production')
+  return rows[0]!.scene_number
+}
+
+/** Next UK consecutive slate number in a series. */
 export async function getNextSlateNumber(productionId: string, prefix?: string | null): Promise<number> {
   const db = await getDb()
   const rows = await db.select<Array<{ slate_number: unknown }>>(
-    `SELECT slate_number FROM ${SLATES} WHERE production_id = $1 AND slate_prefix = $2 AND deleted_at IS NULL`,
+    `SELECT slate_number FROM ${SLATES}
+     WHERE production_id = $1 AND slating_system = 'uk' AND slate_prefix = $2 AND deleted_at IS NULL`,
     [productionId, normaliseSlatePrefix(prefix)]
   )
   return nextConsecutiveSlateNumber(rows.map((r) => coerceNumber(r.slate_number, 0)))
 }
 
-async function isSlateNumberTaken(
+/** Next US setup ordinal for a scene (1 = scene number alone, 2 = A…). */
+export async function getNextUsSetupOrdinal(sceneId: string): Promise<number> {
+  const db = await getDb()
+  const rows = await db.select<Array<{ slate_number: unknown }>>(
+    `SELECT slate_number FROM ${SLATES} WHERE scene_id = $1 AND slating_system = 'us' AND deleted_at IS NULL`,
+    [sceneId]
+  )
+  return nextConsecutiveSlateNumber(rows.map((r) => coerceNumber(r.slate_number, 0)))
+}
+
+export type NextSlatePreview = { slating_system: SlatingSystem; slate_number: number; label: string }
+
+/**
+ * What the "New slate" button will create, for showing the number before it exists.
+ * US needs a scene; without one it returns null.
+ */
+export async function getNextSlatePreview(
   productionId: string,
-  prefix: string,
-  slateNumber: number,
+  opts: { prefix?: string | null; sceneId?: string | null } = {}
+): Promise<NextSlatePreview | null> {
+  const system = await getSlatingSystem(productionId)
+  if (system === 'us') {
+    if (!opts.sceneId) return null
+    const sceneNumber = await getSceneNumber(opts.sceneId, productionId)
+    const ordinal = await getNextUsSetupOrdinal(opts.sceneId)
+    return {
+      slating_system: 'us',
+      slate_number: ordinal,
+      label: slateDisplayLabel({ slating_system: 'us', slate_prefix: '', slate_number: ordinal }, sceneNumber),
+    }
+  }
+  const prefix = normaliseSlatePrefix(opts.prefix)
+  const n = await getNextSlateNumber(productionId, prefix)
+  return { slating_system: 'uk', slate_number: n, label: slateDisplayLabel({ slating_system: 'uk', slate_prefix: prefix, slate_number: n }, null) }
+}
+
+/** Is this number/setup already used by another live slate under the same system's uniqueness rule? */
+async function isSlateNumberTaken(
+  slate: { production_id: string; slating_system: SlatingSystem; slate_prefix: string; scene_id: string | null; slate_number: number },
   excludeId?: string
 ): Promise<boolean> {
   const db = await getDb()
-  const rows = await db.select<Array<{ id: string }>>(
-    `SELECT id FROM ${SLATES}
-     WHERE production_id = $1 AND slate_prefix = $2 AND slate_number = $3 AND deleted_at IS NULL`,
-    [productionId, prefix, slateNumber]
-  )
+  const rows =
+    slate.slating_system === 'us'
+      ? await db.select<Array<{ id: string }>>(
+          `SELECT id FROM ${SLATES} WHERE scene_id = $1 AND slating_system = 'us' AND slate_number = $2 AND deleted_at IS NULL`,
+          [slate.scene_id, slate.slate_number]
+        )
+      : await db.select<Array<{ id: string }>>(
+          `SELECT id FROM ${SLATES}
+           WHERE production_id = $1 AND slating_system = 'uk' AND slate_prefix = $2 AND slate_number = $3 AND deleted_at IS NULL`,
+          [slate.production_id, slate.slate_prefix, slate.slate_number]
+        )
   return rows.some((r) => r.id !== excludeId)
+}
+
+async function labelFor(slate: { slating_system: SlatingSystem; slate_prefix: string; slate_number: number; scene_id: string | null; production_id: string }): Promise<string> {
+  const sceneNumber =
+    slate.slating_system === 'us' && slate.scene_id ? await getSceneNumber(slate.scene_id, slate.production_id) : null
+  return slateDisplayLabel(slate, sceneNumber)
 }
 
 // ─── Slate writes ───────────────────────────────────────────────────────────
@@ -225,10 +376,12 @@ const SLATE_FIELD_KEYS: readonly (keyof SlateFields)[] = [
 export type CreateSlateInput = SlateFields & {
   production_id: string
   shoot_day_id: string
-  /** Series prefix; '' (default) for main unit. */
+  /** UK only: series prefix; '' (default) for main unit. Ignored for US. */
   slate_prefix?: string | null
-  /** Explicit number; omitted = next consecutive number in the series. */
+  /** UK only: explicit number; omitted = next consecutive number in the series. */
   slate_number?: number
+  /** US only: explicit setup letter ('' = master, 'A', 'B'…); omitted = next setup in the scene. */
+  setup_letter?: string
 }
 
 function validateSlateFields(fields: SlateFields): void {
@@ -237,8 +390,9 @@ function validateSlateFields(fields: SlateFields): void {
 }
 
 /**
- * Creates a slate on a shoot day. The number defaults to the next consecutive number in its series;
- * an explicit number is accepted (scripts sometimes skip numbers) but must not already be live.
+ * Creates a slate on a shoot day using the production's slating system.
+ * UK: next consecutive number in its series unless an explicit free number is given.
+ * US: needs a scene; next setup letter in that scene unless an explicit free letter is given.
  */
 export async function createSlate(input: CreateSlateInput): Promise<Slate> {
   await assertLocalProduction(input.production_id)
@@ -254,28 +408,41 @@ export async function createSlate(input: CreateSlateInput): Promise<Slate> {
     throw new Error('Shoot day belongs to a different production')
   }
 
-  const prefix = normaliseSlatePrefix(input.slate_prefix)
+  const system = await getSlatingSystem(input.production_id)
+  const sceneId = input.scene_id ?? null
+  if (system === 'us' && !sceneId) throw new Error('US slating needs a scene for every slate')
+  if (sceneId) await getSceneNumber(sceneId, input.production_id)
+  const prefix = system === 'us' ? '' : normaliseSlatePrefix(input.slate_prefix)
   const id = uuid()
 
   return runInSerializedTransaction(async () => {
     let slateNumber: number
-    if (input.slate_number != null) {
-      assertPositiveInt(input.slate_number, 'Slate number')
-      slateNumber = input.slate_number
-      if (await isSlateNumberTaken(input.production_id, prefix, slateNumber)) {
-        throw new Error(`Slate ${formatSlateLabel(prefix, slateNumber)} is already in use`)
+    const explicit =
+      system === 'us'
+        ? input.setup_letter !== undefined
+          ? ordinalForLetterOrThrow(input.setup_letter)
+          : null
+        : input.slate_number ?? null
+    if (explicit != null) {
+      assertPositiveInt(explicit, 'Slate number')
+      slateNumber = explicit
+      const candidate = { production_id: input.production_id, slating_system: system, slate_prefix: prefix, scene_id: sceneId, slate_number: slateNumber }
+      if (await isSlateNumberTaken(candidate)) {
+        throw new Error(`Slate ${await labelFor(candidate)} is already in use`)
       }
     } else {
-      slateNumber = await getNextSlateNumber(input.production_id, prefix)
+      slateNumber =
+        system === 'us' ? await getNextUsSetupOrdinal(sceneId!) : await getNextSlateNumber(input.production_id, prefix)
     }
 
     const ts = now()
     const row: Slate = {
       id,
       production_id: input.production_id,
+      slating_system: system,
       shoot_day_id: input.shoot_day_id,
       unit_id: input.unit_id ?? null,
-      scene_id: input.scene_id ?? null,
+      scene_id: sceneId,
       shot_id: input.shot_id ?? null,
       slate_prefix: prefix,
       slate_number: slateNumber,
@@ -299,14 +466,15 @@ export async function createSlate(input: CreateSlateInput): Promise<Slate> {
     const statements: Stmt[] = [
       { sql: 'BEGIN', bindValues: [] },
       {
-        sql: `INSERT INTO ${SLATES} (id, production_id, shoot_day_id, unit_id, scene_id, shot_id, slate_prefix, slate_number,
-                shot_type, shot_code, description, camera, lens, stop, filter, sound_mode, int_ext, day_night,
+        sql: `INSERT INTO ${SLATES} (id, production_id, slating_system, shoot_day_id, unit_id, scene_id, shot_id, slate_prefix,
+                slate_number, shot_type, shot_code, description, camera, lens, stop, filter, sound_mode, int_ext, day_night,
                 camera_roll, sound_roll, notes, created_at, updated_at)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
         bindValues: [
-          row.id, row.production_id, row.shoot_day_id, row.unit_id, row.scene_id, row.shot_id, row.slate_prefix,
-          row.slate_number, row.shot_type, row.shot_code, row.description, row.camera, row.lens, row.stop, row.filter,
-          row.sound_mode, row.int_ext, row.day_night, row.camera_roll, row.sound_roll, row.notes, ts, ts,
+          row.id, row.production_id, row.slating_system, row.shoot_day_id, row.unit_id, row.scene_id, row.shot_id,
+          row.slate_prefix, row.slate_number, row.shot_type, row.shot_code, row.description, row.camera, row.lens,
+          row.stop, row.filter, row.sound_mode, row.int_ext, row.day_night, row.camera_roll, row.sound_roll, row.notes,
+          ts, ts,
         ],
       },
       outboxStatementForRow({ entity: SLATES, entityId: id, operation: 'create', payloadJson: JSON.stringify(row) }),
@@ -319,11 +487,18 @@ export async function createSlate(input: CreateSlateInput): Promise<Slate> {
 }
 
 export type UpdateSlateInput = SlateFields & {
+  /** UK only. */
   slate_prefix?: string | null
+  /** UK only. */
   slate_number?: number
+  /** US only: '' = master, 'A', 'B'… */
+  setup_letter?: string
 }
 
-/** Updates editable slate fields; renumbering checks the new number is free in its series. */
+/**
+ * Updates editable slate fields. Renumbering (or, for US, moving to another scene or letter) checks the
+ * result is free under the slate's own system. The slate's system never changes.
+ */
 export async function updateSlate(id: string, patch: UpdateSlateInput): Promise<Slate> {
   const existing = await getSlateById(id)
   if (!existing) throw new Error('Slate not found')
@@ -345,16 +520,35 @@ export async function updateSlate(id: string, patch: UpdateSlateInput): Promise<
     push(key, key === 'sound_mode' ? patch.sound_mode ?? 'sync' : patch[key] ?? null)
   }
 
-  const nextPrefix = patch.slate_prefix !== undefined ? normaliseSlatePrefix(patch.slate_prefix) : existing.slate_prefix
-  const nextNumber = patch.slate_number ?? existing.slate_number
-  if (patch.slate_number !== undefined) assertPositiveInt(patch.slate_number, 'Slate number')
-  const renumbered = nextPrefix !== existing.slate_prefix || nextNumber !== existing.slate_number
-  if (renumbered) {
-    if (await isSlateNumberTaken(existing.production_id, nextPrefix, nextNumber, id)) {
-      throw new Error(`Slate ${formatSlateLabel(nextPrefix, nextNumber)} is already in use`)
+  const isUs = existing.slating_system === 'us'
+  const nextSceneId = patch.scene_id !== undefined ? patch.scene_id ?? null : existing.scene_id
+  if (isUs && !nextSceneId) throw new Error('US slating needs a scene for every slate')
+  if (patch.scene_id) await getSceneNumber(patch.scene_id, existing.production_id)
+
+  const nextPrefix = isUs
+    ? ''
+    : patch.slate_prefix !== undefined
+      ? normaliseSlatePrefix(patch.slate_prefix)
+      : existing.slate_prefix
+  let nextNumber = existing.slate_number
+  if (isUs) {
+    if (patch.setup_letter !== undefined) nextNumber = ordinalForLetterOrThrow(patch.setup_letter)
+  } else if (patch.slate_number !== undefined) {
+    assertPositiveInt(patch.slate_number, 'Slate number')
+    nextNumber = patch.slate_number
+  }
+
+  const identityChanged =
+    nextPrefix !== existing.slate_prefix ||
+    nextNumber !== existing.slate_number ||
+    (isUs && nextSceneId !== existing.scene_id)
+  if (identityChanged) {
+    const candidate = { ...existing, slate_prefix: nextPrefix, slate_number: nextNumber, scene_id: nextSceneId }
+    if (await isSlateNumberTaken(candidate, id)) {
+      throw new Error(`Slate ${await labelFor(candidate)} is already in use`)
     }
-    push('slate_prefix', nextPrefix)
-    push('slate_number', nextNumber)
+    if (nextPrefix !== existing.slate_prefix) push('slate_prefix', nextPrefix)
+    if (nextNumber !== existing.slate_number) push('slate_number', nextNumber)
   }
 
   if (sets.length === 0) return existing
@@ -399,7 +593,7 @@ export async function softDeleteSlate(id: string): Promise<void> {
       sql: `UPDATE ${SLATES} SET deleted_at = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
       bindValues: [ts, ts, id],
     },
-    ...outboxRows.map(outboxStatementForRow),
+    ...outboxRows.map((row) => outboxStatementForRow(row)),
     { sql: 'COMMIT', bindValues: [] },
   ]
   await runInSerializedTransaction(async () => {

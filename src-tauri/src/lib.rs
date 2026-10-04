@@ -940,6 +940,12 @@ pub fn run() {
             sql: include_str!("../migrations/0086_script_supervisor_slates_takes.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 87,
+            description: "script_supervisor_slating_system",
+            sql: include_str!("../migrations/0087_script_supervisor_slating_system.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

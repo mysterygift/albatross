@@ -85,6 +85,7 @@ import { EpisodesSettingsSection } from '@/features/settings/EpisodesSettingsSec
 import { TaxCreditsSettingsSection } from '@/features/settings/TaxCreditsSettingsSection'
 import { ShootingBlocsSettingsSection } from '@/features/settings/ShootingBlocsSettingsSection'
 import { ClientsSettingsSection } from '@/features/settings/ClientsSettingsSection'
+import { ScriptSupervisorSettingsSection } from '@/features/settings/ScriptSupervisorSettingsSection'
 import {
   API_CALL_TRACKER_IDS,
   API_CALL_TRACKER_LABELS,
@@ -158,7 +159,7 @@ export function SettingsPage() {
   const [accountToDelete, setAccountToDelete] = useState<BudgetAccount | null>(null)
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
   const [colorToast, setColorToast] = useState<string | null>(null)
-  const [settingsTab, setSettingsTab] = useState<'budget' | 'people' | 'apis' | 'developer_tools'>('budget')
+  const [settingsTab, setSettingsTab] = useState<'budget' | 'people' | 'script_supervisor' | 'apis' | 'developer_tools'>('budget')
   const queryClient = useQueryClient()
   const [tutorialToast, setTutorialToast] = useState<string | null>(null)
   const [orsApiKeyDraft, setOrsApiKeyDraft] = useState('')
@@ -406,10 +407,11 @@ export function SettingsPage() {
     <div className="space-y-5">
       <h1 className="text-2xl font-semibold">Settings</h1>
 
-      <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as 'budget' | 'people' | 'apis' | 'developer_tools')} className="w-full">
+      <Tabs value={settingsTab} onValueChange={(v) => setSettingsTab(v as 'budget' | 'people' | 'script_supervisor' | 'apis' | 'developer_tools')} className="w-full">
         <TabsList className="h-9 rounded-md border border-border bg-muted/30 w-fit">
           <TabsTrigger value="budget" className="px-4 text-sm data-[state=active]:bg-background">Budget</TabsTrigger>
           <TabsTrigger value="people" className="px-4 text-sm data-[state=active]:bg-background">People</TabsTrigger>
+          <TabsTrigger value="script_supervisor" className="px-4 text-sm data-[state=active]:bg-background">Script supervisor</TabsTrigger>
           <TabsTrigger value="apis" className="px-4 text-sm data-[state=active]:bg-background">APIs</TabsTrigger>
           <TabsTrigger value="developer_tools" className="px-4 text-sm data-[state=active]:bg-background">Developer Tools</TabsTrigger>
         </TabsList>
@@ -684,6 +686,14 @@ export function SettingsPage() {
               <p className="text-sm text-muted-foreground">Select a production to configure crew structure.</p>
             </div>
       )}
+        </TabsContent>
+
+        <TabsContent value="script_supervisor" className="space-y-5 mt-5 outline-none">
+          {currentProductionId ? (
+            <ScriptSupervisorSettingsSection productionId={currentProductionId} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Select a production to set its slating system.</p>
+          )}
         </TabsContent>
 
         <TabsContent value="apis" className="space-y-5 mt-5 outline-none">

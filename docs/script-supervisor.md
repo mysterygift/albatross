@@ -25,6 +25,19 @@ label helpers: [`slateNumbering.ts`](../src/lib/script-supervisor/slateNumbering
 [`features/script-supervisor/hooks.ts`](../src/features/script-supervisor/hooks.ts) (all mutations invalidate
 `['script-supervisor']`).
 
+## SS2 — slating system per production
+
+Migration [`0087_script_supervisor_slating_system.sql`](../src-tauri/migrations/0087_script_supervisor_slating_system.sql):
+
+- `production_script_supervisor_settings` (one row per production, absent = UK). Set in **Settings → Script
+  supervisor → Slating** ([`ScriptSupervisorSettingsSection.tsx`](../src/features/settings/ScriptSupervisorSettingsSection.tsx)).
+- `slates.slating_system` records the system each slate was created under, so labels never change later.
+- **UK (default)**: consecutive numbers per series; unique per production + prefix.
+- **US**: scene number + setup letter (23, 23A, 23B…, skipping I and O; doubling after Z). `slate_number`
+  stores the setup ordinal within the scene (1 = scene alone, 2 = A…), unique per scene. Every US slate needs a scene.
+- The setting **locks once any live slate exists** (`SLATING_SYSTEM_LOCKED_ERROR`), so a shoot never mixes systems.
+- `getNextSlatePreview` returns the label the next "New slate" will get (UK `217`, US `23B`) for the UI.
+
 ## Rules
 
 - **Local SQLite only**, like the SB1 script-section tables. Writes throw `SCRIPT_SUPERVISOR_REMOTE_ERROR`
