@@ -109,6 +109,8 @@ export function ForgotPasswordRecoveryCard({
               value={adminUsername}
               onChange={(e) => setAdminUsername(e.target.value)}
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
               disabled={cardBusy}
               placeholder="Leave blank to reset all admins"
             />

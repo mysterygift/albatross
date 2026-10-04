@@ -145,7 +145,7 @@ export function ConnectServerDialog({
             </div>
             <div className="space-y-1">
               <Label htmlFor="srv-user">Username</Label>
-              <Input id="srv-user" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+              <Input id="srv-user" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" />
             </div>
             <div className="space-y-1">
               <Label htmlFor="srv-pass">Password</Label>

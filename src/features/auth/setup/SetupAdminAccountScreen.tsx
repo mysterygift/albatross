@@ -106,6 +106,8 @@ export function SetupAdminAccountScreen({
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
               disabled={formBusy}
             />
             {validation.fieldErrors.username && (

@@ -203,6 +203,8 @@ export function AuthGateScreen({ loadingAuthState, encryptingDatabase = false }:
                     value={loginUsername}
                     onChange={(e) => setLoginUsername(e.target.value)}
                     autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
                     disabled={busy}
                   />
                 </div>
