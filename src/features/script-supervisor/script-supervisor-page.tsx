@@ -32,6 +32,7 @@ import {
   snapRangeToLineable,
   type LiningUndoEntry,
 } from '@/lib/script-supervisor/liningEdit'
+import { annotationsByElement, formatAnnotationChip } from '@/lib/script-supervisor/annotations'
 import { SCENE_STATUS_LABEL, type SceneProgressStatus } from '@/lib/script-supervisor/progress'
 import {
   carryOverFields,
@@ -49,6 +50,11 @@ import {
   useDayLog,
   useLinedScene,
   useLiningMutations,
+  useAnnotationMutations,
+  usePhotoMutations,
+  useSceneAnnotations,
+  useSlateAnnotations,
+  useSlatePhotos,
   useSaveDayLog,
   useNextSlatePreview,
   useScenesForShootDay,
@@ -65,6 +71,8 @@ import { LinedScript } from './LinedScript'
 import { ProgressView } from './ProgressView'
 import { SceneStatusPip } from './SceneStatusPip'
 import { SlatePanel } from './SlatePanel'
+import { AnnotationDialog, type AnnotationDialogState } from './AnnotationDialog'
+import { SlateNotesPanel } from './SlateNotesPanel'
 import { useTouchLayout } from './useTouchLayout'
 
 function localIsoDate(d = new Date()): string {
@@ -292,6 +300,21 @@ export function ScriptSupervisorPage() {
   }
   const lastUndo = undoStack[undoStack.length - 1] ?? null
 
+  // ─── Notes and continuity photos (SS8) ─────────────────────────────────────
+  const { data: sceneNotes = [] } = useSceneAnnotations(linedScene?.scriptVersionId, sceneId)
+  const notesByElement = useMemo(() => annotationsByElement(sceneNotes), [sceneNotes])
+  const { data: slateNotes = [] } = useSlateAnnotations(currentSlate?.id)
+  const { data: slatePhotos = [] } = useSlatePhotos(currentSlate?.id)
+  const notes = useAnnotationMutations()
+  const photos = usePhotoMutations()
+  const [noteDialog, setNoteDialog] = useState<AnnotationDialogState | null>(null)
+  const photoTake = takeToMark(currentTakes, selectedTakeId)
+  const noteSlateId = noteDialog?.mode === 'edit' ? noteDialog.annotation.slateId : currentSlate?.id ?? null
+  const noteTakes = noteSlateId ? dayTakes.filter((t) => t.slate_id === noteSlateId) : []
+  const noteError = [notes.create.error, notes.update.error, notes.remove.error].find((e) => e instanceof Error) as Error | undefined
+  const rowExcerpt = (row: LiningRow) =>
+    (row.element.element_type === 'dialogue' ? `${row.element.character_name}: ${row.element.text}` : row.element.text).replace(/\s+/g, ' ')
+
   const isUs = settings?.slating_system === 'us'
   const busy = createSlate.isPending || createTake.isPending || updateTake.isPending
   const canCreateSlate =
@@ -416,7 +439,9 @@ export function ScriptSupervisorPage() {
     lining.range.error,
     lining.segments.error,
     lining.remove.error,
-    lining.restore.error
+    lining.restore.error,
+    photos.add.error,
+    photos.remove.error
   )
   const selectedSceneComplete = sceneId ? sceneStatus(sceneId) === 'complete' : false
   const toggleSceneComplete = () => {
@@ -657,6 +682,16 @@ export function ScriptSupervisorPage() {
               sceneNumber={sceneId ? sceneNumberById.get(sceneId) ?? null : null}
               currentSlateId={currentSlate?.id ?? null}
               touch={touch}
+              annotations={notesByElement}
+              onAnnotate={(row) =>
+                setNoteDialog({
+                  mode: 'create',
+                  elementId: row.element.id,
+                  excerpt: rowExcerpt(row),
+                  character: row.element.element_type === 'dialogue' ? row.element.character_name : null,
+                })
+              }
+              onEditAnnotation={(a, row) => setNoteDialog({ mode: 'edit', annotation: a, excerpt: rowExcerpt(row) })}
               editing={{
                 activeSlateId: currentSlate?.id ?? null,
                 activeLabel: currentSlate ? labelOf(currentSlate) : null,
@@ -714,6 +749,7 @@ export function ScriptSupervisorPage() {
           </div>
 
           <div className={cn('w-full', touch ? 'lg:w-[420px]' : 'lg:w-[380px]')}>
+            <div className="space-y-4">
             <SlatePanel
               slate={currentSlate}
               slateLabel={currentSlate ? labelOf(currentSlate) : null}
@@ -730,6 +766,43 @@ export function ScriptSupervisorPage() {
               onUpdateTakeRemarks={(id, remarks) => updateTake.mutate({ id, patch: { remarks } })}
               touch={touch}
               busy={busy}
+            />
+            {currentSlate && (
+              <SlateNotesPanel
+                slateLabel={labelOf(currentSlate)}
+                notes={slateNotes}
+                photos={slatePhotos}
+                photoTakeNumber={photoTake?.take_number ?? null}
+                busy={photos.add.isPending}
+                touch={touch}
+                onEditNote={(n) => setNoteDialog({ mode: 'edit', annotation: n, excerpt: formatAnnotationChip(n) })}
+                onAddPhotos={(files, tags) =>
+                  photos.add.mutate({
+                    productionId: currentProductionId,
+                    files,
+                    slateId: currentSlate.id,
+                    slateLabel: labelOf(currentSlate),
+                    takeId: photoTake?.id ?? null,
+                    takeNumber: photoTake?.take_number ?? null,
+                    sceneId: currentSlate.scene_id,
+                    tags,
+                  })
+                }
+                onRemovePhoto={(id) => photos.remove.mutate(id)}
+              />
+            )}
+            </div>
+            <AnnotationDialog
+              state={noteDialog}
+              slate={currentSlate ? { id: currentSlate.id, label: labelOf(currentSlate) } : null}
+              takes={noteTakes}
+              defaultTakeId={photoTake?.id ?? null}
+              busy={notes.create.isPending || notes.update.isPending || notes.remove.isPending}
+              error={noteError?.message ?? null}
+              onClose={() => setNoteDialog(null)}
+              onCreate={(input) => notes.create.mutate(input, { onSuccess: () => setNoteDialog(null) })}
+              onUpdate={(id, patch) => notes.update.mutate({ id, patch }, { onSuccess: () => setNoteDialog(null) })}
+              onDelete={(id) => notes.remove.mutate(id, { onSuccess: () => setNoteDialog(null) })}
             />
           </div>
         </div>

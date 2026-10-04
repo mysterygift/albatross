@@ -147,6 +147,26 @@ helpers in [`liningEdit.ts`](../src/lib/script-supervisor/liningEdit.ts)):
   (`restoreTramline`, refused if the slate has been lined again since).
 - Keyboard: every draw cell and segment is a real button with a descriptive label; Esc cancels a half-drawn line.
 
+## SS8 — script notes and continuity photos
+
+Migration [`0091_script_supervisor_annotations_media.sql`](../src-tauri/migrations/0091_script_supervisor_annotations_media.sql):
+
+| Table | Notes |
+| --- | --- |
+| `script_annotations` | A note on one script element: `line_change`, `ad_lib`, `cut`, `note`, `vfx`, `sfx`, `continuity`; optionally tied to a slate. |
+| `script_annotation_takes` | Which takes of that slate it applies to (cascades when a take is deleted). |
+| `continuity_media` | A continuity photo: the file is a document (`continuity_photo`, Documents → Set paperwork); the row links slate, take, scene, tags (wardrobe, props, make-up, hair, set, other) and a caption. Photos survive a slate delete — they stay on the scene for matching a reshoot. |
+
+- Repository: [`scriptAnnotations.ts`](../src/lib/db/repositories/scriptAnnotations.ts). Photos are stored by
+  [`continuityPhotos.ts`](../src/features/script-supervisor/continuityPhotos.ts) through `persistProductionDocument` with the
+  `continuity_media` INSERT as `extraStatements`, so file, document row and media row land together.
+- **Script view**: notes show as chips under their line (`T3 · 217 · Ad-lib: + “Nobody ever does.”`); each line has an
+  add-note button (on hover/focus with a mouse, always shown in tablet layout). The dialog defaults the type to *Line
+  change* on dialogue (*Note* otherwise) and ticks the selected take (else the latest) of the current slate.
+- **Slate panel → Notes and photos**: the slate's notes (tap to edit) and continuity photos, with tag toggles for new
+  photos and *Add photos* (a file input, so touch devices offer the camera or library). New photos file against the
+  selected take, else the latest. Images are read back as blob URLs (`createAppDataObjectUrl`), so no asset protocol is needed.
+
 ## Rules
 
 - **Local SQLite only**, like the SB1 script-section tables. Writes throw `SCRIPT_SUPERVISOR_REMOTE_ERROR`

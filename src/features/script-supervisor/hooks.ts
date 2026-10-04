@@ -6,6 +6,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SlatingSystem } from '@/lib/db/types'
 import { loadShootProgress } from '@/lib/db/scriptSupervisorProgressService'
 import {
+  createAnnotation,
+  listAnnotationsForScene,
+  listAnnotationsForSlate,
+  listContinuityMediaForSlate,
+  softDeleteAnnotation,
+  softDeleteContinuityMedia,
+  updateAnnotation,
+  updateContinuityMedia,
+  type CreateAnnotationInput,
+  type UpdateAnnotationInput,
+} from '@/lib/db/repositories/scriptAnnotations'
+import { addContinuityPhotos, type AddContinuityPhotosInput } from './continuityPhotos'
+import {
   createTramline,
   loadLinedScene,
   restoreTramline,
@@ -211,5 +224,57 @@ export function useLiningMutations() {
     ),
     remove: useInvalidatingMutation((id: string) => softDeleteTramline(id)),
     restore: useInvalidatingMutation((id: string) => restoreTramline(id)),
+  }
+}
+
+/** Notes on a scene's lines (SS8). */
+export function useSceneAnnotations(scriptVersionId: string | null | undefined, sceneId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['script-supervisor', 'annotations', 'scene', scriptVersionId ?? null, sceneId ?? null],
+    queryFn: () => listAnnotationsForScene(scriptVersionId!, sceneId!),
+    enabled: !!scriptVersionId && !!sceneId,
+  })
+}
+
+/** Notes tied to a slate (SS8). */
+export function useSlateAnnotations(slateId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['script-supervisor', 'annotations', 'slate', slateId ?? null],
+    queryFn: () => listAnnotationsForSlate(slateId!),
+    enabled: !!slateId,
+  })
+}
+
+/** Continuity photos taken on a slate (SS8). */
+export function useSlatePhotos(slateId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['script-supervisor', 'photos', 'slate', slateId ?? null],
+    queryFn: () => listContinuityMediaForSlate(slateId!),
+    enabled: !!slateId,
+  })
+}
+
+export function useAnnotationMutations() {
+  return {
+    create: useInvalidatingMutation((input: CreateAnnotationInput) => createAnnotation(input)),
+    update: useInvalidatingMutation(({ id, patch }: { id: string; patch: UpdateAnnotationInput }) => updateAnnotation(id, patch)),
+    remove: useInvalidatingMutation((id: string) => softDeleteAnnotation(id)),
+  }
+}
+
+export function usePhotoMutations() {
+  const queryClient = useQueryClient()
+  return {
+    add: useMutation({
+      mutationFn: (input: AddContinuityPhotosInput) => addContinuityPhotos(input),
+      onSuccess: (_r, input) => {
+        void queryClient.invalidateQueries({ queryKey: scriptSupervisorKeys.all })
+        void queryClient.invalidateQueries({ queryKey: ['documents', input.productionId] })
+      },
+    }),
+    update: useInvalidatingMutation(({ id, tags, caption }: { id: string; tags?: string[]; caption?: string | null }) =>
+      updateContinuityMedia(id, { tags, caption })
+    ),
+    remove: useInvalidatingMutation((id: string) => softDeleteContinuityMedia(id)),
   }
 }

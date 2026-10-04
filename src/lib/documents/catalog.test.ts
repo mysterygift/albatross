@@ -19,6 +19,7 @@ describe('document catalog', () => {
       'set-paperwork'
     )
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.dailyProgressReport)).toBe('set-paperwork')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.continuityPhoto)).toBe('set-paperwork')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.contributorForm)).toBe('people-locations')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.deliverable)).toBe('deliverables')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.cueSheet)).toBe('music')

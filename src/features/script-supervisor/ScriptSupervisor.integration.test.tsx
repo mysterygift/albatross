@@ -109,6 +109,18 @@ vi.mock('@/lib/documents/persistDocument', () => ({
   documentsQueryKey: (id: string) => ['documents', id],
 }))
 vi.mock('@/lib/files', () => ({ saveFileWithDialog: vi.fn() }))
+vi.mock('@/lib/db/repositories/scriptAnnotations', () => ({
+  listAnnotationsForScene: async () => [],
+  listAnnotationsForSlate: async () => [],
+  listContinuityMediaForSlate: async () => [],
+  createAnnotation: vi.fn(),
+  updateAnnotation: vi.fn(),
+  softDeleteAnnotation: vi.fn(),
+  updateContinuityMedia: vi.fn(),
+  softDeleteContinuityMedia: vi.fn(),
+  buildContinuityMediaInsert: vi.fn(() => []),
+}))
+vi.mock('@/lib/files/appDataObjectUrl', () => ({ createAppDataObjectUrl: vi.fn(async () => 'blob:x') }))
 vi.mock('@/lib/db/repositories/scriptLining', () => ({
   loadLinedScene: async () => null,
   createTramline: vi.fn(),

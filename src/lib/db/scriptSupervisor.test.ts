@@ -82,6 +82,14 @@ import {
   softDeleteTramline,
 } from '@/lib/db/repositories/scriptLining'
 import { layoutLinedScript } from '@/lib/script-supervisor/lining'
+import {
+  buildContinuityMediaInsert,
+  createAnnotation,
+  listAnnotationsForScene,
+  listAnnotationsForSlate,
+  listContinuityMediaForSlate,
+  updateAnnotation,
+} from '@/lib/db/repositories/scriptAnnotations'
 
 function applyAllMigrations(db: Database): void {
   const dir = join(process.cwd(), 'src-tauri/migrations')
@@ -366,5 +374,59 @@ describe('lining (SS6)', () => {
   it('returns null for a scene that is not in any imported script', async () => {
     const { production, scene } = await setup()
     expect(await loadLinedScene(production.id, scene.id)).toBeNull()
+  })
+})
+
+describe('notes and continuity photos (SS8)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    dataSourceOverride = null
+  })
+
+  it('records a line change against takes and shows it on the scene and the slate', async () => {
+    const { production, scene, day1 } = await setup()
+    await dbAdapter.execute(
+      `INSERT INTO script_versions (id, production_id, is_locked, created_at, updated_at) VALUES ('v1', $1, 0, 't', 't')`,
+      [production.id]
+    )
+    await dbAdapter.execute(
+      `INSERT INTO script_pages (id, script_version_id, scene_id, page_number, page_index, content, created_at, updated_at)
+       VALUES ('pg', 'v1', $1, '31', 0, 'INT. EDIT SUITE - NIGHT\n\nELENA\nThere is no cutaway.', 't', 't')`,
+      [scene.id]
+    )
+    const lined = await loadLinedScene(production.id, scene.id)
+    const speech = lined!.elements[1]!
+    const slate = await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id })
+    const t1 = await createTake(slate.id)
+    const t2 = await createTake(slate.id)
+
+    const id = await createAnnotation({ elementId: speech.id, kind: 'ad_lib', text: '+ “Nobody ever does.”', slateId: slate.id, takeIds: [t2.id] })
+    await expect(createAnnotation({ elementId: speech.id, kind: 'note', text: '   ' })).rejects.toThrow('Write what changed')
+
+    const onScene = await listAnnotationsForScene('v1', scene.id)
+    expect(onScene).toHaveLength(1)
+    expect(onScene[0]).toMatchObject({ elementId: speech.id, slateLabel: '1', takeNumbers: [2] })
+
+    await updateAnnotation(id, { kind: 'line_change', takeIds: [t1.id, t2.id] })
+    expect((await listAnnotationsForSlate(slate.id))[0]).toMatchObject({ kind: 'line_change', takeNumbers: [1, 2] })
+  })
+
+  it('files a continuity photo against a take with tidy tags', async () => {
+    const { production, scene, day1 } = await setup()
+    const slate = await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id })
+    const take = await createTake(slate.id)
+    await dbAdapter.execute(
+      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
+       VALUES ('doc1', $1, 'continuity_photo', $2, 'c.jpg', 'attachments/p/doc1-c.jpg', 'image/jpeg', 't', 't')`,
+      [production.id, slate.id]
+    )
+    for (const st of buildContinuityMediaInsert({
+      productionId: production.id, documentId: 'doc1', slateId: slate.id, takeId: take.id, sceneId: scene.id, tags: ['Props', 'wardrobe'],
+    })) {
+      await dbAdapter.execute(st.sql, st.bindValues)
+    }
+    const photos = await listContinuityMediaForSlate(slate.id)
+    expect(photos).toHaveLength(1)
+    expect(photos[0]).toMatchObject({ takeNumber: 1, tags: 'wardrobe,props', filePath: 'attachments/p/doc1-c.jpg' })
   })
 })

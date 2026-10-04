@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { MessageSquarePlus, PenLine } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { SlateShotType } from '@/lib/db/types'
 import type { CellState, LinedScriptLayout, LiningCell, LiningRow } from '@/lib/script-supervisor/lining'
 import { SEGMENT_STATE_LABEL, isLineableRow, nextSegmentState, orderedRange } from '@/lib/script-supervisor/liningEdit'
+import { formatAnnotationChip, type AnnotationView } from '@/lib/script-supervisor/annotations'
 
 /**
  * Tramline colours by shot type: the UK convention (red masters, blue singles, black multiples, green
@@ -52,6 +54,12 @@ export type LinedScriptProps = {
   currentSlateId: string | null
   touch: boolean
   editing?: LiningEditing
+  /** Notes by script element id (SS8). */
+  annotations?: ReadonlyMap<string, AnnotationView[]>
+  /** Opens the add-note dialog for a line; absent = no add button. */
+  onAnnotate?: (row: LiningRow) => void
+  /** Opens a note for editing; absent = chips are plain text. */
+  onEditAnnotation?: (annotation: AnnotationView, row: LiningRow) => void
 }
 
 function CellLine({ cell, colour, touch }: { cell: LiningCell; colour: string; touch: boolean }) {
@@ -177,7 +185,18 @@ function SegmentMenu({
 }
 
 /** Marked-up script for one scene: script text with tramlines beside it; editable when `editing` is set (SS7). */
-export function LinedScript({ layout, isLoading, hasScript, sceneNumber, currentSlateId, touch, editing }: LinedScriptProps) {
+export function LinedScript({
+  layout,
+  isLoading,
+  hasScript,
+  sceneNumber,
+  currentSlateId,
+  touch,
+  editing,
+  annotations,
+  onAnnotate,
+  onEditAnnotation,
+}: LinedScriptProps) {
   const [anchor, setAnchor] = useState<number | null>(null)
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
@@ -369,7 +388,7 @@ export function LinedScript({ layout, isLoading, hasScript, sceneNumber, current
                   </div>
                   <div
                     className={cn(
-                      'flex-1 min-w-0 px-5 py-1.5 font-mono text-sm leading-5',
+                      'group relative flex-1 min-w-0 px-5 py-1.5 font-mono text-sm leading-5',
                       touch && 'text-[15px] leading-6',
                       row.coverage != null && row.coverage < 2 && layout.columns.length > 0 && 'bg-muted/40',
                       previewing && 'bg-primary/10'
@@ -377,6 +396,49 @@ export function LinedScript({ layout, isLoading, hasScript, sceneNumber, current
                   >
                     <ElementText row={row} />
                     <span className="sr-only">{coverageDescription(row.coverage)}</span>
+                    {(annotations?.get(row.element.id) ?? []).length > 0 && (
+                      <ul className="mt-1.5 flex flex-wrap gap-1.5 font-sans" aria-label="Notes on this line">
+                        {annotations!.get(row.element.id)!.map((a) => {
+                          const chip = formatAnnotationChip(a)
+                          return (
+                            <li key={a.id}>
+                              {onEditAnnotation ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onEditAnnotation(a, row)}
+                                  aria-label={`Edit note: ${chip}`}
+                                  className={cn(
+                                    'inline-flex max-w-full items-center gap-1.5 rounded-full bg-secondary px-2.5 text-left text-xs text-secondary-foreground hover:bg-secondary/80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                                    touch ? 'min-h-9 py-1.5' : 'py-0.5'
+                                  )}
+                                >
+                                  <PenLine className="size-3 shrink-0" aria-hidden />
+                                  <span className="truncate">{chip}</span>
+                                </button>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground">
+                                  <PenLine className="size-3" aria-hidden />
+                                  {chip}
+                                </span>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                    {onAnnotate && isLineableRow(row) && (
+                      <button
+                        type="button"
+                        onClick={() => onAnnotate(row)}
+                        aria-label={`Add a note to “${excerpt(row)}”`}
+                        className={cn(
+                          'absolute right-1 top-1 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                          touch ? 'size-10 opacity-100' : 'size-7 opacity-0 group-hover:opacity-100'
+                        )}
+                      >
+                        <MessageSquarePlus className="size-4" aria-hidden />
+                      </button>
+                    )}
                   </div>
                   <div className="flex shrink-0 border-l border-border pl-1">
                     {row.cells.map((cell, i) => {

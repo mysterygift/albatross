@@ -964,6 +964,12 @@ pub fn run() {
             sql: include_str!("../migrations/0090_script_supervisor_lining.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 91,
+            description: "script_supervisor_annotations_media",
+            sql: include_str!("../migrations/0091_script_supervisor_annotations_media.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
