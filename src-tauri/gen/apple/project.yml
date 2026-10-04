@@ -53,6 +53,21 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.2.0
         CFBundleVersion: "0.2.0"
+        # Mirrors src-tauri/Info.ios.plist: Files-app visibility of Documents (exports) and
+        # .apf document type / exported UTI (see src-tauri/src/apf_ios.rs).
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Albatross Project File
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Owner
+            LSItemContentTypes: [com.albatross.apf]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.albatross.apf
+            UTTypeDescription: Albatross Project File
+            UTTypeConformsTo: [public.data, public.archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [apf]
     entitlements:
       path: app_iOS/app_iOS.entitlements
     scheme:
