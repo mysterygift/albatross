@@ -12,8 +12,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
-  useSensor,
   useSensors,
   useDraggable,
   useDroppable,
@@ -21,6 +19,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
+import { usePlatformDragSensors } from '@/lib/dnd/usePlatformDragSensors'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
@@ -1066,7 +1065,7 @@ export function ScheduleCalendarPage() {
   }
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    ...usePlatformDragSensors(8)
   )
 
   const moveMutation = useMutation({

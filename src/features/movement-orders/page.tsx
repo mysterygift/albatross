@@ -110,6 +110,7 @@ import {
   MovementOrderDistributionDialog,
   type MovementOrderRecipient,
 } from '@/features/movement-orders/MovementOrderDistributionDialog'
+import { isIosPlatform } from '@/lib/platform'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
@@ -670,7 +671,8 @@ export function MovementOrdersPage() {
         bytes
       )
       if (!savedPath) return { bytes, didCancel: true, saved: true }
-      if (savedPath && options.openAfter) {
+      // On iOS saving already presented the share sheet, which covers opening the file.
+      if (savedPath && options.openAfter && !isIosPlatform()) {
         await openInSystem(savedPath)
       }
       return { bytes, didCancel: false, saved: true }

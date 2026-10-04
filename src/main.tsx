@@ -9,7 +9,11 @@ import './styles/themes/sunset.css'
 import './styles/themes/signal.css'
 import './styles/themes/ledger.css'
 import './styles/themes/clay.css'
+import './styles/platform-mobile.css'
 import App from './App.tsx'
+import { applyPlatformAttribute } from './lib/platform'
+
+applyPlatformAttribute()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,12 +1,16 @@
 import { useCallback, useState } from 'react'
+import { isMobilePlatform } from '@/lib/platform'
 
 const STORAGE_KEY = 'albatross.scriptSupervisor.touchLayout'
 
 function readStored(): boolean {
   try {
-    return window.localStorage.getItem(STORAGE_KEY) === 'true'
+    const stored = window.localStorage.getItem(STORAGE_KEY)
+    // No saved choice yet: default to the tablet layout on iOS/Android.
+    if (stored == null) return isMobilePlatform()
+    return stored === 'true'
   } catch {
-    return false
+    return isMobilePlatform()
   }
 }
 

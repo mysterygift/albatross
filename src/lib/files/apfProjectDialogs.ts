@@ -1,4 +1,6 @@
 import { open, save } from '@tauri-apps/plugin-dialog'
+import { isIosPlatform } from '@/lib/platform'
+import { mobileExportPath } from '@/lib/files/mobileShare'
 
 /**
  * Ensure the path ends with `.apf` (some save dialogs omit the extension).
@@ -19,10 +21,13 @@ export function sanitizeProductionExportBasename(name: string): string {
 
 /**
  * Native save dialog for `.apf`. Returns absolute path or null if cancelled.
+ * On iOS, returns a path in the app's exports folder without prompting.
  */
 export async function pickApfSavePath(suggestedProductionName: string): Promise<string | null> {
   const base = sanitizeProductionExportBasename(suggestedProductionName)
   const defaultPath = `${base}.apf`
+  // iOS has no path picker: export into the app's exports folder; the caller then shares it.
+  if (isIosPlatform()) return mobileExportPath(defaultPath)
   const selected = await save({
     title: 'Export project',
     defaultPath,

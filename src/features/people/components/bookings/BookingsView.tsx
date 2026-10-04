@@ -3,13 +3,12 @@ import { useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
-  useSensor,
   useSensors,
   pointerWithin,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
+import { usePlatformDragSensors } from '@/lib/dnd/usePlatformDragSensors'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { SegmentedControl } from '@/components/ui/segmented-control'
@@ -133,7 +132,7 @@ export function BookingsView({
     [people, filterDepartment, filterCastCrew]
   )
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+  const sensors = useSensors(...usePlatformDragSensors(8))
 
   const notify = (message: string) => toast.error(message)
 

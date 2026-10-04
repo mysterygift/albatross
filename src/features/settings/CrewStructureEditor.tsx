@@ -6,12 +6,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,
   KeyboardSensor,
-  PointerSensor,
   closestCenter,
   useSensor,
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
+import { usePlatformDragSensors } from '@/lib/dnd/usePlatformDragSensors'
 import {
   SortableContext,
   arrayMove,
@@ -491,7 +491,7 @@ function DepartmentDetail({
 }) {
   const nameRef = useRef<HTMLInputElement>(null)
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    ...usePlatformDragSensors(4),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 

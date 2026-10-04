@@ -6,12 +6,12 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import {
   DndContext,
   KeyboardSensor,
-  PointerSensor,
   closestCenter,
   useSensor,
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
+import { usePlatformDragSensors } from '@/lib/dnd/usePlatformDragSensors'
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { ArrowLeft, CheckCircle2, Copy, FileDown, Save } from 'lucide-react'
 import { RequireProduction } from '@/components/require-production'
@@ -264,7 +264,7 @@ function RamsEditorForm({ id, productionId, ra }: { id: string; productionId: st
   }
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    ...usePlatformDragSensors(6),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
   const onDragEnd = (e: DragEndEvent) => {

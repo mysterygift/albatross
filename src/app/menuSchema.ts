@@ -299,3 +299,31 @@ export const menuCommandTargets: Record<string, MenuCommandTarget> = Object.from
 export function labelWithShortcut(label: string, accelerator?: string): string {
   return accelerator ? `${label} ${formatAccelerator(accelerator, isMacPlatform())}` : label
 }
+
+/** Native menu event names that don't follow the `albatross-menu-<id>` pattern. */
+const MENU_EVENT_NAME_OVERRIDES: Record<string, string> = {
+  app_settings: 'albatross-menu-open-settings',
+  file_logout: 'albatross-menu-logout',
+  budget_duplicate_live_as_draft: 'albatross-menu-duplicate-live-as-draft',
+}
+
+/** The event the native (Tauri desktop) menu emits for a command id; mirrors src-tauri/src/menu.rs. */
+export function menuEventNameForCommand(id: string): string {
+  return MENU_EVENT_NAME_OVERRIDES[id] ?? `albatross-menu-${id.replace(/_/g, '-')}`
+}
+
+/**
+ * Window event that asks ApfMenuEventBridge to run a menu command exactly as if it came from the
+ * native menu. Used by the in-app actions menu on platforms without a menu bar (iOS, browser).
+ */
+export const RUN_MENU_COMMAND_EVENT = 'albatross-run-menu-command'
+
+export type RunMenuCommandDetail = { eventName: string }
+
+export function runMenuCommand(id: string): void {
+  window.dispatchEvent(
+    new CustomEvent<RunMenuCommandDetail>(RUN_MENU_COMMAND_EVENT, {
+      detail: { eventName: menuEventNameForCommand(id) },
+    }),
+  )
+}

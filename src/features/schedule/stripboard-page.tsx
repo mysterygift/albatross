@@ -13,13 +13,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
   KeyboardSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
+import { usePlatformDragSensors } from '@/lib/dnd/usePlatformDragSensors'
 import { useCurrentProduction } from '@/features/productions/context'
 import {
   useStripboard,
@@ -610,7 +610,7 @@ export function StripboardPage() {
   }, [authSession.authSupported, authSession.currentUser, currentProductionId, mainUnit?.id, shootDays.length, queryClient])
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    ...usePlatformDragSensors(8),
     useSensor(KeyboardSensor)
   )
 

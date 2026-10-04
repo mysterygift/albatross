@@ -104,6 +104,7 @@ import { useRamsSignOff } from '@/features/risk-assessments/useRamsSignOff'
 import { describeRamsSignOff } from '@/lib/risk-assessments/ramsSignOff'
 import { CallSheetDistributionDialog, type CallSheetRecipient } from '@/features/call-sheets/CallSheetDistributionDialog'
 import { exportDistributedCallSheets } from '@/features/call-sheets/exportDistributedCallSheets'
+import { isIosPlatform } from '@/lib/platform'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
@@ -909,7 +910,8 @@ export function CallSheetsPage() {
           },
           bytes
         )
-        if (savedPath && options.openAfter) {
+        // On iOS saving already presented the share sheet, which covers opening the file.
+        if (savedPath && options.openAfter && !isIosPlatform()) {
           await openInSystem(savedPath)
         }
         return { bytes, weatherFallback: usedFallback, saved: true }

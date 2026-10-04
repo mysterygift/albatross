@@ -16,6 +16,8 @@ import {
   writeTextFile,
 } from '@tauri-apps/plugin-fs'
 import { openPath as openerOpenPath, openUrl as openerOpenUrl } from '@tauri-apps/plugin-opener'
+import { isIosPlatform } from '@/lib/platform'
+import { localPathFromUrl, mobileExportPath, shareLocalFile, shareMobileExport } from '@/lib/files/mobileShare'
 
 const ATTACHMENTS_DIR = 'attachments'
 
@@ -46,7 +48,10 @@ export async function pickAndSaveAttachment(
 
   await mkdir(ATTACHMENTS_DIR, { baseDir: BaseDirectory.AppData, recursive: true })
 
-  const fileName = suggestedName ?? selected.split(/[/\\]/).pop() ?? `file-${Date.now()}`
+  // iOS document pickers return file:// URLs with percent-encoded names.
+  const rawName = selected.split(/[/\\]/).pop() ?? ''
+  const pickedName = selected.startsWith('file://') ? decodeURIComponent(rawName) : rawName
+  const fileName = suggestedName ?? (pickedName || `file-${Date.now()}`)
   const ext = selected.split('.').pop() ?? ''
   const baseName = fileName.replace(/\.[^.]+$/, '') || fileName
   const uniqueName = `${baseName}-${crypto.randomUUID().slice(0, 8)}.${ext}`
@@ -71,6 +76,16 @@ export async function deleteAttachmentFile(relativePath: string): Promise<void> 
 
 /** Open a file or URL in the OS default application. Local file:// paths go through openPath; everything else through openUrl. */
 export async function openInSystem(pathOrUrl: string): Promise<void> {
+  if (isIosPlatform()) {
+    // iOS can't hand a sandboxed file to "the default app"; the share sheet offers Quick Look and Open in….
+    const localPath = localPathFromUrl(pathOrUrl)
+    if (localPath) {
+      await shareLocalFile(localPath)
+      return
+    }
+    await openerOpenUrl(pathOrUrl)
+    return
+  }
   if (pathOrUrl.startsWith('file://')) {
     const path = pathOrUrl.slice(7)
     await openerOpenPath(decodeURIComponent(path))
@@ -91,6 +106,7 @@ export interface SaveFileDialogOptions {
 /**
  * Show native "Save As" dialog and write content to the chosen path.
  * The selected path is added to the fs scope by the dialog plugin.
+ * On iOS the file goes to the app's exports folder and the share sheet is shown instead.
  * @returns The chosen path if saved, null if cancelled.
  */
 export async function saveFileWithDialog(
@@ -98,6 +114,13 @@ export async function saveFileWithDialog(
   data: Uint8Array | string,
   isText = false
 ): Promise<string | null> {
+  if (isIosPlatform()) {
+    // No "Save As" on iOS: write to the app's Files-visible exports folder, then offer the share sheet.
+    const path = await mobileExportPath(options.defaultPath || 'export')
+    await writeFile(path, typeof data === 'string' ? new TextEncoder().encode(data) : data)
+    await shareMobileExport(path)
+    return path
+  }
   const selected = await save({
     defaultPath: options.defaultPath,
     filters: options.filters,

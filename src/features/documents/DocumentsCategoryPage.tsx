@@ -25,6 +25,8 @@ import {
 } from '@/lib/documents/catalog'
 import { groupEnrichedDocuments } from '@/lib/documents/enrichDocuments'
 import { documentsQueryKey } from '@/lib/documents/persistDocument'
+import { isIosPlatform } from '@/lib/platform'
+import { toast } from '@/components/ui/sonner'
 
 export function DocumentsCategoryPage() {
   const { category: categorySlug } = useParams<{ category: string }>()
@@ -54,6 +56,11 @@ export function DocumentsCategoryPage() {
       const url = await getFileUrl(filePath)
       await openInSystem(url)
     } catch {
+      // No Finder/Explorer to reveal the file in on iOS.
+      if (isIosPlatform()) {
+        toast.error('Could not open this file.')
+        return
+      }
       const fullPath = await resolveAppDataPath(filePath)
       await revealItemInDir(fullPath)
     }

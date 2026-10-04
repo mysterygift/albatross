@@ -1,0 +1,83 @@
+/*
+ * iOS / iPadOS (and Android) fixes. Everything here is scoped to `html[data-platform]`, which is
+ * only set on mobile (see src/lib/platform), so desktop rendering is unchanged.
+ */
+
+/*
+ * Safe areas. index.html uses `viewport-fit=cover`, so the web view runs under the status bar and
+ * home indicator; pad the app chrome so nothing interactive sits beneath them.
+ */
+html[data-platform] {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  /* No rubber-band bounce of the whole shell; inner scroll areas still scroll. */
+  overscroll-behavior: none;
+}
+
+html[data-platform] [data-slot="top-bar"] {
+  height: calc(3rem + var(--safe-top));
+  padding-top: var(--safe-top);
+  padding-right: calc(1rem + var(--safe-right));
+}
+
+html[data-platform] [data-slot="sidebar-inner"],
+html[data-platform] [data-slot="sidebar"][data-mobile="true"] {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+}
+
+html[data-platform] [data-slot="sidebar-inset"] > main {
+  padding-bottom: calc(1rem + var(--safe-bottom));
+  padding-right: calc(1rem + var(--safe-right));
+}
+
+html[data-platform] [data-slot="sheet-content"] {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+
+/* Full-screen dialogs on small screens must not run under the status bar either. */
+html[data-platform] [data-slot="dialog-content"] {
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 1rem);
+}
+
+/*
+ * Touch. There is no hover on a touch screen (Tailwind v4 only applies `hover:` variants on
+ * hover-capable devices), so controls revealed by `group-hover:opacity-100` would stay invisible.
+ * Show them permanently on touch devices.
+ */
+@media (hover: none) {
+  html[data-platform] [class*="group-hover:opacity-100"],
+  html[data-platform] [class*="group-hover/menu-item:opacity-100"] {
+    opacity: 1;
+  }
+}
+
+/* Larger tap targets in menus and lists where rows are otherwise ~28px tall. */
+@media (pointer: coarse) {
+  html[data-platform] [data-slot="dropdown-menu-item"],
+  html[data-platform] [data-slot="dropdown-menu-checkbox-item"],
+  html[data-platform] [data-slot="dropdown-menu-radio-item"],
+  html[data-platform] [data-slot="dropdown-menu-sub-trigger"],
+  html[data-platform] [data-slot="select-item"],
+  html[data-platform] [data-slot="command-item"] {
+    min-height: 2.75rem;
+  }
+
+  html[data-platform] [data-slot="sidebar-menu-button"],
+  html[data-platform] [data-slot="sidebar-menu-sub-button"] {
+    min-height: 2.5rem;
+  }
+}
+
+/* Long-press on chrome shouldn't pop the iOS text-selection callout; content stays selectable. */
+html[data-platform] [data-slot="top-bar"],
+html[data-platform] [data-slot="sidebar-inner"],
+html[data-platform] [data-slot="button"] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}

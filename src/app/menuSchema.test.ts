@@ -64,3 +64,37 @@ describe('formatAccelerator', () => {
     expect(formatAccelerator('CmdOrCtrl+B', false)).toBe('Ctrl+B')
   })
 })
+
+describe('in-app menu command routing', () => {
+  // The in-app actions menu must fire the same events as the native menu in src-tauri/src/menu.rs.
+  it('maps every native menu item id to the event name menu.rs emits for it', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const { menuEventNameForCommand } = await import('@/app/menuSchema')
+    const source = readFileSync(resolve(__dirname, '../../src-tauri/src/menu.rs'), 'utf8')
+    const duplicateId = /const MENU_ID_DUPLICATE_LIVE_AS_DRAFT: &str = "([^"]+)"/.exec(source)?.[1]
+    const pairs = [...source.matchAll(/(\w+|"[^"]+") => \{\s*let _ = app_handle\.emit\("([^"]+)"/g)].map(
+      ([, rawId, eventName]) => [rawId === 'MENU_ID_DUPLICATE_LIVE_AS_DRAFT' ? duplicateId : rawId.slice(1, -1), eventName],
+    )
+    expect(pairs.length).toBeGreaterThan(30)
+    for (const [id, eventName] of pairs) {
+      expect(menuEventNameForCommand(id!)).toBe(eventName)
+    }
+  })
+
+  it('dispatches RUN_MENU_COMMAND_EVENT with the native event name', async () => {
+    const { RUN_MENU_COMMAND_EVENT, runMenuCommand } = await import('@/app/menuSchema')
+    const target = new EventTarget()
+    const received: string[] = []
+    target.addEventListener(RUN_MENU_COMMAND_EVENT, (e) => received.push((e as CustomEvent).detail.eventName))
+    const originalWindow = globalThis.window
+    globalThis.window = target as unknown as Window & typeof globalThis
+    try {
+      runMenuCommand('import_project')
+      runMenuCommand('app_settings')
+    } finally {
+      globalThis.window = originalWindow
+    }
+    expect(received).toEqual(['albatross-menu-import-project', 'albatross-menu-open-settings'])
+  })
+})

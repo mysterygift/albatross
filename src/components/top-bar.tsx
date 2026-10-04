@@ -8,6 +8,8 @@ import { SidebarTrigger } from '@/components/ui/sidebar'
 import { ShortcutTooltip } from '@/components/shortcut-hint'
 import { TutorialMenu } from '@/features/tutorial/TutorialMenu'
 import { getCommandAccelerator, isMacPlatform } from '@/app/menuSchema'
+import { AppActionsMenu } from '@/components/app-actions-menu'
+import { isMobilePlatform } from '@/lib/platform'
 
 type TopBarProps = {
   onOpenSearch?: () => void
@@ -79,22 +81,26 @@ export function TopBar({ onOpenSearch, onOpenShortcuts }: TopBarProps) {
         >
           <Search className="size-4 shrink-0" aria-hidden />
           <span className="hidden md:inline">Search</span>
-          <kbd className="ml-auto hidden font-sans text-xs md:inline">{searchHint}</kbd>
+          {!isMobilePlatform() && <kbd className="ml-auto hidden font-sans text-xs md:inline">{searchHint}</kbd>}
         </button>
-        <ShortcutTooltip label="Keyboard shortcuts" keys="?">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              onOpenShortcuts?.()
-            }}
-            aria-label="Keyboard shortcuts"
-          >
-            <Keyboard className="size-4" />
-          </Button>
-        </ShortcutTooltip>
+        {/* On touch devices the shortcuts sheet lives in the app menu instead. */}
+        {!isMobilePlatform() && (
+          <ShortcutTooltip label="Keyboard shortcuts" keys="?">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                onOpenShortcuts?.()
+              }}
+              aria-label="Keyboard shortcuts"
+            >
+              <Keyboard className="size-4" />
+            </Button>
+          </ShortcutTooltip>
+        )}
         <TutorialMenu />
+        <AppActionsMenu onOpenShortcuts={onOpenShortcuts} />
       </div>
     </header>
   )

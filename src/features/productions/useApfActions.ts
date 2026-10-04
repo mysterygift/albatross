@@ -12,6 +12,8 @@ import { runApfImportWithUiFollowUp } from '@/features/productions/apfImportFlow
 import { useCurrentProduction } from '@/features/productions/context'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
+import { shareMobileExport } from '@/lib/files/mobileShare'
+import { isIosPlatform } from '@/lib/platform'
 
 export type ApfActionMessage = { type: 'success' | 'error'; message: string; timeoutMs: number }
 
@@ -88,6 +90,8 @@ export function useApfActions(options: UseApfActionsOptions = {}) {
       }
       const baseName = path.split(/[/\\]/).pop() ?? 'file.apf'
       notify('success', `Project exported as "${baseName}".`, 5000)
+      // The export succeeded; a share-sheet failure must not be reported as an export failure.
+      if (isIosPlatform()) await shareMobileExport(path).catch(() => {})
     } catch (e) {
       notify('error', userMessageForExportFailure(e), 6000)
     } finally {
