@@ -2,11 +2,52 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Merged into the generated iOS Info.plist by the Tauri CLI. -->
+
 	<!-- Show the app's Documents folder (where exports are written) in the Files app
-	     under On My iPad › Albatross. Merged into the generated iOS Info.plist by the Tauri CLI. -->
+	     under On My iPad › Albatross. -->
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+
+	<!-- .apf project files: open from the Files app, the share sheet, Mail and AirDrop.
+	     `bundle.fileAssociations` in tauri.conf.json only produces these entries on macOS. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Albatross Project File</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.albatross.apf</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.albatross.apf</string>
+			<key>UTTypeDescription</key>
+			<string>Albatross Project File</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>apf</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>
