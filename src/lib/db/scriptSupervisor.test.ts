@@ -69,6 +69,8 @@ import {
   updateSlate,
   updateTake,
 } from '@/lib/db/repositories/scriptSupervisor'
+import { setSceneProgress } from '@/lib/db/repositories/scriptSupervisor'
+import { loadShootProgress } from '@/lib/db/scriptSupervisorProgressService'
 
 function applyAllMigrations(db: Database): void {
   const dir = join(process.cwd(), 'src-tauri/migrations')
@@ -87,7 +89,7 @@ async function setup() {
   dbAdapter = createSqlJsTauriAdapter(db)
 
   const production = await createProduction({ name: 'P', notes: null }, { skipBudgetSeed: true })
-  const scene = await createScene({ production_id: production.id, scene_number: '23' })
+  const scene = await createScene({ production_id: production.id, scene_number: '23', page_eighths: 11 })
   const { shootDay: day1 } = await createShootDayWithDefaultMainUnit({
     productionId: production.id,
     shootDate: '2026-10-06',
@@ -207,5 +209,44 @@ describe('slating system per production (SS2)', () => {
     await expect(createSlate({ ...base, setup_letter: 'I' })).rejects.toThrow('not a setup letter')
     const d = await createSlate({ ...base, setup_letter: 'd' })
     expect(d.slate_number).toBe(5)
+  })
+})
+
+describe('shooting progress (SS4)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    dataSourceOverride = null
+  })
+
+  it('shows a part-shot scene with its slates, takes and credited pages, and per-day pages', async () => {
+    const { production, scene, day1, day2 } = await setup()
+    const scene10 = await createScene({ production_id: production.id, scene_number: '10', page_eighths: 6 })
+    await createScene({ production_id: production.id, scene_number: '2', page_eighths: 8 })
+
+    const a = await createSlate({ production_id: production.id, shoot_day_id: day1.id, scene_id: scene.id })
+    await createTake(a.id, { status: 'print' })
+    await createTake(a.id, { status: 'ng', ng_reason: 'sound' })
+    await createSlate({ production_id: production.id, shoot_day_id: day2.id, scene_id: scene.id })
+    await createSlate({ production_id: production.id, shoot_day_id: day2.id, scene_id: scene10.id })
+
+    await setSceneProgress(production.id, scene.id, { marked_status: null, credited_eighths: 4 })
+    await setSceneProgress(production.id, scene10.id, { marked_status: 'complete', completed_shoot_day_id: day2.id })
+
+    const progress = await loadShootProgress(production.id)
+    expect(progress.rows.map((r) => r.scene.scene_number)).toEqual(['2', '10', '23'])
+    const part = progress.rows.find((r) => r.scene.id === scene.id)!
+    expect(part).toMatchObject({ status: 'part_shot', slates: 2, takes: 2, prints: 1, shotEighths: 4, totalEighths: 11 })
+    expect(progress.totals).toMatchObject({ scenes: 3, complete: 1, partShot: 1, notShot: 1, shotEighths: 10, totalEighths: 25 })
+    expect(progress.days.map((d) => [d.shootDate, d.completedEighths, d.slates])).toEqual([
+      ['2026-10-06', 0, 1],
+      ['2026-10-07', 6, 2],
+    ])
+  })
+
+  it('needs a shoot day to mark a scene complete', async () => {
+    const { production, scene } = await setup()
+    await expect(setSceneProgress(production.id, scene.id, { marked_status: 'complete' })).rejects.toThrow(
+      'Choose the shoot day the scene was completed on'
+    )
   })
 })

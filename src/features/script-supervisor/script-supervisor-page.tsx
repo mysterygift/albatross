@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Info, Plus, Tablet } from 'lucide-react'
+import { Check, Info, Plus, Tablet } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import {
   Select,
   SelectContent,
@@ -18,6 +19,7 @@ import { SCRIPT_SUPERVISOR_REMOTE_ERROR } from '@/lib/db/repositories/scriptSupe
 import type { UpdateSlateInput } from '@/lib/db/repositories/scriptSupervisor'
 import type { Slate, TakeNgReason, TakeStatus } from '@/lib/db/types'
 import { slateDisplayLabel } from '@/lib/script-supervisor/slateNumbering'
+import { SCENE_STATUS_LABEL, type SceneProgressStatus } from '@/lib/script-supervisor/progress'
 import {
   carryOverFields,
   isTypingTarget,
@@ -37,8 +39,12 @@ import {
   useSlatesForShootDay,
   useTakesForSlates,
   useUpdateSlate,
+  useSetSceneProgress,
+  useShootProgress,
   useUpdateTake,
 } from './hooks'
+import { ProgressView } from './ProgressView'
+import { SceneStatusPip } from './SceneStatusPip'
 import { SlatePanel } from './SlatePanel'
 import { useTouchLayout } from './useTouchLayout'
 
@@ -93,6 +99,15 @@ export function ScriptSupervisorPage() {
   const updateSlate = useUpdateSlate()
   const createTake = useCreateTake()
   const updateTake = useUpdateTake()
+  const setSceneProgress = useSetSceneProgress()
+
+  const [mode, setMode] = useState<'log' | 'review'>('log')
+  const { data: progress, isLoading: progressLoading } = useShootProgress(currentProductionId)
+  const statusBySceneId = useMemo(
+    () => new Map<string, SceneProgressStatus>((progress?.rows ?? []).map((r) => [r.scene.id, r.status])),
+    [progress]
+  )
+  const sceneStatus = (id: string): SceneProgressStatus => statusBySceneId.get(id) ?? 'not_shot'
 
   const [rolling, setRolling] = useState<{ slateId: string; since: number } | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
@@ -210,7 +225,24 @@ export function ScriptSupervisorPage() {
     )
   }
 
-  const error = errorMessage(createSlate.error, updateSlate.error, createTake.error, updateTake.error)
+  const error = errorMessage(
+    createSlate.error,
+    updateSlate.error,
+    createTake.error,
+    updateTake.error,
+    setSceneProgress.error
+  )
+  const selectedSceneComplete = sceneId ? sceneStatus(sceneId) === 'complete' : false
+  const toggleSceneComplete = () => {
+    if (!sceneId || !dayId) return
+    setSceneProgress.mutate({
+      productionId: currentProductionId,
+      sceneId,
+      input: selectedSceneComplete
+        ? { marked_status: null }
+        : { marked_status: 'complete', completed_shoot_day_id: dayId },
+    })
+  }
   const otherScenes = allScenes.filter((s) => !dayScenes.some((d) => d.id === s.id))
   const chosenDay = days.find((d) => d.id === dayId)
 
@@ -245,6 +277,17 @@ export function ScriptSupervisorPage() {
         )}
         <span className="text-xs text-muted-foreground">{isUs ? 'US slating' : 'UK slating'}</span>
         <div className="flex-1" />
+        <SegmentedControl<'log' | 'review'>
+          ariaLabel="Mode"
+          size={touch ? 'md' : 'sm'}
+          className="w-auto min-w-[200px]"
+          value={mode}
+          onValueChange={setMode}
+          options={[
+            { value: 'log', label: 'Line & log' },
+            { value: 'review', label: 'Review' },
+          ]}
+        />
         <Button
           type="button"
           variant="outline"
@@ -277,7 +320,18 @@ export function ScriptSupervisorPage() {
         </p>
       )}
 
-      {!daysLoading && days.length === 0 ? (
+      {mode === 'review' ? (
+        <ProgressView
+          progress={progress}
+          isLoading={progressLoading}
+          fallbackDayId={dayId}
+          onSetProgress={(id, input) => setSceneProgress.mutate({ productionId: currentProductionId, sceneId: id, input })}
+          onOpenScene={(id) => {
+            setChosenSceneId(id)
+            setMode('log')
+          }}
+        />
+      ) : !daysLoading && days.length === 0 ? (
         <p className="text-muted-foreground">
           No shoot days yet. Add days on the <Link to="/schedule/stripboard">stripboard</Link> to start logging.
         </p>
@@ -308,7 +362,10 @@ export function ScriptSupervisorPage() {
                         active ? 'bg-primary/15 shadow-[inset_2px_0_0_var(--color-primary)]' : 'hover:bg-muted/40'
                       )}
                     >
-                      <span className="font-mono font-semibold">{s.scene_number}</span>
+                      <span className={cn('inline-flex items-center gap-2', touch && 'flex-col gap-1')}>
+                        <SceneStatusPip status={sceneStatus(s.id)} />
+                        <span className="font-mono font-semibold">{s.scene_number}</span>
+                      </span>
                       {!touch && s.title && (
                         <span className="ml-2 text-xs text-muted-foreground truncate">{s.title}</span>
                       )}
@@ -336,6 +393,28 @@ export function ScriptSupervisorPage() {
               <p className="text-xs text-muted-foreground">
                 Logging against unscheduled scene {sceneNumberById.get(sceneId)}.
               </p>
+            )}
+            {sceneId && (
+              <div className="space-y-1 pt-2">
+                {!touch && (
+                  <p className="text-xs text-muted-foreground">
+                    Sc {sceneNumberById.get(sceneId)}: {SCENE_STATUS_LABEL[sceneStatus(sceneId)]}
+                  </p>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size={touch ? 'lg' : 'sm'}
+                  className={cn('w-full', selectedSceneComplete && 'border-primary/60 text-primary')}
+                  aria-pressed={selectedSceneComplete}
+                  aria-label={`Scene ${sceneNumberById.get(sceneId) ?? ''} complete`}
+                  disabled={setSceneProgress.isPending || sceneStatus(sceneId) === 'omitted'}
+                  onClick={toggleSceneComplete}
+                >
+                  <Check aria-hidden />
+                  {touch ? 'Done' : selectedSceneComplete ? 'Scene complete' : 'Mark scene complete'}
+                </Button>
+              </div>
             )}
           </nav>
 

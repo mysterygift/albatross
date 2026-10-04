@@ -11,6 +11,7 @@ import type { Slate, Take } from '@/lib/db/types'
 const store = vi.hoisted(() => ({
   slates: [] as Slate[],
   takes: [] as Take[],
+  marks: new Map<string, { marked_status: 'complete' | 'omitted' | null; completed_shoot_day_id: string | null; credited_eighths: number | null; notes: string | null }>(),
   clock: 0,
 }))
 
@@ -64,6 +65,39 @@ vi.mock('@/lib/db/repositories/scriptSupervisor', () => {
       return t
     },
     softDeleteTake: vi.fn(),
+    setSceneProgress: async (
+      _productionId: string,
+      sceneId: string,
+      input: { marked_status: 'complete' | 'omitted' | null; completed_shoot_day_id?: string | null; credited_eighths?: number | null }
+    ) => {
+      store.marks.set(sceneId, {
+        marked_status: input.marked_status,
+        completed_shoot_day_id: input.completed_shoot_day_id ?? null,
+        credited_eighths: input.credited_eighths ?? null,
+        notes: null,
+      })
+    },
+  }
+})
+
+vi.mock('@/lib/db/scriptSupervisorProgressService', async () => {
+  const p = await vi.importActual<typeof import('@/lib/script-supervisor/progress')>('@/lib/script-supervisor/progress')
+  return {
+    loadShootProgress: async () => {
+      const scenes = [
+        { id: 'sc23', scene_number: '23', title: 'Edit suite', page_eighths: 11, episode_id: null },
+        { id: 'sc24', scene_number: '24', title: 'Corridor', page_eighths: 4, episode_id: null },
+      ]
+      const aggregates = new Map<string, { slates: number; takes: number; prints: number; lastShootDate: string | null; lastDayNumber: number | null }>()
+      for (const sc of scenes) {
+        const slates = store.slates.filter((s) => s.scene_id === sc.id)
+        if (slates.length === 0) continue
+        const takes = store.takes.filter((t) => slates.some((s) => s.id === t.slate_id))
+        aggregates.set(sc.id, { slates: slates.length, takes: takes.length, prints: takes.filter((t) => t.status === 'print').length, lastShootDate: '2026-10-07', lastDayNumber: 14 })
+      }
+      const rows = p.buildSceneProgressRows(scenes, aggregates, store.marks)
+      return { rows, totals: p.summariseProgress(rows), days: [] }
+    },
   }
 })
 
@@ -102,6 +136,7 @@ describe('Script Supervisor page (SS3)', () => {
   beforeEach(() => {
     store.slates = []
     store.takes = []
+    store.marks = new Map()
     store.clock = 0
     window.localStorage.clear()
   })
@@ -149,5 +184,23 @@ describe('Script Supervisor page (SS3)', () => {
     await user.click(toggle)
     expect(toggle.getAttribute('aria-pressed')).toBe('true')
     expect(window.localStorage.getItem('albatross.scriptSupervisor.touchLayout')).toBe('true')
+  })
+
+  it('marks the scene complete and shows it in Review', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /new slate 1/i }))
+    await waitFor(() => expect(store.slates).toHaveLength(1))
+
+    const complete = await screen.findByRole('button', { name: 'Scene 23 complete' })
+    expect(complete.getAttribute('aria-pressed')).toBe('false')
+    await user.click(complete)
+    await waitFor(() => expect(store.marks.get('sc23')?.completed_shoot_day_id).toBe('day-14'))
+    await waitFor(() => expect(complete.getAttribute('aria-pressed')).toBe('true'))
+
+    await user.click(screen.getByRole('tab', { name: 'Review' }))
+    const row = await screen.findByTestId('progress-row-23')
+    expect(within(row).getByRole('img', { name: 'Complete' })).toBeTruthy()
+    expect(within(screen.getByTestId('progress-row-24')).getByRole('img', { name: 'Not shot' })).toBeTruthy()
   })
 })

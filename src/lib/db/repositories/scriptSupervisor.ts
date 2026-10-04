@@ -781,3 +781,74 @@ export async function softDeleteTake(id: string): Promise<void> {
     await executeBatch(db, statements)
   })
 }
+
+// ─── Scene progress marks (SS4) ─────────────────────────────────────────────
+
+const SCENE_PROGRESS = 'script_supervisor_scene_progress'
+
+export type SceneProgressInput = {
+  /** 'complete', 'omitted', or null to clear the mark (status falls back to not shot / part shot). */
+  marked_status: 'complete' | 'omitted' | null
+  /** Day the scene was completed; required when marking complete. */
+  completed_shoot_day_id?: string | null
+  /** Part-shot page credit in eighths. */
+  credited_eighths?: number | null
+  notes?: string | null
+}
+
+/**
+ * Records the script supervisor's mark for a scene: complete (on a shoot day), omitted, or cleared,
+ * plus an optional part-shot page credit. One row per scene, upserted.
+ */
+export async function setSceneProgress(productionId: string, sceneId: string, input: SceneProgressInput): Promise<void> {
+  await assertLocalProduction(productionId)
+  if (input.marked_status != null && !['complete', 'omitted'].includes(input.marked_status)) {
+    throw new Error('Scene mark must be complete, omitted or cleared')
+  }
+  await getSceneNumber(sceneId, productionId)
+
+  const completedDayId = input.marked_status === 'complete' ? input.completed_shoot_day_id ?? null : null
+  if (input.marked_status === 'complete') {
+    if (!completedDayId) throw new Error('Choose the shoot day the scene was completed on')
+    const db = await getDb()
+    const dayRows = await db.select<Array<{ production_id: string }>>(
+      `SELECT production_id FROM shoot_days WHERE id = $1 AND deleted_at IS NULL`,
+      [completedDayId]
+    )
+    if (dayRows.length === 0) throw new Error('Shoot day not found')
+    if (dayRows[0]!.production_id !== productionId) throw new Error('Shoot day belongs to a different production')
+  }
+  const credit = input.credited_eighths
+  if (credit != null && (!Number.isInteger(credit) || credit < 0)) {
+    throw new Error('Pages credited must be a whole number of eighths, zero or more')
+  }
+
+  const ts = now()
+  const row = {
+    scene_id: sceneId,
+    production_id: productionId,
+    marked_status: input.marked_status,
+    completed_shoot_day_id: completedDayId,
+    credited_eighths: credit ?? null,
+    notes: input.notes ?? null,
+  }
+  const statements: Stmt[] = [
+    { sql: 'BEGIN', bindValues: [] },
+    {
+      sql: `INSERT INTO ${SCENE_PROGRESS} (scene_id, production_id, marked_status, completed_shoot_day_id, credited_eighths, notes, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (scene_id) DO UPDATE SET marked_status = $3, completed_shoot_day_id = $4,
+              credited_eighths = $5, notes = $6, updated_at = $8`,
+      bindValues: [
+        row.scene_id, row.production_id, row.marked_status, row.completed_shoot_day_id, row.credited_eighths, row.notes,
+        ts, ts,
+      ],
+    },
+    outboxStatementForRow({ entity: SCENE_PROGRESS, entityId: sceneId, operation: 'update', payloadJson: JSON.stringify(row) }),
+    { sql: 'COMMIT', bindValues: [] },
+  ]
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    await executeBatch(db, statements)
+  })
+}

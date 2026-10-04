@@ -4,13 +4,16 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SlatingSystem } from '@/lib/db/types'
+import { loadShootProgress } from '@/lib/db/scriptSupervisorProgressService'
 import {
   countLiveSlates,
   createSlate,
   createTake,
   getNextSlatePreview,
   getScriptSupervisorSettings,
+  setSceneProgress,
   setSlatingSystem,
+  type SceneProgressInput,
   listScenesForShootDay,
   listSlatesByScene,
   listSlatesByShootDay,
@@ -140,4 +143,20 @@ export function useUpdateTake() {
 
 export function useDeleteTake() {
   return useInvalidatingMutation((id: string) => softDeleteTake(id))
+}
+
+/** Shooting progress: per-scene status, totals and per-day pages (SS4). */
+export function useShootProgress(productionId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['script-supervisor', 'progress', productionId ?? null],
+    queryFn: () => loadShootProgress(productionId!),
+    enabled: !!productionId,
+  })
+}
+
+export function useSetSceneProgress() {
+  return useInvalidatingMutation(
+    ({ productionId, sceneId, input }: { productionId: string; sceneId: string; input: SceneProgressInput }) =>
+      setSceneProgress(productionId, sceneId, input)
+  )
 }

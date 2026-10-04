@@ -54,7 +54,31 @@ Migration [`0087_script_supervisor_slating_system.sql`](../src-tauri/migrations/
   preference in local storage (`useTouchLayout`), not production data.
 - Remote-server productions see a notice instead of the workspace.
 
-Not yet: scene status / progress (SS4), Daily Progress Report (SS5), tramlines (SS6–SS7), demo seed data.
+Not yet: Daily Progress Report (SS5), tramlines (SS6–SS7), demo seed data.
+
+## SS4 — scene status and progress
+
+Migration [`0088_script_supervisor_scene_progress.sql`](../src-tauri/migrations/0088_script_supervisor_scene_progress.sql)
+adds `script_supervisor_scene_progress`: one optional row per scene holding only what the script supervisor
+decides — `complete` (with the shoot day it was completed on), `omitted`, a part-shot page credit in eighths, and notes.
+
+Everything else is derived ([`progress.ts`](../src/lib/script-supervisor/progress.ts),
+[`scriptSupervisorProgressService.ts`](../src/lib/db/scriptSupervisorProgressService.ts)):
+
+| Status | Rule | Pages credited |
+| --- | --- | --- |
+| Omitted | marked omitted | none; left out of totals |
+| Complete | marked complete | the scene's full length, on its completion day |
+| Part shot | has a live slate, not marked | the credited estimate, capped at the scene length |
+| Not shot | no slates | none |
+
+- **Line & log**: the scene rail shows a status pip per scene (shape, not just colour) and a
+  **Mark scene complete** toggle that completes the selected scene on the current shoot day.
+- **Review** (mode toggle in the header, [`ProgressView.tsx`](../src/features/script-supervisor/ProgressView.tsx)):
+  pages shot / total, scenes complete, setups and takes; pages completed per day against the stripboard's scheduled
+  pages; a scene table (natural scene order, filterable) with slates, takes, prints, pages shot, last shot day,
+  an inline part-shot credit, and a Complete / Omitted / Not marked control.
+- Marking a scene here does not change `script_sections.status` (SB1); keeping the two in step is a later decision.
 
 ## Rules
 
