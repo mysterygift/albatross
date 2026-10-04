@@ -6,7 +6,15 @@
 import { appDataDir } from '@tauri-apps/api/path'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { BaseDirectory, copyFile, mkdir, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import {
+  BaseDirectory,
+  copyFile,
+  exists,
+  mkdir,
+  remove,
+  writeFile,
+  writeTextFile,
+} from '@tauri-apps/plugin-fs'
 import { openPath as openerOpenPath } from '@tauri-apps/plugin-opener'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
 
@@ -47,6 +55,19 @@ export async function pickAndSaveAttachment(
 
   await copyFile(selected, relativePath, { toPathBaseDir: BaseDirectory.AppData })
   return { relativePath, fileName: uniqueName }
+}
+
+/**
+ * Permanently delete a stored attachment (path relative to AppData). A file that is already
+ * missing is treated as deleted; any other failure is thrown so callers don't report success.
+ */
+export async function deleteAttachmentFile(relativePath: string): Promise<void> {
+  if (!relativePath || relativePath.startsWith('/') || relativePath.split(/[/\\]/).includes('..')) {
+    throw new Error('Refusing to delete a file outside the app data directory')
+  }
+  if (await exists(relativePath, { baseDir: BaseDirectory.AppData })) {
+    await remove(relativePath, { baseDir: BaseDirectory.AppData })
+  }
 }
 
 /** Open a file or URL in the OS default application. Uses opener for file:// paths (shell does not allow file:// by default). */

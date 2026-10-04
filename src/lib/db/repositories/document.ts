@@ -121,6 +121,39 @@ export async function createDocument(data: DocumentInsert): Promise<Document> {
   return (await getDocumentById(id))!
 }
 
+/**
+ * Looks up the stored file for a document (including soft-deleted rows) and whether any other
+ * document row points at the same file. Used before a hard delete to decide whether the file
+ * can be removed from disk.
+ */
+export async function getDocumentFileRef(
+  id: string
+): Promise<{ filePath: string; sharedWithOthers: boolean } | null> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT file_path FROM ${TABLE} WHERE id = $1`,
+    [id]
+  )
+  if (rows.length === 0) return null
+  const filePath = rows[0]!.file_path as string
+  const others = await db.select<Record<string, unknown>[]>(
+    `SELECT id FROM ${TABLE} WHERE file_path = $1 AND id <> $2 LIMIT 1`,
+    [filePath, id]
+  )
+  return { filePath, sharedWithOthers: others.length > 0 }
+}
+
+/**
+ * Permanently removes the document row (no `deleted_at` tombstone). Linked rows (receipts, sides
+ * exports, etc.) are handled by the table's FK rules. Does not touch the file on disk; see
+ * `hardDeleteDocument` in `@/lib/documents/hardDeleteDocument`.
+ */
+export async function hardDeleteDocumentRow(id: string): Promise<void> {
+  const db = await getDb()
+  await db.execute(`DELETE FROM ${TABLE} WHERE id = $1`, [id])
+  await outboxPush(TABLE, id, 'delete', null)
+}
+
 export async function deleteDocument(id: string): Promise<void> {
   const db = await getDb()
   const ts = now()

@@ -1,4 +1,7 @@
+import { useState } from 'react'
+
 import { RequireProduction } from '@/components/require-production'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
@@ -11,7 +14,7 @@ import { useCurrentProduction } from '@/features/productions/context'
 import { useHighlightParam } from '@/features/search/useHighlightParam'
 import { DocumentGroupSection } from '@/features/documents/DocumentGroupSection'
 import { useEnrichedDocuments } from '@/features/documents/useEnrichedDocuments'
-import { deleteDocument } from '@/lib/db/repositories/document'
+import { hardDeleteDocument } from '@/lib/documents/hardDeleteDocument'
 import { getFileUrl, openInSystem, resolveAppDataPath } from '@/lib/files'
 import {
   getDocumentCategory,
@@ -31,8 +34,10 @@ export function DocumentsCategoryPage() {
   const categoryId: DocumentCategoryId | null =
     categorySlug && isDocumentCategorySlug(categorySlug) ? categorySlug : null
 
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+
   const deleteMutation = useMutation({
-    mutationFn: (docId: string) => deleteDocument(docId),
+    mutationFn: (docId: string) => hardDeleteDocument(docId),
     onSuccess: () => {
       if (currentProductionId) {
         queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId) })
@@ -73,6 +78,7 @@ export function DocumentsCategoryPage() {
   const category = getDocumentCategory(categoryId)
   const docs = getCategoryDocuments(categoryId)
   const groups = groupEnrichedDocuments(docs)
+  const pendingDeleteDoc = docs.find((d) => d.id === pendingDeleteId) ?? null
 
   return (
     <div className="space-y-6">
@@ -114,7 +120,7 @@ export function DocumentsCategoryPage() {
               key={group.groupKey}
               group={group}
               onOpen={handleOpen}
-              onDelete={(id) => deleteMutation.mutate(id)}
+              onDelete={setPendingDeleteId}
               isDeleting={deleteMutation.isPending}
               showType={categoryId !== 'general'}
               highlightedId={highlightedId}
@@ -122,6 +128,26 @@ export function DocumentsCategoryPage() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDeleteDoc !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteId(null)
+        }}
+        title="Delete document?"
+        description={
+          <>
+            <span className="font-medium text-foreground">{pendingDeleteDoc?.file_name}</span> will
+            be permanently deleted. This can&apos;t be undone, and the document can&apos;t be
+            retrieved once it&apos;s been deleted.
+          </>
+        }
+        confirmLabel="Delete document"
+        destructive
+        onConfirm={async () => {
+          if (pendingDeleteId) await deleteMutation.mutateAsync(pendingDeleteId)
+        }}
+      />
     </div>
   )
 }
