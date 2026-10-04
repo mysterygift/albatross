@@ -12,6 +12,8 @@ struct OrsDirectionsResponse {
 struct OrsRoute {
     summary: Option<OrsSummary>,
     segments: Option<Vec<OrsSegment>>,
+    /// Encoded polyline (precision 5), as returned by the default ORS `json` format.
+    geometry: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -56,6 +58,9 @@ pub struct RouteSummaryOut {
     pub duration_minutes: Option<i64>,
     pub distance_meters: Option<i64>,
     pub instructions: Vec<String>,
+    /// Encoded polyline (precision 5) of the route, for drawing it on a map.
+    #[serde(default)]
+    pub geometry: Option<String>,
 }
 
 /// ORS rejects some requests (often HTTP 400) when waypoints coincide; treat as a zero-length leg.
@@ -124,6 +129,7 @@ async fn get_route_summary_internal(
             duration_minutes: Some(0),
             distance_meters: Some(0),
             instructions: Vec::new(),
+            geometry: None,
         });
     }
 
@@ -186,11 +192,13 @@ async fn get_route_summary_internal(
         .filter(|meters| *meters >= 0.0)
         .map(|meters| meters.round() as i64);
     let instructions = compact_instructions(&route);
+    let geometry = route.geometry.clone().filter(|g| !g.is_empty());
 
     Some(RouteSummaryOut {
         duration_minutes,
         distance_meters,
         instructions,
+        geometry,
     })
 }
 

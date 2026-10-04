@@ -138,12 +138,15 @@ export type RouteSummary = {
   distanceMeters: number | null
   distanceText: string | null
   writtenDirections: string | null
+  /** Encoded polyline (precision 5) of the route, or null when ORS returned none. */
+  geometry: string | null
 }
 
 type RouteSummaryOut = {
   duration_minutes: number | null
   distance_meters: number | null
   instructions: string[]
+  geometry: string | null
 }
 
 function toDistanceText(distanceMeters: number | null): string | null {
@@ -177,6 +180,7 @@ function routeSummaryFromOut(summary: RouteSummaryOut): RouteSummary {
     distanceMeters,
     distanceText: toDistanceText(distanceMeters),
     writtenDirections: toWrittenDirections(instructions),
+    geometry: typeof summary.geometry === 'string' && summary.geometry ? summary.geometry : null,
   }
 }
 
@@ -184,6 +188,9 @@ function parseCachedRouteSummaryOut(raw: unknown): RouteSummaryOut | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   if (!('duration_minutes' in o || 'distance_meters' in o || 'instructions' in o)) return null
+  // Entries cached before geometry was stored have no `geometry` key; treat them as a miss so
+  // the route is fetched again with its shape.
+  if (!('geometry' in o)) return null
   const duration_minutes =
     typeof o.duration_minutes === 'number' && Number.isFinite(o.duration_minutes)
       ? o.duration_minutes
@@ -195,7 +202,8 @@ function parseCachedRouteSummaryOut(raw: unknown): RouteSummaryOut | null {
   const instructions = Array.isArray(o.instructions)
     ? o.instructions.filter((entry): entry is string => typeof entry === 'string')
     : []
-  return { duration_minutes, distance_meters, instructions }
+  const geometry = typeof o.geometry === 'string' && o.geometry ? o.geometry : null
+  return { duration_minutes, distance_meters, instructions, geometry }
 }
 
 async function invokeRouteSummary(

@@ -4,7 +4,7 @@
  *
  * Text is always wrapped, never truncated: cells and cards grow to fit their content.
  */
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
 
 export type PdfFont = PDFFont
 export type PdfPage = PDFPage
@@ -726,6 +726,76 @@ export class PdfLayout {
       this.y -= rowH
     }
     this.y -= 4
+  }
+
+  /** Embed a PNG; returns null if the bytes are not a readable PNG so one bad map cannot fail the PDF. */
+  async embedPng(png: Uint8Array): Promise<PDFImage | null> {
+    try {
+      return await this.doc.embedPng(png)
+    } catch {
+      return null
+    }
+  }
+
+  /** Size a full-width image is drawn at: its aspect ratio, capped to fit on one page. */
+  private fullWidthImageSize(image: PDFImage): { width: number; height: number } {
+    const maxHeight = this.pageHeight - this.margin * 2 - 60
+    const width = this.contentWidth
+    const height = (width * image.height) / image.width
+    if (height <= maxHeight) return { width, height }
+    return { width: (maxHeight * image.width) / image.height, height: maxHeight }
+  }
+
+  /** Vertical space `imageBlock` needs, for a heading's `keepWith`. */
+  imageBlockHeight(image: PDFImage): number {
+    return this.fullWidthImageSize(image).height + 6
+  }
+
+  /** Vertical space the first row of `imageGrid` needs for `image` with a one-line caption. */
+  imageGridRowHeight(image: PDFImage, columns: number): number {
+    const gutter = 8
+    const cellW = (this.contentWidth - gutter * (columns - 1)) / columns
+    return (cellW * image.height) / image.width + this.lineHeight(8.5) + 8
+  }
+
+  /** Full-width framed image, scaled to keep its aspect ratio and to fit on one page. */
+  imageBlock(image: PDFImage): void {
+    const { width, height } = this.fullWidthImageSize(image)
+    this.ensureSpace(height + 6)
+    const x = this.xLeft + (this.contentWidth - width) / 2
+    this.page.drawImage(image, { x, y: this.y - height, width, height })
+    this.frame(x, this.y, width, height)
+    this.y -= height + 6
+  }
+
+  /** Framed images with a caption above each, `columns` across. Rows never split across pages. */
+  imageGrid(items: Array<{ image: PDFImage; caption: string }>, columns: number): void {
+    if (items.length === 0) return
+    const cols = Math.max(1, Math.min(columns, items.length))
+    const gutter = 8
+    const cellW = (this.contentWidth - gutter * (cols - 1)) / cols
+    const captionSize = 8.5
+    for (let i = 0; i < items.length; i += cols) {
+      const row = items.slice(i, i + cols)
+      const captions = row.map((item) => this.wrap(item.caption, cellW, captionSize, true))
+      const captionH = Math.max(1, ...captions.map((c) => c.length)) * this.lineHeight(captionSize)
+      const imageH = Math.max(...row.map((item) => (cellW * item.image.height) / item.image.width))
+      this.ensureSpace(captionH + imageH + 8)
+      row.forEach((item, j) => {
+        const x = this.xLeft + j * (cellW + gutter)
+        captions[j]!.forEach((line, n) => {
+          this.text(line, x, this.y - captionSize * 1.05 - n * this.lineHeight(captionSize), {
+            size: captionSize,
+            bold: true,
+          })
+        })
+        const h = (cellW * item.image.height) / item.image.width
+        const top = this.y - captionH
+        this.page.drawImage(item.image, { x, y: top - h, width: cellW, height: h })
+        this.frame(x, top, cellW, h)
+      })
+      this.y -= captionH + imageH + 8
+    }
   }
 
   /** Footer on every page: rule, `left` text (wrapped), and `Page X of Y`. Call once, at the end. */

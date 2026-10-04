@@ -19,6 +19,7 @@ import {
   listShootDaysByProductionForActor,
   listShootingBlocsByProductionForActor,
   setShootDayUnitMovementOrderJsonForActor,
+  updateShootDayForActor,
   listShootDayUnitsByShootDayForActor,
   listShotsByProductionForActor,
   listStripsByShootDayForActor,
@@ -26,6 +27,7 @@ import {
 } from '@/lib/access/projectDomainService'
 import {
   getShootDayById,
+  updateShootDay,
   listScenesByProduction,
   listShootDaysByProduction,
   listShotsByProduction,
@@ -53,11 +55,25 @@ import { getMovementOrderPdfFileName } from '@/lib/movement-orders/fileNaming'
 import { getOrderedMovementOrderLocationsForDayUnit } from '@/lib/movement-orders/orderedLocations'
 import { getMovementOrderLocationContacts } from '@/lib/movement-orders/locationContacts'
 import {
+  applyResolvedLocationCoordinates,
   buildMovementOrderLegSkeleton,
   buildMovementOrderWaypoints,
 } from '@/lib/movement-orders/movementLegs'
 import {
-  EMPTY_MOVEMENT_ORDER_INPUTS,
+  parseMovementPins,
+  serializeMovementPins,
+  type MovementPin,
+} from '@/lib/movement-orders/pins'
+import { renderMovementOrderMaps } from '@/lib/movement-orders/renderMovementOrderMaps'
+import {
+  DEFAULT_MAP_TILE_URL_TEMPLATE,
+  getMapTileConfig,
+  saveMapTileConfig,
+  type MapTileConfig,
+} from '@/lib/maps/tileConfig'
+import { MapTileSettings, MovementOrderMaps } from '@/features/movement-orders/MovementOrderMaps'
+import { useSyncedDraft } from '@/features/movement-orders/useSyncedDraft'
+import {
   normalizeMovementTime,
   parseMovementOrderInputs,
   serializeMovementOrderInputs,
@@ -114,8 +130,10 @@ export function MovementOrdersPage() {
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [paperSize, setPaperSize] = useState<PaperSize>(DEFAULT_PAPER_SIZE)
-  const [inputs, setInputs] = useState<MovementOrderInputs>(EMPTY_MOVEMENT_ORDER_INPUTS)
   const [inputsError, setInputsError] = useState<string | null>(null)
+  const [pinsError, setPinsError] = useState<string | null>(null)
+  const [includeMaps, setIncludeMaps] = useState(true)
+  const [mapWarning, setMapWarning] = useState<string | null>(null)
   const [distributionOpen, setDistributionOpen] = useState(false)
   const [distributionStatus, setDistributionStatus] = useState<{
     loading: boolean
@@ -427,6 +445,42 @@ export function MovementOrdersPage() {
     },
   })
 
+  // Hand-entered times live on the shoot day unit, pins on the shoot day. Each is a local draft
+  // that saves after a short pause (see the effects below).
+  const savedInputsJson = selectedDayUnit?.movement_order_json ?? null
+  const [inputs, setInputs] = useSyncedDraft<MovementOrderInputs>({
+    key: selectedDayUnit?.id ?? null,
+    savedJson: savedInputsJson,
+    parse: parseMovementOrderInputs,
+    serialize: serializeMovementOrderInputs,
+  })
+  const savedPinsJson = shootDay?.movement_pins_json ?? null
+  const [pins, setPins] = useSyncedDraft<MovementPin[]>({
+    key: shootDay?.id ?? null,
+    savedJson: savedPinsJson,
+    parse: parseMovementPins,
+    serialize: serializeMovementPins,
+  })
+
+  const locationsWithCoordinates = useMemo(
+    () =>
+      applyResolvedLocationCoordinates(
+        orderedLocations,
+        enrichedLegs ?? skeletonLegs,
+        waypoints.length > orderedLocations.length
+      ),
+    [orderedLocations, enrichedLegs, skeletonLegs, waypoints.length]
+  )
+
+  const { data: tileConfig = { urlTemplate: DEFAULT_MAP_TILE_URL_TEMPLATE, apiKey: '' } } = useQuery({
+    queryKey: ['map-tile-config'],
+    queryFn: getMapTileConfig,
+  })
+  const saveTileConfigMutation = useMutation({
+    mutationFn: (config: MapTileConfig) => saveMapTileConfig(config),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['map-tile-config'] }),
+  })
+
   const movementOrderDataForView = useMemo<MovementOrderData | null>(() => {
     if (!production || !shootDay || !selectedUnit) return null
     return buildMovementOrderData({
@@ -440,7 +494,8 @@ export function MovementOrdersPage() {
       }),
       unitName: selectedUnit.name,
       inputs,
-      locations: orderedLocations,
+      pins,
+      locations: locationsWithCoordinates,
       locationContacts,
       movementLegs: enrichedLegs ?? skeletonLegs,
     })
@@ -452,7 +507,8 @@ export function MovementOrdersPage() {
     shootingBlocs,
     isEpisodic,
     inputs,
-    orderedLocations,
+    pins,
+    locationsWithCoordinates,
     locationContacts,
     enrichedLegs,
     skeletonLegs,
@@ -460,11 +516,6 @@ export function MovementOrdersPage() {
 
   // Hand-entered values live on the shoot day unit. Load them when the selection changes (or
   // another save lands); local edits are saved after a short pause.
-  const savedInputsJson = selectedDayUnit?.movement_order_json ?? null
-  useEffect(() => {
-    setInputs(parseMovementOrderInputs(savedInputsJson))
-    setInputsError(null)
-  }, [selectedDayUnit?.id, savedInputsJson])
 
   const saveInputsMutation = useMutation({
     mutationFn: async (args: { shootDayUnitId: string; json: string | null }) => {
@@ -498,6 +549,54 @@ export function MovementOrdersPage() {
     return () => window.clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce on edits only
   }, [inputs, selectedDayUnit?.id, selectedDayUnit?.movement_order_json])
+
+  // Pins belong to the shoot day. Same pattern as the times: load on selection, save after a pause.
+
+  const savePinsMutation = useMutation({
+    mutationFn: async (args: { shootDayId: string; json: string | null }) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return updateShootDayForActor({
+          db,
+          actor: authSession.currentUser,
+          shootDayId: args.shootDayId,
+          data: { movement_pins_json: args.json },
+        })
+      }
+      return updateShootDay(args.shootDayId, { movement_pins_json: args.json })
+    },
+    onSuccess: () => {
+      setPinsError(null)
+      void queryClient.invalidateQueries({ queryKey: ['shoot-day', shootDayId] })
+    },
+    onError: (error) => {
+      setPinsError((error as Error)?.message ?? 'Failed to save map pins.')
+    },
+  })
+
+  useEffect(() => {
+    if (!shootDay) return
+    const json = serializeMovementPins(pins)
+    if (json === (shootDay.movement_pins_json ?? null)) return
+    const timer = window.setTimeout(() => {
+      savePinsMutation.mutate({ shootDayId: shootDay.id, json })
+    }, 600)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce on edits only
+  }, [pins, shootDay?.id, shootDay?.movement_pins_json])
+
+  /** Builds the PDF, drawing the maps first when they are switched on. Never fails on maps. */
+  const buildOrderPdf = async (data: MovementOrderData): Promise<Uint8Array> => {
+    let maps = null
+    if (includeMaps) {
+      const rendered = await renderMovementOrderMaps(data, tileConfig)
+      maps = rendered.maps
+      setMapWarning(rendered.warning)
+    } else {
+      setMapWarning(null)
+    }
+    return generateMovementOrderPDF(data, { paperSize, maps })
+  }
 
   const setLegTime = (legKey: string, field: 'departTime' | 'arriveTime', value: string) => {
     setInputs((previous) => {
@@ -547,7 +646,7 @@ export function MovementOrdersPage() {
       openAfter?: boolean
     }) => {
       if (!options.data) throw new Error('Missing movement order data.')
-      const pdfBytes = await generateMovementOrderPDF(options.data, { paperSize })
+      const pdfBytes = await buildOrderPdf(options.data)
       const bytes = new Uint8Array(pdfBytes)
       if (!options.save) return { bytes, didCancel: false }
 
@@ -826,6 +925,48 @@ export function MovementOrdersPage() {
       {movementOrderDataForView && (
         <Card className="border-border bg-card">
           <CardHeader>
+            <CardTitle className="text-base">Route maps & pins</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <p className="text-muted-foreground">
+              Pins belong to this shoot day. The overview and one close-up per location are printed
+              on the movement order, with the written directions kept alongside.
+            </p>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={includeMaps}
+                onChange={(event) => setIncludeMaps(event.target.checked)}
+              />
+              Include maps in the PDF
+            </label>
+            <MovementOrderMaps
+              data={movementOrderDataForView}
+              tileConfig={tileConfig}
+              pins={pins}
+              onPinsChange={setPins}
+              canEdit={!!shootDay}
+            />
+            {pinsError && <p className="text-sm text-destructive">{pinsError}</p>}
+            {mapWarning && <p className="text-sm text-amber-600 dark:text-amber-400">{mapWarning}</p>}
+            <details className="rounded border border-border p-3">
+              <summary className="cursor-pointer font-medium">Map settings</summary>
+              <div className="pt-3">
+                <MapTileSettings
+                  key={`${tileConfig.urlTemplate}|${tileConfig.apiKey}`}
+                  config={tileConfig}
+                  onSave={(config) => saveTileConfigMutation.mutate(config)}
+                  saving={saveTileConfigMutation.isPending}
+                />
+              </div>
+            </details>
+          </CardContent>
+        </Card>
+      )}
+
+      {movementOrderDataForView && (
+        <Card className="border-border bg-card">
+          <CardHeader>
             <CardTitle className="text-base">Times & revision</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
@@ -1067,7 +1208,7 @@ export function MovementOrdersPage() {
           try {
             let baseBytes: Uint8Array
             try {
-              const pdfBytes = await generateMovementOrderPDF(movementOrderDataForView, { paperSize })
+              const pdfBytes = await buildOrderPdf(movementOrderDataForView)
               baseBytes = new Uint8Array(pdfBytes)
             } catch {
               throw new Error('Failed to generate movement order PDF. Please try again.')

@@ -46,9 +46,30 @@ export function buildMovementOrderLegSkeleton(
       walkingTimeMinutes: null,
       walkingDistanceText: null,
       writtenDirections: null,
+      routeGeometry: null,
+      fromCoords: null,
+      toCoords: null,
       departTime: null,
       arriveTime: null,
     })
   }
   return legs
+}
+
+/**
+ * Fill in each location's coordinates from the legs' resolved ends (geocoded addresses have no
+ * stored lat/lng). `hasBase` is true when the legs run base -> locations -> base.
+ */
+export function applyResolvedLocationCoordinates(
+  locations: MovementOrderLocation[],
+  legs: MovementOrderMovementLeg[],
+  hasBase: boolean
+): MovementOrderLocation[] {
+  const offset = hasBase ? 1 : 0
+  return locations.map((location, i) => {
+    if (location.lat != null && location.lng != null) return location
+    const waypoint = i + offset
+    const coords = legs[waypoint]?.fromCoords ?? legs[waypoint - 1]?.toCoords ?? null
+    return coords ? { ...location, lat: coords.lat, lng: coords.lng } : location
+  })
 }

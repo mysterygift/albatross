@@ -3,6 +3,7 @@ import {
   applyMovementOrderLegInputs,
   type MovementOrderInputs,
 } from '@/lib/movement-orders/movementOrderInputs'
+import type { MovementPin } from '@/lib/movement-orders/pins'
 import type { MovementOrderData } from '@/lib/movement-orders/types'
 
 export type BuildMovementOrderDataInput = {
@@ -25,6 +26,7 @@ export type BuildMovementOrderDataInput = {
   unitName: string
   /** Hand-entered values for this shoot day + unit. */
   inputs: MovementOrderInputs
+  pins?: MovementPin[]
   locations: MovementOrderData['locations']
   locationContacts: MovementOrderData['locationContacts']
   movementLegs: MovementOrderData['movementLegs']
@@ -57,6 +59,7 @@ export function buildMovementOrderData(input: BuildMovementOrderDataInput): Move
       policeStationAddress: clean(shootDay.police_station_address),
       notes: clean(shootDay.special_notes),
     },
+    pins: input.pins ?? [],
     locations: input.locations,
     locationContacts: input.locationContacts,
     movementLegs: applyMovementOrderLegInputs(input.movementLegs, input.inputs),

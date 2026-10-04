@@ -1044,6 +1044,12 @@ pub fn run() {
             sql: include_str!("../migrations/0100_shoot_day_units_movement_order.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 101,
+            description: "shoot_days_movement_pins",
+            sql: include_str!("../migrations/0101_shoot_days_movement_pins.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

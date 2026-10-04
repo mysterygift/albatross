@@ -78,6 +78,7 @@ const shootDayRow = {
   hospital_address: null,
   police_station_name: null,
   police_station_address: null,
+  movement_pins_json: null,
   ...soft,
 }
 

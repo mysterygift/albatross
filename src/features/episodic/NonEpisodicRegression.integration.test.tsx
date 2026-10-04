@@ -293,6 +293,7 @@ const shootDayRow = {
   hospital_address: null,
   police_station_name: null,
   police_station_address: null,
+  movement_pins_json: null,
   ...soft,
 }
 
@@ -409,6 +410,7 @@ describe('Non-episodic regression shield', () => {
       hospital_address: null,
       police_station_name: null,
       police_station_address: null,
+      movement_pins_json: null,
       ...soft,
     }
     const unit: Unit = { id: 'u-1', production_id: 'prod-1', name: 'U', ...soft }

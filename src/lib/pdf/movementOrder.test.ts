@@ -15,6 +15,9 @@ const leg = (over: Partial<MovementOrderMovementLeg>): MovementOrderMovementLeg 
   walkingTimeMinutes: null,
   walkingDistanceText: null,
   writtenDirections: null,
+  routeGeometry: null,
+  fromCoords: null,
+  toCoords: null,
   departTime: null,
   arriveTime: null,
   ...over,
@@ -41,6 +44,7 @@ function order(over: Partial<MovementOrderData> = {}): MovementOrderData {
       policeStationAddress: null,
       notes: 'Hi-vis at all times.',
     },
+    pins: [],
     locations: [
       {
         id: 'a',
@@ -158,6 +162,67 @@ describe('generateMovementOrderPDF', () => {
   it('shows the shooting bloc for episodic productions', async () => {
     const text = await extractPdfText(await generateMovementOrderPDF(order({ shootingBlocLabel: 'Block A' })))
     expect(text).toContain('Unit: Main Unit | Shooting bloc: Block A')
+  })
+})
+
+// 1x1 PNG.
+const PNG = Uint8Array.from(
+  atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='),
+  (c) => c.charCodeAt(0)
+)
+const image = { png: PNG, width: 1600, height: 800 }
+
+describe('generateMovementOrderPDF maps and pins', () => {
+  const pins = [
+    { id: 'b', kind: 'unit_base' as const, label: 'Mill Lane base', notes: null, lat: 51.5, lng: -0.12 },
+    { id: 'p', kind: 'parking' as const, label: 'Bays outside no. 12', notes: 'Permit 4471', lat: 51.50123, lng: -0.11876 },
+  ]
+
+  it('adds the route overview, close-ups and pin legend', async () => {
+    const withMaps = await generateMovementOrderPDF(order({ pins }), {
+      maps: { overview: image, locations: [{ ...image, width: 800, height: 600 }], attribution: 'x' },
+    })
+    const withMapsPages = (await PDFDocument.load(withMaps.slice())).getPageCount()
+    const plainPages = (await PDFDocument.load(await generateMovementOrderPDF(order({ pins })))).getPageCount()
+    expect(withMapsPages).toBeGreaterThanOrEqual(plainPages)
+    const text = await extractPdfText(withMaps)
+    expect(text).toContain('ROUTE OVERVIEW')
+    expect(text).toContain('LOCATION MAPS')
+    expect(text).toContain('1 | Smith House')
+    expect(text).toContain('MAP PINS')
+    expect(text).toContain('Parking dispensation')
+    expect(text).toContain('Permit 4471')
+    expect(text).toContain('51.50123,')
+    expect(text).toContain('-0.11876')
+  })
+
+  it('still lists the pins, but no map sections, when maps are not supplied', async () => {
+    const text = await extractPdfText(await generateMovementOrderPDF(order({ pins })))
+    expect(text).toContain('MAP PINS')
+    expect(text).not.toContain('ROUTE OVERVIEW')
+    expect(text).not.toContain('LOCATION MAPS')
+  })
+
+  it('leaves out maps whose image bytes are unreadable instead of failing', async () => {
+    const bytes = await generateMovementOrderPDF(order(), {
+      maps: {
+        overview: { png: new Uint8Array([1, 2, 3]), width: 10, height: 10 },
+        locations: [null],
+        attribution: 'x',
+      },
+    })
+    const text = await extractPdfText(bytes)
+    expect(text).toContain('MOVEMENT ORDER')
+    expect(text).not.toContain('ROUTE OVERVIEW')
+  })
+
+  it('keeps the written directions alongside the maps', async () => {
+    const text = await extractPdfText(
+      await generateMovementOrderPDF(order(), {
+        maps: { overview: image, locations: [image], attribution: 'x' },
+      })
+    )
+    expect(text).toContain('Left onto Mill Lane')
   })
 })
 

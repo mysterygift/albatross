@@ -1,4 +1,6 @@
 import type { PaperSize } from '@/lib/pdf/layoutKit'
+import type { LatLng } from '@/lib/logistics/openRouteService'
+import type { MovementPin } from '@/lib/movement-orders/pins'
 
 /** One scene shot at a movement order location (derived from the day's scheduled strips). */
 export interface MovementOrderLocationScene {
@@ -40,6 +42,11 @@ export interface MovementOrderMovementLeg {
   walkingTimeMinutes: number | null
   walkingDistanceText: string | null
   writtenDirections: string | null
+  /** Encoded polyline (precision 5) of the driving route, for the maps. */
+  routeGeometry: string | null
+  /** Resolved coordinates of the leg's ends, when known. */
+  fromCoords: LatLng | null
+  toCoords: LatLng | null
   /** Hand-entered, `HH:MM` (24h). Never computed. */
   departTime: string | null
   /** Hand-entered, `HH:MM` (24h). Never computed. */
@@ -79,12 +86,32 @@ export interface MovementOrderData {
   /** Shooting bloc name for episodic productions (same label as the call sheet masthead). */
   shootingBlocLabel: string | null
   safety: MovementOrderSafety
+  /** Map pins placed on the shoot day (unit base, parking dispensations, ...). */
+  pins: MovementPin[]
   locations: MovementOrderLocation[]
   locationContacts: MovementOrderLocationContact[]
   movementLegs: MovementOrderMovementLeg[]
 }
 
+/** A rendered map, as PNG bytes, ready to embed in the PDF. */
+export interface MovementOrderMapImage {
+  png: Uint8Array
+  width: number
+  height: number
+}
+
+export interface MovementOrderMaps {
+  /** Whole-day route overview. */
+  overview: MovementOrderMapImage | null
+  /** Close-up per location, aligned with `MovementOrderData.locations`. */
+  locations: Array<MovementOrderMapImage | null>
+  /** Tile attribution printed under the maps. */
+  attribution: string
+}
+
 export interface MovementOrderPdfOptions {
   /** Defaults to A4. */
   paperSize?: PaperSize
+  /** Rendered maps to include; omit for a text-only order. */
+  maps?: MovementOrderMaps | null
 }

@@ -103,6 +103,7 @@ describe('operational PDF PII boundary', () => {
         policeStationAddress: null,
         notes: null,
       },
+      pins: [],
       locations: [
         {
           id: 'location-1',

@@ -10,6 +10,7 @@ import {
   type TableCell,
   type TextBlock,
 } from '@/lib/pdf/layoutKit'
+import { getMovementPinCodes, MOVEMENT_PIN_KIND_LABELS } from '@/lib/movement-orders/pins'
 import {
   formatDriveDistance,
   formatDriveDuration,
@@ -211,12 +212,51 @@ export async function generateMovementOrderPDF(
     })
   }
 
+  // Route overview map and the pins placed on it.
+  const overview = options.maps?.overview ? await layout.embedPng(options.maps.overview.png) : null
+  if (overview) {
+    layout.sectionBar('Route overview', layout.imageBlockHeight(overview))
+    layout.imageBlock(overview)
+  }
+  if (data.pins.length > 0) {
+    layout.sectionBar('Map pins', 50)
+    const codes = getMovementPinCodes(data.pins)
+    layout.table({
+      columns: [
+        { header: 'Pin', weight: 6 },
+        { header: 'Type', weight: 18 },
+        { header: 'Label', weight: 24 },
+        { header: 'Notes', weight: 28 },
+        { header: 'Position', weight: 24 },
+      ],
+      rows: data.pins.map((pin, i) => [
+        { text: codes[i]!, bold: true },
+        MOVEMENT_PIN_KIND_LABELS[pin.kind],
+        pin.label || EMPTY_CELL,
+        pin.notes ?? EMPTY_CELL,
+        `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}`,
+      ]),
+    })
+  }
+
   // Locations: numbered stops.
   layout.sectionBar('Locations', 50)
   if (data.locations.length === 0) {
     layout.blockGrid([[{ text: 'No locations scheduled.', color: COLOR_MUTED }]], 1)
   } else {
     layout.numberedRows(data.locations.map(locationRow))
+  }
+
+  // One close-up map per location.
+  const closeUps: Array<{ image: NonNullable<Awaited<ReturnType<PdfLayout['embedPng']>>>; caption: string }> = []
+  for (const [i, location] of data.locations.entries()) {
+    const map = options.maps?.locations[i]
+    const image = map ? await layout.embedPng(map.png) : null
+    if (image) closeUps.push({ image, caption: `${i + 1}${SEP}${location.name}` })
+  }
+  if (closeUps.length > 0) {
+    layout.sectionBar('Location maps', layout.imageGridRowHeight(closeUps[0]!.image, 2))
+    layout.imageGrid(closeUps, 2)
   }
 
   // Directions: numbered to match the Journey rows, two to a row.

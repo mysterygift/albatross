@@ -146,6 +146,7 @@ function rowToShootDay(r: Record<string, unknown>): ShootDay {
     hospital_address: (r.hospital_address as string | null) ?? null,
     police_station_name: (r.police_station_name as string | null) ?? null,
     police_station_address: (r.police_station_address as string | null) ?? null,
+    movement_pins_json: (r.movement_pins_json as string | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
@@ -294,6 +295,7 @@ const SHOOT_DAY_UPDATE_KEYS = [
   'shoot_date', 'day_number', 'call_time', 'wrap_time', 'notes', 'weather_manual',
   'meal_times_json', 'weather_json', 'parking_base_address', 'special_notes',
   'hospital_name', 'hospital_address', 'police_station_name', 'police_station_address',
+  'movement_pins_json',
 ] as const
 
 export async function updateShootDay(

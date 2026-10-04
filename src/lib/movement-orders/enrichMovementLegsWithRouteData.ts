@@ -87,6 +87,7 @@ export async function enrichMovementLegsWithRouteData(
     let walkingTimeMinutes: number | null = null
     let walkingDistanceText: string | null = null
     let writtenDirections: string | null = null
+    let routeGeometry: string | null = null
 
     if (fromCoords && toCoords) {
       const drivingSummary = await getDrivingRouteSummary(
@@ -99,6 +100,7 @@ export async function enrichMovementLegsWithRouteData(
       drivingDistanceText = drivingSummary?.distanceText ?? null
       drivingDistanceMeters = drivingSummary?.distanceMeters ?? null
       writtenDirections = drivingSummary?.writtenDirections ?? null
+      routeGeometry = drivingSummary?.geometry ?? null
 
       const walkingSummary = await getWalkingRouteSummary(
         fromCoords,
@@ -120,6 +122,9 @@ export async function enrichMovementLegsWithRouteData(
       walkingTimeMinutes,
       walkingDistanceText,
       writtenDirections,
+      routeGeometry,
+      fromCoords,
+      toCoords,
       departTime: null,
       arriveTime: null,
     })

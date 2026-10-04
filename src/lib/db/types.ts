@@ -494,6 +494,8 @@ export type ShootDay = {
   hospital_address: string | null
   police_station_name: string | null
   police_station_address: string | null
+  /** JSON array of movement order map pins; see `parseMovementPins`. */
+  movement_pins_json: string | null
 } & SoftDeletable
 
 export type Unit = {

@@ -804,6 +804,7 @@ CREATE TABLE shoot_days (
   updated_at TIMESTAMPTZ NOT NULL,
   deleted_at TIMESTAMPTZ,
   shooting_bloc_id UUID,
+  movement_pins_json TEXT,
   CONSTRAINT pk_shoot_days PRIMARY KEY (id),
   CONSTRAINT fk_shoot_days_1_shooting_bloc_id FOREIGN KEY (shooting_bloc_id) REFERENCES shooting_blocs(id) ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT fk_shoot_days_2_production_id FOREIGN KEY (production_id) REFERENCES productions(id) ON UPDATE NO ACTION ON DELETE CASCADE

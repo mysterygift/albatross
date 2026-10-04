@@ -22,6 +22,7 @@ function mapShootDay(r: Record<string, unknown>): ShootDay {
     hospital_address: (r.hospital_address as string | null) ?? null,
     police_station_name: (r.police_station_name as string | null) ?? null,
     police_station_address: (r.police_station_address as string | null) ?? null,
+    movement_pins_json: (r.movement_pins_json as string | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: (r.deleted_at as string | null) ?? null,
