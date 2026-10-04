@@ -190,7 +190,7 @@ describe('generateMovementOrderPDF maps and pins', () => {
     expect(text).toContain('LOCATION MAPS')
     expect(text).toContain('1 | Smith House')
     expect(text).toContain('MAP PINS')
-    expect(text).toContain('Parking dispensation')
+    expect(text).toContain('Parking')
     expect(text).toContain('Permit 4471')
     expect(text).toContain('51.50123,')
     expect(text).toContain('-0.11876')

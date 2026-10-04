@@ -5,7 +5,7 @@ export type MovementPinKind = (typeof MOVEMENT_PIN_KINDS)[number]
 
 export const MOVEMENT_PIN_KIND_LABELS: Record<MovementPinKind, string> = {
   unit_base: 'Unit base',
-  parking: 'Parking dispensation',
+  parking: 'Parking',
   other: 'Other',
 }
 
@@ -71,7 +71,7 @@ export function serializeMovementPins(pins: MovementPin[]): string | null {
 
 /**
  * Short code printed on the map marker and in the pin legend: `B` for the unit base (`B1`, `B2`
- * if several), `P1`, `P2`... for parking dispensations, `X1`... for other pins.
+ * if several), `P1`, `P2`... for parking, `X1`... for other pins.
  */
 export function getMovementPinCodes(pins: MovementPin[]): string[] {
   const counts: Record<MovementPinKind, number> = { unit_base: 0, parking: 0, other: 0 }

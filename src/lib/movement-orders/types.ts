@@ -86,7 +86,7 @@ export interface MovementOrderData {
   /** Shooting bloc name for episodic productions (same label as the call sheet masthead). */
   shootingBlocLabel: string | null
   safety: MovementOrderSafety
-  /** Map pins placed on the shoot day (unit base, parking dispensations, ...). */
+  /** Map pins placed on the shoot day (unit base, parking, ...). */
   pins: MovementPin[]
   locations: MovementOrderLocation[]
   locationContacts: MovementOrderLocationContact[]

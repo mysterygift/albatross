@@ -92,6 +92,7 @@ import { EpisodesSettingsSection } from '@/features/settings/EpisodesSettingsSec
 import { TaxCreditsSettingsSection } from '@/features/settings/TaxCreditsSettingsSection'
 import { ShootingBlocsSettingsSection } from '@/features/settings/ShootingBlocsSettingsSection'
 import { ClientsSettingsSection } from '@/features/settings/ClientsSettingsSection'
+import { MapTilesSettingsCard } from '@/features/settings/MapTilesSettingsCard'
 import {
   API_CALL_TRACKER_IDS,
   API_CALL_TRACKER_LABELS,
@@ -818,6 +819,8 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          <MapTilesSettingsCard />
 
           <ServerPublishingSettingsSection />
         </div>

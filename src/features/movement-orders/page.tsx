@@ -68,10 +68,8 @@ import { renderMovementOrderMaps } from '@/lib/movement-orders/renderMovementOrd
 import {
   DEFAULT_MAP_TILE_URL_TEMPLATE,
   getMapTileConfig,
-  saveMapTileConfig,
-  type MapTileConfig,
 } from '@/lib/maps/tileConfig'
-import { MapTileSettings, MovementOrderMaps } from '@/features/movement-orders/MovementOrderMaps'
+import { MovementOrderMaps } from '@/features/movement-orders/MovementOrderMaps'
 import { useSyncedDraft } from '@/features/movement-orders/useSyncedDraft'
 import {
   normalizeMovementTime,
@@ -475,10 +473,6 @@ export function MovementOrdersPage() {
   const { data: tileConfig = { urlTemplate: DEFAULT_MAP_TILE_URL_TEMPLATE, apiKey: '' } } = useQuery({
     queryKey: ['map-tile-config'],
     queryFn: getMapTileConfig,
-  })
-  const saveTileConfigMutation = useMutation({
-    mutationFn: (config: MapTileConfig) => saveMapTileConfig(config),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['map-tile-config'] }),
   })
 
   const movementOrderDataForView = useMemo<MovementOrderData | null>(() => {
@@ -949,17 +943,6 @@ export function MovementOrdersPage() {
             />
             {pinsError && <p className="text-sm text-destructive">{pinsError}</p>}
             {mapWarning && <p className="text-sm text-amber-600 dark:text-amber-400">{mapWarning}</p>}
-            <details className="rounded border border-border p-3">
-              <summary className="cursor-pointer font-medium">Map settings</summary>
-              <div className="pt-3">
-                <MapTileSettings
-                  key={`${tileConfig.urlTemplate}|${tileConfig.apiKey}`}
-                  config={tileConfig}
-                  onSave={(config) => saveTileConfigMutation.mutate(config)}
-                  saving={saveTileConfigMutation.isPending}
-                />
-              </div>
-            </details>
           </CardContent>
         </Card>
       )}

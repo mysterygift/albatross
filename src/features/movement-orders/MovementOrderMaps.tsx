@@ -5,7 +5,6 @@ import { Trash2 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -222,7 +221,7 @@ export function MovementOrderMaps({
   if (isMapTileConfigIncomplete(tileConfig)) {
     return (
       <p className="text-sm text-muted-foreground">
-        Add a map tile API key in the map settings below to show the maps.
+        Add a map tile API key under Settings → Integrations to show the maps.
       </p>
     )
   }
@@ -328,7 +327,7 @@ export function MovementOrderMaps({
         <p className="text-sm font-medium">Pins</p>
         {pins.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No pins yet. Mark the unit base or parking dispensations on the map.
+            No pins yet. Mark the unit base or parking on the map.
           </p>
         ) : (
           pins.map((pin, i) => (
@@ -384,53 +383,6 @@ export function MovementOrderMaps({
           ))
         )}
       </div>
-    </div>
-  )
-}
-
-/** Tile source settings: URL template (with `{key}`) and API key. */
-export function MapTileSettings({
-  config,
-  onSave,
-  saving,
-}: {
-  config: MapTileConfig
-  onSave: (config: MapTileConfig) => void
-  saving: boolean
-}) {
-  const [urlTemplate, setUrlTemplate] = useState(config.urlTemplate)
-  const [apiKey, setApiKey] = useState(config.apiKey)
-
-  return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        Maps use an OpenMapTiles-based raster tile service (MapTiler Cloud by default, or your own
-        tile server). Use <code>{'{z}'}</code>, <code>{'{x}'}</code>, <code>{'{y}'}</code> and{' '}
-        <code>{'{key}'}</code> in the URL.
-      </p>
-      <div className="space-y-2">
-        <Label htmlFor="map-tile-url">Tile URL template</Label>
-        <Input
-          id="map-tile-url"
-          value={urlTemplate}
-          onChange={(event) => setUrlTemplate(event.target.value)}
-          className="bg-input border-border font-mono text-xs"
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="map-tile-key">API key</Label>
-        <Input
-          id="map-tile-key"
-          type="password"
-          autoComplete="off"
-          value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)}
-          className="bg-input border-border"
-        />
-      </div>
-      <Button size="sm" disabled={saving} onClick={() => onSave({ urlTemplate, apiKey })}>
-        {saving ? 'Saving…' : 'Save map settings'}
-      </Button>
     </div>
   )
 }
