@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react'
 import { act, cleanup, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -32,14 +33,15 @@ vi.mock('@/features/productions/context', () => ({
 }))
 vi.mock('@/components/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-function renderBridge() {
-  return render(
+function renderBridge({ strict = false } = {}) {
+  const tree = (
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
         <ApfDesktopOpenBridge />
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+  return render(strict ? <StrictMode>{tree}</StrictMode> : tree)
 }
 
 const flush = () => act(async () => new Promise((r) => setTimeout(r, 0)))
@@ -60,6 +62,14 @@ describe('ApfDesktopOpenBridge', () => {
     renderBridge()
     await flush()
     expect(native.calls.slice(0, 2)).toEqual(['listen', 'pop_pending_apf_open_paths'])
+    expect(runImport).toHaveBeenCalledWith('/tmp/apf-open/Cold.apf', expect.any(Object))
+  })
+
+  it('imports the cold-start file when the effect is mounted twice (StrictMode)', async () => {
+    native.queue = ['/tmp/apf-open/Cold.apf']
+    renderBridge({ strict: true })
+    await flush()
+    expect(runImport).toHaveBeenCalledTimes(1)
     expect(runImport).toHaveBeenCalledWith('/tmp/apf-open/Cold.apf', expect.any(Object))
   })
 

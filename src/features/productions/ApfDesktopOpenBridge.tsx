@@ -51,13 +51,14 @@ export function ApfDesktopOpenBridge() {
       navigate('/productions')
 
       try {
+        // Not gated on `cancelled`: once a path has been popped from the queue nothing else will
+        // import it, so finish the import and report it even if this effect has been torn down.
         const outcome = await runApfImportWithUiFollowUp(path, {
           queryClient,
           refetchProductions,
           setCurrentProductionId,
           persistShowArchived,
         })
-        if (cancelled) return
         if (outcome.kind === 'error') {
           toast.error(outcome.message, { duration: 8000 })
         } else {
@@ -67,9 +68,7 @@ export function ApfDesktopOpenBridge() {
           toast.success(outcome.message, { duration: 9000 })
         }
       } catch (e) {
-        if (!cancelled) {
-          toast.error(userMessageForImportFailure(e), { duration: 8000 })
-        }
+        toast.error(userMessageForImportFailure(e), { duration: 8000 })
       } finally {
         inFlightRef.current = false
         if (!cancelled) setPhase('idle')
@@ -88,6 +87,7 @@ export function ApfDesktopOpenBridge() {
       // Listen before draining the queue so a file opened in between is not missed.
       try {
         const off = await listen<ApfOpenPayload>('apf-open-request', async (event) => {
+          if (cancelled) return
           // iOS also queues opened files (for cold start / the sign-in screen); drain the queue here
           // so they are not imported a second time on the next mount.
           const pending = await popPending()
@@ -100,8 +100,11 @@ export function ApfDesktopOpenBridge() {
         /* not running under Tauri */
       }
 
+      // A torn-down effect (StrictMode's double mount, or a dependency change) must not drain the
+      // queue: the instance that replaces it does that.
+      if (cancelled) return
       const pending = await popPending()
-      if (!cancelled && pending[0]) {
+      if (pending[0]) {
         await processPath(pending[0])
       }
     }
