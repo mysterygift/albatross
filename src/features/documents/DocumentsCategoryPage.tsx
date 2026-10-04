@@ -92,11 +92,6 @@ export function DocumentsCategoryPage() {
         <PageHeader
           title={category.label}
           description={category.description}
-          actions={
-            <Button variant="outline" asChild>
-              <Link to={category.sourceRoute}>Open {category.label.split(' ')[0]}…</Link>
-            </Button>
-          }
         />
       </div>
 
