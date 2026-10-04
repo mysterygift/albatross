@@ -87,7 +87,22 @@ describe('operational PDF PII boundary', () => {
       productionName: 'Privacy Boundary Production',
       shootDate: '2026-08-17',
       dayNumber: 3,
+      totalShootDays: 24,
       unitName: 'Main Unit',
+      callTime: '07:00',
+      wrapTime: null,
+      unitBaseTime: null,
+      unitBaseAddress: null,
+      revisionLabel: null,
+      issuedAt: null,
+      shootingBlocLabel: null,
+      safety: {
+        hospitalName: null,
+        hospitalAddress: null,
+        policeStationName: null,
+        policeStationAddress: null,
+        notes: null,
+      },
       locations: [
         {
           id: 'location-1',
@@ -97,6 +112,7 @@ describe('operational PDF PII boundary', () => {
           parkingInfo: 'Use rear gate',
           lat: null,
           lng: null,
+          scenes: [],
         },
       ],
       locationContacts: [

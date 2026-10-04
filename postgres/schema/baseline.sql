@@ -777,6 +777,7 @@ CREATE TABLE shoot_day_units (
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   deleted_at TIMESTAMPTZ,
+  movement_order_json TEXT,
   CONSTRAINT pk_shoot_day_units PRIMARY KEY (id),
   CONSTRAINT fk_shoot_day_units_1_unit_id FOREIGN KEY (unit_id) REFERENCES units(id) ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT fk_shoot_day_units_2_shoot_day_id FOREIGN KEY (shoot_day_id) REFERENCES shoot_days(id) ON UPDATE NO ACTION ON DELETE CASCADE

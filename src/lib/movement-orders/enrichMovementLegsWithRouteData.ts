@@ -4,6 +4,7 @@ import {
   getWalkingRouteSummary,
   type LatLng,
 } from '@/lib/logistics/openRouteService'
+import { getMovementLegKeys } from '@/lib/movement-orders/movementOrderInputs'
 import type {
   MovementOrderLocation,
   MovementOrderMovementLeg,
@@ -72,6 +73,7 @@ export async function enrichMovementLegsWithRouteData(
     return null
   }
 
+  const legKeys = getMovementLegKeys(locations)
   const legs: MovementOrderMovementLeg[] = []
   for (let i = 0; i < locations.length - 1; i += 1) {
     const from = locations[i]!
@@ -81,6 +83,7 @@ export async function enrichMovementLegsWithRouteData(
 
     let drivingTimeMinutes: number | null = null
     let drivingDistanceText: string | null = null
+    let drivingDistanceMeters: number | null = null
     let walkingTimeMinutes: number | null = null
     let walkingDistanceText: string | null = null
     let writtenDirections: string | null = null
@@ -94,6 +97,7 @@ export async function enrichMovementLegsWithRouteData(
       )
       drivingTimeMinutes = drivingSummary?.durationMinutes ?? null
       drivingDistanceText = drivingSummary?.distanceText ?? null
+      drivingDistanceMeters = drivingSummary?.distanceMeters ?? null
       writtenDirections = drivingSummary?.writtenDirections ?? null
 
       const walkingSummary = await getWalkingRouteSummary(
@@ -107,13 +111,17 @@ export async function enrichMovementLegsWithRouteData(
     }
 
     legs.push({
+      key: legKeys[i]!,
       fromLocationName: from.name,
       toLocationName: to.name,
       drivingTimeMinutes,
       drivingDistanceText,
+      drivingDistanceMeters,
       walkingTimeMinutes,
       walkingDistanceText,
       writtenDirections,
+      departTime: null,
+      arriveTime: null,
     })
   }
 

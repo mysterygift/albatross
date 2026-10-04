@@ -17,6 +17,8 @@ import {
   listLocationsByProductionForActor,
   listScenesByProductionForActor,
   listShootDaysByProductionForActor,
+  listShootingBlocsByProductionForActor,
+  setShootDayUnitMovementOrderJsonForActor,
   listShootDayUnitsByShootDayForActor,
   listShotsByProductionForActor,
   listStripsByShootDayForActor,
@@ -28,7 +30,12 @@ import {
   listShootDaysByProduction,
   listShotsByProduction,
 } from '@/lib/db/repositories/schedule'
-import { listShootDayUnitsByShootDay } from '@/lib/db/repositories/shoot-day-units'
+import {
+  listShootDayUnitsByShootDay,
+  setShootDayUnitMovementOrderJson,
+} from '@/lib/db/repositories/shoot-day-units'
+import { listShootingBlocsByProduction } from '@/lib/db/repositories/shootingBlocs'
+import { shootingBlocMastheadLabelForCallSheet } from '@/lib/call-sheets/callSheetEpisodic'
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import { listStripsByShootDay } from '@/lib/db/repositories/stripboard-strips'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
@@ -45,7 +52,18 @@ import { buildMovementOrderData } from '@/lib/movement-orders/buildMovementOrder
 import { getMovementOrderPdfFileName } from '@/lib/movement-orders/fileNaming'
 import { getOrderedMovementOrderLocationsForDayUnit } from '@/lib/movement-orders/orderedLocations'
 import { getMovementOrderLocationContacts } from '@/lib/movement-orders/locationContacts'
-import { buildMovementOrderLegSkeleton } from '@/lib/movement-orders/movementLegs'
+import {
+  buildMovementOrderLegSkeleton,
+  buildMovementOrderWaypoints,
+} from '@/lib/movement-orders/movementLegs'
+import {
+  EMPTY_MOVEMENT_ORDER_INPUTS,
+  normalizeMovementTime,
+  parseMovementOrderInputs,
+  serializeMovementOrderInputs,
+  type MovementOrderInputs,
+} from '@/lib/movement-orders/movementOrderInputs'
+import { DEFAULT_PAPER_SIZE, PAPER_SIZES, isPaperSize, type PaperSize } from '@/lib/pdf/layoutKit'
 import { enrichMovementLegsWithRouteData } from '@/lib/movement-orders/enrichMovementLegsWithRouteData'
 import { generateMovementOrderPDF } from '@/lib/pdf/movementOrder'
 import {
@@ -62,6 +80,7 @@ import {
 } from '@/lib/call-sheets/castRequirements'
 import { getCallSheetCrewRequirements } from '@/lib/call-sheets/crewRequirements'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -94,6 +113,9 @@ export function MovementOrdersPage() {
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
+  const [paperSize, setPaperSize] = useState<PaperSize>(DEFAULT_PAPER_SIZE)
+  const [inputs, setInputs] = useState<MovementOrderInputs>(EMPTY_MOVEMENT_ORDER_INPUTS)
+  const [inputsError, setInputsError] = useState<string | null>(null)
   const [distributionOpen, setDistributionOpen] = useState(false)
   const [distributionStatus, setDistributionStatus] = useState<{
     loading: boolean
@@ -141,6 +163,19 @@ export function MovementOrdersPage() {
       return listUnitsByProduction(currentProductionId ?? '')
     },
     enabled: !!currentProductionId && canLoadProjectData,
+  })
+
+  const isEpisodic = production?.is_episodic === true
+  const { data: shootingBlocs = [] } = useQuery({
+    queryKey: ['shooting-blocs-callsheet', currentProductionId],
+    queryFn: async () => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return listShootingBlocsByProductionForActor({ db, actor: authSession.currentUser, productionId: currentProductionId! })
+      }
+      return listShootingBlocsByProduction(currentProductionId!)
+    },
+    enabled: !!currentProductionId && canLoadProjectData && isEpisodic,
   })
 
   const { data: shootDay } = useQuery({
@@ -362,61 +397,117 @@ export function MovementOrdersPage() {
     [crew, crewHierarchy]
   )
 
-  const movementLegs = useMemo(
-    () => buildMovementOrderLegSkeleton(orderedLocations),
-    [orderedLocations]
+  // The journey runs base -> locations -> base when the shoot day has a base address.
+  const waypoints = useMemo(
+    () => buildMovementOrderWaypoints(orderedLocations, shootDay?.parking_base_address ?? null),
+    [orderedLocations, shootDay?.parking_base_address]
   )
 
-  const movementOrderData = useMemo<MovementOrderData | null>(() => {
-    if (!production || !shootDay || !selectedUnit) return null
-    return buildMovementOrderData({
-      productionName: production.name,
-      shootDate: shootDay.shoot_date,
-      dayNumber: shootDay.day_number ?? null,
-      unitName: selectedUnit.name,
-      locations: orderedLocations,
-      locationContacts,
-      movementLegs,
-    })
-  }, [production, shootDay, selectedUnit, orderedLocations, locationContacts, movementLegs])
+  const skeletonLegs = useMemo(() => buildMovementOrderLegSkeleton(waypoints), [waypoints])
 
   const refreshTravelDataRef = useRef(false)
 
   const {
-    data: enrichedMovementOrderData,
+    data: enrichedLegs,
     isFetching: isEnrichingRouteData,
-    refetch: refetchEnrichedMovementOrder,
+    refetch: refetchEnrichedLegs,
   } = useQuery({
     queryKey: [
-      'movement-order-data-enriched',
+      'movement-order-legs-enriched',
       shootDayId,
       shootDayUnitId,
-      movementOrderData?.locations.map((location) => location.id).join(',') ?? '',
-      movementOrderData?.locations
-        .map((location) => `${location.name}|${location.address ?? ''}`)
-        .join('||') ?? '',
+      waypoints.map((location) => location.id).join(','),
+      waypoints.map((location) => `${location.name}|${location.address ?? ''}`).join('||'),
     ],
-    enabled: !!movementOrderData,
+    enabled: waypoints.length >= 2,
     queryFn: async () => {
-      if (!movementOrderData) return null
       const forceRefresh = refreshTravelDataRef.current
       refreshTravelDataRef.current = false
-      const enrichedLegs = await enrichMovementLegsWithRouteData({
-        locations: movementOrderData.locations,
-        forceRefresh,
-      })
-      return buildMovementOrderData({
-        productionName: movementOrderData.productionName,
-        shootDate: movementOrderData.shootDate,
-        dayNumber: movementOrderData.dayNumber,
-        unitName: movementOrderData.unitName,
-        locations: movementOrderData.locations,
-        locationContacts: movementOrderData.locationContacts,
-        movementLegs: enrichedLegs,
-      })
+      return enrichMovementLegsWithRouteData({ locations: waypoints, forceRefresh })
     },
   })
-  const movementOrderDataForView = enrichedMovementOrderData ?? movementOrderData
+
+  const movementOrderDataForView = useMemo<MovementOrderData | null>(() => {
+    if (!production || !shootDay || !selectedUnit) return null
+    return buildMovementOrderData({
+      productionName: production.name,
+      shootDay,
+      totalShootDays: shootDays.length > 0 ? shootDays.length : null,
+      shootingBlocLabel: shootingBlocMastheadLabelForCallSheet({
+        isEpisodicProduction: isEpisodic,
+        shootingBlocId: shootDay.shooting_bloc_id ?? null,
+        blocsById: new Map(shootingBlocs.map((bloc) => [bloc.id, bloc])),
+      }),
+      unitName: selectedUnit.name,
+      inputs,
+      locations: orderedLocations,
+      locationContacts,
+      movementLegs: enrichedLegs ?? skeletonLegs,
+    })
+  }, [
+    production,
+    shootDay,
+    selectedUnit,
+    shootDays.length,
+    shootingBlocs,
+    isEpisodic,
+    inputs,
+    orderedLocations,
+    locationContacts,
+    enrichedLegs,
+    skeletonLegs,
+  ])
+
+  // Hand-entered values live on the shoot day unit. Load them when the selection changes (or
+  // another save lands); local edits are saved after a short pause.
+  const savedInputsJson = selectedDayUnit?.movement_order_json ?? null
+  useEffect(() => {
+    setInputs(parseMovementOrderInputs(savedInputsJson))
+    setInputsError(null)
+  }, [selectedDayUnit?.id, savedInputsJson])
+
+  const saveInputsMutation = useMutation({
+    mutationFn: async (args: { shootDayUnitId: string; json: string | null }) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return setShootDayUnitMovementOrderJsonForActor({
+          db,
+          actor: authSession.currentUser,
+          shootDayUnitId: args.shootDayUnitId,
+          movementOrderJson: args.json,
+        })
+      }
+      return setShootDayUnitMovementOrderJson(args.shootDayUnitId, args.json)
+    },
+    onSuccess: () => {
+      setInputsError(null)
+      void queryClient.invalidateQueries({ queryKey: ['shoot-day-units', shootDayId] })
+    },
+    onError: (error) => {
+      setInputsError((error as Error)?.message ?? 'Failed to save movement order times.')
+    },
+  })
+
+  useEffect(() => {
+    if (!selectedDayUnit) return
+    const json = serializeMovementOrderInputs(inputs)
+    if (json === (selectedDayUnit.movement_order_json ?? null)) return
+    const timer = window.setTimeout(() => {
+      saveInputsMutation.mutate({ shootDayUnitId: selectedDayUnit.id, json })
+    }, 600)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce on edits only
+  }, [inputs, selectedDayUnit?.id, selectedDayUnit?.movement_order_json])
+
+  const setLegTime = (legKey: string, field: 'departTime' | 'arriveTime', value: string) => {
+    setInputs((previous) => {
+      const existing = previous.legs[legKey] ?? { departTime: null, arriveTime: null }
+      return {
+        ...previous,
+        legs: { ...previous.legs, [legKey]: { ...existing, [field]: normalizeMovementTime(value) } },
+      }
+    })
+  }
 
   const distributionContext = useMemo(() => {
     if (!movementOrderDataForView) return null
@@ -456,7 +547,7 @@ export function MovementOrdersPage() {
       openAfter?: boolean
     }) => {
       if (!options.data) throw new Error('Missing movement order data.')
-      const pdfBytes = await generateMovementOrderPDF(options.data)
+      const pdfBytes = await generateMovementOrderPDF(options.data, { paperSize })
       const bytes = new Uint8Array(pdfBytes)
       if (!options.save) return { bytes, didCancel: false }
 
@@ -616,14 +707,35 @@ export function MovementOrdersPage() {
               )}
             </div>
 
+            <div className="space-y-2">
+              <Label>Paper size</Label>
+              <Select
+                value={paperSize}
+                onValueChange={(value) => {
+                  if (isPaperSize(value)) setPaperSize(value)
+                }}
+              >
+                <SelectTrigger className="w-full bg-input border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(PAPER_SIZES) as PaperSize[]).map((size) => (
+                    <SelectItem key={size} value={size}>
+                      {PAPER_SIZES[size].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 onClick={() => {
                   refreshTravelDataRef.current = true
-                  void refetchEnrichedMovementOrder()
+                  void refetchEnrichedLegs()
                 }}
-                disabled={!movementOrderData || isEnrichingRouteData}
+                disabled={waypoints.length < 2 || isEnrichingRouteData}
               >
                 {isEnrichingRouteData ? 'Refreshing travel…' : 'Refresh travel data'}
               </Button>
@@ -710,6 +822,94 @@ export function MovementOrdersPage() {
           </CardContent>
         </Card>
       </div>
+
+      {movementOrderDataForView && (
+        <Card className="border-border bg-card">
+          <CardHeader>
+            <CardTitle className="text-base">Times & revision</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <p className="text-muted-foreground">
+              Enter depart and arrive times by hand for each leg. Nothing is calculated from the
+              crew call, so staggered or late departures print exactly as entered.
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="movement-order-revision">Revision label</Label>
+                <Input
+                  id="movement-order-revision"
+                  placeholder="e.g. Draft 2"
+                  value={inputs.revisionLabel ?? ''}
+                  onChange={(event) =>
+                    setInputs((previous) => ({ ...previous, revisionLabel: event.target.value || null }))
+                  }
+                  className="bg-input border-border"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="movement-order-base-time">Unit base opens</Label>
+                <Input
+                  id="movement-order-base-time"
+                  type="time"
+                  value={inputs.unitBaseTime ?? ''}
+                  onChange={(event) =>
+                    setInputs((previous) => ({
+                      ...previous,
+                      unitBaseTime: normalizeMovementTime(event.target.value),
+                    }))
+                  }
+                  className="bg-input border-border"
+                />
+              </div>
+            </div>
+
+            {movementOrderDataForView.movementLegs.length > 0 ? (
+              <div className="space-y-2">
+                <div className="hidden grid-cols-[1fr_8rem_8rem] gap-3 text-xs text-muted-foreground md:grid">
+                  <span>Leg</span>
+                  <span>Depart</span>
+                  <span>Arrive</span>
+                </div>
+                {movementOrderDataForView.movementLegs.map((leg, index) => (
+                  <div
+                    key={leg.key}
+                    className="grid items-center gap-3 md:grid-cols-[1fr_8rem_8rem]"
+                  >
+                    <span className="font-medium">
+                      {index + 1}. {leg.fromLocationName} to {leg.toLocationName}
+                    </span>
+                    <Input
+                      type="time"
+                      aria-label={`Depart time, leg ${index + 1}`}
+                      value={inputs.legs[leg.key]?.departTime ?? ''}
+                      onChange={(event) => setLegTime(leg.key, 'departTime', event.target.value)}
+                      className="bg-input border-border"
+                    />
+                    <Input
+                      type="time"
+                      aria-label={`Arrive time, leg ${index + 1}`}
+                      value={inputs.legs[leg.key]?.arriveTime ?? ''}
+                      onChange={(event) => setLegTime(leg.key, 'arriveTime', event.target.value)}
+                      className="bg-input border-border"
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground">
+                No legs yet. A journey needs at least two stops, or one location plus a base address
+                on the shoot day.
+              </p>
+            )}
+            {!shootDay?.parking_base_address?.trim() && (
+              <p className="text-xs text-muted-foreground">
+                Add a base address to the shoot day to start and end the journey at the unit base.
+              </p>
+            )}
+            {inputsError && <p className="text-sm text-destructive">{inputsError}</p>}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-border bg-card">
         <CardHeader>
@@ -809,12 +1009,17 @@ export function MovementOrdersPage() {
                   <ul className="space-y-2">
                     {movementOrderDataForView.movementLegs.map((leg) => (
                       <li
-                        key={`${leg.fromLocationName}-${leg.toLocationName}`}
+                        key={leg.key}
                         className="rounded border border-border p-2"
                       >
                         <p className="font-medium">
                           {leg.fromLocationName} {'->'} {leg.toLocationName}
                         </p>
+                        {(leg.departTime || leg.arriveTime) && (
+                          <p className="text-muted-foreground">
+                            Depart: {leg.departTime ?? '-'} | Arrive: {leg.arriveTime ?? '-'}
+                          </p>
+                        )}
                         <p className="text-muted-foreground">
                           Driving: {leg.drivingTimeMinutes != null ? `${leg.drivingTimeMinutes} min` : 'Unavailable'}
                           {leg.drivingDistanceText ? ` (${leg.drivingDistanceText})` : ''}
@@ -862,7 +1067,7 @@ export function MovementOrdersPage() {
           try {
             let baseBytes: Uint8Array
             try {
-              const pdfBytes = await generateMovementOrderPDF(movementOrderDataForView)
+              const pdfBytes = await generateMovementOrderPDF(movementOrderDataForView, { paperSize })
               baseBytes = new Uint8Array(pdfBytes)
             } catch {
               throw new Error('Failed to generate movement order PDF. Please try again.')

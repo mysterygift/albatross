@@ -8,6 +8,8 @@ export type OrderedLocationStackEntry = {
   parkingInfo: string | null
   lat: number | null
   lng: number | null
+  /** Scenes scheduled during this visit, in order, without repeats. Empty for MOVE-only stops. */
+  sceneIds: string[]
 }
 
 export type OrderedLocationStackResult = {
@@ -28,6 +30,7 @@ function locationToStackEntry(location: Location): OrderedLocationStackEntry {
     parkingInfo: location.parking_info ?? null,
     lat: toNullableCoordinate((location as Record<string, unknown>).lat),
     lng: toNullableCoordinate((location as Record<string, unknown>).lng),
+    sceneIds: [],
   }
 }
 
@@ -57,13 +60,16 @@ export function getOrderedLocationStackForDayUnit(args: {
   const orderedLocations: OrderedLocationStackEntry[] = []
   const missingLocationSceneIds = new Set<string>()
 
+  /** Adds a stop unless it repeats the last one; returns the stop for this visit, if any. */
   const pushLocationIfNew = (locationId: string | null | undefined) => {
-    if (!locationId) return
-    const lastId = orderedLocations.at(-1)?.locationId
-    if (lastId === locationId) return
+    if (!locationId) return undefined
+    const last = orderedLocations.at(-1)
+    if (last?.locationId === locationId) return last
     const location = locationsById.get(locationId)
-    if (!location) return
-    orderedLocations.push(locationToStackEntry(location))
+    if (!location) return undefined
+    const entry = locationToStackEntry(location)
+    orderedLocations.push(entry)
+    return entry
   }
 
   for (const strip of ordered) {
@@ -80,7 +86,8 @@ export function getOrderedLocationStackForDayUnit(args: {
         continue
       }
 
-      pushLocationIfNew(locationId)
+      const entry = pushLocationIfNew(locationId)
+      if (entry && !entry.sceneIds.includes(sceneId)) entry.sceneIds.push(sceneId)
       continue
     }
 

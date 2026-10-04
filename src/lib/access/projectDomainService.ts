@@ -72,6 +72,7 @@ import {
   listShootDayUnitsByProduction,
   listShootDayUnitsByShootDay,
   setShootDayUnitLocked,
+  setShootDayUnitMovementOrderJson,
 } from '@/lib/db/repositories/shoot-day-units'
 import { ensureMainUnit, ensureSecondUnit, listUnitsByProduction } from '@/lib/db/repositories/units'
 import {
@@ -1019,6 +1020,17 @@ export async function setShootDayUnitLockedForActor(args: {
   const productionId = await resolveProductionIdForShootDayUnit(args.db, args.shootDayUnitId)
   await requireProjectEditAccess(args.db, args.actor, productionId)
   return setShootDayUnitLocked(args.shootDayUnitId, args.isLocked)
+}
+
+export async function setShootDayUnitMovementOrderJsonForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  shootDayUnitId: string
+  movementOrderJson: string | null
+}) {
+  const productionId = await resolveProductionIdForShootDayUnit(args.db, args.shootDayUnitId)
+  await requireProjectEditAccess(args.db, args.actor, productionId)
+  return setShootDayUnitMovementOrderJson(args.shootDayUnitId, args.movementOrderJson)
 }
 
 export async function listShootDayUnitsByShootDayForActor(args: {

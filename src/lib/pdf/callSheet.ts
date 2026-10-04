@@ -8,6 +8,14 @@
  * running header (CALL SHEET (cont'd) + production + date + rule) — intentional; do not duplicate the masthead on page 1.
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import {
+  drawHorizontalRule,
+  drawPdfText,
+  drawTextRight as drawTextRightAligned,
+  textForPdf,
+  wrapLines,
+  wrapLinesLimited,
+} from '@/lib/pdf/layoutKit'
 import type { CallSheetCastRow } from '@/lib/call-sheets/castRequirements'
 import type { CallSheetCrewGroup, CallSheetCrewRow } from '@/lib/call-sheets/crewRequirements'
 import { primaryContactShowsEmail } from '@/lib/call-sheets/primaryContacts'
@@ -182,23 +190,7 @@ const SUPPORT_SEP = 6
 
 type Page = ReturnType<PDFDocument['getPages']>[0]
 
-/** StandardFonts use WinAnsi; strip bidi/zero-width controls and unmapped code points. */
-export function textForPdf(text: string): string {
-  return text
-    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, '')
-    .replace(/\u2013|\u2014/g, '-')
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[^\t\n\r\x20-\x7E\xA0-\xFF]/g, '')
-}
-
-function drawPdfText(
-  page: Page,
-  text: string,
-  options: Parameters<Page['drawText']>[1]
-): void {
-  page.drawText(textForPdf(text), options)
-}
+export { textForPdf }
 
 function drawRule(
   page: Page,
@@ -207,13 +199,8 @@ function drawRule(
   xEnd: number,
   color: ReturnType<typeof rgb> = GRAY
 ): void {
-  page.drawRectangle({ // Draws the actual line.
-    x: xStart,
-    y: y + 6, // originally 0.25, I've offset this to +4 to put it above each element in the row. Which means it no longer bisects any multi-line cells.
-    width: xEnd - xStart,
-    height: 0.5,
-    color,
-  })
+  // Offset +6 puts the rule above each row's text so it never bisects a multi-line cell.
+  drawHorizontalRule(page, y + 6, xStart, xEnd, color)
 }
 
 /**
@@ -276,54 +263,7 @@ function drawTextRight(
   font: Awaited<ReturnType<PDFDocument['embedFont']>>,
   xRight: number
 ): void {
-  const safe = textForPdf(text)
-  const w = font.widthOfTextAtSize(safe, size)
-  drawPdfText(page, safe, { x: Math.max(MARGIN, xRight - w), y, size, font })
-}
-
-function wrapLines(
-  text: string,
-  maxWidth: number,
-  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
-  size: number
-): string[] {
-  const paragraphs = textForPdf(text).trim().split(/\n+/)
-  const lines: string[] = []
-  for (const paragraph of paragraphs) {
-    const words = paragraph.trim().split(/\s+/).filter(Boolean)
-    if (words.length === 0) continue
-    let line = ''
-    for (const w of words) {
-      const next = line ? `${line} ${w}` : w
-      if (font.widthOfTextAtSize(next, size) <= maxWidth) line = next
-      else {
-        if (line) lines.push(line)
-        line = w
-      }
-    }
-    if (line) lines.push(line)
-  }
-  return lines
-}
-
-function wrapLinesLimited(
-  text: string,
-  maxWidth: number,
-  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
-  size: number,
-  maxLines: number
-): string[] {
-  const all = wrapLines(text.trim(), maxWidth, font, size)
-  if (all.length <= maxLines) return all.length ? all : ['']
-  const out = all.slice(0, maxLines)
-  let last = out[maxLines - 1]!
-  if (all.length > maxLines) {
-    while (last.length > 1 && font.widthOfTextAtSize(`${last}…`, size) > maxWidth) {
-      last = last.slice(0, -1)
-    }
-    out[maxLines - 1] = `${last}…`
-  }
-  return out
+  drawTextRightAligned(page, text, y, size, font, xRight, MARGIN)
 }
 
 type PdfFont = Awaited<ReturnType<PDFDocument['embedFont']>>

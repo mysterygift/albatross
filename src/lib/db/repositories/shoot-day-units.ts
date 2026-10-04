@@ -12,6 +12,7 @@ function rowToShootDayUnit(r: Record<string, unknown>): ShootDayUnit {
     unit_id: r.unit_id as string,
     notes: r.notes as string | null,
     is_locked: coerceBoolean(r.is_locked, false) ? 1 : 0,
+    movement_order_json: (r.movement_order_json as string | null) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: r.deleted_at as string | null,
@@ -77,5 +78,19 @@ export async function setShootDayUnitLocked(id: string, isLocked: boolean): Prom
     [isLocked, ts, id]
   )
   await outboxPush(TABLE, id, 'update', JSON.stringify({ is_locked: isLocked }))
+  return (await getShootDayUnitById(id))!
+}
+
+export async function setShootDayUnitMovementOrderJson(
+  id: string,
+  movementOrderJson: string | null
+): Promise<ShootDayUnit> {
+  const db = await getDb()
+  const ts = now()
+  await db.execute(
+    `UPDATE ${TABLE} SET movement_order_json = $1, updated_at = $2 WHERE id = $3`,
+    [movementOrderJson, ts, id]
+  )
+  await outboxPush(TABLE, id, 'update', JSON.stringify({ movement_order_json: movementOrderJson }))
   return (await getShootDayUnitById(id))!
 }

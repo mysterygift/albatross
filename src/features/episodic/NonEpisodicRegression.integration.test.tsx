@@ -301,10 +301,10 @@ function setupCallSheetMocks() {
   csRepo.listShootDaysByProduction.mockResolvedValue([shootDayRow])
   csRepo.getShootDayById.mockResolvedValue(shootDayRow)
   csRepo.listShootDayUnitsByShootDay.mockResolvedValue([
-    { id: 'sdu-1', shoot_day_id: 'day-1', unit_id: 'unit-1', notes: null, is_locked: 0, ...soft },
+    { id: 'sdu-1', shoot_day_id: 'day-1', unit_id: 'unit-1', notes: null, is_locked: 0, movement_order_json: null, ...soft },
   ])
   csRepo.listShootDayUnitsByProduction.mockResolvedValue([
-    { id: 'sdu-1', shoot_day_id: 'day-1', unit_id: 'unit-1', notes: null, is_locked: 0, ...soft },
+    { id: 'sdu-1', shoot_day_id: 'day-1', unit_id: 'unit-1', notes: null, is_locked: 0, movement_order_json: null, ...soft },
   ])
   csRepo.listUnitsByProduction.mockResolvedValue([
     { id: 'unit-1', production_id: 'prod-1', name: 'Main', ...soft },
@@ -418,6 +418,7 @@ describe('Non-episodic regression shield', () => {
       unit_id: unit.id,
       notes: null,
       is_locked: 0,
+      movement_order_json: null,
       ...soft,
     }
     const blocLabel = 'HiddenBlocLabelNonEpisodic'

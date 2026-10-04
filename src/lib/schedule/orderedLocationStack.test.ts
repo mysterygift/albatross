@@ -183,4 +183,27 @@ describe('getOrderedLocationStackForDayUnit', () => {
     expect(result.orderedLocations.map((e) => e.locationId)).toEqual(['loc-a', 'loc-b'])
     expect(result.missingLocationSceneCount).toBe(0)
   })
+  it('lists each visit\'s scenes once, and keeps repeat visits to a location separate', () => {
+    const result = getOrderedLocationStackForDayUnit({
+      strips: [
+        baseStrip({ id: 's1', sort_index: 1000, strip_type: 'SHOT', shot_id: 'shot-1' }),
+        baseStrip({ id: 's2', sort_index: 2000, strip_type: 'SHOT', shot_id: 'shot-2' }),
+        baseStrip({ id: 's3', sort_index: 3000, strip_type: 'SHOT', shot_id: 'shot-3' }),
+        baseStrip({ id: 's4', sort_index: 4000, strip_type: 'SHOT', shot_id: 'shot-4' }),
+      ],
+      scenes: [scene('scene-1', 'loc-a'), scene('scene-2', 'loc-b'), scene('scene-3', 'loc-a')],
+      shots: [
+        shot('shot-1', 'scene-1'),
+        shot('shot-2', 'scene-1'),
+        shot('shot-3', 'scene-2'),
+        shot('shot-4', 'scene-3'),
+      ],
+      locations,
+    })
+    expect(result.orderedLocations.map((e) => [e.locationId, e.sceneIds])).toEqual([
+      ['loc-a', ['scene-1']],
+      ['loc-b', ['scene-2']],
+      ['loc-a', ['scene-3']],
+    ])
+  })
 })

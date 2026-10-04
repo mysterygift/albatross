@@ -60,6 +60,7 @@ describe('episodic schedule UI', () => {
       unit_id: 'u-1',
       notes: null,
       is_locked: 0,
+      movement_order_json: null,
       ...soft,
     }
     renderStripboardDayView({
@@ -80,6 +81,7 @@ describe('episodic schedule UI', () => {
       unit_id: 'u-1',
       notes: null,
       is_locked: 0,
+      movement_order_json: null,
       ...soft,
     }
     renderStripboardDayView({
@@ -101,6 +103,7 @@ describe('episodic schedule UI', () => {
       unit_id: 'u-1',
       notes: null,
       is_locked: 0,
+      movement_order_json: null,
       ...soft,
     }
     renderStripboardDayView({
@@ -236,6 +239,7 @@ describe('episodic schedule UI', () => {
       unit_id: 'u-1',
       notes: null,
       is_locked: 0,
+      movement_order_json: null,
       ...soft,
     }
     const scenes: Scene[] = [

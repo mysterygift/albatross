@@ -1,305 +1,282 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
-import type { MovementOrderData } from '@/lib/movement-orders/types'
+import {
+  COLOR_ALERT,
+  COLOR_MUTED,
+  DEFAULT_PAPER_SIZE,
+  PdfLayout,
+  formatIssuedStamp,
+  formatLongDate,
+  type NumberedRow,
+  type StatCell,
+  type TableCell,
+  type TextBlock,
+} from '@/lib/pdf/layoutKit'
+import {
+  formatDriveDistance,
+  formatDriveDuration,
+  summariseMovementDriving,
+} from '@/lib/movement-orders/movementOrderInputs'
+import type {
+  MovementOrderData,
+  MovementOrderLocation,
+  MovementOrderMovementLeg,
+  MovementOrderPdfOptions,
+} from '@/lib/movement-orders/types'
 
-const PAGE_WIDTH = 612
-const PAGE_HEIGHT = 792
-const MARGIN = 54
-const Y_MIN = 64
-const LINE = 12
-const FONT_BODY = 9
-const FONT_SECTION = 11
-const FONT_TITLE = 18
+const SEP = ' | '
+/** Shown in table cells with nothing to say, so a gap reads as a gap rather than a layout error. */
+const EMPTY_CELL = '-'
 
-type Page = ReturnType<PDFDocument['getPages']>[0]
+function present(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
 
-function wrapText(
-  text: string,
-  maxWidth: number,
-  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
-  size: number
-): string[] {
-  const words = text.trim().split(/\s+/).filter(Boolean)
-  if (words.length === 0) return []
-  const lines: string[] = []
-  let line = ''
-  for (const word of words) {
-    const next = line ? `${line} ${word}` : word
-    if (font.widthOfTextAtSize(next, size) <= maxWidth) {
-      line = next
-      continue
+function dayLabel(data: MovementOrderData): string | null {
+  if (data.dayNumber == null) return null
+  return data.totalShootDays != null && data.totalShootDays >= data.dayNumber
+    ? `Day ${data.dayNumber} of ${data.totalShootDays}`
+    : `Day ${data.dayNumber}`
+}
+
+/** `14 min | 5.2 km`, `14 min`, `5.2 km`, or null when the leg has neither. */
+function travelText(minutes: number | null, distance: string | null): string | null {
+  const parts = [minutes != null ? formatDriveDuration(minutes) : null, present(distance)]
+  const text = parts.filter(Boolean).join(SEP)
+  return text || null
+}
+
+/** Walk time only; the distance is in Directions. Falls back to distance when there is no time. */
+function walkCell(leg: MovementOrderMovementLeg): string {
+  if (leg.walkingTimeMinutes != null) return formatDriveDuration(leg.walkingTimeMinutes)
+  return present(leg.walkingDistanceText) ?? EMPTY_CELL
+}
+
+function titleCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase()
+}
+
+/** `1, 2, 4 | INT | Day` per run of scenes sharing INT/EXT and day/night, joined with `; `. */
+function sceneSummary(scenes: MovementOrderLocation['scenes']): string {
+  const groups: Array<{ numbers: string[]; intExt: string | null; dayNight: string | null }> = []
+  for (const scene of scenes) {
+    const last = groups.at(-1)
+    if (last && last.intExt === scene.intExt && last.dayNight === scene.dayNight) {
+      last.numbers.push(scene.sceneNumber)
+    } else {
+      groups.push({ numbers: [scene.sceneNumber], intExt: scene.intExt, dayNight: scene.dayNight })
     }
-    if (line) {
-      lines.push(line)
-      line = word
-      continue
-    }
-    // Single overlong token fallback: hard-wrap by character width.
-    let chunk = ''
-    for (const char of word) {
-      const nextChunk = `${chunk}${char}`
-      if (font.widthOfTextAtSize(nextChunk, size) <= maxWidth) {
-        chunk = nextChunk
-      } else {
-        if (chunk) lines.push(chunk)
-        chunk = char
-      }
-    }
-    line = chunk
   }
-  if (line) lines.push(line)
-  return lines
+  return groups
+    .map((g) =>
+      [g.numbers.join(', '), g.intExt, g.dayNight ? titleCase(g.dayNight) : null]
+        .filter(Boolean)
+        .join(SEP)
+    )
+    .join('; ')
 }
 
-function sectionHeading(
-  page: Page,
-  y: { current: number },
-  title: string,
-  bold: Awaited<ReturnType<PDFDocument['embedFont']>>
-): void {
-  page.drawText(title.toUpperCase(), {
-    x: MARGIN,
-    y: y.current,
-    size: FONT_SECTION,
-    font: bold,
-  })
-  y.current -= LINE
-  page.drawRectangle({
-    x: MARGIN,
-    y: y.current + 5,
-    width: PAGE_WIDTH - MARGIN * 2,
-    height: 0.6,
-    color: rgb(0.65, 0.65, 0.65),
-  })
-  y.current -= 8
+function locationRow(location: MovementOrderLocation, index: number): NumberedRow {
+  const left: TextBlock[] = [{ text: location.name, bold: true }]
+  const address = present(location.address)
+  if (address) left.push({ text: address })
+  const w3w = present(location.what3words)
+  if (w3w) left.push({ text: `what3words: ${w3w}`, color: COLOR_MUTED })
+
+  const right: TextBlock[] = []
+  const parking = present(location.parkingInfo)
+  if (parking) right.push({ label: 'Parking', text: parking })
+  if (location.scenes.length > 0) {
+    right.push({ label: 'Scenes', inline: true, text: sceneSummary(location.scenes) })
+  }
+  return { badge: String(index + 1), columns: [left, right] }
 }
 
-function ensurePage(
-  doc: PDFDocument,
-  pageRef: { page: Page },
-  y: { current: number },
-  minHeight: number,
-  data: MovementOrderData,
-  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
-  bold: Awaited<ReturnType<PDFDocument['embedFont']>>
-): void {
-  if (y.current - minHeight >= Y_MIN) return
-  pageRef.page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  y.current = PAGE_HEIGHT - MARGIN
-  drawRunningHeader(pageRef.page, y, data, font, bold)
-}
-
-function drawRunningHeader(
-  page: Page,
-  y: { current: number },
-  data: MovementOrderData,
-  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
-  bold: Awaited<ReturnType<PDFDocument['embedFont']>>
-): void {
-  page.drawText('MOVEMENT ORDER', { x: MARGIN, y: y.current, size: 10, font: bold })
-  page.drawText(data.productionName.slice(0, 80), { x: MARGIN + 130, y: y.current, size: 8.5, font })
-  y.current -= 12
-  page.drawRectangle({
-    x: MARGIN,
-    y: y.current + 5,
-    width: PAGE_WIDTH - MARGIN * 2,
-    height: 0.5,
-    color: rgb(0.7, 0.7, 0.7),
-  })
-  y.current -= 8
+function directionCell(leg: MovementOrderMovementLeg, index: number): TextBlock[] | null {
+  const drive = travelText(leg.drivingTimeMinutes, leg.drivingDistanceText)
+  const walk = travelText(leg.walkingTimeMinutes, leg.walkingDistanceText)
+  const directions = present(leg.writtenDirections)
+  const meta = [drive ? `Drive ${drive}` : null, walk ? `Walk ${walk}` : null]
+    .filter(Boolean)
+    .join(SEP)
+  if (!meta && !directions) return null
+  const blocks: TextBlock[] = [
+    { text: `${index + 1}${SEP}${leg.fromLocationName} to ${leg.toLocationName}`, bold: true },
+  ]
+  if (meta) blocks.push({ text: meta, color: COLOR_MUTED })
+  if (directions) blocks.push({ text: directions })
+  return blocks
 }
 
 export async function generateMovementOrderPDF(
-  data: MovementOrderData
+  data: MovementOrderData,
+  options: MovementOrderPdfOptions = {}
 ): Promise<Uint8Array> {
-  const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
-  const pageRef = { page: doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]) }
-  const y = { current: PAGE_HEIGHT - MARGIN }
+  const layout = await PdfLayout.create({ paper: options.paperSize ?? DEFAULT_PAPER_SIZE })
+  const day = dayLabel(data)
 
-  pageRef.page.drawText('MOVEMENT ORDER', {
-    x: MARGIN,
-    y: y.current,
-    size: FONT_TITLE,
-    font: bold,
-  })
-  y.current -= 22
-  pageRef.page.drawText(data.productionName.slice(0, 96), {
-    x: MARGIN,
-    y: y.current,
-    size: 12,
-    font: bold,
-  })
-  y.current -= 14
-  const dateLine = `Shoot date: ${data.shootDate}${
-    data.dayNumber != null ? `  ·  Day ${data.dayNumber}` : ''
-  }  ·  Unit: ${data.unitName}`
-  pageRef.page.drawText(dateLine.slice(0, 110), {
-    x: MARGIN,
-    y: y.current,
-    size: FONT_BODY,
-    font,
-  })
-  y.current -= 18
-
-  sectionHeading(pageRef.page, y, 'Locations', bold)
-  if (data.locations.length === 0) {
-    pageRef.page.drawText('No locations available.', { x: MARGIN, y: y.current, size: FONT_BODY, font })
-    y.current -= LINE
-  } else {
-    for (const location of data.locations) {
-      ensurePage(doc, pageRef, y, 72, data, font, bold)
-      pageRef.page.drawText(location.name.slice(0, 90), { x: MARGIN, y: y.current, size: FONT_BODY, font: bold })
-      y.current -= LINE
-
-      const address = location.address?.trim() || 'Address not available'
-      for (const line of wrapText(address, PAGE_WIDTH - MARGIN * 2, font, FONT_BODY)) {
-        pageRef.page.drawText(line, { x: MARGIN, y: y.current, size: FONT_BODY, font })
-        y.current -= LINE
-      }
-      if (location.what3words?.trim()) {
-        pageRef.page.drawText(`what3words: ${location.what3words.trim()}`.slice(0, 96), {
-          x: MARGIN,
-          y: y.current,
-          size: FONT_BODY,
-          font,
-          color: rgb(0.3, 0.3, 0.3),
-        })
-        y.current -= LINE
-      }
-      if (location.parkingInfo?.trim()) {
-        for (const line of wrapText(
-          `Parking: ${location.parkingInfo.trim()}`,
-          PAGE_WIDTH - MARGIN * 2,
-          font,
-          FONT_BODY
-        )) {
-          pageRef.page.drawText(line, { x: MARGIN, y: y.current, size: FONT_BODY, font })
-          y.current -= LINE
-        }
-      } else {
-        pageRef.page.drawText('Parking: Parking info unavailable.', {
-          x: MARGIN,
-          y: y.current,
-          size: FONT_BODY,
-          font,
-          color: rgb(0.35, 0.35, 0.35),
-        })
-        y.current -= LINE
-      }
-      y.current -= 6
-    }
+  layout.onNewPage = (l) => {
+    l.runningHeader(
+      ['MOVEMENT ORDER', day, data.unitName].filter(Boolean).join(SEP),
+      data.productionName
+    )
   }
 
-  ensurePage(doc, pageRef, y, 72, data, font, bold)
-  sectionHeading(pageRef.page, y, 'Movement / Directions', bold)
-  if (data.movementLegs.length === 0) {
-    pageRef.page.drawText('No movement legs available.', { x: MARGIN, y: y.current, size: FONT_BODY, font })
-    y.current -= LINE
-  } else {
-    for (const leg of data.movementLegs) {
-      ensurePage(doc, pageRef, y, 84, data, font, bold)
-      pageRef.page.drawText(`${leg.fromLocationName} -> ${leg.toLocationName}`.slice(0, 100), {
-        x: MARGIN,
-        y: y.current,
-        size: FONT_BODY,
-        font: bold,
-      })
-      y.current -= LINE
+  // Masthead: same shape as the call sheet, with the revision and issue stamp on the right.
+  const issuedAt = data.issuedAt ? new Date(data.issuedAt) : new Date()
+  const issued = `Issued ${formatIssuedStamp(Number.isNaN(issuedAt.getTime()) ? new Date() : issuedAt)}`
+  layout.masthead({
+    title: data.productionName,
+    right: 'MOVEMENT ORDER',
+    subLeft: [
+      `Unit: ${data.unitName}`,
+      present(data.shootingBlocLabel) ? `Shooting bloc: ${data.shootingBlocLabel!.trim()}` : null,
+    ]
+      .filter(Boolean)
+      .join(SEP),
+    subRight: [present(data.revisionLabel), issued].filter(Boolean).join(SEP),
+  })
 
-      const drivingTime = leg.drivingTimeMinutes != null ? `${leg.drivingTimeMinutes} min` : 'Unavailable'
-      const drivingDistance = leg.drivingDistanceText ?? 'Unavailable'
-      pageRef.page.drawText(`Driving: ${drivingTime} (${drivingDistance})`.slice(0, 100), {
-        x: MARGIN,
-        y: y.current,
-        size: FONT_BODY,
-        font,
-      })
-      y.current -= LINE
-
-      if (leg.walkingTimeMinutes != null || leg.walkingDistanceText) {
-        const walkingTime = leg.walkingTimeMinutes != null ? `${leg.walkingTimeMinutes} min` : 'Unavailable'
-        const walkingDistance = leg.walkingDistanceText ?? 'Unavailable'
-        pageRef.page.drawText(`Walking: ${walkingTime} (${walkingDistance})`.slice(0, 100), {
-          x: MARGIN,
-          y: y.current,
-          size: FONT_BODY,
-          font,
-        })
-        y.current -= LINE
-      } else {
-        pageRef.page.drawText('Walking: Walking route unavailable.', {
-          x: MARGIN,
-          y: y.current,
-          size: FONT_BODY,
-          font,
-          color: rgb(0.35, 0.35, 0.35),
-        })
-        y.current -= LINE
-      }
-
-      if (leg.writtenDirections?.trim()) {
-        for (const line of wrapText(
-          `Directions: ${leg.writtenDirections.trim()}`,
-          PAGE_WIDTH - MARGIN * 2,
-          font,
-          FONT_BODY
-        )) {
-          ensurePage(doc, pageRef, y, LINE + 6, data, font, bold)
-          pageRef.page.drawText(line, { x: MARGIN, y: y.current, size: FONT_BODY, font })
-          y.current -= LINE
-        }
-      } else {
-        pageRef.page.drawText('Directions: No directions available.', {
-          x: MARGIN,
-          y: y.current,
-          size: FONT_BODY,
-          font,
-        })
-        y.current -= LINE
-      }
-      y.current -= 4
-    }
-  }
-
-  ensurePage(doc, pageRef, y, 72, data, font, bold)
-  sectionHeading(pageRef.page, y, 'Locations Team Contacts', bold)
-  if (data.locationContacts.length === 0) {
-    pageRef.page.drawText('No Locations department contacts available.', {
-      x: MARGIN,
-      y: y.current,
-      size: FONT_BODY,
-      font,
+  // Header strip: date and day, unit base and call, the day's moves.
+  const driving = summariseMovementDriving(data.movementLegs)
+  const wrapDetail = present(data.wrapTime) ? `Wrap (est.) ${data.wrapTime}` : null
+  const baseTime = present(data.unitBaseTime)
+  const callTime = present(data.callTime)
+  const strip: StatCell[] = [
+    {
+      label: 'Shoot date',
+      weight: 1.1,
+      lines: [
+        { text: formatLongDate(data.shootDate), bold: true, size: 11 },
+        ...(day ? [{ text: day, bold: true, size: 14 }] : []),
+      ],
+    },
+  ]
+  const callAndWrap = [callTime ? `Crew call ${callTime}` : null, wrapDetail].filter(Boolean).join(SEP)
+  if (baseTime) {
+    strip.push({
+      label: 'Unit base opens',
+      weight: 1.2,
+      lines: [{ text: baseTime, bold: true, size: 20 }, ...(callAndWrap ? [{ text: callAndWrap }] : [])],
     })
-  } else {
-    for (const contact of data.locationContacts) {
-      ensurePage(doc, pageRef, y, 52, data, font, bold)
-      pageRef.page.drawText(contact.name.slice(0, 90), { x: MARGIN, y: y.current, size: FONT_BODY, font: bold })
-      y.current -= LINE
-      const role = contact.role?.trim() ? contact.role.trim() : 'Role unavailable'
-      pageRef.page.drawText(`Role: ${role}`.slice(0, 100), { x: MARGIN, y: y.current, size: FONT_BODY, font })
-      y.current -= LINE
-      if (contact.phone?.trim()) {
-        pageRef.page.drawText(`Phone: ${contact.phone.trim()}`.slice(0, 100), {
-          x: MARGIN,
-          y: y.current,
-          size: FONT_BODY,
-          font,
-        })
-        y.current -= LINE
-      }
-      if (contact.email?.trim()) {
-        pageRef.page.drawText(`Email: ${contact.email.trim()}`.slice(0, 100), {
-          x: MARGIN,
-          y: y.current,
-          size: FONT_BODY,
-          font,
-        })
-        y.current -= LINE
-      }
-      y.current -= 4
-    }
+  } else if (callTime) {
+    strip.push({
+      label: 'Crew call',
+      weight: 1.2,
+      lines: [{ text: callTime, bold: true, size: 20 }, ...(wrapDetail ? [{ text: wrapDetail }] : [])],
+    })
+  } else if (present(data.wrapTime)) {
+    strip.push({ label: 'Wrap (est.)', weight: 1.2, lines: [{ text: data.wrapTime!, bold: true, size: 20 }] })
+  }
+  const stopCount =
+    data.locations.length === 0 ? 0 : data.locations.length + (present(data.unitBaseAddress) ? 1 : 0)
+  const driveDetail = [
+    driving.minutes != null ? `Total drive ${formatDriveDuration(driving.minutes)}` : null,
+    driving.meters != null ? formatDriveDistance(driving.meters) : null,
+  ]
+    .filter(Boolean)
+    .join(SEP)
+  strip.push({
+    label: "Today's moves",
+    weight: 1,
+    lines: [
+      { text: `${stopCount} ${stopCount === 1 ? 'stop' : 'stops'}`, bold: true, size: 20 },
+      ...(driveDetail ? [{ text: `${driveDetail}${driving.incomplete ? ' (partial)' : ''}` }] : []),
+    ],
+  })
+  layout.statStrip(strip)
+
+  // Journey: the day at a glance.
+  if (data.movementLegs.length > 0) {
+    layout.sectionBar('Journey', 60)
+    const rows: TableCell[][] = data.movementLegs.map((leg, i) => [
+      String(i + 1),
+      leg.fromLocationName,
+      leg.toLocationName,
+      { text: leg.departTime ?? EMPTY_CELL, bold: leg.departTime != null },
+      travelText(leg.drivingTimeMinutes, leg.drivingDistanceText) ?? EMPTY_CELL,
+      walkCell(leg),
+      { text: leg.arriveTime ?? EMPTY_CELL, bold: leg.arriveTime != null },
+    ])
+    layout.table({
+      columns: [
+        { header: '#', weight: 5 },
+        { header: 'From', weight: 25 },
+        { header: 'To', weight: 25 },
+        { header: 'Depart', weight: 11 },
+        { header: 'Drive', weight: 14 },
+        { header: 'Walk', weight: 10 },
+        { header: 'Arrive', weight: 10 },
+      ],
+      rows,
+    })
   }
 
-  return doc.save()
+  // Locations: numbered stops.
+  layout.sectionBar('Locations', 50)
+  if (data.locations.length === 0) {
+    layout.blockGrid([[{ text: 'No locations scheduled.', color: COLOR_MUTED }]], 1)
+  } else {
+    layout.numberedRows(data.locations.map(locationRow))
+  }
+
+  // Directions: numbered to match the Journey rows, two to a row.
+  const directionCells = data.movementLegs
+    .map(directionCell)
+    .filter((cell): cell is TextBlock[] => cell !== null)
+  if (directionCells.length > 0) {
+    layout.sectionBar('Directions', 50)
+    layout.blockGrid(directionCells, 2)
+  }
+
+  // Contacts.
+  if (data.locationContacts.length > 0) {
+    layout.sectionBar('Locations team contacts', 50)
+    layout.table({
+      columns: [
+        { header: 'Name', weight: 28 },
+        { header: 'Role', weight: 24 },
+        { header: 'Phone', weight: 20 },
+        { header: 'Email', weight: 28 },
+      ],
+      rows: data.locationContacts.map((contact) => [
+        contact.name,
+        contact.role ?? EMPTY_CELL,
+        contact.phone ?? EMPTY_CELL,
+        contact.email ?? EMPTY_CELL,
+      ]),
+    })
+  }
+
+  // Safety box beside the nearest A&E.
+  const { safety } = data
+  const safetyCell: TextBlock[] = []
+  if (present(safety.notes)) {
+    safetyCell.push({ label: 'Safety', labelColor: COLOR_ALERT, text: safety.notes!, bold: true })
+  }
+  const police = [present(safety.policeStationName), present(safety.policeStationAddress)]
+    .filter(Boolean)
+    .join(', ')
+  if (police) {
+    safetyCell.push({ label: 'Police', labelColor: COLOR_MUTED, text: police, inline: safetyCell.length > 0 })
+  }
+  const hospitalCell: TextBlock[] = []
+  if (present(safety.hospitalName)) {
+    hospitalCell.push({ label: 'Nearest A&E', text: safety.hospitalName!, bold: true })
+  }
+  if (present(safety.hospitalAddress)) {
+    hospitalCell.push({
+      label: present(safety.hospitalName) ? undefined : 'Nearest A&E',
+      text: safety.hospitalAddress!,
+    })
+  }
+  const safetyCells = [safetyCell, hospitalCell].filter((cell) => cell.length > 0)
+  if (safetyCells.length > 0) {
+    layout.gap(4)
+    layout.blockGrid(safetyCells, 2)
+  }
+
+  layout.applyFooters({
+    left: `${data.productionName}. CONFIDENTIAL - DO NOT SHARE.`,
+  })
+  return layout.doc.save()
 }

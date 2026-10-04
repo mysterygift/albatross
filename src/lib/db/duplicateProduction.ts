@@ -271,8 +271,8 @@ export async function duplicateProduction(
     if (dayId && unitId) {
       shootDayUnitIdMap.set(r.id as string, id)
       statements.push({
-        sql: `INSERT INTO shoot_day_units (id, shoot_day_id, unit_id, notes, is_locked, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        bindValues: [id, dayId, unitId, r.notes, coerceBoolean(r.is_locked, false), ts, ts],
+        sql: `INSERT INTO shoot_day_units (id, shoot_day_id, unit_id, notes, is_locked, movement_order_json, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        bindValues: [id, dayId, unitId, r.notes, coerceBoolean(r.is_locked, false), r.movement_order_json ?? null, ts, ts],
       })
     }
   }

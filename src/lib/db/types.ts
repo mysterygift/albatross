@@ -508,6 +508,8 @@ export type ShootDayUnit = {
   unit_id: string
   notes: string | null
   is_locked: number
+  /** JSON of hand-entered movement order values; see `parseMovementOrderInputs`. */
+  movement_order_json: string | null
 } & SoftDeletable
 
 /** SHOT = one shot from Shot List (stripboard is shot-based). SCENE kept for legacy/display fallback. */
