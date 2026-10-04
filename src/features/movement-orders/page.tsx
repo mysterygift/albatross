@@ -65,7 +65,10 @@ import {
   type MovementPin,
 } from '@/lib/movement-orders/pins'
 import { renderMovementOrderMaps } from '@/lib/movement-orders/renderMovementOrderMaps'
-import { DEFAULT_MAP_STYLE_CONFIG, getMapStyleConfig } from '@/lib/maps/mapStyle'
+import {
+  DEFAULT_MAP_TILE_URL_TEMPLATE,
+  getMapTileConfig,
+} from '@/lib/maps/tileConfig'
 import { MovementOrderMaps } from '@/features/movement-orders/MovementOrderMaps'
 import { useSyncedDraft } from '@/features/movement-orders/useSyncedDraft'
 import {
@@ -467,9 +470,9 @@ export function MovementOrdersPage() {
     [orderedLocations, enrichedLegs, skeletonLegs, waypoints.length]
   )
 
-  const { data: styleConfig = DEFAULT_MAP_STYLE_CONFIG } = useQuery({
-    queryKey: ['map-style-config'],
-    queryFn: getMapStyleConfig,
+  const { data: tileConfig = { urlTemplate: DEFAULT_MAP_TILE_URL_TEMPLATE, apiKey: '' } } = useQuery({
+    queryKey: ['map-tile-config'],
+    queryFn: getMapTileConfig,
   })
 
   const movementOrderDataForView = useMemo<MovementOrderData | null>(() => {
@@ -580,7 +583,7 @@ export function MovementOrdersPage() {
   const buildOrderPdf = async (data: MovementOrderData): Promise<Uint8Array> => {
     let maps = null
     if (includeMaps) {
-      const rendered = await renderMovementOrderMaps(data, styleConfig)
+      const rendered = await renderMovementOrderMaps(data, tileConfig)
       maps = rendered.maps
       setMapWarning(rendered.warning)
     } else {
@@ -933,7 +936,7 @@ export function MovementOrdersPage() {
             </label>
             <MovementOrderMaps
               data={movementOrderDataForView}
-              styleConfig={styleConfig}
+              tileConfig={tileConfig}
               pins={pins}
               onPinsChange={setPins}
               canEdit={!!shootDay}

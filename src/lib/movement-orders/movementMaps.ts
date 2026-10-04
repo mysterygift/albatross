@@ -1,4 +1,4 @@
-import { distanceMeters } from '@/lib/maps/mapMath'
+import { boundsOf, centerOf, distanceMeters, fitZoom, type Bounds } from '@/lib/maps/mapMath'
 import { decodePolyline, type LatLngLike } from '@/lib/maps/polyline'
 import { getMovementPinCodes, type MovementPinKind } from '@/lib/movement-orders/pins'
 import type { MovementOrderData } from '@/lib/movement-orders/types'
@@ -12,13 +12,13 @@ export interface MapMarker {
   style: MapMarkerStyle
 }
 
-/** Everything drawn on one map, independent of how it is rendered (interactive map or PDF image). */
+/** Everything drawn on one map, independent of how it is rendered (Leaflet or canvas). */
 export interface MapScene {
   routes: LatLngLike[][]
   markers: MapMarker[]
   /** Points the view must contain. */
   fitPoints: LatLngLike[]
-  /** Highest zoom the view may fit to (a single point zooms to this). */
+  minZoom: number
   maxZoom: number
 }
 
@@ -92,7 +92,7 @@ export function buildOverviewScene(data: SceneInput): MapScene | null {
   const markers = [...locationMarkers(data), ...baseMarker(data), ...pinMarkers(data)]
   const fitPoints = [...routes.flat(), ...markers.map((m) => m.position)]
   if (fitPoints.length === 0) return null
-  return { routes, markers, fitPoints, maxZoom: 17 }
+  return { routes, markers, fitPoints, minZoom: 2, maxZoom: 17 }
 }
 
 /** Close-up on one location with the pins and neighbouring stops near it. */
@@ -107,5 +107,23 @@ export function buildLocationScene(data: SceneInput, locationIndex: number): Map
     ...pinMarkers(data),
   ]
   const fitPoints = [centre, ...markers.map((m) => m.position).filter(near)]
-  return { routes: routePolylines(data), markers, fitPoints, maxZoom: 17 }
+  return { routes: routePolylines(data), markers, fitPoints, minZoom: 14, maxZoom: 17 }
+}
+
+export type MapView = { center: LatLngLike; zoom: number }
+
+export function viewForScene(scene: MapScene, width: number, height: number): MapView | null {
+  const bounds: Bounds | null = boundsOf(scene.fitPoints)
+  if (!bounds) return null
+  return {
+    center: centerOf(bounds),
+    zoom: fitZoom({
+      bounds,
+      width,
+      height,
+      padding: 56,
+      minZoom: scene.minZoom,
+      maxZoom: scene.maxZoom,
+    }),
+  }
 }

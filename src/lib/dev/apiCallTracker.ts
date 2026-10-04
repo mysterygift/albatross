@@ -18,7 +18,7 @@ export const API_CALL_TRACKER_LABELS: Record<ApiCallTrackerId, string> = {
   openrouteservice: 'OpenRouteService (geocode + directions via Tauri)',
   open_meteo_forecast: 'Open-Meteo (forecast only)',
   currency_conversion_api: 'Currency conversion API (Fawaz / jsDelivr)',
-  map_tiles: 'Map tiles (OpenFreeMap; interactive maps + PDF maps, one per tile request)',
+  map_tiles: 'Map tiles (OpenMapTiles / MapTiler; interactive maps + PDF maps, one per tile)',
 }
 
 const counts: Record<ApiCallTrackerId, number> = {

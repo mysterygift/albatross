@@ -7,62 +7,72 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/components/ui/sonner'
 import {
-  DEFAULT_MAP_STYLE_URL,
-  getMapStyleConfig,
-  saveMapStyleConfig,
-  type MapStyleConfig,
-} from '@/lib/maps/mapStyle'
+  DEFAULT_MAP_TILE_URL_TEMPLATE,
+  getMapTileConfig,
+  saveMapTileConfig,
+  type MapTileConfig,
+} from '@/lib/maps/tileConfig'
 
-const MAP_STYLE_CONFIG_QUERY_KEY = ['map-style-config']
+const MAP_TILE_CONFIG_QUERY_KEY = ['map-tile-config']
 
-function MapStyleForm({ config }: { config: MapStyleConfig }) {
+function MapTilesForm({ config }: { config: MapTileConfig }) {
   const queryClient = useQueryClient()
-  const [styleUrl, setStyleUrl] = useState(config.styleUrl)
+  const [urlTemplate, setUrlTemplate] = useState(config.urlTemplate)
+  const [apiKey, setApiKey] = useState(config.apiKey)
 
   const saveMutation = useMutation({
-    mutationFn: (next: MapStyleConfig) => saveMapStyleConfig(next),
+    mutationFn: (next: MapTileConfig) => saveMapTileConfig(next),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: MAP_STYLE_CONFIG_QUERY_KEY })
-      toast.success('Map style saved.')
+      void queryClient.invalidateQueries({ queryKey: MAP_TILE_CONFIG_QUERY_KEY })
+      toast.success('Map tile settings saved.')
     },
   })
 
   return (
     <CardContent className="space-y-3">
       <div className="space-y-2">
-        <Label htmlFor="map-style-url">Map style URL</Label>
+        <Label htmlFor="map-tile-url">Tile URL template</Label>
         <Input
-          id="map-style-url"
+          id="map-tile-url"
           spellCheck={false}
-          value={styleUrl}
-          onChange={(event) => setStyleUrl(event.target.value)}
+          value={urlTemplate}
+          onChange={(event) => setUrlTemplate(event.target.value)}
           className="font-mono text-xs"
         />
-        <p className="text-xs text-muted-foreground">
-          OpenFreeMap styles: liberty (detailed), bright, positron (light grey, good for print).
-        </p>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="map-tile-key">API key</Label>
+        <Input
+          id="map-tile-key"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          value={apiKey}
+          onChange={(event) => setApiKey(event.target.value)}
+          placeholder="Paste your map tile API key"
+        />
       </div>
       <div className="flex flex-wrap gap-2">
         <Button
-          onClick={() => saveMutation.mutate({ styleUrl })}
-          disabled={saveMutation.isPending || !styleUrl.trim()}
+          onClick={() => saveMutation.mutate({ urlTemplate, apiKey })}
+          disabled={saveMutation.isPending}
         >
           {saveMutation.isPending ? 'Saving…' : 'Save'}
         </Button>
         <Button
           type="button"
           variant="outline"
-          onClick={() => setStyleUrl(DEFAULT_MAP_STYLE_URL)}
+          onClick={() => setUrlTemplate(DEFAULT_MAP_TILE_URL_TEMPLATE)}
           disabled={saveMutation.isPending}
         >
-          Reset to default
+          Reset URL to default
         </Button>
         <Button
           type="button"
           variant="secondary"
-          onClick={() => shellOpen('https://openfreemap.org')}
+          onClick={() => shellOpen('https://www.maptiler.com/cloud/')}
         >
-          About OpenFreeMap
+          Get free key
         </Button>
       </div>
       {saveMutation.error instanceof Error && (
@@ -72,11 +82,11 @@ function MapStyleForm({ config }: { config: MapStyleConfig }) {
   )
 }
 
-/** Map source for the Movement Order route maps (interactive and printed). */
+/** Tile source for the Movement Order route maps (interactive and printed). */
 export function MapTilesSettingsCard() {
   const { data: config } = useQuery({
-    queryKey: MAP_STYLE_CONFIG_QUERY_KEY,
-    queryFn: getMapStyleConfig,
+    queryKey: MAP_TILE_CONFIG_QUERY_KEY,
+    queryFn: getMapTileConfig,
   })
 
   return (
@@ -84,11 +94,13 @@ export function MapTilesSettingsCard() {
       <CardHeader>
         <CardTitle>Map tiles</CardTitle>
         <CardDescription>
-          Movement Order maps use OpenFreeMap, which is free and needs no API key. Change the style
-          URL to use a different MapLibre style, such as a self-hosted OpenFreeMap.
+          Movement Order maps use an OpenMapTiles-based raster tile service (MapTiler Cloud by
+          default, or your own tile server). Use {'{z}'}, {'{x}'}, {'{y}'} and {'{key}'} in the URL.
         </CardDescription>
       </CardHeader>
-      {config ? <MapStyleForm key={config.styleUrl} config={config} /> : null}
+      {config ? (
+        <MapTilesForm key={`${config.urlTemplate}|${config.apiKey}`} config={config} />
+      ) : null}
     </Card>
   )
 }

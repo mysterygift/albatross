@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Layer, Map, Marker, Source, type MapRef } from '@vis.gl/react-maplibre'
+import { useEffect, useMemo, useState } from 'react'
+import L from 'leaflet'
+import { MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { Trash2 } from 'lucide-react'
-import 'maplibre-gl/dist/maplibre-gl.css'
+import 'leaflet/dist/leaflet.css'
+import { recordApiCall } from '@/lib/dev/apiCallTracker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -11,9 +13,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { MapStyleConfig } from '@/lib/maps/mapStyle'
-import { boundsOf, routesToGeoJson } from '@/lib/maps/mapMath'
-import { transformMapRequest } from '@/lib/maps/staticMapRenderer'
+import {
+  MAP_TILE_ATTRIBUTION_HTML,
+  isMapTileConfigIncomplete,
+  leafletTileUrl,
+  type MapTileConfig,
+} from '@/lib/maps/tileConfig'
+import { boundsOf } from '@/lib/maps/mapMath'
 import type { LatLngLike } from '@/lib/maps/polyline'
 import {
   MARKER_COLORS,
@@ -35,114 +41,141 @@ import type { MovementOrderData } from '@/lib/movement-orders/types'
 
 type MapData = Pick<MovementOrderData, 'locations' | 'movementLegs' | 'pins' | 'unitBaseAddress'>
 
-function MarkerBadge({ label, style }: { label: string; style: MapMarkerStyle }) {
+function markerIcon(label: string, style: MapMarkerStyle): L.DivIcon {
   const size = label.length > 1 ? 28 : 24
+  const radius = style === 'base' ? '4px' : '50%'
+  return L.divIcon({
+    className: '',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    html: `<div style="width:${size}px;height:${size}px;border-radius:${radius};background:${MARKER_COLORS[style]};color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font:700 12px/1 Helvetica,Arial,sans-serif;">${label}</div>`,
+  })
+}
+
+/** Re-fit the view when the points that should be visible change. */
+function FitView({
+  points,
+  minZoom,
+  maxZoom,
+}: {
+  points: LatLngLike[]
+  minZoom: number
+  maxZoom: number
+}) {
+  const map = useMap()
+  const signature = points.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join('|')
+  useEffect(() => {
+    const bounds = boundsOf(points)
+    if (!bounds) return
+    map.fitBounds(
+      [
+        [bounds.south, bounds.west],
+        [bounds.north, bounds.east],
+      ],
+      { padding: [32, 32], maxZoom }
+    )
+    if (map.getZoom() < minZoom) map.setZoom(minZoom)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `signature` stands in for `points`
+  }, [map, signature, minZoom, maxZoom])
+  return null
+}
+
+function ClickToAddPin({ onAdd }: { onAdd: ((position: LatLngLike) => void) | null }) {
+  useMapEvents({
+    click(event) {
+      onAdd?.({ lat: event.latlng.lat, lng: event.latlng.lng })
+    },
+  })
+  return null
+}
+
+function SceneLayers({ scene, pins, onMovePin }: {
+  scene: MapScene
+  pins: MovementPin[]
+  onMovePin: (id: string, position: LatLngLike) => void
+}) {
+  const codes = getMovementPinCodes(pins)
   return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: style === 'base' ? 4 : '50%',
-        background: MARKER_COLORS[style],
-        color: '#fff',
-        border: '2px solid #fff',
-        boxShadow: '0 1px 4px rgba(0,0,0,.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        font: '700 12px/1 Helvetica, Arial, sans-serif',
-      }}
-    >
-      {label}
-    </div>
+    <>
+      {scene.routes.map((line, i) => (
+        <Polyline
+          key={`route-${i}`}
+          positions={line.map((p) => [p.lat, p.lng] as [number, number])}
+          pathOptions={{ color: ROUTE_COLOR, weight: 5, opacity: 0.85 }}
+        />
+      ))}
+      {scene.markers
+        .filter((m) => m.style === 'location' || m.style === 'base')
+        .map((m, i) => (
+          <Marker
+            key={`stop-${i}`}
+            position={[m.position.lat, m.position.lng]}
+            icon={markerIcon(m.label, m.style)}
+            interactive={false}
+          />
+        ))}
+      {pins.map((pin, i) => (
+        <Marker
+          key={pin.id}
+          position={[pin.lat, pin.lng]}
+          icon={markerIcon(codes[i]!, pin.kind)}
+          draggable
+          eventHandlers={{
+            dragend: (event) => {
+              const latlng = (event.target as L.Marker).getLatLng()
+              onMovePin(pin.id, { lat: latlng.lat, lng: latlng.lng })
+            },
+          }}
+        />
+      ))}
+    </>
   )
 }
 
 function MapFrame({
   scene,
-  styleConfig,
+  tileConfig,
   pins,
   height,
   onMovePin,
   onAddPin,
+  fitMinZoom,
+  fitMaxZoom,
 }: {
   scene: MapScene
-  styleConfig: MapStyleConfig
+  tileConfig: MapTileConfig
   pins: MovementPin[]
   height: number
   onMovePin: (id: string, position: LatLngLike) => void
   onAddPin: ((position: LatLngLike) => void) | null
+  fitMinZoom: number
+  fitMaxZoom: number
 }) {
-  const mapRef = useRef<MapRef>(null)
-  const codes = getMovementPinCodes(pins)
-  const bounds = boundsOf(scene.fitPoints)!
-  const fitBounds: [[number, number], [number, number]] = [
-    [bounds.west, bounds.south],
-    [bounds.east, bounds.north],
-  ]
-  const signature = scene.fitPoints.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join('|')
-  const route = useMemo(() => routesToGeoJson(scene.routes), [scene.routes])
-
-  // Re-fit when the points that should be visible change (not when a pin is dragged inside).
-  useEffect(() => {
-    mapRef.current?.fitBounds(fitBounds, { padding: 40, maxZoom: scene.maxZoom, duration: 0 })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `signature` stands in for the points
-  }, [signature, scene.maxZoom])
-
+  const first = scene.fitPoints[0]!
   return (
-    <div className="overflow-hidden rounded border border-border" style={{ height }}>
-      <Map
-        ref={mapRef}
-        mapStyle={styleConfig.styleUrl}
-        initialViewState={{ bounds: fitBounds, fitBoundsOptions: { padding: 40, maxZoom: scene.maxZoom } }}
-        style={{ width: '100%', height: '100%' }}
-        cursor={onAddPin ? 'crosshair' : undefined}
-        transformRequest={transformMapRequest}
-        onClick={(event) => onAddPin?.({ lat: event.lngLat.lat, lng: event.lngLat.lng })}
-      >
-        {scene.routes.length > 0 && (
-          <Source id="route" type="geojson" data={route}>
-            <Layer
-              id="route-casing"
-              type="line"
-              layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-              paint={{ 'line-color': '#ffffff', 'line-width': 9 }}
-            />
-            <Layer
-              id="route-line"
-              type="line"
-              layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-              paint={{ 'line-color': ROUTE_COLOR, 'line-width': 5 }}
-            />
-          </Source>
-        )}
-        {scene.markers
-          .filter((m) => m.style === 'location' || m.style === 'base')
-          .map((m, i) => (
-            <Marker key={`stop-${i}`} longitude={m.position.lng} latitude={m.position.lat} anchor="center">
-              <MarkerBadge label={m.label} style={m.style} />
-            </Marker>
-          ))}
-        {pins.map((pin, i) => (
-          <Marker
-            key={pin.id}
-            longitude={pin.lng}
-            latitude={pin.lat}
-            anchor="center"
-            draggable
-            onDragEnd={(event) => onMovePin(pin.id, { lat: event.lngLat.lat, lng: event.lngLat.lng })}
-          >
-            <MarkerBadge label={codes[i]!} style={pin.kind} />
-          </Marker>
-        ))}
-      </Map>
-    </div>
+    <MapContainer
+      center={[first.lat, first.lng]}
+      zoom={13}
+      style={{ height, width: '100%', cursor: onAddPin ? 'crosshair' : undefined }}
+      className="rounded border border-border"
+      scrollWheelZoom
+    >
+      <TileLayer
+        url={leafletTileUrl(tileConfig)}
+        attribution={MAP_TILE_ATTRIBUTION_HTML}
+        maxZoom={19}
+        eventHandlers={{ tileloadstart: () => recordApiCall('map_tiles') }}
+      />
+      <FitView points={scene.fitPoints} minZoom={fitMinZoom} maxZoom={fitMaxZoom} />
+      <ClickToAddPin onAdd={onAddPin} />
+      <SceneLayers scene={scene} pins={pins} onMovePin={onMovePin} />
+    </MapContainer>
   )
 }
 
 export interface MovementOrderMapsProps {
   data: MapData
-  styleConfig: MapStyleConfig
+  tileConfig: MapTileConfig
   pins: MovementPin[]
   onPinsChange: (pins: MovementPin[]) => void
   canEdit: boolean
@@ -154,7 +187,7 @@ export interface MovementOrderMapsProps {
  */
 export function MovementOrderMaps({
   data,
-  styleConfig,
+  tileConfig,
   pins,
   onPinsChange,
   canEdit,
@@ -191,6 +224,14 @@ export function MovementOrderMaps({
     onPinsChange(pins.map((pin) => (pin.id === id ? { ...pin, ...patch } : pin)))
   const onAddPin = canEdit && addKind ? addPin : null
 
+  if (isMapTileConfigIncomplete(tileConfig)) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Add a map tile API key under Settings → Integrations to show the maps.
+      </p>
+    )
+  }
+
   // Before any route or coordinates exist there is nothing to centre on.
   const fallbackScene: MapScene | null =
     overview ??
@@ -199,6 +240,7 @@ export function MovementOrderMaps({
           routes: [],
           markers: [],
           fitPoints: pins.map((p) => ({ lat: p.lat, lng: p.lng })),
+          minZoom: 2,
           maxZoom: 17,
         }
       : null)
@@ -231,11 +273,13 @@ export function MovementOrderMaps({
         {fallbackScene ? (
           <MapFrame
             scene={fallbackScene}
-            styleConfig={styleConfig}
+            tileConfig={tileConfig}
             pins={pins}
             height={440}
             onMovePin={movePin}
             onAddPin={onAddPin}
+            fitMinZoom={fallbackScene.minZoom}
+            fitMaxZoom={fallbackScene.maxZoom}
           />
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -269,11 +313,13 @@ export function MovementOrderMaps({
             <MapFrame
               key={locationIndex}
               scene={closeUp}
-              styleConfig={styleConfig}
+              tileConfig={tileConfig}
               pins={pins}
               height={340}
               onMovePin={movePin}
               onAddPin={onAddPin}
+              fitMinZoom={closeUp.minZoom}
+              fitMaxZoom={closeUp.maxZoom}
             />
           ) : (
             <p className="text-sm text-muted-foreground">
