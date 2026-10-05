@@ -114,6 +114,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 
@@ -454,6 +455,155 @@ function DroppableDayCell({
       )}
     >
       {children}
+    </div>
+  )
+}
+
+/** Short weekday initials for the phone month grid. */
+const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const
+
+/**
+ * Phone month grid cell: the date and a dot per unit shooting that day. It is a drop target like the
+ * desktop cell, so a card dragged from the list below can be rescheduled onto it.
+ */
+function CompactDayCell({
+  dateStr,
+  day,
+  events,
+  isToday,
+  onSelect,
+}: {
+  dateStr: string
+  day: number
+  events: CalendarShootDayEvent[]
+  isToday: boolean
+  onSelect: () => void
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `date-${dateStr}` })
+  const label = events.length > 0 ? `${day}, ${events.length} shoot ${events.length === 1 ? 'unit' : 'units'}` : `${day}`
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      aria-label={label}
+      disabled={events.length === 0}
+      onClick={onSelect}
+      className={cn(
+        'flex h-12 flex-col items-center justify-center gap-1 rounded-md border text-sm',
+        events.length > 0 ? 'border-border bg-card font-semibold text-foreground' : 'border-transparent text-muted-foreground',
+        isToday && 'ring-1 ring-primary',
+        isOver && 'ring-2 ring-primary/60'
+      )}
+    >
+      {day}
+      <span className="flex h-1.5 gap-0.5" aria-hidden>
+        {events.map((e) => (
+          <span
+            key={e.shootDayUnitId}
+            className="size-1.5 rounded-full"
+            style={{ backgroundColor: e.unitKey === 'main' ? 'var(--unit-main)' : 'var(--unit-second)' }}
+          />
+        ))}
+      </span>
+    </button>
+  )
+}
+
+/**
+ * Calendar on a phone. Seven ~55pt columns are too narrow for event cards, so the month is a compact
+ * grid of dates with unit dots (tap a date to jump to it), and the month's shoot days are listed
+ * underneath at full width. Cards keep their drag handle: drag one onto a date in the grid to move it.
+ */
+function PhoneMonthCalendar({
+  year,
+  month,
+  leadingBlanks,
+  daysInMonth,
+  monthLabel,
+  eventsByDate,
+  isEpisodic,
+  onOpenEvent,
+}: {
+  year: number
+  month: number
+  leadingBlanks: number
+  daysInMonth: number
+  monthLabel: string
+  eventsByDate: Map<string, CalendarShootDayEvent[]>
+  isEpisodic: boolean
+  onOpenEvent: (event: CalendarShootDayEvent) => void
+}) {
+  const now = new Date()
+  const todayStr = toYyyyMmDd(now.getFullYear(), now.getMonth(), now.getDate())
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+  const datesWithEvents = days
+    .map((day) => toYyyyMmDd(year, month, day))
+    .filter((dateStr) => (eventsByDate.get(dateStr)?.length ?? 0) > 0)
+
+  const jumpTo = (dateStr: string) => {
+    document.getElementById(`calendar-agenda-${dateStr}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  return (
+    <div className="space-y-4" data-slot="phone-calendar">
+      <div className="grid grid-cols-7 gap-1 text-center">
+        {WEEKDAY_INITIALS.map((label, i) => (
+          <div key={i} className="py-1 text-xs font-medium text-muted-foreground" aria-hidden>
+            {label}
+          </div>
+        ))}
+        {Array.from({ length: leadingBlanks }).map((_, i) => (
+          <div key={`blank-${i}`} />
+        ))}
+        {days.map((day) => {
+          const dateStr = toYyyyMmDd(year, month, day)
+          return (
+            <CompactDayCell
+              key={day}
+              dateStr={dateStr}
+              day={day}
+              events={eventsByDate.get(dateStr) ?? []}
+              isToday={dateStr === todayStr}
+              onSelect={() => jumpTo(dateStr)}
+            />
+          )
+        })}
+      </div>
+
+      <section aria-label={`Shoot days in ${monthLabel}`} className="space-y-4">
+        {datesWithEvents.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+            No shoot days in {monthLabel}.
+          </p>
+        ) : (
+          datesWithEvents.map((dateStr) => {
+            const [y, m, d] = dateStr.split('-').map(Number)
+            const heading = new Date(y!, m! - 1, d!).toLocaleDateString(undefined, {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'short',
+            })
+            return (
+              <div key={dateStr} id={`calendar-agenda-${dateStr}`} className="scroll-mt-4 space-y-1.5">
+                <h3 className={cn('text-sm font-semibold', dateStr === todayStr ? 'text-primary' : 'text-foreground')}>
+                  {heading}
+                  {dateStr === todayStr && <span className="ml-2 text-xs font-medium">Today</span>}
+                </h3>
+                <div className="space-y-1.5 [&_[data-slot=calendar-event]]:px-3 [&_[data-slot=calendar-event]]:py-2 [&_[data-slot=calendar-event]]:text-sm">
+                  {(eventsByDate.get(dateStr) ?? []).map((event) => (
+                    <DraggableEventCard
+                      key={event.shootDayUnitId}
+                      event={event}
+                      onClick={() => onOpenEvent(event)}
+                      isEpisodic={isEpisodic}
+                    />
+                  ))}
+                </div>
+              </div>
+            )
+          })
+        )}
+      </section>
     </div>
   )
 }
@@ -1045,6 +1195,8 @@ export function ScheduleCalendarPage() {
   const authSession = useAuthSession()
   const isEpisodicProduction = currentProduction?.is_episodic === true
   const [viewDate, setViewDate] = useState(() => new Date())
+  // iPhone held upright: compact month grid plus a list of the month's shoot days (see PhoneMonthCalendar).
+  const phoneWidth = usePhoneWidth()
   const [calendarBlocFilter, setCalendarBlocFilter] = useState<ShootingBlocViewFilter>('all')
   const [selectedEvent, setSelectedEvent] = useState<CalendarShootDayEvent | null>(null)
 
@@ -1624,7 +1776,7 @@ export function ScheduleCalendarPage() {
           <Button variant="outline" size="icon" onClick={goPrevMonth}>
             <ChevronLeft className="size-4" />
           </Button>
-          <span className="min-w-[180px] text-center font-medium">
+          <span className={cn('text-center font-medium', phoneWidth ? 'min-w-[9rem]' : 'min-w-[180px]')}>
             {monthLabel}
           </span>
           <Button variant="outline" size="icon" onClick={goNextMonth}>
@@ -1639,6 +1791,18 @@ export function ScheduleCalendarPage() {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
+        {phoneWidth ? (
+          <PhoneMonthCalendar
+            year={year}
+            month={month}
+            leadingBlanks={leadingBlanks}
+            daysInMonth={daysInMonth}
+            monthLabel={monthLabel}
+            eventsByDate={eventsByDate}
+            isEpisodic={isEpisodicProduction}
+            onOpenEvent={openDrawer}
+          />
+        ) : (
         <div className="grid grid-cols-7 gap-1 text-center text-sm text-muted-foreground">
           {WEEKDAY_LABELS.map((label) => (
             <div key={label} className="py-2 font-medium">
@@ -1668,6 +1832,7 @@ export function ScheduleCalendarPage() {
             )
           })}
         </div>
+        )}
 
         <DragOverlay dropAnimation={null}>
           {activeEvent ? (

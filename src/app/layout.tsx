@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { SidebarInset, SidebarProvider, useSidebar } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
 import { TutorialProvider } from '@/features/tutorial/engine/TutorialProvider'
@@ -184,6 +184,7 @@ function AppLayoutInner() {
 }
 
 function AppLayoutShell() {
+  const { pathname } = useLocation()
   const { currentProduction } = useCurrentProduction()
   const isDemoProductionCurrent = currentProduction?.slug === DEMO_SLUG
   const [searchOpen, setSearchOpen] = useState(false)
@@ -224,7 +225,10 @@ function AppLayoutShell() {
               isDemo={isDemoProductionCurrent}
               currentProduction={currentProduction}
             />
-            <Outlet />
+            {/* Keyed on the path so each page fades up as it opens (motion.css); query-string changes don't replay it. */}
+            <div key={pathname} data-page-transition="" className="h-full">
+              <Outlet />
+            </div>
           </main>
         </SidebarInset>
         <PhoneTabBar />

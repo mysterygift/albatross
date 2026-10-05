@@ -11,6 +11,7 @@ import './styles/themes/ledger.css'
 import './styles/themes/night.css'
 import './styles/themes/clay.css'
 import './styles/platform-mobile.css'
+import './styles/motion.css'
 import App from './App.tsx'
 import { applyPlatformAttribute } from './lib/platform'
 

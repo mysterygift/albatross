@@ -35,9 +35,10 @@ function isTextEntry(el: Element | null): boolean {
 }
 
 /**
- * iPhone (portrait) navigation: the four places used most on the go within thumb reach, plus More, which
- * opens the full sidebar. Each tab remembers the last page visited under it, like an iOS tab bar. It hides
- * while the keyboard is up so it doesn't sit on top of the field being typed into.
+ * iPhone (portrait) navigation: More at the bottom left, which shows and hides the full sidebar, then the
+ * four places used most on the go within thumb reach. Each tab remembers the last page visited under it,
+ * like an iOS tab bar. It slides away while the keyboard is up so it doesn't sit on top of the field
+ * being typed into.
  */
 export function PhoneTabBar() {
   const isPhoneWidth = useIsMobile()
@@ -67,17 +68,16 @@ export function PhoneTabBar() {
   }, [show])
 
   // Lets the page column, toasts and fixed controls leave room for the bar.
-  const visible = show && !typing
   useEffect(() => {
     const root = document.documentElement
-    if (visible) root.dataset.phoneTabBar = ''
+    if (show) root.dataset.phoneTabBar = ''
     else delete root.dataset.phoneTabBar
     return () => {
       delete root.dataset.phoneTabBar
     }
-  }, [visible])
+  }, [show])
 
-  if (!visible) return null
+  if (!show) return null
 
   const go = (tab: Tab) => {
     setOpenMobile(false)
@@ -89,13 +89,34 @@ export function PhoneTabBar() {
   }
 
   return (
-    // Above the sidebar sheet (z-50) so More can close it again and the tabs stay usable while it is open.
+    // Above the sidebar sheet (z-50), and opted back in to pointer events (a modal sheet turns them off
+    // outside itself), so More can close it again and the tabs stay usable while it is open.
+    // While typing (and while a dialog is open, see platform-mobile.css) it slides down out of the way
+    // rather than disappearing, and rises back when done.
     <nav
       aria-label="Main"
       data-slot="phone-tab-bar"
-      className="fixed inset-x-0 bottom-0 z-[60] border-t border-border bg-background/95 pb-[var(--safe-bottom)] backdrop-blur"
+      data-hidden={typing || undefined}
+      aria-hidden={typing || undefined}
+      inert={typing || undefined}
+      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[60] border-t border-border bg-background/95 pb-[var(--safe-bottom)] backdrop-blur"
     >
       <ul className="flex h-14 items-stretch">
+        {/* More sits bottom left, under the sidebar it slides out, and toggles it. Edge swipes still work too. */}
+        <li className="flex-1">
+          <button
+            type="button"
+            aria-expanded={openMobile}
+            onClick={() => setOpenMobile(!openMobile)}
+            className={cn(
+              'flex h-full w-full flex-col items-center justify-center gap-0.5 text-[11px] font-medium',
+              openMobile || !activeTab ? 'text-primary' : 'text-muted-foreground'
+            )}
+          >
+            <Menu className="size-5" aria-hidden />
+            More
+          </button>
+        </li>
         {TABS.map((tab) => {
           const active = activeTab?.id === tab.id && !openMobile
           const Icon = tab.icon
@@ -116,20 +137,6 @@ export function PhoneTabBar() {
             </li>
           )
         })}
-        <li className="flex-1">
-          <button
-            type="button"
-            aria-expanded={openMobile}
-            onClick={() => setOpenMobile(!openMobile)}
-            className={cn(
-              'flex h-full w-full flex-col items-center justify-center gap-0.5 text-[11px] font-medium',
-              openMobile || !activeTab ? 'text-primary' : 'text-muted-foreground'
-            )}
-          >
-            <Menu className="size-5" aria-hidden />
-            More
-          </button>
-        </li>
       </ul>
     </nav>
   )

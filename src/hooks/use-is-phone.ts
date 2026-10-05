@@ -17,3 +17,25 @@ export function useIsPhone(): boolean {
 
   return isPhone
 }
+
+/**
+ * Narrower than Tailwind's `md` (an iPhone held upright), following rotation. Unlike `useIsMobile` it
+ * tolerates environments without `matchMedia` (tests), where it reports false.
+ */
+export function usePhoneWidth(): boolean {
+  const query = `(max-width: ${PHONE_MAX_WIDTH}px)`
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(query).matches
+  )
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const mql = window.matchMedia(query)
+    const onChange = () => setMatches(mql.matches)
+    onChange()
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [query])
+
+  return matches
+}

@@ -271,6 +271,17 @@ html[data-phone-tab-bar] [data-slot="top-bar"] [data-sidebar="trigger"] {
     min-height: 2.5rem;
   }
 
+  /*
+   * ...but not the compact controls inside table rows (inline edits, chip remove buttons, row
+   * actions): enlarging those makes every row several times taller. Rows are the tap target there.
+   */
+  html[data-platform] [data-slot="table-cell"] [data-slot="button"],
+  html[data-platform] [data-slot="table-cell"] [data-slot="input"],
+  html[data-platform] [data-slot="table-cell"] [data-slot="select-trigger"] {
+    min-height: 0;
+    min-width: 0;
+  }
+
   /* 16px text stops iOS zooming the page when a field takes focus. */
   html[data-platform] [data-slot="input"],
   html[data-platform] [data-slot="textarea"],
@@ -282,4 +293,17 @@ html[data-phone-tab-bar] [data-slot="top-bar"] [data-sidebar="trigger"] {
 html[data-phone-tab-bar] [data-slot="top-bar"] [aria-label="Current production"] {
   flex: 1 1 auto;
   width: auto;
+}
+
+/*
+ * Dialogs and side panels cover the page; the tab bar would sit on their buttons, so it slides away
+ * (motion in motion.css), as it does while typing.
+ */
+html[data-phone-tab-bar] [data-slot="phone-tab-bar"][data-hidden],
+html[data-phone-tab-bar]
+  body:has([role="dialog"]:not([data-slot="sidebar"]), [role="alertdialog"])
+  [data-slot="phone-tab-bar"] {
+  transform: translateY(calc(100% + 8px));
+  opacity: 0;
+  pointer-events: none;
 }

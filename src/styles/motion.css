@@ -1,0 +1,223 @@
+/*
+ * Motion and polish for touch devices (iPhone, iPad). Scoped to `html[data-platform]` like
+ * platform-mobile.css, so desktop rendering is unchanged.
+ *
+ * Radix components animate with tw-animate's `enter` / `exit` keyframes, which read their timing from
+ * --tw-duration and --tw-ease and their start/end pose from --tw-enter-* / --tw-exit-*. Overriding those
+ * variables here retimes every dialog, sheet and menu without touching the components.
+ */
+
+html[data-platform] {
+  /* iOS-style curves: sheets decelerate into place; small surfaces settle quickly. */
+  --motion-ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* ─── Backdrops: a slower fade than the panel, so the page dims behind it ─── */
+html[data-platform] [data-slot="dialog-overlay"],
+html[data-platform] [data-slot="sheet-overlay"],
+html[data-platform] [data-slot="alert-dialog-overlay"] {
+  --tw-ease: var(--motion-ease-out);
+  --tw-duration: 280ms;
+  animation-duration: 280ms;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+html[data-platform] [data-slot="dialog-overlay"][data-state="closed"],
+html[data-platform] [data-slot="sheet-overlay"][data-state="closed"] {
+  --tw-ease: var(--motion-ease-in);
+  animation-duration: 200ms;
+}
+
+/* ─── Dialogs: a soft pop on tablets ─── */
+html[data-platform] [data-slot="dialog-content"] {
+  --tw-ease: var(--motion-ease-out);
+  --tw-enter-scale: 0.96;
+  --tw-exit-scale: 0.97;
+  animation-duration: 260ms;
+  box-shadow:
+    0 24px 48px -12px rgb(0 0 0 / 0.45),
+    0 0 0 1px rgb(255 255 255 / 0.02);
+}
+
+html[data-platform] [data-slot="dialog-content"][data-state="closed"] {
+  --tw-ease: var(--motion-ease-in);
+  animation-duration: 180ms;
+}
+
+/* ...and on a phone they rise from below and sink back, like an iOS sheet. */
+@media (max-width: 767px) {
+  html[data-platform] [data-slot="dialog-content"] {
+    --tw-ease: var(--motion-ease-sheet);
+    --tw-enter-translate-y: 2.5rem;
+    --tw-enter-scale: 0.98;
+    --tw-exit-translate-y: 1.5rem;
+    --tw-exit-scale: 0.98;
+    animation-duration: 380ms;
+    border-radius: 1rem;
+  }
+
+  html[data-platform] [data-slot="dialog-content"][data-state="closed"] {
+    --tw-ease: var(--motion-ease-in);
+    animation-duration: 200ms;
+  }
+
+  /* Search slides down from the top, where it sits on a phone. */
+  html[data-platform] [data-slot="dialog-content"][data-command-dialog] {
+    --tw-enter-translate-y: -1.5rem;
+    --tw-exit-translate-y: -1rem;
+  }
+}
+
+/* ─── Sheets and the sidebar: same deceleration as an iOS drawer ─── */
+html[data-platform] [data-slot="sheet-content"][data-state="open"] {
+  --tw-ease: var(--motion-ease-sheet);
+  animation-duration: 420ms;
+}
+
+html[data-platform] [data-slot="sheet-content"][data-state="closed"] {
+  --tw-ease: var(--motion-ease-in);
+  animation-duration: 240ms;
+}
+
+/* Full-screen phone panels rise from the bottom instead of sliding in from the right. */
+@media (max-width: 639px) {
+  html[data-platform] [data-slot="sheet-content"][data-variant="floating"] {
+    --tw-enter-translate-x: 0;
+    --tw-exit-translate-x: 0;
+    --tw-enter-translate-y: 100%;
+    --tw-exit-translate-y: 100%;
+  }
+}
+
+/* ─── Menus, dropdowns, popovers, selects: quick scale-and-fade from where they were opened ─── */
+html[data-platform] [data-slot="dropdown-menu-content"],
+html[data-platform] [data-slot="dropdown-menu-sub-content"],
+html[data-platform] [data-slot="popover-content"],
+html[data-platform] [data-slot="select-content"],
+html[data-platform] [data-slot="hover-card-content"],
+html[data-platform] [data-slot="tooltip-content"] {
+  --tw-ease: var(--motion-ease-out);
+  --tw-enter-scale: 0.94;
+  --tw-exit-scale: 0.96;
+  animation-duration: 200ms;
+  box-shadow: 0 16px 32px -12px rgb(0 0 0 / 0.4);
+}
+
+html[data-platform] [data-slot="dropdown-menu-content"][data-state="closed"],
+html[data-platform] [data-slot="popover-content"][data-state="closed"],
+html[data-platform] [data-slot="select-content"][data-state="closed"] {
+  --tw-ease: var(--motion-ease-in);
+  animation-duration: 130ms;
+}
+
+/* ─── Tab bar: slides and fades away (typing, dialogs) and rises back ─── */
+html[data-platform] [data-slot="phone-tab-bar"] {
+  transition:
+    transform 340ms var(--motion-ease-sheet),
+    opacity 240ms var(--motion-ease-out);
+  will-change: transform;
+}
+
+/* The bar arrives with the app rather than popping in. */
+html[data-platform] [data-slot="phone-tab-bar"] {
+  animation: motion-rise-in 420ms var(--motion-ease-sheet) backwards;
+}
+
+/* Tab icons ease between active and inactive, and give a little on press. */
+html[data-platform] [data-slot="phone-tab-bar"] button {
+  transition: color 200ms var(--motion-ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+
+html[data-platform] [data-slot="phone-tab-bar"] button svg {
+  transition: transform 220ms var(--motion-ease-out);
+}
+
+html[data-platform] [data-slot="phone-tab-bar"] button:active svg {
+  transform: scale(0.86);
+}
+
+html[data-platform] [data-slot="phone-tab-bar"] button[aria-current="page"] svg {
+  transform: translateY(-1px);
+}
+
+/* ─── Pages: a short fade-and-rise on navigation (see `data-page-transition` in layout.tsx) ─── */
+html[data-platform] [data-page-transition] {
+  animation: motion-page-in 260ms var(--motion-ease-out) backwards;
+}
+
+/* ─── Touch feedback: controls press in slightly, without the grey iOS tap flash ─── */
+html[data-platform] [data-slot="button"],
+html[data-platform] [data-slot="tabs-trigger"],
+html[data-platform] [data-slot="section-tabs"] a,
+html[data-platform] [data-slot="sidebar-menu-button"],
+html[data-platform] [data-slot="sidebar-menu-sub-button"] {
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 160ms var(--motion-ease-out),
+    background-color 160ms var(--motion-ease-out),
+    color 160ms var(--motion-ease-out),
+    border-color 160ms var(--motion-ease-out),
+    opacity 160ms var(--motion-ease-out);
+}
+
+@media (hover: none) {
+  html[data-platform] [data-slot="button"]:active:not(:disabled),
+  html[data-platform] [data-slot="tabs-trigger"]:active,
+  html[data-platform] [data-slot="sidebar-menu-button"]:active,
+  html[data-platform] [data-slot="sidebar-menu-sub-button"]:active {
+    transform: scale(0.97);
+  }
+}
+
+/* Section tab underline glides between tabs rather than snapping. */
+html[data-platform] [data-slot="section-tabs"] a {
+  transition-property: color, border-color, transform;
+}
+
+/* Cards and list rows in the phone layouts respond to a press. */
+html[data-platform] [data-slot="phone-calendar"] button,
+html[data-platform] nav[aria-label="On set"] a {
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 160ms var(--motion-ease-out),
+    background-color 160ms var(--motion-ease-out);
+}
+
+html[data-platform] [data-slot="phone-calendar"] button:active:not(:disabled),
+html[data-platform] nav[aria-label="On set"] a:active {
+  transform: scale(0.96);
+}
+
+@keyframes motion-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes motion-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
+/* People who ask for less motion get instant changes. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-platform] *,
+  html[data-platform] *::before,
+  html[data-platform] *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+
+  html[data-platform] [data-slot="button"]:active:not(:disabled),
+  html[data-platform] [data-slot="phone-tab-bar"] button:active svg {
+    transform: none;
+  }
+}

@@ -77,10 +77,18 @@ describe('PhoneTabBar', () => {
     expect(screen.getByTestId('path').textContent).toBe('/schedule/calendar')
   })
 
-  it('opens the sidebar from More', () => {
+  it('puts More first (bottom left) and toggles the sidebar with it', () => {
+    renderAt('/')
+    const buttons = screen.getAllByRole('button')
+    expect(buttons[0]?.textContent).toBe('More')
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    expect(sidebar.setOpenMobile).toHaveBeenLastCalledWith(true)
+    cleanup()
+
+    sidebar.openMobile = true
     renderAt('/')
     fireEvent.click(screen.getByRole('button', { name: 'More' }))
-    expect(sidebar.setOpenMobile).toHaveBeenCalledWith(true)
+    expect(sidebar.setOpenMobile).toHaveBeenLastCalledWith(false)
   })
 
   it('hides while a text field has focus', () => {

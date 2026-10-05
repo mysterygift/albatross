@@ -1,3 +1,4 @@
+import { ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   SETTINGS_GROUPS,
@@ -16,30 +17,37 @@ export function SettingsNav({ active, developerMode, onSelect }: SettingsNavProp
   const sections = visibleSettingsSections(developerMode)
   return (
     <>
-      <div className="md:hidden">
-        <label htmlFor="settings-section-select" className="sr-only">
+      <div className="space-y-1.5 md:hidden">
+        <label htmlFor="settings-section-select" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Settings section
         </label>
-        <select
-          id="settings-section-select"
-          value={active}
-          onChange={(e) => onSelect(e.target.value as SettingsSectionId)}
-          className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
-        >
-          {SETTINGS_GROUPS.map((group) => {
-            const items = sections.filter((s) => s.group === group.id)
-            if (items.length === 0) return null
-            return (
-              <optgroup key={group.id} label={group.label}>
-                {items.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </optgroup>
-            )
-          })}
-        </select>
+        {/* A native select (the iOS picker wheel), drawn as a button with a chevron so it reads as a menu. */}
+        <div className="relative">
+          <select
+            id="settings-section-select"
+            value={active}
+            onChange={(e) => onSelect(e.target.value as SettingsSectionId)}
+            className="h-11 w-full appearance-none rounded-md border border-input bg-muted/40 pr-10 pl-3 text-base font-medium text-foreground shadow-xs focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            {SETTINGS_GROUPS.map((group) => {
+              const items = sections.filter((s) => s.group === group.id)
+              if (items.length === 0) return null
+              return (
+                <optgroup key={group.id} label={group.label}>
+                  {items.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )
+            })}
+          </select>
+          <ChevronsUpDown
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+        </div>
       </div>
       <nav aria-label="Settings sections" className="hidden w-52 shrink-0 space-y-4 md:block">
         {SETTINGS_GROUPS.map((group) => {

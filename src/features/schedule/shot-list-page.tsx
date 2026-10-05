@@ -1525,8 +1525,8 @@ export function ShotListPage() {
                   <TableHead className="text-foreground font-medium h-11 px-3">Lens</TableHead>
                   <TableHead className="text-foreground font-medium h-11 px-3">Support</TableHead>
                   <TableHead className="text-foreground font-medium h-11 px-3">Notes</TableHead>
-                  <TableHead className="text-foreground font-medium h-11 px-3 w-[180px]">Cast</TableHead>
-                  <TableHead className="text-foreground font-medium h-11 px-3 w-[170px]">Sections</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3 min-w-[180px]">Cast</TableHead>
+                  <TableHead className="text-foreground font-medium h-11 px-3 min-w-[170px]">Sections</TableHead>
                   {editMode && (
                     <TableHead className="text-foreground font-medium h-11 px-2 w-20 text-right">
                       <span className="sr-only">Shot actions</span>
@@ -2481,7 +2481,7 @@ function ShotRow({
 
   const cellClass = (field: EditableField) =>
     cn(
-      'align-middle px-3 py-2 max-w-[180px]',
+      'align-middle px-3 py-1 max-w-[180px]',
       editMode && 'cursor-pointer hover:bg-muted/50 rounded',
       editingField === field && 'ring-2 ring-emerald-500/50 ring-inset rounded bg-muted/30'
     )
@@ -2490,7 +2490,7 @@ function ShotRow({
     <TableRow>
       <TableCell
         className={cn(
-          'font-medium px-3 py-2 align-middle',
+          'font-medium px-3 py-1 align-middle',
           editMode && 'cursor-pointer hover:bg-muted/50 rounded',
           editingField === 'shot_number' &&
             'ring-2 ring-emerald-500/50 ring-inset rounded bg-muted/30'
@@ -2796,8 +2796,9 @@ function ShotRow({
       </TableCell>
 
       {/* Cast (shot-level) */}
-      <TableCell className="align-middle px-3 py-2 w-[180px]">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <TableCell className="align-middle px-3 py-1 min-w-[180px]">
+        {/* One line: the table scrolls sideways, so chips extend the cell rather than doubling the row height. */}
+        <div className="flex items-center gap-1.5 whitespace-nowrap">
           {shotCastList.map((sc) => {
             const person = castById.get(sc.person_id)
             return (
@@ -2835,8 +2836,9 @@ function ShotRow({
       </TableCell>
 
       {/* Script sections (coverage) */}
-      <TableCell className="align-middle px-3 py-2 w-[170px]">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <TableCell className="align-middle px-3 py-1 min-w-[170px]">
+        {/* One line: the table scrolls sideways, so chips extend the cell rather than doubling the row height. */}
+        <div className="flex items-center gap-1.5 whitespace-nowrap">
           {linkedSectionCount > 0 ? (
             <>
               <span
@@ -2876,7 +2878,7 @@ function ShotRow({
       </TableCell>
 
       {(onDuplicate != null || onRequestDelete != null) && (
-        <TableCell className="align-middle px-2 py-2 w-20 text-right">
+        <TableCell className="align-middle px-2 py-1 w-20 text-right">
           <div className="flex items-center justify-end gap-0.5">
             {onDuplicate != null && (
               <Button
