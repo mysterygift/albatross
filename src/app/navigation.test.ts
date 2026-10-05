@@ -118,6 +118,7 @@ describe('experimental features', () => {
   it('keeps experimental routes reachable for breadcrumbs and links', () => {
     expect(findNavTrail('/people/overtime')?.sub?.label).toBe('Overtime')
     expect(findNavTrail('/budget/receipt-capture')?.sub?.label).toBe('Receipt Capture')
+    expect(findNavTrail('/schedule/script-supervisor')?.sub?.label).toBe('Script Supervisor')
   })
 
   it('drops parents and groups left empty, and moves a hidden default child to the first visible one', () => {

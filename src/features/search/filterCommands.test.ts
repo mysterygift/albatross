@@ -73,5 +73,6 @@ describe('experimental pages in search', () => {
     expect(ids(buildGlobalSearchCommands())).not.toContain('go:/people/overtime')
     expect(ids(buildGlobalSearchCommands({ showExperimental: true }))).toContain('go:/people/overtime')
     expect(ids(buildGlobalSearchCommands({ showExperimental: true }))).toContain('go:/budget/receipt-capture')
+    expect(ids(buildGlobalSearchCommands({ showExperimental: true }))).toContain('go:/schedule/script-supervisor')
   })
 })
