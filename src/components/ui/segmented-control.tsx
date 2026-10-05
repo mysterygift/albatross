@@ -36,7 +36,7 @@ export function SegmentedControl<T extends string>({
       role="tablist"
       aria-label={ariaLabel}
       className={cn(
-        "relative inline-flex w-full max-w-full overflow-hidden rounded-xl border bg-muted/20 p-1",
+        "relative isolate inline-flex w-full max-w-full overflow-hidden rounded-xl border bg-muted/20 p-1",
         size === "sm" ? "h-9" : "h-10",
         className
       )}
