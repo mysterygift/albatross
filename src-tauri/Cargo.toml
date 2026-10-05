@@ -24,7 +24,7 @@ log = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 futures-core = "0.3"
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
-tauri = { version = "2.10.0", features = [] }
+tauri = { version = "2.12.1", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-fs = "2"
