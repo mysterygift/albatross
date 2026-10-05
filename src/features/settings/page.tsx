@@ -85,6 +85,7 @@ import { getProductionBySlug } from '@/lib/db/repositories/production'
 import { ServerPublishingSettingsSection } from '@/features/server/ServerPublishingSettingsSection'
 import { ServerCollabDevTools } from '@/features/server/ServerCollabDevTools'
 import { AppearanceSettingsSection } from '@/features/settings/AppearanceSettingsSection'
+import { ExperimentalFeaturesSettingsCard } from '@/features/settings/ExperimentalFeaturesSettingsCard'
 import { enableEpisodicProduction } from '@/lib/db/episodicProductionService'
 import { getSetting, setSetting, FIRST_LAUNCH_TUTORIAL_SEEN_KEY, setFirstLaunchTutorialSeen } from '@/lib/db/repositories/settings'
 import { CrewStructureEditor } from '@/features/settings/CrewStructureEditor'
@@ -926,11 +927,18 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
+        </div>
+      )}
+
+      {section === 'developer' && (
+        <div className="space-y-5">
+      <ExperimentalFeaturesSettingsCard />
+
       <Card>
         <CardHeader>
           <CardTitle>Developer mode</CardTitle>
           <CardDescription>
-            Shows diagnostics and developer tools in Settings. Leave off unless you are troubleshooting.
+            Shows diagnostics and developer tools on this page. Leave off unless you are troubleshooting.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex items-center gap-2">
@@ -947,12 +955,7 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-        </div>
-      )}
-
-      {section === 'developer' && (
-        <div className="space-y-5">
-      {import.meta.env.DEV && (
+      {import.meta.env.DEV && developerMode && (
         <Card className="mt-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -1074,7 +1077,7 @@ export function SettingsPage() {
         </Card>
       )}
 
-      {!import.meta.env.DEV && (
+      {!import.meta.env.DEV && developerMode && (
         <p className="text-sm text-muted-foreground">Developer tools are only available in development builds.</p>
       )}
         </div>

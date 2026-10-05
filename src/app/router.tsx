@@ -31,6 +31,7 @@ import { AdminOnlyUserManagementRoute } from '@/features/admin/UserManagementPag
 import { ProjectAccessRoute } from '@/features/admin/ProjectAccessPage'
 import { WrapProductionPage } from '@/features/wrap-production/page'
 import { VendorsIndexPage } from '@/features/budget/vendors/VendorsIndexPage'
+import { OvertimePage } from '@/features/people/overtime/OvertimePage'
 import { VendorDetailPage } from '@/features/budget/vendors/VendorDetailPage'
 
 export const router = createBrowserRouter([
@@ -57,6 +58,7 @@ export const router = createBrowserRouter([
       { path: 'people/day-out-of-days', element: <DayOutOfDaysPage /> },
       { path: 'people/cast-manager', element: <CastManagerPage /> },
       { path: 'people/crew-manager', element: <CrewManagerPage /> },
+      { path: 'people/overtime', element: <OvertimePage /> },
       { path: 'people/crew/:personId', element: <CrewDetailPage /> },
       { path: 'people/cast', element: <Navigate to="/people/cast-manager" replace /> },
       { path: 'people/:personId', element: <CastDetailPage /> },

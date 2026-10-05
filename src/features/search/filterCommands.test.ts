@@ -66,3 +66,12 @@ describe('filterCommands', () => {
     expect(fired).toBe(1)
   })
 })
+
+describe('experimental pages in search', () => {
+  it('offers Go to entries for experimental pages only while they are shown', () => {
+    const ids = (cmds: ReturnType<typeof buildGlobalSearchCommands>) => cmds.map((c) => c.id)
+    expect(ids(buildGlobalSearchCommands())).not.toContain('go:/people/overtime')
+    expect(ids(buildGlobalSearchCommands({ showExperimental: true }))).toContain('go:/people/overtime')
+    expect(ids(buildGlobalSearchCommands({ showExperimental: true }))).toContain('go:/schedule/script-supervisor')
+  })
+})

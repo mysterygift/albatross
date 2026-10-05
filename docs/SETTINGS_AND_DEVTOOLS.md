@@ -21,7 +21,7 @@ The Settings page provides:
 4. **Episodes & shooting blocs** — Shown only when the selected production is **episodic** (`is_episodic`). Manage episode names/order/archives and shooting-bloc calendars; see [docs/schedule.md](schedule.md) § Episodic productions.
 5. **Data location** — Informational card pointing to app data directory (README paths).
 6. **Demo projects** — Demo production seed and reset controls (available in both dev and production builds).
-7. **Developer tools** (dev build only) — DB perf logging, cascade verification, and experimental toggles.
+7. **Developer** (always listed) — the **Experimental features** toggle (every build), the **Developer mode** toggle, and, in dev builds with developer mode on, the Developer tools card (DB perf logging, cascade verification, experimental dev toggles).
 
 ### 1.2 Demo projects and Developer tools
 
@@ -54,6 +54,8 @@ All values are stored as strings; consumers parse as needed (e.g. `value === 'tr
 | `display_currency` | `'GBP'` | `useCurrency`, Settings UI | Display currency for budget/money (see `CURRENCY_OPTIONS` in `formatMoney`). |
 | `enable_currency_conversion_api` | `'true'` | `useCurrency`, exchange rates, Settings/Dev tools | When `'true'`, allows fetching exchange rates and converting displayed amounts. Existing DBs that had the old default `'false'` are migrated once on startup. |
 | `enable_db_perf_logging` | (none; treated as enabled if not `'false'`) | `src/lib/db/perf.ts`, Settings/Dev tools | When not `'false'`, enables DB perf recording and HUD in dev. |
+| `developer_mode` | `'false'` | `useDeveloperMode`, Settings → Developer | Shows the developer diagnostics on the Developer page. |
+| `show_experimental` | `'false'` | `useShowExperimental`, sidebar, search, Settings → Developer | Shows nav entries marked `experimental` (Overtime, Script Supervisor). See [experimental-on-set.md](experimental-on-set.md). |
 
 Defaults are applied by `ensureSettingsDefaults()` in `settings.ts` (called from productions context on app init). Add new default keys to the `DEFAULTS` object and ensure they are created on first run if needed.
 

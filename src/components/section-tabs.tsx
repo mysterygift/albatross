@@ -1,13 +1,17 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { findNavTrail, isNavGroup } from '@/app/navigation'
+import { useShowExperimental } from '@/hooks/useShowExperimental'
 import { cn } from '@/lib/utils'
 
 export function SectionTabs() {
   const { pathname } = useLocation()
+  const { showExperimental } = useShowExperimental()
   const trail = findNavTrail(pathname)
-  if (!trail || trail.isDetail || !isNavGroup(trail.item) || trail.item.sub.length < 2) return null
+  if (!trail || trail.isDetail || !isNavGroup(trail.item)) return null
   const { item } = trail
-  if (!isNavGroup(item)) return null
+  // Experimental tabs follow the sidebar toggle; the one being viewed stays so a direct link isn't orphaned.
+  const tabs = item.sub.filter((s) => showExperimental || !s.experimental || s.to === trail.sub?.to)
+  if (tabs.length < 2) return null
 
   return (
     <nav
@@ -15,7 +19,7 @@ export function SectionTabs() {
       data-slot="section-tabs"
       className="flex shrink-0 gap-1 border-b px-4 pt-2"
     >
-      {item.sub.map((s) => (
+      {tabs.map((s) => (
         <NavLink
           key={s.to}
           to={s.to}

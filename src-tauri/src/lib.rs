@@ -1050,6 +1050,12 @@ pub fn run() {
             sql: include_str!("../migrations/0101_shoot_days_movement_pins.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 102,
+            description: "crew_hours",
+            sql: include_str!("../migrations/0102_crew_hours.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();

@@ -1,5 +1,8 @@
 # Script Supervisor (SS1–SS10)
 
+> **Experimental.** Script Supervisor is hidden from the sidebar and search unless **Settings → Developer →
+> Show experimental features** is on (see [experimental-on-set.md](experimental-on-set.md)). Its route and data are unaffected.
+
 Developer notes for the on-set Script Supervisor workflow: slates and takes logged against the
 stripboard's shoot days, later lined onto the script as tramlines (the UK marked-up script).
 

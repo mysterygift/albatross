@@ -17,8 +17,8 @@ describe('parseSettingsSection', () => {
     expect(parseSettingsSection('')).toBe('production')
     expect(parseSettingsSection('nope')).toBe('production')
   })
-  it('gates developer on developer mode', () => {
-    expect(parseSettingsSection('developer', false)).toBe('production')
+  it('offers the developer section with or without developer mode', () => {
+    expect(parseSettingsSection('developer', false)).toBe('developer')
     expect(parseSettingsSection('developer', true)).toBe('developer')
   })
 })
@@ -32,7 +32,7 @@ describe('sectionFromSearchParams', () => {
     expect(sectionFromSearchParams(new URLSearchParams('tab=people'))).toBe('people')
     expect(sectionFromSearchParams(new URLSearchParams('tab=apis'))).toBe('integrations')
     expect(sectionFromSearchParams(new URLSearchParams('tab=script_supervisor'))).toBe('script-supervisor')
-    expect(sectionFromSearchParams(new URLSearchParams('tab=developer_tools'))).toBe('production')
+    expect(sectionFromSearchParams(new URLSearchParams('tab=developer_tools'))).toBe('developer')
     expect(sectionFromSearchParams(new URLSearchParams('tab=developer_tools'), true)).toBe('developer')
     expect(sectionFromSearchParams(new URLSearchParams('tab=zzz'))).toBe('production')
   })
@@ -50,8 +50,8 @@ describe('section registry', () => {
       expect(SETTINGS_SECTIONS.some((s) => s.group === g.id)).toBe(true)
     }
   })
-  it('hides developer section when developer mode is off', () => {
-    expect(visibleSettingsSections(false).some((s) => s.id === 'developer')).toBe(false)
+  it('always lists the developer section, so the experimental toggle is reachable in every build', () => {
+    expect(visibleSettingsSections(false).some((s) => s.id === 'developer')).toBe(true)
     expect(visibleSettingsSections(true).some((s) => s.id === 'developer')).toBe(true)
   })
 })

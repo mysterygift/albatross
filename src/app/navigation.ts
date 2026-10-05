@@ -18,16 +18,21 @@ import {
   ShieldAlert,
 } from 'lucide-react'
 
-export type NavSubItem = { to: string; label: string }
+/**
+ * `experimental` entries are hidden from the sidebar and search unless Settings → Developer →
+ * "Show experimental features" is on. Their routes stay registered, so links still work.
+ */
+export type NavSubItem = { to: string; label: string; experimental?: boolean }
 
 export type NavItem =
-  | { to: string; label: string; icon: LucideIcon }
+  | { to: string; label: string; icon: LucideIcon; experimental?: boolean }
   | {
       to: string
       label: string
       icon: LucideIcon
       defaultChild: string
       sub: NavSubItem[]
+      experimental?: boolean
     }
 
 export type NavGroup = { id: string; label: string; items: NavItem[] }
@@ -66,7 +71,7 @@ export const navGroups: NavGroup[] = [
         sub: [
           { to: '/schedule/script-import', label: 'Script Import' },
           { to: '/schedule/script-sections', label: 'Script Sections' },
-          { to: '/schedule/script-supervisor', label: 'Script Supervisor' },
+          { to: '/schedule/script-supervisor', label: 'Script Supervisor', experimental: true },
         ],
       },
       { to: '/locations', label: 'Locations', icon: MapPin },
@@ -88,6 +93,7 @@ export const navGroups: NavGroup[] = [
           { to: '/people/crew-manager', label: 'Crew Manager' },
           { to: '/people/bookings', label: 'Bookings' },
           { to: '/people/day-out-of-days', label: 'Day Out of Days' },
+          { to: '/people/overtime', label: 'Overtime', experimental: true },
         ],
       },
     ],
@@ -133,8 +139,48 @@ export const navGroups: NavGroup[] = [
 
 export const navItems: NavItem[] = navGroups.flatMap((g) => g.items)
 
+/**
+ * The nav tree as shown to the user: with `showExperimental` off, experimental items and sub-items
+ * are removed, as are groups left empty. A parent whose default child is hidden falls back to its
+ * first visible sub-item.
+ */
+export function visibleNavGroups(showExperimental: boolean, groups: NavGroup[] = navGroups): NavGroup[] {
+  if (showExperimental) return groups
+  const out: NavGroup[] = []
+  for (const group of groups) {
+    const items: NavItem[] = []
+    for (const item of group.items) {
+      if (item.experimental) continue
+      if (!isNavGroup(item)) {
+        items.push(item)
+        continue
+      }
+      const sub = item.sub.filter((s) => !s.experimental)
+      if (sub.length === 0) continue
+      const defaultChild = sub.some((s) => s.to === item.defaultChild) ? item.defaultChild : sub[0]!.to
+      items.push({ ...item, sub, defaultChild })
+    }
+    if (items.length > 0) out.push({ ...group, items })
+  }
+  return out
+}
+
 export function isNavGroup(item: NavItem): item is NavItem & { defaultChild: string; sub: NavSubItem[] } {
   return 'sub' in item && Array.isArray(item.sub)
+}
+
+/** Labels of every nav entry marked experimental, e.g. "People: Overtime". */
+export function experimentalNavLabels(groups: NavGroup[] = navGroups): string[] {
+  const out: string[] = []
+  for (const group of groups) {
+    for (const item of group.items) {
+      if (item.experimental) out.push(item.label)
+      if (isNavGroup(item)) {
+        for (const sub of item.sub) if (sub.experimental) out.push(`${item.label}: ${sub.label}`)
+      }
+    }
+  }
+  return out
 }
 
 export type NavTrail = {
