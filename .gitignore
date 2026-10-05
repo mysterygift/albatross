@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# iPad / Xcode (Tauri iOS)
+src-tauri/gen/apple/
+src-tauri/vendor/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.xcarchive
+*.ipa
+*.dSYM
+Pods/
