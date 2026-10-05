@@ -7,6 +7,7 @@
  * is rendered with its best-available script text and range metadata and flagged as estimated.
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { embedStandardFont } from '@/lib/pdf/layoutKit'
 import { textForPdf } from '@/lib/pdf/callSheet'
 import { sceneSlugline } from '@/lib/schedule/sceneDisplay'
 import type {
@@ -193,9 +194,9 @@ function wrapLines(text: string, maxWidth: number, font: PdfFont, size: number):
  */
 export async function generateSidesPdf(data: SidesPdfData): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
-  const mono = await doc.embedFont(StandardFonts.Courier)
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+  const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
+  const mono = await embedStandardFont(doc, StandardFonts.Courier)
 
   let page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
   let y = PAGE_HEIGHT - MARGIN

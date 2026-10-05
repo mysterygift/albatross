@@ -12,7 +12,7 @@
  * Nothing is silently truncated: cells wrap and rows grow instead.
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
-import { textForPdf, wrapLines } from '@/lib/pdf/layoutKit'
+import { textForPdf, wrapLines, embedStandardFont } from '@/lib/pdf/layoutKit'
 import type { CallSheetCastRow } from '@/lib/call-sheets/castRequirements'
 import type { CallSheetCrewGroup, CallSheetCrewRow } from '@/lib/call-sheets/crewRequirements'
 import { primaryContactShowsEmail } from '@/lib/call-sheets/primaryContacts'
@@ -1151,8 +1151,8 @@ function drawAdvancedSchedule(ctx: Ctx): void {
 // ---------- Entry point ----------
 export async function generateCallSheetPdf(data: CallSheetData): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+  const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
 
   // Everything below is synchronous until `doc.save()`, so the module-level paper size cannot
   // be changed by a concurrent generation part-way through drawing.

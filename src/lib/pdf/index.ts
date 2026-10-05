@@ -3,6 +3,7 @@
  * Uses pdf-lib (works in Tauri without Node).
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { embedStandardFont } from '@/lib/pdf/layoutKit'
 import type { ShootDay } from '@/lib/db/types'
 import type { Scene } from '@/lib/db/types'
 import type { Location } from '@/lib/db/types'
@@ -21,8 +22,8 @@ export async function generateLocationReleaseCover(
   data: LocationReleaseCoverData
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+  const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
   const page = doc.addPage([612, 792])
   const { height } = page.getSize()
   let y = height - 72
@@ -73,8 +74,8 @@ export async function generateContributorFormCover(
   data: ContributorFormCoverData
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+  const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
   const page = doc.addPage([612, 792])
   const { height } = page.getSize()
   let y = height - 72
@@ -114,8 +115,8 @@ export interface CallSheetData {
 /** Generate a call sheet PDF for a shoot day. */
 export async function generateCallSheet(data: CallSheetData): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+  const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
   const page = doc.addPage([612, 792])
   const { height } = page.getSize()
   const margin = 72
@@ -218,8 +219,8 @@ export async function generateCueSheet(
   rows: CueSheetRow[]
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+  const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
   const page = doc.addPage([612, 792])
   const { height } = page.getSize()
   const margin = 72

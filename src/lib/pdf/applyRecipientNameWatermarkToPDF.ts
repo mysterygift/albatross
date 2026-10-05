@@ -1,4 +1,5 @@
-import { PDFDocument, degrees, rgb } from 'pdf-lib'
+import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib'
+import { embedStandardFont } from '@/lib/pdf/layoutKit'
 
 type InputPDFBytes = Uint8Array | ArrayBuffer
 
@@ -47,8 +48,9 @@ export async function applyRecipientNameWatermarkToPDF(
     throw new Error('applyRecipientNameWatermarkToPDF: PDF has no pages to watermark.')
   }
 
-  // Use a built‑in font so the utility has no external font dependencies.
-  const font = await doc.embedFont('Helvetica')
+  // A built-in font (no external font files), mapped to text it can encode: recipients' names can
+  // contain letters outside WinAnsi, e.g. "Čech".
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
 
   /** pdf-lib rotates text about the baseline origin; offset so the label sits centred on the page. */
   const rotationDeg = 45

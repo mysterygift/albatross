@@ -4,6 +4,7 @@
  * on-screen Script view. Courier for script text, Helvetica for labels and notes.
  */
 import { degrees, PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage, type RGB } from 'pdf-lib'
+import { embedStandardFont } from '@/lib/pdf/layoutKit'
 
 import type { SlateShotType } from '@/lib/db/types'
 import { textForPdf } from '@/lib/pdf/callSheet'
@@ -193,10 +194,10 @@ export async function generateMarkedUpScriptPdf(input: MarkedUpScriptPdfInput): 
   const doc = await PDFDocument.create()
   doc.setTitle(markedUpPdfText(`${input.productionName} - Marked-up script`))
   const fonts: Fonts = {
-    mono: await doc.embedFont(StandardFonts.Courier),
-    monoBold: await doc.embedFont(StandardFonts.CourierBold),
-    sans: await doc.embedFont(StandardFonts.Helvetica),
-    sansBold: await doc.embedFont(StandardFonts.HelveticaBold),
+    mono: await embedStandardFont(doc, StandardFonts.Courier),
+    monoBold: await embedStandardFont(doc, StandardFonts.CourierBold),
+    sans: await embedStandardFont(doc, StandardFonts.Helvetica),
+    sansBold: await embedStandardFont(doc, StandardFonts.HelveticaBold),
   }
   const measure: TextMeasure = (text, size, font: FontKind) => fonts[font].widthOfTextAtSize(text, size)
   const plan = planForPdf(input, measure)

@@ -3,6 +3,7 @@
  * Uses pdf-lib (same as call sheet, DooD). Read-only; does not modify list or registry.
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { embedStandardFont } from '@/lib/pdf/layoutKit'
 import { formatEquipmentCategoryLabel } from '@/features/equipment/formatEquipmentLabel'
 import { textForPdf } from '@/lib/pdf/callSheet'
 import type { Equipment, EquipmentList, EquipmentListItem } from '@/lib/db/types'
@@ -96,8 +97,8 @@ export interface EquipmentListPdfParams {
 export async function generateEquipmentListPdf(params: EquipmentListPdfParams): Promise<Uint8Array> {
   const { productionName, list, listItems, equipmentById, shootDayLabel } = params
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+  const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
 
   const checkboxSize = 15
   const colOut = checkboxSize + 14

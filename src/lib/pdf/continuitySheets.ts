@@ -3,6 +3,7 @@
  * Data comes from `buildContinuitySheets`; styled like the Daily Progress Report (print mint for rules only).
  */
 import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from 'pdf-lib'
+import { embedStandardFont } from '@/lib/pdf/layoutKit'
 
 import { textForPdf } from '@/lib/pdf/callSheet'
 import type { ContinuitySheet, ContinuitySheetsData } from '@/lib/script-supervisor/continuitySheets'
@@ -195,8 +196,8 @@ function drawSheet(ctx: Ctx, sheet: ContinuitySheet, first: boolean): void {
 export async function generateContinuitySheetsPdf(data: ContinuitySheetsData): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
   doc.setTitle(t(`${data.productionName} - ${data.heading}`))
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+  const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
   const ctx: Ctx = { doc, page: doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]), y: PAGE_HEIGHT - MARGIN, font, bold }
 
   ctx.page.drawRectangle({ x: MARGIN, y: ctx.y + 10, width: 36, height: 3, color: MINT })

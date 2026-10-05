@@ -46,14 +46,67 @@ export const COLOR_ALERT = rgb(0.63, 0, 0)
 // Text
 // ---------------------------------------------------------------------------
 
-/** StandardFonts use WinAnsi; strip bidi/zero-width controls and unmapped code points. */
+/** WinAnsi characters outside Latin-1 (0x80–0x9F in the encoding) that the standard fonts can draw. */
+const WIN_ANSI_EXTRAS = new Set('€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ')
+
+/** Letters that don't decompose to a base letter plus accents. */
+const TRANSLITERATIONS: Record<string, string> = {
+  Ł: 'L', ł: 'l', Đ: 'D', đ: 'd', Ħ: 'H', ħ: 'h', ı: 'i', Ŧ: 'T', ŧ: 't', Ŋ: 'N', ŋ: 'n',
+  ĸ: 'k', ſ: 's', Ŀ: 'L', ŀ: 'l', Ĳ: 'IJ', ĳ: 'ij', ŉ: "'n", '\u2212': '-', '\u3003': '"',
+}
+
+function isWinAnsi(ch: string): boolean {
+  const c = ch.codePointAt(0) ?? 0
+  return c === 9 || c === 10 || c === 13 || (c >= 0x20 && c <= 0x7e) || (c >= 0xa0 && c <= 0xff) || WIN_ANSI_EXTRAS.has(ch)
+}
+
+/**
+ * Text the standard PDF fonts (WinAnsi) can encode. Characters they can't draw would make pdf-lib throw
+ * ("WinAnsi cannot encode …"), so accented letters fall back to their base letter (Č → C, ő → o, ł → l)
+ * and anything with no Latin equivalent is dropped.
+ */
+export function toWinAnsi(text: string): string {
+  let out = ''
+  for (const ch of text) {
+    if (isWinAnsi(ch)) {
+      out += ch
+      continue
+    }
+    const mapped = TRANSLITERATIONS[ch]
+    if (mapped !== undefined) {
+      out += mapped
+      continue
+    }
+    for (const base of ch.normalize('NFD').replace(/\p{M}/gu, '')) {
+      if (isWinAnsi(base)) out += base
+    }
+  }
+  return out
+}
+
+/** StandardFonts use WinAnsi; strip bidi/zero-width controls, use ASCII punctuation, and map the rest to WinAnsi. */
 export function textForPdf(text: string): string {
-  return text
-    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, '')
-    .replace(/\u2013|\u2014/g, '-')
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[^\t\n\r\x20-\x7E\xA0-\xFF]/g, '')
+  return toWinAnsi(
+    text
+      .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, '')
+      .replace(/\u2013|\u2014/g, '-')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+  )
+}
+
+/**
+ * Embeds a standard PDF font that accepts any text: whatever is drawn or measured with it goes through
+ * `textForPdf` first, so names like "Čech" print as "Cech" instead of failing the whole document.
+ * Use this instead of `doc.embedFont(StandardFonts.…)` for every generated PDF.
+ */
+export async function embedStandardFont(doc: PDFDocument, name: StandardFonts): Promise<PDFFont> {
+  const font = await doc.embedFont(name)
+  const encodeText = font.encodeText.bind(font)
+  const widthOfTextAtSize = font.widthOfTextAtSize.bind(font)
+  font.encodeText = (text: string) => encodeText(textForPdf(text))
+  font.widthOfTextAtSize = (text: string, size: number) => widthOfTextAtSize(textForPdf(text), size)
+  return font
 }
 
 export function drawPdfText(
@@ -292,8 +345,8 @@ export class PdfLayout {
 
   static async create(options: PdfLayoutOptions = {}): Promise<PdfLayout> {
     const doc = await PDFDocument.create()
-    const font = await doc.embedFont(StandardFonts.Helvetica)
-    const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+    const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+    const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
     return new PdfLayout(
       doc,
       font,

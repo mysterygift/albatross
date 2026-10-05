@@ -4,6 +4,7 @@
  * Print mint (#2d9d78) is used for rules and fills only, never as text (3.4:1 on white).
  */
 import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from 'pdf-lib'
+import { embedStandardFont } from '@/lib/pdf/layoutKit'
 
 import { textForPdf } from '@/lib/pdf/callSheet'
 import type { DailyProgressReportData } from '@/lib/script-supervisor/dailyProgressReport'
@@ -109,8 +110,8 @@ function paragraph(ctx: Ctx, text: string, size = 9.5, color = TEXT): void {
 export async function generateDailyProgressReportPdf(data: DailyProgressReportData): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
   doc.setTitle(t(`${data.productionName} - ${data.heading}`))
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+  const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
   const ctx: Ctx = { doc, page: doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]), y: PAGE_HEIGHT - MARGIN, font, bold, pageNo: 1 }
 
   // Header

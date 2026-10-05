@@ -3,6 +3,7 @@
  * Read-only: renders a saved RAMS; does not modify any data.
  */
 import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib'
+import { embedStandardFont } from '@/lib/pdf/layoutKit'
 import type { PDFFont, PDFPage } from 'pdf-lib'
 import { textForPdf } from '@/lib/pdf/callSheet'
 import type { RiskAssessmentFull } from '@/lib/db/repositories/risk-assessments'
@@ -109,8 +110,8 @@ type DrawLine = { text: string; x: number; bold?: boolean; muted?: boolean; gapB
 export async function generateRiskAssessmentPdf(params: RiskAssessmentPdfParams): Promise<Uint8Array> {
   const { productionName, shootDayLabel, unitNames, riskAssessment: ra } = params
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+  const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
 
   let page: PDFPage = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
   let y = PAGE_HEIGHT - MARGIN

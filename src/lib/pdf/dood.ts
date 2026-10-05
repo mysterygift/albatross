@@ -2,6 +2,7 @@
  * Day Out of Days PDF export (A4, landscape if many columns).
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { embedStandardFont } from '@/lib/pdf/layoutKit'
 
 export type DoodCellStatus = 'WORK' | 'HOLD' | 'OFF' | 'CLASH'
 
@@ -21,8 +22,8 @@ export interface DoodExportData {
 
 export async function generateDoodPdf(data: DoodExportData): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await embedStandardFont(doc, StandardFonts.Helvetica)
+  const bold = await embedStandardFont(doc, StandardFonts.HelveticaBold)
 
   const numCols = data.dates.length + 6 // dates + Start, Finish, Work, Hold, Clash
   const useLandscape = numCols > 10
