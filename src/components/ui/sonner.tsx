@@ -7,6 +7,8 @@ function Toaster(props: ToasterProps) {
       position="bottom-right"
       richColors
       closeButton
+      // Phones: sit above the iPhone tab bar when it is showing (the variable is unset otherwise).
+      mobileOffset={{ bottom: 'calc(var(--phone-tab-bar-space, 0px) + 16px)' }}
       toastOptions={{
         classNames: {
           toast: 'bg-card text-card-foreground border-border',

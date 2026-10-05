@@ -42,6 +42,7 @@ import type { FloatExpenseLink, Person, PettyCashFloat, ProductionTask } from '@
 import { cn } from '@/lib/utils'
 import { GetStartedChecklist } from '@/features/onboarding/GetStartedChecklist'
 import { DashboardHero } from './DashboardHero'
+import { PhoneQuickActions } from './PhoneQuickActions'
 import { buildAttentionItems } from './attentionItems'
 import { CustomiseDashboardMenu } from './CustomiseDashboardMenu'
 import { readHiddenCards, writeHiddenCards, type DashboardCardId } from './dashboardLayoutPrefs'
@@ -965,6 +966,7 @@ export function DashboardPage() {
 
       {currentProductionId && (
         <>
+          <PhoneQuickActions />
           <DashboardHero
             nextShootDay={nextShootDayData}
             nextShootDayLoading={nextShootDayLoading}

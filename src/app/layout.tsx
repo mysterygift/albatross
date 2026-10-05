@@ -13,6 +13,8 @@ import { setPerfLoggingEnabled } from '@/lib/db/perf'
 import { useUiTheme } from '@/hooks/useUiTheme'
 import { ApfDesktopOpenBridge } from '@/features/productions/ApfDesktopOpenBridge'
 import { SidebarSwipeGestures } from '@/components/sidebar-swipe-gestures'
+import { PhoneTabBar } from '@/components/phone-tab-bar'
+import { isPhoneViewport } from '@/lib/platform'
 import { ApfMenuEventBridge } from '@/features/productions/ApfMenuEventBridge'
 import { GlobalSearchDialog } from '@/features/search/GlobalSearchDialog'
 import { GlobalShortcutBridge } from '@/app/GlobalShortcutBridge'
@@ -198,7 +200,8 @@ function AppLayoutShell() {
 
   return (
     <TutorialProvider>
-      <SidebarProvider>
+      {/* A docked sidebar would take over half of an iPhone held sideways, so phones start with it hidden. */}
+      <SidebarProvider defaultOpen={!isPhoneViewport()}>
         <MenuSidebarBridge />
         <SidebarSwipeGestures />
         <GlobalShortcutBridge
@@ -224,6 +227,7 @@ function AppLayoutShell() {
             <Outlet />
           </main>
         </SidebarInset>
+        <PhoneTabBar />
         <DevPerfHud />
         <GlobalSearchDialog
           open={searchOpen}

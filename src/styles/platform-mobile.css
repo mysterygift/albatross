@@ -113,7 +113,18 @@ html[data-platform] [data-slot="dialog-content"] {
   /* Dialogs use nearly the full width of a phone and keep clear of the notch. */
   html[data-platform] [data-slot="dialog-content"] {
     max-width: calc(100vw - 1rem - var(--safe-left) - var(--safe-right));
+  }
+
+  /* A little less padding than desktop, except on dialogs that lay out their own edges (p-0). */
+  html[data-platform] [data-slot="dialog-content"]:not(.p-0) {
     padding: 1.25rem 1rem;
+  }
+
+  /* Search sits at the top on a phone so the keyboard doesn't cover its results. */
+  html[data-platform] [data-slot="dialog-content"][data-command-dialog] {
+    top: calc(var(--safe-top) + 0.5rem);
+    translate: -50% 0;
+    max-height: calc(100dvh - var(--safe-top) - 1rem);
   }
 
   /* The page column loses a little padding so forms and tables get more room. */
@@ -194,4 +205,81 @@ html[data-platform] [data-slot="dialog-content"] {
     right: calc(0.5rem + var(--safe-right));
     height: auto;
   }
+}
+
+/*
+ * iPhone tab bar (src/components/phone-tab-bar.tsx). While it is showing, the page column, the
+ * sidebar sheet and bottom toasts leave room for it; it already covers the home-indicator inset.
+ */
+html[data-phone-tab-bar] {
+  --phone-tab-bar-space: calc(3.5rem + var(--safe-bottom));
+}
+
+html[data-phone-tab-bar] [data-slot="sidebar-inset"] > main {
+  padding-bottom: calc(1rem + var(--phone-tab-bar-space));
+}
+
+html[data-phone-tab-bar] [data-slot="sidebar"][data-mobile="true"] {
+  padding-bottom: var(--phone-tab-bar-space);
+}
+
+/* The tab bar's More button opens the sidebar, so the top bar's toggle gives its room to the production switcher. */
+html[data-phone-tab-bar] [data-slot="top-bar"] [data-sidebar="trigger"] {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  /*
+   * Wide tables scroll sideways on a phone; keep the first column (usually the row's name) pinned so
+   * every scrolled-to cell can still be matched to its row.
+   */
+  html[data-platform] [data-slot="table-container"] [data-slot="table-head"]:first-child,
+  html[data-platform] [data-slot="table-container"] [data-slot="table-cell"]:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    max-width: 45vw;
+    /* Capped width, so long names wrap inside the pinned cell rather than spilling over the next one. */
+    white-space: normal;
+    overflow-wrap: break-word;
+    overflow: hidden;
+    background-color: var(--background);
+    box-shadow: 1px 0 0 var(--border);
+  }
+
+  html[data-platform] [data-slot="card"] [data-slot="table-container"] [data-slot="table-head"]:first-child,
+  html[data-platform] [data-slot="card"] [data-slot="table-container"] [data-slot="table-cell"]:first-child {
+    background-color: var(--card);
+  }
+}
+
+/* Phone-sized touch targets: small buttons and inputs are 32–36px on desktop, under Apple's 44pt minimum. */
+@media (pointer: coarse) and (max-width: 767px) {
+  html[data-platform] [data-slot="button"][data-size="sm"],
+  html[data-platform] [data-slot="button"][data-size="default"] {
+    min-height: 2.5rem;
+  }
+
+  html[data-platform] [data-slot="button"][data-size="icon"],
+  html[data-platform] [data-slot="button"][data-size="icon-sm"] {
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+
+  html[data-platform] [data-slot="input"],
+  html[data-platform] [data-slot="select-trigger"] {
+    min-height: 2.5rem;
+  }
+
+  /* 16px text stops iOS zooming the page when a field takes focus. */
+  html[data-platform] [data-slot="input"],
+  html[data-platform] [data-slot="textarea"],
+  html[data-platform] [data-slot="select-trigger"] {
+    font-size: 16px;
+  }
+}
+
+html[data-phone-tab-bar] [data-slot="top-bar"] [aria-label="Current production"] {
+  flex: 1 1 auto;
+  width: auto;
 }
