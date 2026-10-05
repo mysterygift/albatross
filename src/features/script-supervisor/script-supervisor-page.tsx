@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ExperimentalBadge } from '@/components/experimental-badge'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, FileDown, Info, Plus, Tablet, Undo2 } from 'lucide-react'
+import { Check, FileDown, Info, Plus, Tablet, Trash2, Undo2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import {
   Select,
@@ -65,6 +67,7 @@ import {
   useSlatesForShootDay,
   useTakesForSlates,
   useUpdateSlate,
+  useDeleteSlate,
   useSetSceneProgress,
   useShootProgress,
   useUpdateTake,
@@ -83,6 +86,7 @@ import { LinedScript } from './LinedScript'
 import { ProgressView } from './ProgressView'
 import { SceneStatusPip } from './SceneStatusPip'
 import { SlatePanel } from './SlatePanel'
+import { SwipeToDeleteRow } from './SwipeToDeleteRow'
 import { AnnotationDialog, type AnnotationDialogState } from './AnnotationDialog'
 import { SlateNotesPanel } from './SlateNotesPanel'
 import { RevisionReview, revisionRecorded, revisionSummary } from './RevisionReview'
@@ -138,6 +142,9 @@ export function ScriptSupervisorPage() {
 
   const createSlate = useCreateSlate()
   const updateSlate = useUpdateSlate()
+  const deleteSlate = useDeleteSlate()
+  const { confirm, dialog: confirmDialog } = useConfirm()
+  const [swipedSlateId, setSwipedSlateId] = useState<string | null>(null)
   const createTake = useCreateTake()
   const updateTake = useUpdateTake()
   const setSceneProgress = useSetSceneProgress()
@@ -431,6 +438,24 @@ export function ScriptSupervisorPage() {
     if (target) updateTake.mutate({ id: target.id, patch: { status: 'ng', ng_reason: reason } })
   }
 
+  const handleDeleteSlate = async (slate: Slate) => {
+    const takeCount = dayTakes.filter((t) => t.slate_id === slate.id).length
+    const ok = await confirm({
+      title: `Delete slate ${labelOf(slate)}?`,
+      description: takeCount > 0 ? `Its ${takeCount} ${takeCount === 1 ? 'take' : 'takes'} will be deleted too.` : undefined,
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+    setSwipedSlateId(null)
+    deleteSlate.mutate(slate.id, {
+      onSuccess: () => {
+        if (chosenSlateId === slate.id) setChosenSlateId(null)
+        setSelectedTakeId(null)
+      },
+    })
+  }
+
   const handleUpdateSlate = (patch: UpdateSlateInput) => {
     if (currentSlate) updateSlate.mutate({ id: currentSlate.id, patch })
   }
@@ -499,6 +524,7 @@ export function ScriptSupervisorPage() {
   const error = errorMessage(
     createSlate.error,
     updateSlate.error,
+    deleteSlate.error,
     createTake.error,
     updateTake.error,
     setSceneProgress.error,
@@ -531,8 +557,10 @@ export function ScriptSupervisorPage() {
 
   return (
     <div className="space-y-4">
+      {confirmDialog}
       <header className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl mr-2">Script Supervisor</h1>
+        <h1 className="text-2xl">Script Supervisor</h1>
+        <ExperimentalBadge />
         {days.length > 0 && (
           <Select
             value={dayId ?? undefined}
@@ -827,7 +855,14 @@ export function ScriptSupervisorPage() {
                 const active = currentSlate?.id === s.id
                 const prints = printedTakeNumbers(dayTakes.filter((t) => t.slate_id === s.id))
                 return (
-                  <li key={s.id}>
+                  <li key={s.id} className="group relative">
+                    <SwipeToDeleteRow
+                      open={swipedSlateId === s.id}
+                      onOpenChange={(o) => setSwipedSlateId(o ? s.id : null)}
+                      onDelete={() => void handleDeleteSlate(s)}
+                      disabled={rolling?.slateId === s.id}
+                      deleteLabel={`Delete slate ${labelOf(s)}`}
+                    >
                     <button
                       type="button"
                       aria-pressed={active}
@@ -855,6 +890,19 @@ export function ScriptSupervisorPage() {
                         {prints.length > 0 ? `Print ${prints.join(',')}` : ''}
                       </span>
                     </button>
+                    </SwipeToDeleteRow>
+                    {!touch && (
+                      <button
+                        type="button"
+                        aria-label={`Delete slate ${labelOf(s)}`}
+                        title="Delete slate"
+                        disabled={rolling?.slateId === s.id}
+                        onClick={() => void handleDeleteSlate(s)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 group-hover:opacity-100 disabled:hidden"
+                      >
+                        <Trash2 className="size-4" aria-hidden />
+                      </button>
+                    )}
                   </li>
                 )
               })}
