@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ExperimentalBadge } from '@/components/experimental-badge'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, FileDown, Info, Plus, Tablet, Undo2 } from 'lucide-react'
@@ -608,7 +609,8 @@ export function ScriptSupervisorPage() {
   const header = (
     <header className="flex flex-wrap items-center gap-3">
       {/* On tablets the breadcrumb and section tab already name the page, so the toolbar keeps only controls. */}
-      <h1 className={cn(touch ? 'sr-only' : 'text-2xl mr-2')}>Script Supervisor</h1>
+      <h1 className={cn(touch ? 'sr-only' : 'text-2xl')}>Script Supervisor</h1>
+      <ExperimentalBadge />
       {daySelect}
       {!touch && <span className="text-xs text-muted-foreground">{isUs ? 'US slating' : 'UK slating'}</span>}
       {touch && modeControl}

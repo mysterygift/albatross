@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { filterGlobalSearch, type GlobalSearchGroup } from '@/features/search/filterGlobalSearch'
 import { filterCommands, type FilteredCommand } from '@/features/search/filterCommands'
 import { buildGlobalSearchCommands } from '@/features/search/commands'
+import { useShowExperimental } from '@/hooks/useShowExperimental'
 import { formatAccelerator, isMacPlatform } from '@/app/menuSchema'
 import { useGlobalSearchIndex } from '@/features/search/useGlobalSearchIndex'
 import { GlobalSearchResultPreview } from '@/features/search/GlobalSearchResultPreview'
@@ -43,7 +44,8 @@ export function GlobalSearchDialog({
   const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null)
   const { results } = useGlobalSearchIndex(productionId, { enabled: open })
 
-  const allCommands = useMemo(() => buildGlobalSearchCommands(), [])
+  const { showExperimental } = useShowExperimental()
+  const allCommands = useMemo(() => buildGlobalSearchCommands({ showExperimental }), [showExperimental])
   const { commands: commandResults, commandsOnly } = useMemo(
     () => filterCommands(allCommands, query, { hasProduction: Boolean(productionId) }),
     [allCommands, query, productionId]

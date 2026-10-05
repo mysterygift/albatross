@@ -314,8 +314,13 @@ describe('applyFinanceDraftToExpense: receipts', () => {
 
     await apply(e.id, draftOf({ receipt: { ...FILE, reference: 'T-1' } }))
     await apply(e.id, draftOf({ receipt: { ...FILE, fileName: 'second.pdf' } }))
-    const [first, second] = await listReceiptsByExpense(e.id)
+    // Both receipts can share a created_at millisecond, so find them by content rather than list order.
+    const attached = await listReceiptsByExpense(e.id)
+    expect(attached).toHaveLength(2)
+    const first = attached.find((r) => r.reference === 'T-1')
+    const second = attached.find((r) => r.document.file_name === 'second.pdf')
     expect(first).toMatchObject({ reference: 'T-1' })
+    expect(second).toBeDefined()
 
     await apply(
       e.id,
