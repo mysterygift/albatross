@@ -110,20 +110,31 @@ describe('permanentlyDeleteProduction (sql.js + migrations, foreign keys on)', (
     const imp = await importProductionFromApf(DEMO_APF)
     if (!imp.ok) throw imp.error
     const raw = sqlJsApfE2eContext.rawDb!
-    const productionId = String(raw.exec('SELECT id FROM productions')[0]!.values[0]![0])
+    /** Rows of a query as objects (the project's sql.js typings only expose prepare/bind/step). */
+    const rows = (sql: string, params: unknown[] = []): Record<string, unknown>[] => {
+      const stmt = raw.prepare(sql)
+      stmt.bind(params)
+      const out: Record<string, unknown>[] = []
+      while (stmt.step()) out.push(stmt.getAsObject())
+      stmt.free()
+      return out
+    }
+    const productionId = String(rows('SELECT id FROM productions')[0]!.id)
+    // The demo has crew availability, whose missing cascade used to block the delete.
+    expect(rows('SELECT id FROM crew_availability WHERE production_id = ?', [productionId]).length).toBeGreaterThan(0)
 
     await permanentlyDeleteProduction(productionId)
 
-    expect(raw.exec('SELECT id FROM productions WHERE id = ?', [productionId])).toEqual([])
+    expect(rows('SELECT id FROM productions WHERE id = ?', [productionId])).toEqual([])
     const leftovers: string[] = []
-    const tables = raw.exec("SELECT name FROM sqlite_master WHERE type = 'table'")[0]!.values.map((r) => String(r[0]))
-    for (const table of tables) {
-      const cols = raw.exec(`PRAGMA table_info("${table}")`)[0]?.values.map((r) => String(r[1])) ?? []
+    for (const { name } of rows("SELECT name FROM sqlite_master WHERE type = 'table'")) {
+      const table = String(name)
+      const cols = rows(`PRAGMA table_info("${table}")`).map((c) => String(c.name))
       if (!cols.includes('production_id')) continue
-      const n = Number(raw.exec(`SELECT COUNT(*) FROM "${table}" WHERE production_id = ?`, [productionId])[0]!.values[0]![0])
+      const n = Number(rows(`SELECT COUNT(*) AS n FROM "${table}" WHERE production_id = ?`, [productionId])[0]!.n)
       if (n > 0) leftovers.push(`${table}: ${n}`)
     }
     expect(leftovers).toEqual([])
-    expect(raw.exec('PRAGMA foreign_key_check')).toEqual([])
+    expect(rows('PRAGMA foreign_key_check')).toEqual([])
   }, 60_000)
 })
