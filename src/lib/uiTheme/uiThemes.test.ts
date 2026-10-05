@@ -14,6 +14,7 @@ describe('uiThemes', () => {
     expect(isUiThemeId('signal')).toBe(true)
     expect(isUiThemeId('ledger')).toBe(true)
     expect(isUiThemeId('clay')).toBe(true)
+    expect(isUiThemeId('night')).toBe(true)
     expect(isUiThemeId('neon')).toBe(false)
     expect(isUiThemeId(null)).toBe(false)
   })

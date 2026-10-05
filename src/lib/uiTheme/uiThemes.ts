@@ -37,6 +37,11 @@ export const UI_THEMES = [
     label: 'Clay',
     description: 'Soft pastel blocks, rounded shapes and a tactile bottom-edge shadow, with no outlines.',
   },
+  {
+    id: 'night',
+    label: 'Night Shoot',
+    description: 'Dim and red-shifted for dark sets and night exteriors, so the screen does not light the set.',
+  },
 ] as const
 
 export type UiThemeId = (typeof UI_THEMES)[number]['id']
