@@ -53,8 +53,15 @@ Migration [`0094_script_supervisor_slating_system.sql`](../src-tauri/migrations/
 - Slate setup fields save on blur. **Roll / Cut (Space)** runs a stopwatch and logs the take with its duration.
   **Print / Hold / NG (P / H / G)** mark the selected take, else the latest; NG shows reason chips.
   Shortcuts are ignored while typing. Switching slate is disabled while rolling.
-- **Tablet layout** toggle (Lucide `Tablet` icon) enlarges targets and compacts the scene rail; it is a per-device
-  preference in local storage (`useTouchLayout`), not production data.
+- **Tablet layout** toggle (Lucide `Tablet` icon; always on for iOS/Android) is a per-device preference in local
+  storage (`useTouchLayout`), not production data. Line & log becomes a fixed-height workspace
+  ([`TabletWorkspace`](../src/features/script-supervisor/TabletWorkspace.tsx)) whose panes scroll independently, so
+  Roll / Cut and Print / Hold / NG never scroll away. At 1080px of workspace width or more (landscape, sidebar hidden)
+  it is scene rail | workbench | slate deck; below that (portrait, or the sidebar open) the scenes become a strip on
+  top and the slate deck docks at the bottom, with the takes as chips until *Takes & notes* expands it. The deck keeps
+  takes, notes, photos and setup on tabs; setup is collapsed to a one-line summary because it carries over between
+  slates. All targets are at least 44px. The lined script keeps its key and drawing hint pinned (with *Cancel* for a
+  half-drawn line) and reserves room for each line's add-note button.
 - Remote-server productions see a notice instead of the workspace.
 
 Not yet: demo seed data.

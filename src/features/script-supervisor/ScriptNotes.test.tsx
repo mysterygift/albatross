@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -23,6 +23,16 @@ const adLib: AnnotationView = {
 const take = (id: string, n: number): Take => ({
   id, slate_id: 'sl', take_number: n, status: 'pending', ng_reason: null, duration_ms: null, end_board: 0, remarks: null,
   created_at: 't', updated_at: 't', deleted_at: null,
+})
+
+// The note dialog's Radix checkbox measures itself; jsdom has no ResizeObserver.
+beforeAll(() => {
+  class RO {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver ??= RO
 })
 
 describe('script notes (SS8)', () => {

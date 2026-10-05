@@ -21,12 +21,21 @@ export const TRAMLINE_COLOUR: Record<SlateShotType | 'none', string> = {
   none: 'var(--muted-foreground)',
 }
 
-const LEGEND: Array<{ type: SlateShotType; label: string }> = [
-  { type: 'master', label: 'Master / wide' },
-  { type: 'single', label: 'Single' },
-  { type: 'multiple', label: 'Multiple' },
-  { type: 'insert', label: 'Insert / cutaway' },
+const LEGEND: Array<{ type: SlateShotType; label: string; short: string }> = [
+  { type: 'master', label: 'Master / wide', short: 'Master' },
+  { type: 'single', label: 'Single', short: 'Single' },
+  { type: 'multiple', label: 'Multiple', short: 'Multiple' },
+  { type: 'insert', label: 'Insert / cutaway', short: 'Insert' },
 ]
+
+/** Nearest ancestor that scrolls vertically, else null (the window scrolls). */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
+    const { overflowY } = window.getComputedStyle(node)
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node
+  }
+  return null
+}
 
 const LONG_PRESS_MS = 500
 
@@ -200,7 +209,7 @@ export function LinedScript({
   const [anchor, setAnchor] = useState<number | null>(null)
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
-  const dragRef = useRef<{ from: number; to: number; moved: boolean; pointerId: number } | null>(null)
+  const dragRef = useRef<{ from: number; to: number; moved: boolean; pointerId: number; scroller: HTMLElement | null } | null>(null)
   const suppressClick = useRef(false)
   const longPress = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -253,14 +262,18 @@ export function LinedScript({
 
   const onDrawPointerDown = (e: ReactPointerEvent<HTMLButtonElement>, sort: number) => {
     if (editing?.busy || e.button > 0) return
-    dragRef.current = { from: sort, to: sort, moved: false, pointerId: e.pointerId }
+    dragRef.current = { from: sort, to: sort, moved: false, pointerId: e.pointerId, scroller: scrollParent(e.currentTarget) }
     e.currentTarget.setPointerCapture?.(e.pointerId)
   }
   const onDrawPointerMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
     const d = dragRef.current
     if (!d || d.pointerId !== e.pointerId) return
-    if (e.clientY > window.innerHeight - 60) window.scrollBy(0, 14)
-    else if (e.clientY < 60) window.scrollBy(0, -14)
+    // Auto-scroll near the edges of whatever scrolls the script: its pane in the tablet layout, else the window.
+    const box = d.scroller?.getBoundingClientRect()
+    const top = box ? box.top : 0
+    const bottom = box ? box.bottom : window.innerHeight
+    const by = e.clientY > bottom - 60 ? 14 : e.clientY < top + 60 ? -14 : 0
+    if (by !== 0) (d.scroller ?? window).scrollBy(0, by)
     const sort = sortFromPoint(e.clientX, e.clientY)
     if (sort == null || sort === d.to) return
     d.to = sort
@@ -297,6 +310,8 @@ export function LinedScript({
 
   return (
     <section aria-label={`Marked-up script, scene ${sceneNumber ?? ''}`} className="space-y-2">
+      {/* In the tablet layout the script scrolls in its own pane, so the key and drawing hint stay pinned above it. */}
+      <div className={cn('space-y-2', touch && 'sticky top-0 z-10 bg-background pb-1')}>
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         <span>
           {layout.columns.length} {layout.columns.length === 1 ? 'tramline' : 'tramlines'}
@@ -306,7 +321,7 @@ export function LinedScript({
         {LEGEND.map((l) => (
           <span key={l.type} className="flex items-center gap-1">
             <span aria-hidden className="h-[3px] w-3" style={{ background: TRAMLINE_COLOUR[l.type] }} />
-            {l.label}
+            {touch ? l.short : l.label}
           </span>
         ))}
         <span className="flex items-center gap-1">
@@ -316,12 +331,30 @@ export function LinedScript({
       </div>
 
       {drawing && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {anchor != null
-            ? `Now ${touch ? 'tap' : 'click'} the last line slate ${editing!.activeLabel} covers. Esc cancels.`
-            : `${editing!.activeHasTramline ? 'Redraw' : 'Line'} slate ${editing!.activeLabel}: ${touch ? 'tap' : 'click'} the first and last lines in the right-hand lane, or drag down it.`}
-        </p>
+        <div
+          className={cn(
+            'flex items-center gap-2',
+            touch && 'min-h-11 rounded-lg border px-3',
+            touch && (anchor != null ? 'border-primary/30 bg-primary/10' : 'border-border')
+          )}
+        >
+          <p role="status" className="flex-1 text-sm text-muted-foreground">
+            {anchor != null
+              ? `Now ${touch ? 'tap' : 'click'} the last line slate ${editing!.activeLabel} covers.${touch ? '' : ' Esc cancels.'}`
+              : `${editing!.activeHasTramline ? 'Redraw' : 'Line'} slate ${editing!.activeLabel}: ${touch ? 'tap' : 'click'} the first and last lines in the right-hand lane, or drag down it.`}
+          </p>
+          {touch && anchor != null && (
+            <button
+              type="button"
+              onClick={() => setAnchor(null)}
+              className="h-9 shrink-0 rounded-md px-3 text-sm font-medium hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       )}
+      </div>
 
       <div className="rounded-xl border border-border bg-card overflow-x-auto">
         <div className="min-w-[560px] pb-4 pr-3">
@@ -389,7 +422,8 @@ export function LinedScript({
                   <div
                     className={cn(
                       'group relative flex-1 min-w-0 px-5 py-1.5 font-mono text-sm leading-5',
-                      touch && 'text-[15px] leading-6',
+                      // Clear the always-visible 40px note button in the tablet layout.
+                      touch && 'pr-14 text-[15px] leading-6',
                       row.coverage != null && row.coverage < 2 && layout.columns.length > 0 && 'bg-muted/40',
                       previewing && 'bg-primary/10'
                     )}
