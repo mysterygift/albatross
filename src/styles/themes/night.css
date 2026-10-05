@@ -1,0 +1,168 @@
+/*
+ * Night Shoot: for dark sets and night exteriors. Low luminance and red-shifted throughout (no blue
+ * or green light), so the screen does not light the set or spoil night vision. Square-ish corners,
+ * hairlines and no shadows. Every status keeps its icon and label, because hue alone collapses in an
+ * all-red palette. Contrast (WCAG AA) was checked for each text/fill pair.
+ */
+
+:root[data-ui-theme="night"] {
+  color-scheme: dark;
+
+  /* Keep derived radii (radius − 4px etc.) at or above zero; components override via --ui-* */
+  --radius: 0.25rem;
+
+  --background: #070302;
+  --foreground: #e8806b;
+  --card: #130806;
+  --card-foreground: #e8806b;
+  --popover: #1b0b08;
+  --popover-foreground: #e8806b;
+
+  --primary: #d9533b;
+  --primary-foreground: #070302;
+  --secondary: #210e0a;
+  --secondary-foreground: #e8806b;
+  --muted: #210e0a;
+  --muted-foreground: #c46954;
+  --accent: #d9533b;
+  --accent-foreground: #070302;
+  /* Lighter than primary, so destructive and primary differ in lightness, not only in hue */
+  --destructive: #f0937c;
+
+  --border: #4a2018;
+  --input: #4a2018;
+  --ring: #d9533b;
+
+  --chart-1: #d9533b;
+  --chart-2: #c78a2e;
+  --chart-3: #f0937c;
+  --chart-4: #8f3b2b;
+  --chart-5: #98903c;
+
+  --sidebar: #040201;
+  --sidebar-foreground: #e8806b;
+  --sidebar-primary: #d9533b;
+  --sidebar-primary-foreground: #070302;
+  --sidebar-accent: #210e0a;
+  --sidebar-accent-foreground: #e8806b;
+  --sidebar-border: #4a2018;
+  --sidebar-ring: #d9533b;
+
+  --unit-main: #d9533b;
+  --unit-main-foreground: #070302;
+  --unit-second: #b9813a;
+  --unit-second-foreground: #070302;
+
+  /* Shape and emphasis */
+  --ui-border-w: 1px;
+  --ui-control-radius: 3px;
+  --ui-btn-radius: 3px;
+  --ui-badge-radius: 3px;
+  --ui-check-radius: 2px;
+  --ui-card-radius: 4px;
+  --ui-pop-radius: 4px;
+  --ui-item-radius: 3px;
+  --ui-tab-radius: 3px;
+  --ui-nav-radius: 3px;
+  --ui-tag-radius: 3px;
+  --ui-event-radius: 3px;
+  --ui-nav-border: transparent;
+  --ui-shadow-sm: none;
+  --ui-shadow-lg: none;
+  --ui-sep-h: 1px;
+  --ui-sep-color: #4a2018;
+  --ui-highlight-bg: #3a1610;
+  --ui-highlight-fg: #e8806b;
+  --ui-highlight-shadow: none;
+  --ui-active-bg: #3a1610;
+  --ui-active-fg: #e8806b;
+  --ui-nav-active-bg: #2a120d;
+  --ui-nav-active-fg: #e8806b;
+  --ui-heading-weight: 600;
+  --ui-heading-tracking: -0.01em;
+  --ui-heading-transform: none;
+
+  /* Episode label pills */
+  --ui-pill-text: #e8806b;
+  --ui-pill-bg: #210e0a;
+
+  /* Status colours used by the app's amber, green and red utilities (see overrides.css).
+     Amber and olive rather than yellow and green: they stay warm and dim. */
+  --ui-warn: #c78a2e;
+  --ui-warn-text: #d9a24a;
+  --ui-on-warn: #070302;
+  --ui-success: #98903c;
+  --ui-success-text: #b3a64f;
+  --ui-danger-text: #ff9e85;
+  --ui-on-solid: #070302;
+
+  /* Patterns: none, so the page stays as dark as possible */
+  --ui-page-image: none;
+  --ui-page-size: auto;
+  --ui-topbar-bg: #070302;
+  --ui-topbar-image: none;
+  --ui-topbar-size: auto;
+  --ui-sidebar-image: none;
+  --ui-sidebar-size: auto;
+  --ui-card-header-bg: #130806;
+  --ui-card-header-image: none;
+  --ui-card-header-size: auto;
+
+  /* Booking pills: a dim tint of the booking colour with an edge bar */
+  --ui-pill-radius: 3px;
+  --ui-pill-border-w: 1px;
+  --ui-pill-border-color: initial;
+  --ui-pill-shadow: 0 0 0 0 transparent;
+  --ui-pill-weight: 600;
+  --ui-pill-font: inherit;
+  --ui-pill-size: 0.75rem;
+  --ui-pill-transform: none;
+  --ui-pill-tracking: 0;
+  --ui-pill-pad: 0.5625rem;
+  --ui-pill-tint: 22%;
+  --ui-pill-bar: 3px;
+  --ui-pill-ink: var(--foreground);
+}
+
+/* The theme borders are drawn in --foreground on the expressive themes; here that would be too bright. */
+:root[data-ui-theme="night"] :is(
+  [data-slot="card"],
+  [data-slot="card-header"],
+  [data-slot="button"],
+  [data-slot="badge"],
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="checkbox"],
+  [data-slot="avatar"],
+  [data-slot="select-trigger"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="select-content"],
+  [data-slot="popover-content"],
+  [data-slot="hover-card-content"],
+  [data-slot="command"],
+  [data-slot="dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="tabs-list"],
+  [data-slot="calendar-event"],
+  [data-slot="calendar-tag"],
+  [data-slot="booking-frame"],
+  [data-slot="booking-head"],
+  [data-slot="top-bar"]
+) {
+  border-color: var(--border);
+}
+:root[data-ui-theme="night"] [data-slot="button"][data-variant="ghost"],
+:root[data-ui-theme="night"] [data-slot="button"][data-variant="link"] {
+  border-color: transparent;
+}
+
+/* Darker scrim behind dialogs: the shared rule tints it with --foreground, which is red here. */
+:root[data-ui-theme="night"] :is([data-slot="dialog-overlay"], [data-slot="sheet-overlay"]) {
+  background-color: rgb(0 0 0 / 0.7);
+}
+
+/* Photos, maps and PDFs keep their own colours; dim them so they don't flash the set. */
+:root[data-ui-theme="night"] :is(img, video, canvas, .leaflet-tile-pane, .react-pdf__Page) {
+  filter: brightness(0.6) sepia(0.6) saturate(1.4) hue-rotate(-20deg);
+}
