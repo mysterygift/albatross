@@ -7,6 +7,8 @@ import {
   latestSlate,
   pickDefaultShootDay,
   printedTakeNumbers,
+  sceneTimeLabel,
+  slateSetupSummary,
   takeToMark,
 } from './slatePanel'
 
@@ -58,5 +60,19 @@ describe('slate panel helpers', () => {
     expect(formatDuration(null)).toBe('—')
     expect(latestSlate([slate({ id: 'x', created_at: '2026-10-07T10:00' }), slate({ id: 'y', created_at: '2026-10-07T11:00' })])?.id).toBe('y')
     expect(printedTakeNumbers([take({ take_number: 4, status: 'print' }), take({ take_number: 2, status: 'print' }), take({ take_number: 3, status: 'ng' })])).toEqual([2, 4])
+  })
+
+  it('summarises the camera setup on one line for the tablet header', () => {
+    expect(
+      slateSetupSummary(slate({ camera: 'A', lens: '50mm', stop: 'T2.8', filter: 'ND.6', camera_roll: 'A012', sound_roll: 'S004' }))
+    ).toBe('A · 50mm · T2.8 · ND.6 · A012 / S004 · Sync')
+    expect(slateSetupSummary(slate({ lens: '35mm', sound_roll: 'S002', sound_mode: 'wild_track' }))).toBe('35mm · S002 · Wild track')
+    expect(slateSetupSummary(slate({ sound_mode: 'mute' }))).toBe('Mute')
+  })
+
+  it('labels a scene by interior/exterior and time of day', () => {
+    expect(sceneTimeLabel('INT', 'NIGHT')).toBe('Int · Night')
+    expect(sceneTimeLabel('INT/EXT', null)).toBe('Int/ext')
+    expect(sceneTimeLabel(null, null)).toBe('')
   })
 })

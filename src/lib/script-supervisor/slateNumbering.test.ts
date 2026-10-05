@@ -28,8 +28,9 @@ describe('UK consecutive slating', () => {
 
 describe('US scene + setup letter slating', () => {
   it('maps ordinals to letters, skipping I and O and doubling after Z', () => {
-    expect([1, 2, 3, 9, 10, 14, 25, 26, 27].map(usSetupLetterForOrdinal)).toEqual([
-      '', 'A', 'B', 'H', 'J', 'P', 'Z', 'AA', 'BB',
+    // H → J skips I; N → P skips O.
+    expect([1, 2, 3, 9, 10, 14, 15, 25, 26, 27].map(usSetupLetterForOrdinal)).toEqual([
+      '', 'A', 'B', 'H', 'J', 'N', 'P', 'Z', 'AA', 'BB',
     ])
   })
 

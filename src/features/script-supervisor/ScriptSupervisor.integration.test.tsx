@@ -276,3 +276,85 @@ describe('Script Supervisor page (SS3)', () => {
     expect(screen.getByRole('tab', { name: /script \| sc 23/i }).getAttribute('aria-selected')).toBe('true')
   })
 })
+
+describe('Script Supervisor page, tablet layout', () => {
+  beforeEach(() => {
+    store.slates = []
+    store.takes = []
+    store.marks = new Map()
+    store.clock = 0
+    window.localStorage.clear()
+    window.localStorage.setItem('albatross.scriptSupervisor.touchLayout', 'true')
+  })
+  const jsdomHeight = window.innerHeight
+  const setWindowHeight = (value: number) => Object.defineProperty(window, 'innerHeight', { configurable: true, value })
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+    setWindowHeight(jsdomHeight)
+  })
+
+  it('docks the slate controls under the workbench when narrow, and logs and prints a take', async () => {
+    setWindowHeight(1194) // iPad portrait
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /new slate 1/i }))
+    await waitFor(() => expect(screen.getByTestId('current-slate-label').textContent).toBe('1'))
+    // jsdom lays out at zero width, so the workspace takes the narrow arrangement.
+    expect(document.querySelector('[data-arrangement]')?.getAttribute('data-arrangement')).toBe('narrow')
+
+    await user.click(screen.getByRole('button', { name: /roll take 1/i }))
+    await user.click(screen.getByRole('button', { name: /cut take 1/i }))
+    await screen.findByTestId('take-chip-1')
+    await user.click(screen.getByRole('button', { name: /^print$/i }))
+    await waitFor(() => expect(within(screen.getByTestId('take-chip-1')).getByRole('button', { name: /take 1: print/i })).toBeTruthy())
+
+    // Setup is collapsed to a summary; the Setup button opens it as a tab.
+    expect(screen.queryByLabelText('Lens')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Setup' }))
+    await user.type(screen.getByLabelText('Lens'), '50mm')
+    await user.tab()
+    await waitFor(() => expect(store.slates[0]!.lens).toBe('50mm'))
+  })
+
+  it('leaves the takes row out of the dock when the window is short, keeping it under Takes & notes', async () => {
+    setWindowHeight(700)
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /new slate 1/i }))
+    await user.click(await screen.findByRole('button', { name: /roll take 1/i }))
+    await user.click(screen.getByRole('button', { name: /cut take 1/i }))
+    await waitFor(() => expect(store.takes).toHaveLength(1))
+    expect(screen.queryByTestId('take-chip-1')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: /takes & notes/i }))
+    expect(await screen.findByTestId('take-row-1')).toBeTruthy()
+  })
+
+  it('lays the slate deck beside the workbench when wide, with the takes table in view', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 120, top: 120, left: 0, right: 1162, bottom: 820, width: 1162, height: 700, toJSON: () => ({}),
+    } as DOMRect)
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /new slate 1/i }))
+    await waitFor(() => expect(document.querySelector('[data-arrangement]')?.getAttribute('data-arrangement')).toBe('wide'))
+
+    await user.click(screen.getByRole('button', { name: /roll take 1/i }))
+    await user.click(screen.getByRole('button', { name: /cut take 1/i }))
+    expect(await screen.findByTestId('take-row-1')).toBeTruthy()
+    expect(screen.getByText('Mark take 1 (latest). Tap another take’s mark to change it.')).toBeTruthy()
+  })
+
+  it('keeps scene status, completion and the other-scene picker on tablets', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    expect(await screen.findByRole('button', { name: 'Scene 23, Edit suite, Not shot' })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Another scene' })).toBeTruthy()
+
+    const complete = screen.getByRole('button', { name: 'Scene 23 complete' })
+    await user.click(complete)
+    await waitFor(() => expect(store.marks.get('sc23')?.marked_status).toBe('complete'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Scene 23, Edit suite, Complete' })).toBeTruthy())
+  })
+})
