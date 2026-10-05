@@ -49,3 +49,12 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"
+
+# Xcode 27 strip corrupts host proc-macro dylibs (mis-aligned LINKEDIT)
+[profile.release.build-override]
+strip = "none"
+
+# swift-rs 1.0.8 only globalizes the package's own @_cdecl symbols; Xcode 27 also
+# internalizes the SwiftRs helpers (retain_object etc.) bundled in libTauri.a
+[patch.crates-io]
+swift-rs = { path = "vendor/swift-rs" }
