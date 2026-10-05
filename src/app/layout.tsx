@@ -216,7 +216,7 @@ function AppLayoutShell() {
           />
           <ServerCollabBanner />
           <SectionTabs />
-          <main className="flex-1 overflow-auto p-4">
+          <main className="flex-1 overflow-auto p-3 sm:p-4">
             <DemoProductionBanner
               isDemo={isDemoProductionCurrent}
               currentProduction={currentProduction}

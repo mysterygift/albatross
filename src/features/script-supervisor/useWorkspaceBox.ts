@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 const DEFAULT_BOTTOM_GAP = 16
 /** Below this the workspace stops shrinking and the page scrolls instead. */
 const MIN_HEIGHT = 480
+/** A phone on its side has well under 480px; let the workspace shrink further there so the panes still scroll on their own. */
+const PHONE_LANDSCAPE_MIN_HEIGHT = 240
 
 export type WorkspaceBox = { width: number; height: number }
 
@@ -15,7 +17,10 @@ function measure(el: HTMLElement): WorkspaceBox {
   const bottomGap = main ? parseFloat(window.getComputedStyle(main).paddingBottom) || 0 : DEFAULT_BOTTOM_GAP
   return {
     width: Math.round(rect.width),
-    height: Math.max(MIN_HEIGHT, Math.floor(window.innerHeight - top - bottomGap)),
+    height: Math.max(
+      window.innerHeight < 500 ? PHONE_LANDSCAPE_MIN_HEIGHT : MIN_HEIGHT,
+      Math.floor(window.innerHeight - top - bottomGap)
+    ),
   }
 }
 

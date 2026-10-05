@@ -55,7 +55,7 @@ export function BoneyardPanel({
   return (
     <div
       ref={setNodeRef}
-      className={`flex w-64 shrink-0 flex-col rounded-lg border min-h-0 overflow-hidden transition-colors bg-muted border-amber-500/60 ${
+      className={`flex w-56 sm:w-64 shrink-0 flex-col rounded-lg border min-h-0 overflow-hidden transition-colors bg-muted border-amber-500/60 ${
         isOver ? 'ring-2 ring-amber-500/50 border-amber-500' : ''
       }`}
       title={isOver ? 'Drop to send to Boneyard' : undefined}

@@ -21,14 +21,13 @@ import {
   TakesTable,
   type SlatePanelProps,
 } from './SlatePanel'
-import type { TabletArrangement } from './TabletWorkspace'
+import type { TabletLayout } from './TabletWorkspace'
 
 type DeckTab = 'takes' | 'notes' | 'photos' | 'setup'
 
 export type TabletSlateDeckProps = Omit<SlatePanelProps, 'touch'> & {
-  arrangement: TabletArrangement
-  /** Little height to spare: the dock leaves out the takes row (still under Takes & notes). */
-  short?: boolean
+  /** Arrangement and space from the workspace. Short: the dock leaves out the takes row (still under Takes & notes). */
+  layout: TabletLayout
   notes: AnnotationView[]
   photos: ContinuityMediaView[]
   photoTakeNumber: number | null
@@ -44,12 +43,15 @@ export type TabletSlateDeckProps = Omit<SlatePanelProps, 'touch'> & {
  * carries over from the previous slate and is rarely changed mid-setup.
  *
  * Wide: a full-height column. Narrow: docked under the workbench, showing the takes as chips until expanded.
+ * Compact (phone held upright): docked, with Roll / Cut and the marks stacked full width and icon-only header buttons.
+ * Phone landscape: the column scrolls as a whole because there is no height for the tabs to have their own scroller.
  */
 export function TabletSlateDeck(props: TabletSlateDeckProps) {
-  const { slate, takes, busy, arrangement } = props
+  const { slate, takes, busy, layout } = props
   const [tab, setTab] = useState<DeckTab>('takes')
   const [expanded, setExpanded] = useState(false)
-  const docked = arrangement === 'narrow'
+  const docked = layout.arrangement === 'narrow'
+  const { compact, phoneLandscape } = layout
 
   if (!slate) return <NoSlateYet className={cn(!docked && 'self-start')} />
 
@@ -73,7 +75,11 @@ export function TabletSlateDeck(props: TabletSlateDeckProps) {
       {docked && <span className="min-w-0 truncate text-sm text-muted-foreground">{shotLine ? `· ${shotLine}` : ''}</span>}
     </div>
   )
-  const setupButton = (
+  const setupButton = compact ? (
+    <Button type="button" variant="outline" size="icon-lg" className="size-11 shrink-0" aria-label="Setup" onClick={openSetup}>
+      <SlidersHorizontal aria-hidden />
+    </Button>
+  ) : (
     <Button type="button" variant="outline" size="lg" className="h-11 shrink-0 px-4" onClick={openSetup}>
       <SlidersHorizontal aria-hidden />
       Setup
@@ -86,7 +92,7 @@ export function TabletSlateDeck(props: TabletSlateDeckProps) {
       nowMs={props.nowMs}
       busy={busy}
       touch
-      className={cn(docked && 'h-16 flex-1')}
+      className={cn(docked && (compact ? 'h-14' : 'h-16 flex-1'), phoneLandscape && 'h-14')}
       onRollCut={props.onRollCut}
     />
   )
@@ -95,8 +101,8 @@ export function TabletSlateDeck(props: TabletSlateDeckProps) {
       target={target}
       busy={busy}
       touch
-      className={cn(docked && 'w-[336px] shrink-0')}
-      buttonClassName={cn(docked && 'h-16')}
+      className={cn(docked && !compact && 'w-[336px] shrink-0')}
+      buttonClassName={cn(docked && (compact ? 'h-12' : 'h-16'))}
       onMark={props.onMark}
     />
   )
@@ -140,23 +146,40 @@ export function TabletSlateDeck(props: TabletSlateDeckProps) {
       />
     ) : (
       <div className="space-y-2">
-        <SlateSetupFields slate={slate} touch columns={docked ? 3 : 2} onUpdateSlate={props.onUpdateSlate} />
+        <SlateSetupFields slate={slate} touch columns={docked && !compact ? 3 : 2} onUpdateSlate={props.onUpdateSlate} />
         <p className="text-xs text-muted-foreground">Camera, lens, stop, filter, sound and rolls carry over to the next slate.</p>
       </div>
     )
 
   if (docked) {
     return (
-      <section aria-label={`Slate ${props.slateLabel ?? ''}`} className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-3 shadow-sm">
+      <section
+        aria-label={`Slate ${props.slateLabel ?? ''}`}
+        className={cn('flex min-w-0 flex-col rounded-xl border border-border bg-card shadow-sm', compact ? 'gap-2 p-2.5' : 'gap-3 p-3')}
+      >
         <div className="flex items-center gap-2">
           {heading}
           {setupButton}
-          <Button type="button" variant="outline" size="lg" className="h-11 shrink-0 px-4" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
-            {expanded ? 'Less' : 'Takes & notes'}
-            {expanded ? <ChevronDown aria-hidden /> : <ChevronUp aria-hidden />}
-          </Button>
+          {compact ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-lg"
+              className="size-11 shrink-0"
+              aria-label={expanded ? 'Less' : 'Takes & notes'}
+              aria-expanded={expanded}
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? <ChevronDown aria-hidden /> : <ChevronUp aria-hidden />}
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" size="lg" className="h-11 shrink-0 px-4" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+              {expanded ? 'Less' : 'Takes & notes'}
+              {expanded ? <ChevronDown aria-hidden /> : <ChevronUp aria-hidden />}
+            </Button>
+          )}
         </div>
-        <div className="flex gap-2">
+        <div className={cn('flex gap-2', compact && 'flex-col')}>
           {roll}
           {marks}
         </div>
@@ -164,17 +187,20 @@ export function TabletSlateDeck(props: TabletSlateDeckProps) {
         {expanded ? (
           <>
             {tabs}
-            <div className="max-h-[45dvh] overflow-y-auto">{tabContent}</div>
+            <div className={cn('overflow-y-auto', compact ? 'max-h-[38dvh]' : 'max-h-[45dvh]')}>{tabContent}</div>
           </>
         ) : (
-          !props.short && <TakeChips takes={takes} target={target} onSelectTake={props.onSelectTake} />
+          !layout.short && <TakeChips takes={takes} target={target} onSelectTake={props.onSelectTake} />
         )}
       </section>
     )
   }
 
   return (
-    <section aria-label={`Slate ${props.slateLabel ?? ''}`} className="flex min-h-0 flex-col gap-3 rounded-xl border border-border bg-card p-4">
+    <section
+      aria-label={`Slate ${props.slateLabel ?? ''}`}
+      className={cn('flex min-h-0 flex-col rounded-xl border border-border bg-card', phoneLandscape ? 'gap-2 overflow-y-auto p-3' : 'gap-3 p-4')}
+    >
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           {heading}
@@ -195,7 +221,7 @@ export function TabletSlateDeck(props: TabletSlateDeckProps) {
       </div>
       <NgReasonChips target={target} touch onNgReason={props.onNgReason} />
       {tabs}
-      <div className="min-h-0 flex-1 overflow-y-auto">{tabContent}</div>
+      <div className={cn(!phoneLandscape && 'min-h-0 flex-1 overflow-y-auto')}>{tabContent}</div>
     </section>
   )
 }

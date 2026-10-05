@@ -28,7 +28,7 @@ export function ProductionSwitcher() {
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          className="w-[240px] justify-between gap-2 font-normal"
+          className="w-[240px] min-w-0 shrink justify-between gap-2 font-normal"
           aria-label="Current production"
         >
           <span className="flex min-w-0 items-center gap-2">
@@ -40,7 +40,7 @@ export function ProductionSwitcher() {
           <ChevronsUpDown className="size-4 shrink-0 opacity-50" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[240px]">
+      <DropdownMenuContent align="start" className="w-[240px] max-w-[calc(100vw-1rem)]">
         <DropdownMenuRadioGroup
           value={current?.id ?? ''}
           onValueChange={(v) => setCurrentProductionId(v || null)}

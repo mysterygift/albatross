@@ -39,3 +39,16 @@ export function applyPlatformAttribute(root: HTMLElement = document.documentElem
   if (isIosPlatform()) root.dataset.platform = 'ios'
   else if (isMobilePlatform()) root.dataset.platform = 'android'
 }
+
+/** Below Tailwind's `md` breakpoint: iPhone portrait, where side-by-side panels don't fit. */
+export const PHONE_MAX_WIDTH = 767
+
+/**
+ * True when the viewport is phone-sized: narrower than `md` (iPhone portrait) or shorter than a
+ * tablet in landscape (iPhone landscape). Read once for initial state; layouts that must follow
+ * rotation should use `useIsPhone` instead.
+ */
+export function isPhoneViewport(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+  return window.matchMedia(`(max-width: ${PHONE_MAX_WIDTH}px), (max-height: 500px)`).matches
+}

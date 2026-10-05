@@ -64,12 +64,12 @@ export function TopBar({ onOpenSearch, onOpenShortcuts }: TopBarProps) {
   const searchHint = isMac ? '\u2318K' : 'Ctrl K'
   const sidebarAccelerator = getCommandAccelerator('view_toggle_sidebar')
   return (
-    <header data-slot="top-bar" className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+    <header data-slot="top-bar" className="flex h-12 shrink-0 items-center gap-2 border-b px-3 sm:px-4">
       <ShortcutTooltip label="Toggle sidebar" accelerator={sidebarAccelerator} side="bottom">
         <SidebarTrigger />
       </ShortcutTooltip>
       <Breadcrumbs />
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1 sm:gap-2">
         <ProductionSwitcher />
         <button
           type="button"

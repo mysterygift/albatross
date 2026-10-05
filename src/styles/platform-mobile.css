@@ -81,3 +81,117 @@ html[data-platform] [data-slot="button"] {
   user-select: none;
   -webkit-touch-callout: none;
 }
+
+/*
+ * Dialogs scroll inside themselves when their content is taller than the screen (iPhone, and iPad
+ * with the keyboard up) instead of running off the top and bottom.
+ */
+html[data-platform] [data-slot="dialog-content"] {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/*
+ * Phone widths (iPhone portrait). Floating side sheets have fixed desktop widths (384–512px) that
+ * are wider than the screen, so they become full-screen panels instead.
+ */
+@media (max-width: 639px) {
+  html[data-platform] [data-slot="sheet-content"][data-variant="floating"] {
+    inset: 0;
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    border-radius: 0;
+    border: 0;
+  }
+
+  html[data-platform] [data-slot="sheet-content"][data-side="left"],
+  html[data-platform] [data-slot="sheet-content"][data-side="right"][data-variant="default"] {
+    width: min(85vw, 24rem);
+  }
+
+  /* Dialogs use nearly the full width of a phone and keep clear of the notch. */
+  html[data-platform] [data-slot="dialog-content"] {
+    max-width: calc(100vw - 1rem - var(--safe-left) - var(--safe-right));
+    padding: 1.25rem 1rem;
+  }
+
+  /* The page column loses a little padding so forms and tables get more room. */
+  html[data-platform] [data-slot="sidebar-inset"] > main {
+    padding-left: calc(0.75rem + var(--safe-left));
+    padding-right: calc(0.75rem + var(--safe-right));
+  }
+
+  html[data-platform] [data-slot="top-bar"] {
+    padding-left: calc(0.75rem + var(--safe-left));
+    padding-right: calc(0.75rem + var(--safe-right));
+  }
+
+  /* Tab strips scroll sideways rather than pushing the page wider than the screen. */
+  html[data-platform] [data-slot="tabs-list"] {
+    max-width: 100%;
+    overflow-x: auto;
+    justify-content: flex-start;
+    scrollbar-width: none;
+  }
+
+  html[data-platform] [data-slot="tabs-list"]::-webkit-scrollbar {
+    display: none;
+  }
+
+  html[data-platform] [data-slot="tabs-trigger"] {
+    flex-shrink: 0;
+  }
+
+  /* Selects with fixed desktop widths (w-[240px] etc.) shrink to their row instead of overflowing it. */
+  html[data-platform] [data-slot="select-trigger"] {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* Popovers and menus with fixed desktop widths (w-[420px] etc.) stay on screen. */
+  html[data-platform] [data-slot="popover-content"],
+  html[data-platform] [data-slot="dropdown-menu-content"],
+  html[data-platform] [data-slot="dropdown-menu-sub-content"],
+  html[data-platform] [data-slot="hover-card-content"],
+  html[data-platform] [data-slot="select-content"] {
+    max-width: calc(100vw - 1rem - var(--safe-left) - var(--safe-right));
+  }
+
+  /*
+   * Grids that only set columns from `md:` up (e.g. "grid gap-4 md:grid-cols-2") have one implicit
+   * auto-sized column here, which grows to fit nowrap/truncated text and runs off the screen. Make
+   * that column shrinkable, as grid-cols-1 would. Grids with an unprefixed grid-cols-* class or an
+   * inline template keep their own columns.
+   */
+  html[data-platform] [data-slot="sidebar-inset"] .grid:not([class*=" grid-cols-"]):not([class^="grid-cols-"]) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Page titles a step smaller so action buttons fit beside them more often. */
+  html[data-platform] [data-slot="page-header"] h1 {
+    font-size: 1.375rem;
+    line-height: 1.75rem;
+  }
+}
+
+/*
+ * iPhone landscape: the screen is wide but short, and the notch/Dynamic Island sits on one side.
+ * Keep the chrome clear of it.
+ */
+@media (max-height: 500px) and (orientation: landscape) {
+  html[data-platform] [data-slot="top-bar"] {
+    padding-left: calc(0.75rem + var(--safe-left));
+  }
+
+  html[data-platform] [data-slot="sidebar-inset"] > main {
+    padding-left: calc(1rem + var(--safe-left));
+  }
+
+  html[data-platform] [data-slot="sheet-content"][data-variant="floating"] {
+    top: calc(0.5rem + var(--safe-top));
+    bottom: calc(0.5rem + var(--safe-bottom));
+    right: calc(0.5rem + var(--safe-right));
+    height: auto;
+  }
+}

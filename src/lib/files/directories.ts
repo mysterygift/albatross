@@ -10,7 +10,7 @@ import { mobileExportsDirectory } from '@/lib/files/mobileShare'
  */
 export async function pickExportDirectory(title = 'Select export directory'): Promise<string | null> {
   // iOS folder pickers return security-scoped URLs that can't be written to reliably; use the
-  // app's exports folder, which the Files app shows under On My iPad › Albatross.
+  // app's exports folder, which the Files app shows under On My iPhone/iPad › Albatross.
   if (isIosPlatform()) return mobileExportsDirectory()
   const selected = await open({
     multiple: false,

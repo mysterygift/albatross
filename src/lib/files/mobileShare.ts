@@ -1,7 +1,7 @@
 /**
  * iOS file hand-off. iOS has no "Save As" path picker and no "open in default app" for files in the
  * app sandbox, so exports are written to the app's Documents/Exports folder (visible in the Files
- * app under On My iPad › Albatross) and then offered through the system share sheet, which covers
+ * app under On My iPhone/iPad › Albatross) and then offered through the system share sheet, which covers
  * Quick Look preview, Save to Files, AirDrop, Mail and "Open in…".
  */
 import { documentDir, join } from '@tauri-apps/api/path'
@@ -116,9 +116,15 @@ export async function shareLocalFile(path: string, options: ShareFileOptions = {
   }
 }
 
+/** The Files app's name for local storage on this device ("On My iPhone" / "On My iPad"). */
+function onMyDeviceLabel(): string {
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  return /iPhone|iPod/.test(ua) ? 'On My iPhone' : 'On My iPad'
+}
+
 /** Shares a file just written to the iOS exports folder, telling the user where it was saved. */
 export async function shareMobileExport(path: string): Promise<void> {
   await shareLocalFile(path, {
-    fallbackMessage: `Saved "${baseName(path)}" to Files › On My iPad › Albatross › ${MOBILE_EXPORTS_DIR}.`,
+    fallbackMessage: `Saved "${baseName(path)}" to Files › ${onMyDeviceLabel()} › Albatross › ${MOBILE_EXPORTS_DIR}.`,
   })
 }

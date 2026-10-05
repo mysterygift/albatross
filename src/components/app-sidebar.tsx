@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   Sidebar,
@@ -15,6 +15,7 @@ import {
   SidebarMenuSubButton,
   SidebarHeader,
   SidebarFooter,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import { ChevronRight, FlaskConical } from 'lucide-react'
 import { AlbatrossLogo } from '@/components/AlbatrossLogo'
@@ -82,6 +83,14 @@ export function AppSidebar() {
       setExpanded(next)
     }
   }
+
+  // At phone widths the sidebar is a sheet over the page; close it once a link has navigated.
+  const { isMobile, setOpenMobile } = useSidebar()
+  useEffect(() => {
+    if (isMobile) setOpenMobile(false)
+    // Only on navigation, not when the sheet opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname])
 
   const toggle = (key: string) => {
     setExpanded((prev) => {

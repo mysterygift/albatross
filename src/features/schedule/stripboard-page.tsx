@@ -5,6 +5,8 @@
  * Files: stripboard-page.tsx, unscheduled-scenes-panel.tsx, stripboard-hooks.ts,
  * stripboard-day-view.tsx, stripboard-table-row.tsx, strip-item.tsx, stripboard-strips repo.
  */
+import { useIsPhone } from '@/hooks/use-is-phone'
+import { isPhoneViewport } from '@/lib/platform'
 import { PageHeader } from '@/components/page-header'
 import { RequireProduction } from '@/components/require-production'
 import { useSearchParams } from 'react-router-dom'
@@ -365,7 +367,9 @@ export function StripboardPage() {
     (day: string | null) => updateUrl({ day }, true),
     [updateUrl]
   )
-  const [unscheduledOpen, setUnscheduledOpen] = useState(true)
+  const isPhone = useIsPhone()
+  // On a phone the open panels squeeze the day view, so Unscheduled starts collapsed there.
+  const [unscheduledOpen, setUnscheduledOpenState] = useState(() => !isPhoneViewport())
 
   // The Board/Day choice used to be stored per viewer. Day is now the only view, so drop the stale key.
   useEffect(() => {
@@ -375,7 +379,22 @@ export function StripboardPage() {
       /* storage unavailable: nothing to clean up */
     }
   }, [])
-  const [boneyardOpen, setBoneyardOpen] = useState(false)
+  const [boneyardOpen, setBoneyardOpenState] = useState(false)
+  // A phone has room for one side panel beside the day view, so opening one closes the other.
+  const setUnscheduledOpen = useCallback(
+    (open: boolean) => {
+      setUnscheduledOpenState(open)
+      if (open && isPhone) setBoneyardOpenState(false)
+    },
+    [isPhone]
+  )
+  const setBoneyardOpen = useCallback(
+    (open: boolean) => {
+      setBoneyardOpenState(open)
+      if (open && isPhone) setUnscheduledOpenState(false)
+    },
+    [isPhone]
+  )
 
   // Reset the bloc filter when the user switches production (not on first load, which would
   // discard a deep-linked `bloc` param).

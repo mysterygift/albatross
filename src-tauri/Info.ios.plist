@@ -5,7 +5,7 @@
 	<!-- Merged into the generated iOS Info.plist by the Tauri CLI. -->
 
 	<!-- Show the app's Documents folder (where exports are written) in the Files app
-	     under On My iPad › Albatross. -->
+	     under On My iPhone / On My iPad › Albatross. -->
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

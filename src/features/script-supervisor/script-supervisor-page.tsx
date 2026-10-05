@@ -94,6 +94,7 @@ import { AnnotationDialog, type AnnotationDialogState } from './AnnotationDialog
 import { SlateNotesPanel } from './SlateNotesPanel'
 import { RevisionReview, revisionRecorded, revisionSummary } from './RevisionReview'
 import { useTouchLayout } from './useTouchLayout'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 function localIsoDate(d = new Date()): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -112,6 +113,8 @@ export function ScriptSupervisorPage() {
   const queryClient = useQueryClient()
   const { data: dataSource } = useEffectiveDataSourceForProduction(currentProductionId)
   const [touch, toggleTouch] = useTouchLayout()
+  // Phone width: the toolbar wraps onto two rows (day + new slate, then the mode switch).
+  const phoneWidth = useIsMobile()
 
   const { data: days = [], isLoading: daysLoading } = useQuery({
     queryKey: ['shoot-days', currentProductionId],
@@ -571,7 +574,10 @@ export function ScriptSupervisorPage() {
         setSelectedTakeId(null)
       }}
     >
-      <SelectTrigger aria-label="Shoot day" className={cn(touch ? 'h-11 w-[240px] text-base' : 'w-[220px]')}>
+      <SelectTrigger
+        aria-label="Shoot day"
+        className={cn(touch ? (phoneWidth ? 'h-11 min-w-0 flex-1 text-base' : 'h-11 w-[240px] text-base') : 'w-[220px]')}
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -590,7 +596,7 @@ export function ScriptSupervisorPage() {
     <SegmentedControl<'log' | 'review'>
       ariaLabel="Mode"
       size={touch ? 'md' : 'sm'}
-      className={cn('w-auto min-w-[200px]', touch && 'h-11 min-w-[240px]')}
+      className={cn('w-auto min-w-[200px]', touch && (phoneWidth ? 'order-last h-11 w-full' : 'h-11 min-w-[240px]'))}
       value={mode}
       onValueChange={setMode}
       options={[
@@ -639,7 +645,7 @@ export function ScriptSupervisorPage() {
       {daySelect}
       {!touch && <span className="text-xs text-muted-foreground">{isUs ? 'US slating' : 'UK slating'}</span>}
       {touch && modeControl}
-      <div className="flex-1" />
+      {!(touch && phoneWidth) && <div className="flex-1" />}
       {!touch && modeControl}
       {tabletToggle}
       {newSlateButton}
@@ -713,11 +719,12 @@ export function ScriptSupervisorPage() {
       {selectedSceneComplete ? 'Scene complete' : touch ? 'Mark complete' : 'Mark scene complete'}
     </Button>
   )
-  const middleViewControl = (
+  // `fullWidth`: the phone layout gives the control a row of its own.
+  const middleViewControlFor = (fullWidth: boolean) => (
     <SegmentedControl<'slates' | 'script'>
       ariaLabel="Show"
       size={touch ? 'md' : 'sm'}
-      className={cn('w-auto', touch && 'h-11 w-[220px] shrink-0')}
+      className={cn('w-auto', touch && (fullWidth ? 'h-11 w-full' : 'h-11 w-[220px] shrink-0'))}
       value={middleView}
       onValueChange={setMiddleView}
       options={[
@@ -727,6 +734,7 @@ export function ScriptSupervisorPage() {
       ]}
     />
   )
+  const middleViewControl = middleViewControlFor(false)
   const revisionPanel = revision && (revision.items.length > 0 || revision.relined > 0) && (
     <RevisionReview
       review={revision}
@@ -922,10 +930,8 @@ export function ScriptSupervisorPage() {
                 onSelect={setChosenSceneId}
               />
             )}
-            workbench={
-              <>
-                <div className="flex items-center gap-3">
-                  {middleViewControl}
+            workbench={(layout) => {
+              const sceneInfo = (
                   <div className="min-w-0 flex-1">
                     {sceneId ? (
                       <>
@@ -943,8 +949,24 @@ export function ScriptSupervisorPage() {
                       <p className="text-sm text-muted-foreground">Choose a scene.</p>
                     )}
                   </div>
-                  {sceneCompleteButton}
-                </div>
+              )
+              return (
+              <>
+                {layout.compact ? (
+                  <>
+                    {middleViewControlFor(true)}
+                    <div className="flex items-center gap-2">
+                      {sceneInfo}
+                      {sceneCompleteButton}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    {middleViewControl}
+                    {sceneInfo}
+                    {sceneCompleteButton}
+                  </div>
+                )}
                 {middleView === 'script' ? (
                   <>
                     {liningToolbar}
@@ -957,12 +979,12 @@ export function ScriptSupervisorPage() {
                   <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card p-1.5">{slatesList}</div>
                 )}
               </>
-            }
-            deck={(arrangement, short) => (
+              )
+            }}
+            deck={(layout) => (
               <TabletSlateDeck
                 {...slatePanelProps}
-                arrangement={arrangement}
-                short={short}
+                layout={layout}
                 notes={slateNotes}
                 photos={slatePhotos}
                 photoTakeNumber={photoTake?.take_number ?? null}

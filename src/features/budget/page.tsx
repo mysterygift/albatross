@@ -1420,8 +1420,8 @@ export function BudgetPage() {
       )}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <PageHeader title="Budget" />
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-2 py-1">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 rounded-md border border-border bg-muted/20 px-2 py-1">
             <span className="text-xs text-muted-foreground">Revision</span>
             <Select
               value={workingBudgetRevision?.id ?? EMPTY_REVISION_SELECT_VALUE}
@@ -1483,7 +1483,7 @@ export function BudgetPage() {
               {revisionContextLabel}
             </span>
           </div>
-          <Tabs value={viewMode} onValueChange={handleBudgetTabChange} className="w-auto">
+          <Tabs value={viewMode} onValueChange={handleBudgetTabChange} className="w-auto min-w-0 max-w-full">
             <TabsList className="h-9 border border-border bg-muted/30">
               <TabsTrigger value="budget" className="px-3 text-sm data-[state=active]:bg-background">
                 Budget
@@ -1502,7 +1502,7 @@ export function BudgetPage() {
               </TabsTrigger>
             </TabsList>
           </Tabs>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
