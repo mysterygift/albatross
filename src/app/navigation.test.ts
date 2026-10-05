@@ -97,26 +97,26 @@ describe('experimental features', () => {
   const subTargets = (groups: ReturnType<typeof visibleNavGroups>) =>
     groups.flatMap((g) => g.items.flatMap((i) => (isNavGroup(i) ? i.sub.map((s) => s.to) : [i.to])))
 
-  it('marks Receipt Capture, Crew Hours and Script Supervisor as experimental', () => {
-    expect(experimentalNavLabels()).toEqual(['Script: Script Supervisor', 'People: Crew Hours', 'Budget: Receipt Capture'])
+  it('marks Receipt Capture, Overtime and Script Supervisor as experimental', () => {
+    expect(experimentalNavLabels()).toEqual(['Script: Script Supervisor', 'People: Overtime', 'Budget: Receipt Capture'])
   })
 
   it('hides experimental entries unless they are shown', () => {
     const hidden = subTargets(visibleNavGroups(false))
     expect(hidden).not.toContain('/schedule/script-supervisor')
-    expect(hidden).not.toContain('/people/crew-hours')
+    expect(hidden).not.toContain('/people/overtime')
     expect(hidden).not.toContain('/budget/receipt-capture')
     expect(hidden).toContain('/schedule/script-sections')
     expect(hidden).toContain('/budget/vendors')
 
     const shown = subTargets(visibleNavGroups(true))
     expect(shown).toContain('/schedule/script-supervisor')
-    expect(shown).toContain('/people/crew-hours')
+    expect(shown).toContain('/people/overtime')
     expect(shown).toContain('/budget/receipt-capture')
   })
 
   it('keeps experimental routes reachable for breadcrumbs and links', () => {
-    expect(findNavTrail('/people/crew-hours')?.sub?.label).toBe('Crew Hours')
+    expect(findNavTrail('/people/overtime')?.sub?.label).toBe('Overtime')
     expect(findNavTrail('/budget/receipt-capture')?.sub?.label).toBe('Receipt Capture')
   })
 

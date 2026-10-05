@@ -7,7 +7,7 @@ features** is on.
 | Feature | Route | Data |
 | --- | --- | --- |
 | Receipt Capture | `/budget/receipt-capture` | Existing `expenses`, `expense_receipts`, `documents`, `float_expense_links` |
-| Crew Hours | `/people/crew-hours` | New: `production_crew_hours_settings`, `crew_day_hours`, `crew_hours_person_settings` (migration 0102). Unit times from `script_supervisor_day_logs` |
+| Overtime | `/people/overtime` | New: `production_crew_hours_settings`, `crew_day_hours`, `crew_hours_person_settings` (migration 0102). Unit times from `script_supervisor_day_logs` |
 | Script Supervisor | `/schedule/script-supervisor` | See [script-supervisor.md](script-supervisor.md) |
 
 The **Night Shoot** theme (Settings → Appearance) is a regular theme, not behind the flag.
@@ -41,10 +41,10 @@ The **Night Shoot** theme (Settings → Appearance) is a regular theme, not behi
 - Retry safety: one expense id per capture, reused on retry, so neither the expense nor the float match is duplicated.
 - Not yet: reading the receipt's text on device (VisionKit needs a native Tauri plugin); the form is typed by hand.
 
-## Crew Hours
+## Overtime
 
-`CrewHoursPage`; calculations in `src/lib/crew-hours/crewHours.ts` (pure, tested), storage in
-`src/lib/db/repositories/crewHours.ts`. Local SQLite only, like Script Supervisor (`CREW_HOURS_REMOTE_ERROR`).
+Shown in the app as "Overtime": an estimate of what running over will cost, so the unit can make informed decisions on set. The database tables keep the original `crew_hours` names. `OvertimePage`; calculations in `src/lib/overtime/overtime.ts` (pure, tested), storage in
+`src/lib/db/repositories/overtime.ts`. Local SQLite only, like Script Supervisor (`OVERTIME_REMOTE_ERROR`).
 
 - **Who:** crew (not cast) booked on the shoot day (by `shoot_day_id` or a date range covering it), plus anyone with
   their own hours recorded for that day.
@@ -62,4 +62,4 @@ The **Night Shoot** theme (Settings → Appearance) is a regular theme, not behi
 - **Rest:** from each person's wrap to the next shoot day's call (their own if recorded, else the unit's actual,
   else planned call). Under the minimum is flagged.
 - Wraps earlier than the call are after midnight, so night shoots need no date field.
-- Not yet: cast (Equity) overtime, meal penalties, turning crew hours into labour expenses, publish/import/export.
+- Not yet: cast (Equity) overtime, meal penalties, turning overtime into labour expenses, publish/import/export.

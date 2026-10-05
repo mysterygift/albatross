@@ -55,7 +55,7 @@ All values are stored as strings; consumers parse as needed (e.g. `value === 'tr
 | `enable_currency_conversion_api` | `'true'` | `useCurrency`, exchange rates, Settings/Dev tools | When `'true'`, allows fetching exchange rates and converting displayed amounts. Existing DBs that had the old default `'false'` are migrated once on startup. |
 | `enable_db_perf_logging` | (none; treated as enabled if not `'false'`) | `src/lib/db/perf.ts`, Settings/Dev tools | When not `'false'`, enables DB perf recording and HUD in dev. |
 | `developer_mode` | `'false'` | `useDeveloperMode`, Settings → Developer | Shows the developer diagnostics on the Developer page. |
-| `show_experimental` | `'false'` | `useShowExperimental`, sidebar, search, Settings → Developer | Shows nav entries marked `experimental` (Receipt Capture, Crew Hours, Script Supervisor). See [experimental-on-set.md](experimental-on-set.md). |
+| `show_experimental` | `'false'` | `useShowExperimental`, sidebar, search, Settings → Developer | Shows nav entries marked `experimental` (Receipt Capture, Overtime, Script Supervisor). See [experimental-on-set.md](experimental-on-set.md). |
 
 Defaults are applied by `ensureSettingsDefaults()` in `settings.ts` (called from productions context on app init). Add new default keys to the `DEFAULTS` object and ensure they are created on first run if needed.
 

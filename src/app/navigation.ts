@@ -93,7 +93,7 @@ export const navGroups: NavGroup[] = [
           { to: '/people/crew-manager', label: 'Crew Manager' },
           { to: '/people/bookings', label: 'Bookings' },
           { to: '/people/day-out-of-days', label: 'Day Out of Days' },
-          { to: '/people/crew-hours', label: 'Crew Hours', experimental: true },
+          { to: '/people/overtime', label: 'Overtime', experimental: true },
         ],
       },
     ],
