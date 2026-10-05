@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { findNavTrail, isNavGroup, navGroups, navItems } from '@/app/navigation'
+import { experimentalNavLabels, findNavTrail, isNavGroup, navGroups, navItems, visibleNavGroups } from '@/app/navigation'
 
 const routerSource = readFileSync(resolve(__dirname, 'router.tsx'), 'utf8')
 const routePaths = [...routerSource.matchAll(/path: '([^']*)'/g)]
@@ -90,5 +90,67 @@ describe('findNavTrail', () => {
 
   it('returns null for unknown paths', () => {
     expect(findNavTrail('/nope')).toBeNull()
+  })
+})
+
+describe('experimental features', () => {
+  const subTargets = (groups: ReturnType<typeof visibleNavGroups>) =>
+    groups.flatMap((g) => g.items.flatMap((i) => (isNavGroup(i) ? i.sub.map((s) => s.to) : [i.to])))
+
+  it('marks Receipt Capture, Crew Hours and Script Supervisor as experimental', () => {
+    expect(experimentalNavLabels()).toEqual(['Script: Script Supervisor', 'People: Crew Hours', 'Budget: Receipt Capture'])
+  })
+
+  it('hides experimental entries unless they are shown', () => {
+    const hidden = subTargets(visibleNavGroups(false))
+    expect(hidden).not.toContain('/schedule/script-supervisor')
+    expect(hidden).not.toContain('/people/crew-hours')
+    expect(hidden).not.toContain('/budget/receipt-capture')
+    expect(hidden).toContain('/schedule/script-sections')
+    expect(hidden).toContain('/budget/vendors')
+
+    const shown = subTargets(visibleNavGroups(true))
+    expect(shown).toContain('/schedule/script-supervisor')
+    expect(shown).toContain('/people/crew-hours')
+    expect(shown).toContain('/budget/receipt-capture')
+  })
+
+  it('keeps experimental routes reachable for breadcrumbs and links', () => {
+    expect(findNavTrail('/people/crew-hours')?.sub?.label).toBe('Crew Hours')
+    expect(findNavTrail('/budget/receipt-capture')?.sub?.label).toBe('Receipt Capture')
+  })
+
+  it('drops parents and groups left empty, and moves a hidden default child to the first visible one', () => {
+    const Icon = navItems[0]!.icon
+    const groups = visibleNavGroups(false, [
+      {
+        id: 'lab',
+        label: 'Lab',
+        items: [
+          { to: '/lab', label: 'Lab', icon: Icon, defaultChild: '/lab/a', sub: [{ to: '/lab/a', label: 'A', experimental: true }] },
+        ],
+      },
+      {
+        id: 'mixed',
+        label: 'Mixed',
+        items: [
+          {
+            to: '/m',
+            label: 'M',
+            icon: Icon,
+            defaultChild: '/m/x',
+            sub: [
+              { to: '/m/x', label: 'X', experimental: true },
+              { to: '/m/y', label: 'Y' },
+            ],
+          },
+          { to: '/z', label: 'Z', icon: Icon, experimental: true },
+        ],
+      },
+    ])
+    expect(groups.map((g) => g.id)).toEqual(['mixed'])
+    const m = groups[0]!.items[0]!
+    expect(isNavGroup(m) && m.defaultChild).toBe('/m/y')
+    expect(groups[0]!.items).toHaveLength(1)
   })
 })

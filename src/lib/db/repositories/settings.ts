@@ -10,12 +10,16 @@ const LOCAL_COLLABORATION_SETTING_MIGRATION_KEY = '_migration_local_collaboratio
 /** Setting key for the developer-mode flag (shows diagnostics in Settings). */
 export const DEVELOPER_MODE_SETTING_KEY = 'developer_mode'
 
+/** Setting key for showing experimental features (Receipt Capture, Crew Hours, Script Supervisor) in the sidebar. */
+export const SHOW_EXPERIMENTAL_SETTING_KEY = 'show_experimental'
+
 const DEFAULTS: Record<string, string> = {
   display_currency: 'GBP',
   ui_theme: DEFAULT_UI_THEME,
   enable_currency_conversion_api: 'true',
   enable_api_call_tracking: 'false',
   developer_mode: 'false',
+  show_experimental: 'false',
   /** Enables collaboration traffic and management UI on this device; never starts a local host. */
   local_collaboration_enabled: 'false',
 }

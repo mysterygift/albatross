@@ -31,6 +31,8 @@ import { AdminOnlyUserManagementRoute } from '@/features/admin/UserManagementPag
 import { ProjectAccessRoute } from '@/features/admin/ProjectAccessPage'
 import { WrapProductionPage } from '@/features/wrap-production/page'
 import { VendorsIndexPage } from '@/features/budget/vendors/VendorsIndexPage'
+import { ReceiptCapturePage } from '@/features/budget/receipt-capture/ReceiptCapturePage'
+import { CrewHoursPage } from '@/features/people/crew-hours/CrewHoursPage'
 import { VendorDetailPage } from '@/features/budget/vendors/VendorDetailPage'
 
 export const router = createBrowserRouter([
@@ -43,6 +45,7 @@ export const router = createBrowserRouter([
       { path: 'productions', element: <ProductionsPage /> },
       { path: 'budget', element: <BudgetPage /> },
       { path: 'budget/vendors', element: <VendorsIndexPage /> },
+      { path: 'budget/receipt-capture', element: <ReceiptCapturePage /> },
       { path: 'budget/vendors/:vendorId', element: <VendorDetailPage /> },
       { path: 'schedule', element: <Navigate to="/schedule/calendar" replace /> },
       { path: 'schedule/calendar', element: <ScheduleCalendarPage /> },
@@ -57,6 +60,7 @@ export const router = createBrowserRouter([
       { path: 'people/day-out-of-days', element: <DayOutOfDaysPage /> },
       { path: 'people/cast-manager', element: <CastManagerPage /> },
       { path: 'people/crew-manager', element: <CrewManagerPage /> },
+      { path: 'people/crew-hours', element: <CrewHoursPage /> },
       { path: 'people/crew/:personId', element: <CrewDetailPage /> },
       { path: 'people/cast', element: <Navigate to="/people/cast-manager" replace /> },
       { path: 'people/:personId', element: <CastDetailPage /> },

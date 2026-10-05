@@ -40,7 +40,9 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
   { id: 'project-access', label: 'Project access', group: 'team' },
   { id: 'integrations', label: 'APIs & publishing', group: 'integrations' },
   { id: 'demo-tutorial', label: 'Demo & tutorial', group: 'advanced' },
-  { id: 'developer', label: 'Developer tools', group: 'advanced', requiresDeveloperMode: true },
+  // Always listed: it holds the experimental-features toggle, which must be reachable in every build.
+  // Its diagnostics stay behind developer mode (see the Developer section of the Settings page).
+  { id: 'developer', label: 'Developer', group: 'advanced' },
 ]
 
 /** Legacy `?tab=` values from the old tabbed settings page. */
@@ -59,8 +61,8 @@ function resolveSectionId(param: string | null | undefined): SettingsSectionId |
 }
 
 /**
- * Parses the `section` URL param. Unknown/missing values give the default; `developer`
- * falls back to the default while developer mode is off. Never throws.
+ * Parses the `section` URL param. Unknown/missing values give the default; a section that
+ * requires developer mode falls back to the default while it is off. Never throws.
  */
 export function parseSettingsSection(
   param: string | null | undefined,

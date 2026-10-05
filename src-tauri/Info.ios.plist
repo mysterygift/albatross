@@ -11,6 +11,11 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 
+	<!-- Camera access for photo pickers (receipt capture, continuity photos). iOS terminates an app
+	     that opens the camera without this string. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Albatross uses the camera to photograph receipts and continuity on set.</string>
+
 	<!-- .apf project files: open from the Files app, the share sheet, Mail and AirDrop.
 	     `bundle.fileAssociations` in tauri.conf.json only produces these entries on macOS. -->
 	<key>CFBundleDocumentTypes</key>

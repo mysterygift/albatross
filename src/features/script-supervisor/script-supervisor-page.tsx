@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ExperimentalBadge } from '@/components/experimental-badge'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, FileDown, Info, Plus, Tablet, Undo2 } from 'lucide-react'
@@ -532,7 +533,8 @@ export function ScriptSupervisorPage() {
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl mr-2">Script Supervisor</h1>
+        <h1 className="text-2xl">Script Supervisor</h1>
+        <ExperimentalBadge />
         {days.length > 0 && (
           <Select
             value={dayId ?? undefined}

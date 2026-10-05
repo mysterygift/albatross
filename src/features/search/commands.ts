@@ -1,4 +1,4 @@
-import { isNavGroup, navGroups } from '@/app/navigation'
+import { isNavGroup, visibleNavGroups } from '@/app/navigation'
 import {
   commandLabels,
   getCommandAccelerator,
@@ -25,9 +25,9 @@ export const CREATE_COMMAND_IDS = [
 
 export const SELECT_PRODUCTION_HINT = 'Select a production'
 
-function goCommands(): GlobalSearchCommand[] {
+function goCommands(showExperimental: boolean): GlobalSearchCommand[] {
   const out: GlobalSearchCommand[] = []
-  for (const group of navGroups) {
+  for (const group of visibleNavGroups(showExperimental)) {
     for (const item of group.items) {
       const subtitle = group.label && group.label !== item.label ? group.label : undefined
       const commandId = navCommandIdByPath[item.to]
@@ -77,10 +77,13 @@ function createCommands(): GlobalSearchCommand[] {
   })
 }
 
-/** Builds the full palette command list (Go to, Create, general). */
-export function buildGlobalSearchCommands(): GlobalSearchCommand[] {
+/**
+ * Builds the full palette command list (Go to, Create, general). Experimental pages get a
+ * "Go to" entry only while experimental features are shown.
+ */
+export function buildGlobalSearchCommands(options: { showExperimental?: boolean } = {}): GlobalSearchCommand[] {
   return [
-    ...goCommands(),
+    ...goCommands(options.showExperimental ?? false),
     ...createCommands(),
     {
       id: 'general:shortcuts',
