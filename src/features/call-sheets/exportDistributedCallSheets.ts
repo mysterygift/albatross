@@ -49,6 +49,7 @@ export async function exportDistributedCallSheets(
       const safeUnit = sanitizeForFilename(baseData.unitName || 'unit')
       return `call-sheet-${baseData.shootDate}-${safeUnit}-${safeName}.pdf`
     },
+    archiveFileName: `call-sheets-${baseData.shootDate}-${sanitizeForFilename(baseData.unitName || 'unit')}.zip`,
     directoryPickerTitle: 'Select directory for personalised call sheet copies',
     onProgress,
   })

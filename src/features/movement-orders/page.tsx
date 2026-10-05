@@ -2,7 +2,6 @@ import { RequireProduction } from '@/components/require-production'
 import { PageHeader } from '@/components/page-header'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Document, Page, pdfjs } from 'react-pdf'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
@@ -97,7 +96,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { PdfPreview } from '@/components/pdf-preview'
 import {
   Select,
   SelectContent,
@@ -110,14 +109,8 @@ import {
   MovementOrderDistributionDialog,
   type MovementOrderRecipient,
 } from '@/features/movement-orders/MovementOrderDistributionDialog'
-import { isIosPlatform } from '@/lib/platform'
-import 'react-pdf/dist/Page/AnnotationLayer.css'
-import 'react-pdf/dist/Page/TextLayer.css'
+import { isIosPlatform, isMobilePlatform } from '@/lib/platform'
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).toString()
 
 export function MovementOrdersPage() {
   const { currentProductionId } = useCurrentProduction()
@@ -126,7 +119,6 @@ export function MovementOrdersPage() {
   const [shootDayId, setShootDayId] = useState<string | null>(null)
   const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
-  const [numPages, setNumPages] = useState<number | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [paperSize, setPaperSize] = useState<PaperSize>(DEFAULT_PAPER_SIZE)
   const [inputsError, setInputsError] = useState<string | null>(null)
@@ -714,7 +706,6 @@ export function MovementOrdersPage() {
 
   useEffect(() => {
     // Selection changes invalidate previous preview context.
-    setNumPages(null)
     setPdfError(null)
     setDistributionOpen(false)
     setDistributionStatus({ loading: false, message: null, error: null })
@@ -894,21 +885,10 @@ export function MovementOrdersPage() {
           </CardHeader>
           <CardContent>
             {previewPdfUrl ? (
-              <ScrollArea className="h-[960px] w-full rounded border border-border">
-                <Document
-                  file={previewPdfUrl}
-                  onLoadSuccess={({ numPages: loadedPages }) => setNumPages(loadedPages)}
-                  onLoadError={() => {
-                    setPdfError('Preview failed to load. Try generating the PDF again.')
-                    setNumPages(null)
-                  }}
-                >
-                  {numPages != null &&
-                    Array.from({ length: numPages }, (_, index) => (
-                      <Page key={index} pageNumber={index + 1} width={680} />
-                    ))}
-                </Document>
-              </ScrollArea>
+              <PdfPreview
+                file={previewPdfUrl}
+                onLoadError={() => setPdfError('Preview failed to load. Try generating the PDF again.')}
+              />
             ) : (
               <p className="text-muted-foreground text-sm py-8 text-center">
                 Generate a preview to see the Movement Order PDF.
@@ -1217,6 +1197,7 @@ export function MovementOrdersPage() {
                 const safeName = sanitizeForFilename(recipient.fullName)
                 return `movement-order-${safeDate}-${safeUnit}-${safeName}.pdf`
               },
+              archiveFileName: `movement-orders-${sanitizeForFilename(shootDate)}-${sanitizeForFilename(unitName || 'unit')}.zip`,
               directoryPickerTitle: 'Select directory for personalised movement order copies',
               onProgress: (current, total) => {
                 setDistributionStatus((prev) => ({
@@ -1228,9 +1209,12 @@ export function MovementOrdersPage() {
 
             if (result.persisted > 0) {
               void queryClient.invalidateQueries({ queryKey: documentsQueryKey(currentProductionId!) })
-              const pathSuffix = result.directoryPath
-                ? ` Copies saved to: ${result.directoryPath}`
-                : ''
+              // On iOS/Android the copies were zipped and offered through the share sheet.
+              const pathSuffix = !result.directoryPath
+                ? ''
+                : isMobilePlatform()
+                  ? ` Zipped as ${result.directoryPath.split('/').pop()} and ready to share.`
+                  : ` Copies saved to: ${result.directoryPath}`
               setDistributionExportSuccessMessage(
                 `Saved ${result.persisted} personalised movement order${result.persisted === 1 ? '' : 's'} to Documents.${pathSuffix}`,
               )
