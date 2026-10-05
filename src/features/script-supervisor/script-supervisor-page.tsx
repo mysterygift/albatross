@@ -32,7 +32,7 @@ import {
   snapRangeToLineable,
   type LiningUndoEntry,
 } from '@/lib/script-supervisor/liningEdit'
-import { annotationsByElement, formatAnnotationChip } from '@/lib/script-supervisor/annotations'
+import { annotationsByElement, formatAnnotationChip, type AnnotationView, type ContinuityTag } from '@/lib/script-supervisor/annotations'
 import { SCENE_STATUS_LABEL, type SceneProgressStatus } from '@/lib/script-supervisor/progress'
 import {
   carryOverFields,
@@ -83,6 +83,9 @@ import { LinedScript } from './LinedScript'
 import { ProgressView } from './ProgressView'
 import { SceneStatusPip } from './SceneStatusPip'
 import { SlatePanel } from './SlatePanel'
+import { TabletSceneNav } from './TabletSceneNav'
+import { TabletSlateDeck } from './TabletSlateDeck'
+import { TabletWorkspace } from './TabletWorkspace'
 import { AnnotationDialog, type AnnotationDialogState } from './AnnotationDialog'
 import { SlateNotesPanel } from './SlateNotesPanel'
 import { RevisionReview, revisionRecorded, revisionSummary } from './RevisionReview'
@@ -528,136 +531,431 @@ export function ScriptSupervisorPage() {
   }
   const otherScenes = allScenes.filter((s) => !dayScenes.some((d) => d.id === s.id))
   const chosenDay = days.find((d) => d.id === dayId)
+  const sceneNumber = sceneId ? sceneNumberById.get(sceneId) ?? null : null
+  const dayLabelOf = (d: { day_number: number | null; shoot_date: string }) => (d.day_number != null ? `Day ${d.day_number}` : d.shoot_date)
+
+  // ─── Pieces shared by the desktop and tablet layouts ───────────────────────
+  const daySelect = days.length > 0 && (
+    <Select
+      value={dayId ?? undefined}
+      onValueChange={(v) => {
+        setChosenDayId(v)
+        setChosenSceneId(null)
+        setChosenSlateId(null)
+        setSelectedTakeId(null)
+      }}
+    >
+      <SelectTrigger aria-label="Shoot day" className={cn(touch ? 'h-11 w-[240px] text-base' : 'w-[220px]')}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {[...days]
+          .sort((a, b) => a.shoot_date.localeCompare(b.shoot_date))
+          .map((d) => (
+            <SelectItem key={d.id} value={d.id}>
+              {d.day_number != null ? `Day ${d.day_number} | ` : ''}
+              {d.shoot_date}
+            </SelectItem>
+          ))}
+      </SelectContent>
+    </Select>
+  )
+  const modeControl = (
+    <SegmentedControl<'log' | 'review'>
+      ariaLabel="Mode"
+      size={touch ? 'md' : 'sm'}
+      className={cn('w-auto min-w-[200px]', touch && 'h-11 min-w-[240px]')}
+      value={mode}
+      onValueChange={setMode}
+      options={[
+        { value: 'log', label: 'Line & log' },
+        { value: 'review', label: 'Review' },
+      ]}
+    />
+  )
+  const tabletToggle = toggleTouch && (
+    <Button
+      type="button"
+      variant="outline"
+      size={touch ? 'icon-lg' : 'icon'}
+      aria-label="Tablet layout"
+      title="Tablet layout"
+      aria-pressed={touch}
+      onClick={toggleTouch}
+      className={cn(touch && 'size-11 border-primary/60 bg-primary/15 text-primary')}
+    >
+      <Tablet aria-hidden />
+    </Button>
+  )
+  const newSlateButton = (
+    <Button
+      type="button"
+      size={touch ? 'lg' : 'default'}
+      className={cn(touch && 'h-11')}
+      disabled={!canCreateSlate}
+      aria-keyshortcuts="N"
+      title={isUs && !sceneId ? 'Choose a scene first' : touch ? `${isUs ? 'US' : 'UK'} slating` : undefined}
+      onClick={handleNewSlate}
+    >
+      <Plus aria-hidden />
+      New slate
+      {/* A separate space keeps the accessible name "New slate 12" rather than "New slate12". */}
+      {preview && ' '}
+      {preview && <span className="font-mono">{preview.label}</span>}
+    </Button>
+  )
+  // One header for both layouts, so switching layout keeps the toggle (and its focus) in place.
+  const header = (
+    <header className="flex flex-wrap items-center gap-3">
+      {/* On tablets the breadcrumb and section tab already name the page, so the toolbar keeps only controls. */}
+      <h1 className={cn(touch ? 'sr-only' : 'text-2xl mr-2')}>Script Supervisor</h1>
+      {daySelect}
+      {!touch && <span className="text-xs text-muted-foreground">{isUs ? 'US slating' : 'UK slating'}</span>}
+      {touch && modeControl}
+      <div className="flex-1" />
+      {!touch && modeControl}
+      {tabletToggle}
+      {newSlateButton}
+    </header>
+  )
+  const errorAlert = error && (
+    <p role="alert" className="text-sm text-destructive">
+      {error}
+    </p>
+  )
+  const reviewView = (
+    <ProgressView
+      progress={progress}
+      isLoading={progressLoading}
+      fallbackDayId={dayId}
+      onSetProgress={(id, input) => setSceneProgress.mutate({ productionId: currentProductionId, sceneId: id, input })}
+      onOpenScene={(id) => {
+        setChosenSceneId(id)
+        setMode('log')
+      }}
+      header={
+        chosenDay ? (
+          <div className="space-y-4">
+            <DayReportCard
+              dayLabel={dayLabelOf(chosenDay)}
+              dayLog={dayLog}
+              plannedCallTime={chosenDay.call_time}
+              plannedWrapTime={chosenDay.wrap_time}
+              onSave={(patch) => saveDayLog.mutate({ productionId: currentProductionId, shootDayId: chosenDay.id, patch })}
+              onExport={() => exportDpr.mutate()}
+              exporting={exportDpr.isPending}
+              touch={touch}
+            />
+            <ExportsCard
+              dayLabel={dayLabelOf(chosenDay)}
+              coverage={dayCoverage}
+              coverageLoading={coverageLoading}
+              exporting={dayExport.isPending ? dayExport.variables ?? null : null}
+              notice={exportNotice}
+              touch={touch}
+              onExport={(kind) => dayExport.mutate(kind)}
+              onOpenScene={(id) => {
+                setChosenSceneId(id)
+                setMiddleView('script')
+                setMode('log')
+              }}
+            />
+          </div>
+        ) : null
+      }
+    />
+  )
+  const noDays = !daysLoading && days.length === 0
+  const noDaysMessage = (
+    <p className="text-muted-foreground">
+      No shoot days yet. Add days on the <Link to="/schedule/stripboard">stripboard</Link> to start logging.
+    </p>
+  )
+  const sceneCompleteButton = sceneId && (
+    <Button
+      type="button"
+      variant="outline"
+      size={touch ? 'lg' : 'sm'}
+      className={cn(touch ? 'h-11 shrink-0' : 'w-full', selectedSceneComplete && 'border-primary/60 text-primary')}
+      aria-pressed={selectedSceneComplete}
+      aria-label={`Scene ${sceneNumber ?? ''} complete`}
+      disabled={setSceneProgress.isPending || sceneStatus(sceneId) === 'omitted'}
+      onClick={toggleSceneComplete}
+    >
+      <Check aria-hidden />
+      {selectedSceneComplete ? 'Scene complete' : touch ? 'Mark complete' : 'Mark scene complete'}
+    </Button>
+  )
+  const middleViewControl = (
+    <SegmentedControl<'slates' | 'script'>
+      ariaLabel="Show"
+      size={touch ? 'md' : 'sm'}
+      className={cn('w-auto', touch && 'h-11 w-[220px] shrink-0')}
+      value={middleView}
+      onValueChange={setMiddleView}
+      options={[
+        { value: 'slates', label: `Slates (${slates.length})` },
+        // The tablet header names the scene beside the control, so the tab doesn't repeat it.
+        { value: 'script', label: sceneId && !touch ? `Script | Sc ${sceneNumber ?? ''}` : 'Script' },
+      ]}
+    />
+  )
+  const revisionPanel = revision && (revision.items.length > 0 || revision.relined > 0) && (
+    <RevisionReview
+      review={revision}
+      touch={touch}
+      busy={markReviewed.isPending}
+      daySlateIds={new Set(slateIds)}
+      onSelectSlate={(id) => {
+        setChosenSlateId(id)
+        setSelectedTakeId(null)
+      }}
+      onReviewed={(id) => markReviewed.mutate(id)}
+    />
+  )
+  const liningToolbar = linedScene && (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size={touch ? 'lg' : 'sm'}
+        className={cn(touch && 'h-11')}
+        disabled={!lastUndo || liningBusy}
+        aria-keyshortcuts="Control+Z Meta+Z"
+        onClick={handleUndo}
+      >
+        <Undo2 aria-hidden />
+        {lastUndo ? `Undo ${lastUndo.label}` : 'Undo'}
+      </Button>
+      {!currentSlate && <span className="text-xs text-muted-foreground">Create a slate to line it.</span>}
+      {revision && revisionWasRecorded && revision.items.length === 0 && revision.relined === 0 && (
+        <span className="text-xs text-muted-foreground">{revisionSummary(revision)}</span>
+      )}
+      <span className="flex-1" />
+      <Button
+        type="button"
+        variant="outline"
+        size={touch ? 'lg' : 'sm'}
+        className={cn(touch && 'h-11')}
+        disabled={sceneExport.isPending}
+        onClick={() => sceneExport.mutate()}
+      >
+        <FileDown aria-hidden />
+        {sceneExport.isPending ? 'Exporting…' : 'Export PDF'}
+      </Button>
+    </div>
+  )
+  const linedScript = (
+    <LinedScript
+      layout={linedLayout}
+      isLoading={linedLoading && !!sceneId}
+      hasScript={!!linedScene}
+      sceneNumber={sceneNumber}
+      currentSlateId={currentSlate?.id ?? null}
+      touch={touch}
+      annotations={notesByElement}
+      onAnnotate={(row) =>
+        setNoteDialog({
+          mode: 'create',
+          elementId: row.element.id,
+          excerpt: rowExcerpt(row),
+          character: row.element.element_type === 'dialogue' ? row.element.character_name : null,
+        })
+      }
+      onEditAnnotation={(a, row) => setNoteDialog({ mode: 'edit', annotation: a, excerpt: rowExcerpt(row) })}
+      editing={{
+        activeSlateId: currentSlate?.id ?? null,
+        activeLabel: currentSlate ? labelOf(currentSlate) : null,
+        activeShotType: currentSlate?.shot_type ?? null,
+        activeHasTramline: !!activeTramline,
+        busy: liningBusy,
+        onDraw: handleDraw,
+        onSetSegment: handleSetSegment,
+        onCharacterOff: handleCharacterOff,
+        onDeleteTramline: handleDeleteTramline,
+      }}
+    />
+  )
+  const slatesList = (
+    <section aria-label="Slates on this day" className="space-y-2">
+      {touch && slates.length === 0 && <p className="p-3 text-sm text-muted-foreground">No slates on this day yet.</p>}
+      <ul className="space-y-1">
+        {[...slates].reverse().map((s) => {
+          const active = currentSlate?.id === s.id
+          const prints = printedTakeNumbers(dayTakes.filter((t) => t.slate_id === s.id))
+          return (
+            <li key={s.id}>
+              <button
+                type="button"
+                aria-pressed={active}
+                disabled={!!rolling && !active}
+                onClick={() => {
+                  setChosenSlateId(s.id)
+                  setSelectedTakeId(null)
+                }}
+                className={cn(
+                  'w-full rounded-lg text-left flex items-center gap-3 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50',
+                  touch ? 'min-h-14 px-3' : 'px-3 py-2',
+                  active ? 'bg-primary/15 shadow-[inset_2px_0_0_var(--color-primary)]' : 'hover:bg-muted/40'
+                )}
+              >
+                <span className="font-mono font-semibold w-14">{labelOf(s)}</span>
+                <span className="flex-1 min-w-0 truncate text-sm">
+                  {[s.shot_code, s.description].filter(Boolean).join(' ') || (
+                    <span className="text-muted-foreground">No description</span>
+                  )}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {s.scene_id ? `Sc ${sceneNumberById.get(s.scene_id) ?? '?'}` : 'No scene'}
+                </span>
+                <span className={cn('font-mono text-xs text-right', touch ? 'w-20 whitespace-nowrap' : 'w-16')}>
+                  {prints.length > 0 ? `Print ${prints.join(',')}` : ''}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+  const slatePanelProps = {
+    slate: currentSlate,
+    slateLabel: currentSlate ? labelOf(currentSlate) : null,
+    sceneLabel: currentSlate?.scene_id ? sceneNumberById.get(currentSlate.scene_id) ?? null : null,
+    takes: currentTakes,
+    selectedTakeId,
+    onSelectTake: setSelectedTakeId,
+    rollingSinceMs: rolling && currentSlate && rolling.slateId === currentSlate.id ? rolling.since : null,
+    nowMs,
+    onRollCut: handleRollCut,
+    onMark: handleMark,
+    onNgReason: handleNgReason,
+    onUpdateSlate: handleUpdateSlate,
+    onUpdateTakeRemarks: (id: string, remarks: string | null) => updateTake.mutate({ id, patch: { remarks } }),
+    busy,
+  }
+  const onEditSlateNote = (n: AnnotationView) => setNoteDialog({ mode: 'edit', annotation: n, excerpt: formatAnnotationChip(n) })
+  const onAddPhotos = (files: File[], tags: ContinuityTag[]) => {
+    if (!currentSlate) return
+    photos.add.mutate({
+      productionId: currentProductionId,
+      files,
+      slateId: currentSlate.id,
+      slateLabel: labelOf(currentSlate),
+      takeId: photoTake?.id ?? null,
+      takeNumber: photoTake?.take_number ?? null,
+      sceneId: currentSlate.scene_id,
+      tags,
+    })
+  }
+  const annotationDialog = (
+    <AnnotationDialog
+      state={noteDialog}
+      slate={currentSlate ? { id: currentSlate.id, label: labelOf(currentSlate) } : null}
+      takes={noteTakes}
+      defaultTakeId={photoTake?.id ?? null}
+      busy={notes.create.isPending || notes.update.isPending || notes.remove.isPending}
+      error={noteError?.message ?? null}
+      onClose={() => setNoteDialog(null)}
+      onCreate={(input) => notes.create.mutate(input, { onSuccess: () => setNoteDialog(null) })}
+      onUpdate={(id, patch) => notes.update.mutate({ id, patch }, { onSuccess: () => setNoteDialog(null) })}
+      onDelete={(id) => notes.remove.mutate(id, { onSuccess: () => setNoteDialog(null) })}
+    />
+  )
+
+  if (touch) {
+    const sceneTitle = sceneId ? allScenes.find((s) => s.id === sceneId)?.title ?? dayScenes.find((s) => s.id === sceneId)?.title ?? null : null
+    return (
+      <div className="space-y-3">
+        {header}
+        {errorAlert}
+        {mode === 'review' ? (
+          reviewView
+        ) : noDays ? (
+          noDaysMessage
+        ) : (
+          <TabletWorkspace
+            scenes={(arrangement) => (
+              <TabletSceneNav
+                arrangement={arrangement}
+                dayLabel={chosenDay ? dayLabelOf(chosenDay) : 'Today'}
+                dayScenes={dayScenes}
+                otherScenes={otherScenes}
+                sceneId={sceneId}
+                statusOf={sceneStatus}
+                onSelect={setChosenSceneId}
+              />
+            )}
+            workbench={
+              <>
+                <div className="flex items-center gap-3">
+                  {middleViewControl}
+                  <div className="min-w-0 flex-1">
+                    {sceneId ? (
+                      <>
+                        <p className="truncate">
+                          <span className="font-mono font-semibold">Sc {sceneNumber}</span>
+                          {sceneTitle && <span className="text-muted-foreground"> {sceneTitle}</span>}
+                        </p>
+                        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <SceneStatusPip status={sceneStatus(sceneId)} />
+                          {SCENE_STATUS_LABEL[sceneStatus(sceneId)]}
+                          {!dayScenes.some((d) => d.id === sceneId) && ' | not scheduled today'}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Choose a scene.</p>
+                    )}
+                  </div>
+                  {sceneCompleteButton}
+                </div>
+                {middleView === 'script' ? (
+                  <>
+                    {liningToolbar}
+                    <div className="min-h-0 flex-1 overflow-y-auto">
+                      {revisionPanel}
+                      {linedScript}
+                    </div>
+                  </>
+                ) : (
+                  <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card p-1.5">{slatesList}</div>
+                )}
+              </>
+            }
+            deck={(arrangement, short) => (
+              <TabletSlateDeck
+                {...slatePanelProps}
+                arrangement={arrangement}
+                short={short}
+                notes={slateNotes}
+                photos={slatePhotos}
+                photoTakeNumber={photoTake?.take_number ?? null}
+                photosBusy={photos.add.isPending}
+                onEditNote={onEditSlateNote}
+                onAddPhotos={onAddPhotos}
+                onRemovePhoto={(id) => photos.remove.mutate(id)}
+              />
+            )}
+          />
+        )}
+        {annotationDialog}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl mr-2">Script Supervisor</h1>
-        {days.length > 0 && (
-          <Select
-            value={dayId ?? undefined}
-            onValueChange={(v) => {
-              setChosenDayId(v)
-              setChosenSceneId(null)
-              setChosenSlateId(null)
-              setSelectedTakeId(null)
-            }}
-          >
-            <SelectTrigger aria-label="Shoot day" className={cn('w-[220px]', touch && 'h-11 text-base')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {[...days]
-                .sort((a, b) => a.shoot_date.localeCompare(b.shoot_date))
-                .map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.day_number != null ? `Day ${d.day_number} | ` : ''}
-                    {d.shoot_date}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        )}
-        <span className="text-xs text-muted-foreground">{isUs ? 'US slating' : 'UK slating'}</span>
-        <div className="flex-1" />
-        <SegmentedControl<'log' | 'review'>
-          ariaLabel="Mode"
-          size={touch ? 'md' : 'sm'}
-          className="w-auto min-w-[200px]"
-          value={mode}
-          onValueChange={setMode}
-          options={[
-            { value: 'log', label: 'Line & log' },
-            { value: 'review', label: 'Review' },
-          ]}
-        />
-        {toggleTouch && (
-          <Button
-            type="button"
-            variant="outline"
-            size={touch ? 'icon-lg' : 'icon'}
-            aria-label="Tablet layout"
-            title="Tablet layout"
-            aria-pressed={touch}
-            onClick={toggleTouch}
-            className={cn(touch && 'border-primary/60 bg-primary/15 text-primary')}
-          >
-            <Tablet aria-hidden />
-          </Button>
-        )}
-        <Button
-          type="button"
-          size={touch ? 'lg' : 'default'}
-          disabled={!canCreateSlate}
-          aria-keyshortcuts="N"
-          title={isUs && !sceneId ? 'Choose a scene first' : undefined}
-          onClick={handleNewSlate}
-        >
-          <Plus aria-hidden />
-          New slate
-          {preview && <span className="font-mono">{preview.label}</span>}
-        </Button>
-      </header>
+      {header}
 
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      {errorAlert}
 
       {mode === 'review' ? (
-        <ProgressView
-          progress={progress}
-          isLoading={progressLoading}
-          fallbackDayId={dayId}
-          onSetProgress={(id, input) => setSceneProgress.mutate({ productionId: currentProductionId, sceneId: id, input })}
-          onOpenScene={(id) => {
-            setChosenSceneId(id)
-            setMode('log')
-          }}
-          header={
-            chosenDay ? (
-              <div className="space-y-4">
-              <DayReportCard
-                dayLabel={chosenDay.day_number != null ? `Day ${chosenDay.day_number}` : chosenDay.shoot_date}
-                dayLog={dayLog}
-                plannedCallTime={chosenDay.call_time}
-                plannedWrapTime={chosenDay.wrap_time}
-                onSave={(patch) =>
-                  saveDayLog.mutate({ productionId: currentProductionId, shootDayId: chosenDay.id, patch })
-                }
-                onExport={() => exportDpr.mutate()}
-                exporting={exportDpr.isPending}
-                touch={touch}
-              />
-              <ExportsCard
-                dayLabel={chosenDay.day_number != null ? `Day ${chosenDay.day_number}` : chosenDay.shoot_date}
-                coverage={dayCoverage}
-                coverageLoading={coverageLoading}
-                exporting={dayExport.isPending ? dayExport.variables ?? null : null}
-                notice={exportNotice}
-                touch={touch}
-                onExport={(kind) => dayExport.mutate(kind)}
-                onOpenScene={(id) => {
-                  setChosenSceneId(id)
-                  setMiddleView('script')
-                  setMode('log')
-                }}
-              />
-              </div>
-            ) : null
-          }
-        />
-      ) : !daysLoading && days.length === 0 ? (
-        <p className="text-muted-foreground">
-          No shoot days yet. Add days on the <Link to="/schedule/stripboard">stripboard</Link> to start logging.
-        </p>
+        reviewView
+      ) : noDays ? (
+        noDaysMessage
       ) : (
         <div className="flex flex-wrap gap-4 items-start">
-          <nav
-            aria-label="Scenes"
-            className={cn('shrink-0 space-y-2', touch ? 'w-[88px]' : 'w-[220px]')}
-          >
+          <nav aria-label="Scenes" className="w-[220px] shrink-0 space-y-2">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               {chosenDay?.day_number != null ? `Day ${chosenDay.day_number}` : 'Today'} | scenes
             </p>
@@ -674,24 +972,21 @@ export function ScriptSupervisorPage() {
                       aria-pressed={active}
                       onClick={() => setChosenSceneId(s.id)}
                       className={cn(
-                        'w-full rounded-lg text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                        touch ? 'h-14 px-2 text-center' : 'px-2 py-2',
+                        'w-full rounded-lg text-left px-2 py-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                         active ? 'bg-primary/15 shadow-[inset_2px_0_0_var(--color-primary)]' : 'hover:bg-muted/40'
                       )}
                     >
-                      <span className={cn('inline-flex items-center gap-2', touch && 'flex-col gap-1')}>
+                      <span className="inline-flex items-center gap-2">
                         <SceneStatusPip status={sceneStatus(s.id)} />
                         <span className="font-mono font-semibold">{s.scene_number}</span>
                       </span>
-                      {!touch && s.title && (
-                        <span className="ml-2 text-xs text-muted-foreground truncate">{s.title}</span>
-                      )}
+                      {s.title && <span className="ml-2 text-xs text-muted-foreground truncate">{s.title}</span>}
                     </button>
                   </li>
                 )
               })}
             </ul>
-            {!touch && otherScenes.length > 0 && (
+            {otherScenes.length > 0 && (
               <Select value="" onValueChange={(v) => setChosenSceneId(v)}>
                 <SelectTrigger aria-label="Another scene" className="w-full">
                   <SelectValue placeholder="Another scene…" />
@@ -707,220 +1002,49 @@ export function ScriptSupervisorPage() {
               </Select>
             )}
             {sceneId && !dayScenes.some((d) => d.id === sceneId) && (
-              <p className="text-xs text-muted-foreground">
-                Logging against unscheduled scene {sceneNumberById.get(sceneId)}.
-              </p>
+              <p className="text-xs text-muted-foreground">Logging against unscheduled scene {sceneNumber}.</p>
             )}
             {sceneId && (
               <div className="space-y-1 pt-2">
-                {!touch && (
-                  <p className="text-xs text-muted-foreground">
-                    Sc {sceneNumberById.get(sceneId)}: {SCENE_STATUS_LABEL[sceneStatus(sceneId)]}
-                  </p>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size={touch ? 'lg' : 'sm'}
-                  className={cn('w-full', selectedSceneComplete && 'border-primary/60 text-primary')}
-                  aria-pressed={selectedSceneComplete}
-                  aria-label={`Scene ${sceneNumberById.get(sceneId) ?? ''} complete`}
-                  disabled={setSceneProgress.isPending || sceneStatus(sceneId) === 'omitted'}
-                  onClick={toggleSceneComplete}
-                >
-                  <Check aria-hidden />
-                  {touch ? 'Done' : selectedSceneComplete ? 'Scene complete' : 'Mark scene complete'}
-                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Sc {sceneNumber}: {SCENE_STATUS_LABEL[sceneStatus(sceneId)]}
+                </p>
+                {sceneCompleteButton}
               </div>
             )}
           </nav>
 
           <div className="flex-1 min-w-[240px] space-y-2">
-          <SegmentedControl<'slates' | 'script'>
-            ariaLabel="Show"
-            size={touch ? 'md' : 'sm'}
-            className="w-auto"
-            value={middleView}
-            onValueChange={setMiddleView}
-            options={[
-              { value: 'slates', label: `Slates (${slates.length})` },
-              { value: 'script', label: sceneId ? `Script | Sc ${sceneNumberById.get(sceneId) ?? ''}` : 'Script' },
-            ]}
-          />
-          {middleView === 'script' ? (
-            <>
-            {revision && (revision.items.length > 0 || revision.relined > 0) && (
-              <RevisionReview
-                review={revision}
-                touch={touch}
-                busy={markReviewed.isPending}
-                daySlateIds={new Set(slateIds)}
-                onSelectSlate={(id) => {
-                  setChosenSlateId(id)
-                  setSelectedTakeId(null)
-                }}
-                onReviewed={(id) => markReviewed.mutate(id)}
-              />
+            {middleViewControl}
+            {middleView === 'script' ? (
+              <>
+                {revisionPanel}
+                {liningToolbar}
+                {linedScript}
+              </>
+            ) : (
+              slatesList
             )}
-            {linedScene && (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size={touch ? 'lg' : 'sm'}
-                  disabled={!lastUndo || liningBusy}
-                  aria-keyshortcuts="Control+Z Meta+Z"
-                  onClick={handleUndo}
-                >
-                  <Undo2 aria-hidden />
-                  {lastUndo ? `Undo ${lastUndo.label}` : 'Undo'}
-                </Button>
-                {!currentSlate && <span className="text-xs text-muted-foreground">Create a slate to line it.</span>}
-                {revision && revisionWasRecorded && revision.items.length === 0 && revision.relined === 0 && (
-                  <span className="text-xs text-muted-foreground">{revisionSummary(revision)}</span>
-                )}
-                <span className="flex-1" />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size={touch ? 'lg' : 'sm'}
-                  disabled={sceneExport.isPending}
-                  onClick={() => sceneExport.mutate()}
-                >
-                  <FileDown aria-hidden />
-                  {sceneExport.isPending ? 'Exporting…' : 'Export PDF'}
-                </Button>
-              </div>
-            )}
-            <LinedScript
-              layout={linedLayout}
-              isLoading={linedLoading && !!sceneId}
-              hasScript={!!linedScene}
-              sceneNumber={sceneId ? sceneNumberById.get(sceneId) ?? null : null}
-              currentSlateId={currentSlate?.id ?? null}
-              touch={touch}
-              annotations={notesByElement}
-              onAnnotate={(row) =>
-                setNoteDialog({
-                  mode: 'create',
-                  elementId: row.element.id,
-                  excerpt: rowExcerpt(row),
-                  character: row.element.element_type === 'dialogue' ? row.element.character_name : null,
-                })
-              }
-              onEditAnnotation={(a, row) => setNoteDialog({ mode: 'edit', annotation: a, excerpt: rowExcerpt(row) })}
-              editing={{
-                activeSlateId: currentSlate?.id ?? null,
-                activeLabel: currentSlate ? labelOf(currentSlate) : null,
-                activeShotType: currentSlate?.shot_type ?? null,
-                activeHasTramline: !!activeTramline,
-                busy: liningBusy,
-                onDraw: handleDraw,
-                onSetSegment: handleSetSegment,
-                onCharacterOff: handleCharacterOff,
-                onDeleteTramline: handleDeleteTramline,
-              }}
-            />
-            </>
-          ) : (
-          <section aria-label="Slates on this day" className="space-y-2">
-            <ul className="space-y-1">
-              {[...slates].reverse().map((s) => {
-                const active = currentSlate?.id === s.id
-                const prints = printedTakeNumbers(dayTakes.filter((t) => t.slate_id === s.id))
-                return (
-                  <li key={s.id}>
-                    <button
-                      type="button"
-                      aria-pressed={active}
-                      disabled={!!rolling && !active}
-                      onClick={() => {
-                        setChosenSlateId(s.id)
-                        setSelectedTakeId(null)
-                      }}
-                      className={cn(
-                        'w-full rounded-lg text-left flex items-center gap-3 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50',
-                        touch ? 'min-h-14 px-3' : 'px-3 py-2',
-                        active ? 'bg-primary/15 shadow-[inset_2px_0_0_var(--color-primary)]' : 'hover:bg-muted/40'
-                      )}
-                    >
-                      <span className="font-mono font-semibold w-14">{labelOf(s)}</span>
-                      <span className="flex-1 min-w-0 truncate text-sm">
-                        {[s.shot_code, s.description].filter(Boolean).join(' ') || (
-                          <span className="text-muted-foreground">No description</span>
-                        )}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {s.scene_id ? `Sc ${sceneNumberById.get(s.scene_id) ?? '?'}` : 'No scene'}
-                      </span>
-                      <span className="font-mono text-xs w-16 text-right">
-                        {prints.length > 0 ? `Print ${prints.join(',')}` : ''}
-                      </span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </section>
-          )}
           </div>
 
-          <div className={cn('w-full', touch ? 'lg:w-[420px]' : 'lg:w-[380px]')}>
+          <div className="w-full lg:w-[380px]">
             <div className="space-y-4">
-            <SlatePanel
-              slate={currentSlate}
-              slateLabel={currentSlate ? labelOf(currentSlate) : null}
-              sceneLabel={currentSlate?.scene_id ? sceneNumberById.get(currentSlate.scene_id) ?? null : null}
-              takes={currentTakes}
-              selectedTakeId={selectedTakeId}
-              onSelectTake={setSelectedTakeId}
-              rollingSinceMs={rolling && currentSlate && rolling.slateId === currentSlate.id ? rolling.since : null}
-              nowMs={nowMs}
-              onRollCut={handleRollCut}
-              onMark={handleMark}
-              onNgReason={handleNgReason}
-              onUpdateSlate={handleUpdateSlate}
-              onUpdateTakeRemarks={(id, remarks) => updateTake.mutate({ id, patch: { remarks } })}
-              touch={touch}
-              busy={busy}
-            />
-            {currentSlate && (
-              <SlateNotesPanel
-                slateLabel={labelOf(currentSlate)}
-                notes={slateNotes}
-                photos={slatePhotos}
-                photoTakeNumber={photoTake?.take_number ?? null}
-                busy={photos.add.isPending}
-                touch={touch}
-                onEditNote={(n) => setNoteDialog({ mode: 'edit', annotation: n, excerpt: formatAnnotationChip(n) })}
-                onAddPhotos={(files, tags) =>
-                  photos.add.mutate({
-                    productionId: currentProductionId,
-                    files,
-                    slateId: currentSlate.id,
-                    slateLabel: labelOf(currentSlate),
-                    takeId: photoTake?.id ?? null,
-                    takeNumber: photoTake?.take_number ?? null,
-                    sceneId: currentSlate.scene_id,
-                    tags,
-                  })
-                }
-                onRemovePhoto={(id) => photos.remove.mutate(id)}
-              />
-            )}
+              <SlatePanel {...slatePanelProps} touch={false} />
+              {currentSlate && (
+                <SlateNotesPanel
+                  slateLabel={labelOf(currentSlate)}
+                  notes={slateNotes}
+                  photos={slatePhotos}
+                  photoTakeNumber={photoTake?.take_number ?? null}
+                  busy={photos.add.isPending}
+                  touch={false}
+                  onEditNote={onEditSlateNote}
+                  onAddPhotos={onAddPhotos}
+                  onRemovePhoto={(id) => photos.remove.mutate(id)}
+                />
+              )}
             </div>
-            <AnnotationDialog
-              state={noteDialog}
-              slate={currentSlate ? { id: currentSlate.id, label: labelOf(currentSlate) } : null}
-              takes={noteTakes}
-              defaultTakeId={photoTake?.id ?? null}
-              busy={notes.create.isPending || notes.update.isPending || notes.remove.isPending}
-              error={noteError?.message ?? null}
-              onClose={() => setNoteDialog(null)}
-              onCreate={(input) => notes.create.mutate(input, { onSuccess: () => setNoteDialog(null) })}
-              onUpdate={(id, patch) => notes.update.mutate({ id, patch }, { onSuccess: () => setNoteDialog(null) })}
-              onDelete={(id) => notes.remove.mutate(id, { onSuccess: () => setNoteDialog(null) })}
-            />
+            {annotationDialog}
           </div>
         </div>
       )}

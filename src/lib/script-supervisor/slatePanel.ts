@@ -1,7 +1,7 @@
 /**
  * Pure helpers for the Script Supervisor slate panel (SS3).
  */
-import type { ShootDay, Slate, Take, TakeNgReason, TakeStatus } from '@/lib/db/types'
+import type { ShootDay, Slate, SlateShotType, SlateSoundMode, Take, TakeNgReason, TakeStatus } from '@/lib/db/types'
 
 /**
  * Fields a new slate inherits from the previous one on the same day: camera setup and rolls usually
@@ -30,6 +30,11 @@ export function carryOverFields(previous: Slate | null | undefined): CarriedOver
     if (value != null && value !== '') out[key] = value
   }
   return out as CarriedOverFields
+}
+
+/** Next take number on a slate (1 when it has none). */
+export function nextTakeNumber(takes: readonly Take[]): number {
+  return takes.reduce((m, t) => Math.max(m, t.take_number), 0) + 1
 }
 
 /** Most recently created live slate, or null. */
@@ -102,4 +107,35 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement
   const tag = el.tagName.toLowerCase()
   return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable
+}
+
+export const SHOT_TYPE_LABEL: Record<SlateShotType, string> = {
+  master: 'Master / wide',
+  single: 'Single',
+  multiple: 'Multiple (2S, 3S, group)',
+  insert: 'Insert / cutaway',
+  other: 'Other',
+}
+
+export const SOUND_MODE_LABEL: Record<SlateSoundMode, string> = {
+  sync: 'Sync',
+  mute: 'Mute',
+  wild_track: 'Wild track',
+}
+
+/**
+ * One-line camera setup for the collapsed tablet slate header, e.g. `A · 50mm · T2.8 · ND.6 · A012 / S004 · Sync`.
+ * Empty fields are left out; sound is always shown.
+ */
+export function slateSetupSummary(slate: Pick<Slate, 'camera' | 'lens' | 'stop' | 'filter' | 'camera_roll' | 'sound_roll' | 'sound_mode'>): string {
+  const rolls = [slate.camera_roll, slate.sound_roll].filter(Boolean).join(' / ')
+  return [slate.camera, slate.lens, slate.stop, slate.filter, rolls, SOUND_MODE_LABEL[slate.sound_mode]]
+    .filter((part) => part != null && part !== '')
+    .join(' · ')
+}
+
+/** Short scene time label for the tablet scene rail: `INT` + `NIGHT` → `Int · Night`. */
+export function sceneTimeLabel(intExt: string | null | undefined, dayNight: string | null | undefined): string {
+  const tidy = (v: string | null | undefined) => (v ? v.charAt(0).toUpperCase() + v.slice(1).toLowerCase() : null)
+  return [tidy(intExt), tidy(dayNight)].filter(Boolean).join(' · ')
 }

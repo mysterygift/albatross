@@ -74,99 +74,126 @@ export type SlateNotesPanelProps = {
   onRemovePhoto: (id: string) => void
 }
 
-/** Script notes and continuity photos for the current slate (SS8). */
-export function SlateNotesPanel(props: SlateNotesPanelProps) {
+/** The slate's script notes as chips; tap one to edit it. */
+export function ScriptNotesSection({ notes, touch, onEditNote }: Pick<SlateNotesPanelProps, 'notes' | 'touch' | 'onEditNote'>) {
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm font-medium">Script notes</h3>
+      {notes.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          None yet. Add line changes and editor notes from the script ({touch ? 'tap' : 'hover'} a line, then the note button).
+        </p>
+      ) : (
+        <ul className="flex flex-wrap gap-1.5">
+          {notes.map((n) => (
+            <li key={n.id}>
+              <button
+                type="button"
+                onClick={() => onEditNote(n)}
+                className={cn(
+                  'inline-flex max-w-full items-center gap-1.5 rounded-full bg-secondary px-2.5 text-left text-xs text-secondary-foreground hover:bg-secondary/80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                  touch ? 'min-h-9 py-1.5' : 'py-1'
+                )}
+              >
+                <PenLine className="size-3 shrink-0" aria-hidden />
+                <span className="truncate">{formatAnnotationChip(n)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Continuity photos for the slate, with tags for new photos and an Add photos picker (camera or library on touch devices). */
+export function ContinuityPhotosSection({
+  photos,
+  photoTakeNumber,
+  busy,
+  touch,
+  onAddPhotos,
+  onRemovePhoto,
+}: Pick<SlateNotesPanelProps, 'photos' | 'photoTakeNumber' | 'busy' | 'touch' | 'onAddPhotos' | 'onRemovePhoto'>) {
   const [tags, setTags] = useState<ContinuityTag[]>([])
   const inputId = useId()
 
   return (
-    <section aria-label={`Notes and photos, slate ${props.slateLabel}`} className="rounded-xl border border-border bg-card p-4 space-y-4">
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium">Script notes</h3>
-        {props.notes.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            None yet. Add line changes and editor notes from the script ({props.touch ? 'tap' : 'hover'} a line, then the note button).
-          </p>
-        ) : (
-          <ul className="flex flex-wrap gap-1.5">
-            {props.notes.map((n) => (
-              <li key={n.id}>
-                <button
-                  type="button"
-                  onClick={() => props.onEditNote(n)}
-                  className={cn(
-                    'inline-flex max-w-full items-center gap-1.5 rounded-full bg-secondary px-2.5 text-left text-xs text-secondary-foreground hover:bg-secondary/80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                    props.touch ? 'min-h-9 py-1.5' : 'py-1'
-                  )}
-                >
-                  <PenLine className="size-3 shrink-0" aria-hidden />
-                  <span className="truncate">{formatAnnotationChip(n)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-medium">Continuity photos</h3>
+        <span className="text-xs text-muted-foreground">
+          {photoTakeNumber != null ? `New photos file against take ${photoTakeNumber}` : 'New photos file against the slate'}
+        </span>
       </div>
-
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-medium">Continuity photos</h3>
-          <span className="text-xs text-muted-foreground">
-            {props.photoTakeNumber != null ? `New photos file against take ${props.photoTakeNumber}` : 'New photos file against the slate'}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Tags for new photos">
-          {CONTINUITY_TAGS.map((t) => {
-            const on = tags.includes(t)
-            return (
-              <button
-                key={t}
-                type="button"
-                aria-pressed={on}
-                onClick={() => setTags((cur) => (on ? cur.filter((x) => x !== t) : [...cur, t]))}
-                className={cn(
-                  'rounded-full border px-2.5 text-xs focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                  props.touch ? 'h-9' : 'h-7',
-                  on ? 'border-primary/60 bg-primary/15 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
-                )}
-              >
-                {CONTINUITY_TAG_LABEL[t]}
-              </button>
-            )
-          })}
-        </div>
-        <ul className="flex flex-wrap gap-3 pt-1" aria-label="Photos">
-          {props.photos.map((p) => (
-            <Thumb key={p.id} photo={p} touch={props.touch} onRemove={() => props.onRemovePhoto(p.id)} />
-          ))}
-          <li>
-            <label
-              htmlFor={inputId}
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Tags for new photos">
+        {CONTINUITY_TAGS.map((t) => {
+          const on = tags.includes(t)
+          return (
+            <button
+              key={t}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setTags((cur) => (on ? cur.filter((x) => x !== t) : [...cur, t]))}
               className={cn(
-                'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-xs text-muted-foreground hover:text-foreground focus-within:ring-[3px] focus-within:ring-ring/50',
-                props.touch ? 'h-[84px] w-28' : 'h-[72px] w-24',
-                props.busy && 'pointer-events-none opacity-60'
+                'rounded-full border px-2.5 text-xs focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                touch ? 'h-9' : 'h-7',
+                on ? 'border-primary/60 bg-primary/15 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
               )}
             >
-              <Camera className="size-4" aria-hidden />
-              {props.busy ? 'Saving…' : 'Add photos'}
-            </label>
-            <input
-              id={inputId}
-              type="file"
-              accept="image/*"
-              multiple
-              className="sr-only"
-              disabled={props.busy}
-              onChange={(e) => {
-                const files: File[] = Array.from(e.currentTarget.files ?? [])
-                e.currentTarget.value = ''
-                if (files.length > 0) props.onAddPhotos(files, tags)
-              }}
-            />
-          </li>
-        </ul>
+              {CONTINUITY_TAG_LABEL[t]}
+            </button>
+          )
+        })}
       </div>
+      <ul className="flex flex-wrap gap-3 pt-1" aria-label="Photos">
+        {photos.map((p) => (
+          <Thumb key={p.id} photo={p} touch={touch} onRemove={() => onRemovePhoto(p.id)} />
+        ))}
+        <li>
+          <label
+            htmlFor={inputId}
+            className={cn(
+              'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-xs text-muted-foreground hover:text-foreground focus-within:ring-[3px] focus-within:ring-ring/50',
+              touch ? 'h-[84px] w-28' : 'h-[72px] w-24',
+              busy && 'pointer-events-none opacity-60'
+            )}
+          >
+            <Camera className="size-4" aria-hidden />
+            {busy ? 'Saving…' : 'Add photos'}
+          </label>
+          <input
+            id={inputId}
+            type="file"
+            accept="image/*"
+            multiple
+            className="sr-only"
+            disabled={busy}
+            onChange={(e) => {
+              const files: File[] = Array.from(e.currentTarget.files ?? [])
+              e.currentTarget.value = ''
+              if (files.length > 0) onAddPhotos(files, tags)
+            }}
+          />
+        </li>
+      </ul>
+    </div>
+  )
+}
+
+/** Script notes and continuity photos for the current slate (SS8). */
+export function SlateNotesPanel(props: SlateNotesPanelProps) {
+  return (
+    <section aria-label={`Notes and photos, slate ${props.slateLabel}`} className="rounded-xl border border-border bg-card p-4 space-y-4">
+      <ScriptNotesSection notes={props.notes} touch={props.touch} onEditNote={props.onEditNote} />
+      <ContinuityPhotosSection
+        photos={props.photos}
+        photoTakeNumber={props.photoTakeNumber}
+        busy={props.busy}
+        touch={props.touch}
+        onAddPhotos={props.onAddPhotos}
+        onRemovePhoto={props.onRemovePhoto}
+      />
     </section>
   )
 }
