@@ -78,6 +78,29 @@ export function sectionSignature(sceneId: string, sectionType: string, label: st
   return `${sceneId}|${sectionType}|${label ?? ''}`
 }
 
+/**
+ * Overlap test for two ranges of the same script version. When both ranges carry text offsets
+ * they are compared exactly (page, then offset), so neighbours that merely share an eighth do
+ * not count as overlapping; otherwise falls back to the page/eighth comparison.
+ */
+export function sameVersionRangesOverlap(
+  a: ScriptSectionRange | undefined,
+  b: ScriptSectionRange | undefined
+): boolean {
+  if (!a || !b) return false
+  const offsets = [a.start_offset, a.end_offset, b.start_offset, b.end_offset]
+  const pages = [a.start_page, a.end_page ?? a.start_page, b.start_page, b.end_page ?? b.start_page].map((p) =>
+    parseLeadingPageNumber(p ?? null)
+  )
+  if (offsets.some((o) => o == null) || pages.some((p) => p == null)) return rangesOverlap(a, b)
+  const before = (p1: number, o1: number, p2: number, o2: number) => p1 < p2 || (p1 === p2 && o1 < o2)
+  const [aStartPage, aEndPage, bStartPage, bEndPage] = pages as number[]
+  return (
+    before(aStartPage!, a.start_offset!, bEndPage!, b.end_offset!) &&
+    before(bStartPage!, b.start_offset!, aEndPage!, a.end_offset!)
+  )
+}
+
 export type SectionRangeConflictPair = {
   sectionAId: string
   sectionBId: string
@@ -100,7 +123,7 @@ export function findOverlappingSectionPairs(
       const b = sections[j]!
       if (a.scene_id !== b.scene_id) continue
       const rangeB = rangeBySectionId.get(b.id)
-      if (rangesOverlap(rangeA, rangeB)) {
+      if (sameVersionRangesOverlap(rangeA, rangeB)) {
         pairs.push({ sectionAId: a.id, sectionBId: b.id, sceneId: a.scene_id })
       }
     }

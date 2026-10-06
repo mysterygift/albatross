@@ -15,7 +15,7 @@ import type {
   ScriptVersion,
 } from '@/lib/db/types'
 import { cn } from '@/lib/utils'
-import { formatSectionStatus } from './script-section-edit-dialog'
+import { buildSectionCodes } from '@/lib/db/scriptSectionStatus'
 import {
   formatScriptSectionRange,
   ScriptSectionScriptPanel,
@@ -74,6 +74,17 @@ export function ShotScriptSectionLinkDialog({
       sections.find((s) => initialSectionIds.includes(s.id))?.id ?? sections[0]?.id ?? null
     setPreviewSectionId(defaultPreview)
   }, [open, initialSectionIds, sections])
+
+  const sectionCodes = useMemo(
+    () =>
+      buildSectionCodes(
+        sections,
+        new Map(sections.map((s) => [s.id, rangesBySectionId.get(s.id)?.[0]])),
+        new Map(scene ? [[scene.id, scene.scene_number]] : [])
+      ),
+    [sections, rangesBySectionId, scene]
+  )
+  const codeOf = (sectionId: string) => sectionCodes.get(sectionId) ?? 'section'
 
   const previewSection = sections.find((s) => s.id === previewSectionId) ?? null
   const previewRange = previewSection
@@ -154,7 +165,7 @@ export function ShotScriptSectionLinkDialog({
                             <Checkbox
                               checked={checked}
                               className="mt-1"
-                              aria-label={`Link section ${section.label ?? section.id}`}
+                              aria-label={`Link section ${codeOf(section.id)}`}
                               onClick={(e) => e.stopPropagation()}
                               onCheckedChange={() => toggleSection(section.id)}
                             />
@@ -164,12 +175,14 @@ export function ShotScriptSectionLinkDialog({
                               onClick={() => setPreviewSectionId(section.id)}
                             >
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="text-sm font-medium text-foreground">
-                                  {section.label ?? 'Untitled section'}
+                                <span className="font-mono text-sm font-medium text-foreground">
+                                  {codeOf(section.id)}
                                 </span>
-                                <span className="rounded bg-secondary/80 px-1.5 py-0.5 text-xs text-foreground">
-                                  {formatSectionStatus(section.status)}
-                                </span>
+                                {section.status === 'omitted' && (
+                                  <span className="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground line-through">
+                                    Cut
+                                  </span>
+                                )}
                                 <span
                                   className={cn(
                                     'rounded px-1.5 py-0.5 text-xs',
@@ -218,9 +231,6 @@ export function ShotScriptSectionLinkDialog({
                                     .join(', ')}
                                 </div>
                               )}
-                              {section.notes && (
-                                <div className="mt-1 text-xs italic text-muted-foreground">{section.notes}</div>
-                              )}
                             </button>
                           </div>
                         </div>
@@ -240,7 +250,7 @@ export function ShotScriptSectionLinkDialog({
                   showCard={false}
                   subtitle={
                     previewSection
-                      ? `showing pages for “${previewSection.label ?? 'section'}”`
+                      ? `showing pages for ${codeOf(previewSection.id)}`
                       : 'Select a section to preview script text'
                   }
                 />

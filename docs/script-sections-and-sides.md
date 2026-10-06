@@ -22,6 +22,12 @@ flowchart LR
 5. **Sides builder** ([`sidesBuilderService.ts`](../src/lib/db/sidesBuilderService.ts)) filters/selects entries for preview.
 6. **Export** ([`sidesExportService.ts`](../src/lib/db/sidesExportService.ts)) renders PDF, stores under `attachments/{productionId}/`, records `shoot_day_sides_exports` + `documents`.
 
+## Sections page and editor
+
+- **Section codes.** Sections are shown as `12.1`, `12.2`, … numbered per scene in script order ([`buildSectionCodes`](../src/lib/db/scriptSectionStatus.ts)). Codes are computed, not stored. The `label` column is no longer edited in the UI: generation still writes it (it is part of the regeneration signature), and new or split-off sections get a descriptive label for sides and shoot-day summaries.
+- **Derived status.** No coverage → Covered → Scheduled → Shot, or Cut ([`deriveSectionStatus`](../src/lib/db/scriptSectionStatus.ts)). A section only reaches a stage once every linked shot has: *scheduled* = a SCHEDULED stripboard strip for the shot or its scene; *shot* = a printed take on a slate for the shot, or the scene marked complete on the Script Supervisor page. Cut is the only stored state (`status = 'omitted'`); a scene the script supervisor marked omitted also counts as cut. Data comes from [`loadScriptVersionSectionProgress`](../src/lib/db/scriptSectionStatusService.ts). Notes are no longer shown or edited.
+- **Highlight to select.** The editor flattens the scene's pages into lines ([`scriptSectionLayout.ts`](../src/lib/db/scriptSectionLayout.ts)) and the user drags across them. Ranges are saved with exact text offsets; eighths are derived from the same line-snapped spans as generation and are for display. The newest selection wins: overlapped neighbours are trimmed, removed (their shot links move to the edited section) or split (the tail becomes a new section with the same shot links), and lines the edited section lets go of are handed to the adjacent section. [`applyScriptSectionLayout`](../src/lib/db/repositories/scriptSections.ts) writes the whole change in one transaction and marks every touched section `ranges_user_edited`.
+
 ## Best-effort pagination
 
 - Eighths use a fixed **8 eighths per page** model everywhere (parsers, generation, SB5–SB7).
