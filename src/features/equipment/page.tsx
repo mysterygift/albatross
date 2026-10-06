@@ -85,6 +85,7 @@ import { VendorPicker } from '@/components/vendors/VendorPicker'
 import { cn } from '@/lib/utils'
 import { formatEquipmentLabel, formatEquipmentCategoryLabel } from '@/features/equipment/formatEquipmentLabel'
 import { generateEquipmentListPdf } from '@/lib/pdf/equipmentListPdf'
+import { DEFAULT_PAPER_SIZE, PAPER_SIZES, isPaperSize, type PaperSize } from '@/lib/pdf/layoutKit'
 import { saveFileWithDialog } from '@/lib/files'
 import { persistProductionDocument, documentsQueryKey } from '@/lib/documents/persistDocument'
 import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
@@ -1302,6 +1303,7 @@ function EquipmentListDetail({
   const queryClient = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
   const [editingList, setEditingList] = useState(false)
+  const [paperSize, setPaperSize] = useState<PaperSize>(DEFAULT_PAPER_SIZE)
   const { data: list } = useQuery({
     queryKey: ['equipmentList', listId],
     queryFn: () => getEquipmentListById(listId),
@@ -1364,13 +1366,20 @@ function EquipmentListDetail({
     mutationFn: async () => {
       if (!list) return
       const equipmentById = new Map(equipment.map((e) => [e.id, e]))
-      const shootDayLabel = list.shoot_day_id ? shootDayById.get(list.shoot_day_id)?.shoot_date ?? null : null
+      const shootDay = list.shoot_day_id ? shootDayById.get(list.shoot_day_id) : undefined
       const pdfBytes = await generateEquipmentListPdf({
         productionName,
         list,
         listItems: items,
         equipmentById,
-        shootDayLabel,
+        shootDay: shootDay
+          ? {
+              shootDate: shootDay.shoot_date,
+              dayNumber: shootDay.day_number,
+              totalShootDays: shootDays.length > 0 ? shootDays.length : null,
+            }
+          : null,
+        paperSize,
       })
       const fileName = `equipment-checklist-${list.name.replace(/[^a-zA-Z0-9-_]/g, '-').slice(0, 40)}-${new Date().toISOString().slice(0, 10)}.pdf`
       const bytes = new Uint8Array(pdfBytes)
@@ -1561,6 +1570,23 @@ function EquipmentListDetail({
         }}
       />
       <div className="flex gap-2">
+        <Select
+          value={paperSize}
+          onValueChange={(value) => {
+            if (isPaperSize(value)) setPaperSize(value)
+          }}
+        >
+          <SelectTrigger size="sm" className="w-[110px]" aria-label="PDF paper size">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(PAPER_SIZES) as PaperSize[]).map((size) => (
+              <SelectItem key={size} value={size}>
+                {PAPER_SIZES[size].label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button
           variant="outline"
           size="sm"
