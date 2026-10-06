@@ -1,22 +1,21 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 
 import { ScriptSectionsPage } from '@/features/schedule/script-sections-page'
-import {
-  validateSectionEditorValues,
-  EMPTY_SECTION_VALUES,
-} from '@/features/schedule/script-section-edit-dialog'
+import { buildSceneLines, rangeForRun, type LineRun } from '@/lib/db/scriptSectionLayout'
+import type { SectionShotProgress } from '@/lib/db/scriptSectionStatus'
 import type {
   Scene,
+  ScriptPage,
   ScriptSection,
+  ScriptSectionRange,
   ScriptVersion,
-  Shot,
 } from '@/lib/db/types'
 
-const loadSceneCoverage = vi.hoisted(() => vi.fn())
 const listVersions = vi.hoisted(() => vi.fn())
 const listScenes = vi.hoisted(() => vi.fn())
 const listShotsByScene = vi.hoisted(() => vi.fn())
@@ -24,18 +23,11 @@ const listPages = vi.hoisted(() => vi.fn())
 const listSections = vi.hoisted(() => vi.fn())
 const listRanges = vi.hoisted(() => vi.fn())
 const listCharacters = vi.hoisted(() => vi.fn())
-const createSection = vi.hoisted(() => vi.fn())
-const updateSection = vi.hoisted(() => vi.fn())
-const replaceRanges = vi.hoisted(() => vi.fn())
-const replaceCharacters = vi.hoisted(() => vi.fn())
+const applyLayout = vi.hoisted(() => vi.fn())
+const setCut = vi.hoisted(() => vi.fn())
 const softDeleteWithChildren = vi.hoisted(() => vi.fn())
-const getLinkedShotCounts = vi.hoisted(() => vi.fn())
 const getLinkedSectionCounts = vi.hoisted(() => vi.fn())
-const listShotsBySection = vi.hoisted(() => vi.fn())
-
-vi.mock('@/lib/db/coverageAnalysisService', () => ({
-  loadSceneCoverage: loadSceneCoverage,
-}))
+const loadProgress = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/db/repositories/scriptVersions', () => ({
   listScriptVersionsByProduction: listVersions,
@@ -53,22 +45,30 @@ vi.mock('@/lib/db/repositories/schedule', () => ({
   listShotsByScene: listShotsByScene,
 }))
 
+vi.mock('@/lib/db/repositories/location', () => ({
+  listLocationsByProduction: vi.fn(async () => []),
+}))
+
 vi.mock('@/lib/db/repositories/scriptPages', () => ({
   listScriptPagesByScriptVersion: listPages,
 }))
 
 vi.mock('@/lib/db/repositories/scriptSections', () => ({
   listSectionsByScriptVersion: listSections,
-  listRangesBySection: listRanges,
-  listCharactersBySection: listCharacters,
-  createSectionWithRangesAndCharacters: createSection,
-  updateScriptSection: updateSection,
-  replaceSectionRanges: replaceRanges,
-  replaceSectionCharacters: replaceCharacters,
+  listRangesByScriptVersion: listRanges,
+  listCharactersByScriptVersion: listCharacters,
+  applyScriptSectionLayout: applyLayout,
+  setScriptSectionCut: setCut,
   softDeleteSectionWithChildren: softDeleteWithChildren,
-  getLinkedShotCountsBySectionIds: getLinkedShotCounts,
   getLinkedSectionCountsByShotIds: getLinkedSectionCounts,
-  listShotsBySection: listShotsBySection,
+}))
+
+vi.mock('@/lib/db/scriptSectionStatusService', () => ({
+  loadScriptVersionSectionProgress: loadProgress,
+}))
+
+vi.mock('@/hooks/useEffectiveDataSourceForProduction', () => ({
+  useEffectiveDataSourceForProduction: () => ({ dataSourceKey: 'local_sqlite' }),
 }))
 
 const currentProdId = vi.hoisted(() => ({ id: 'prod-1' as string | null }))
@@ -109,33 +109,14 @@ function scene(over: Partial<Scene> = {}): Scene {
     id: 'scene-1',
     production_id: 'prod-1',
     episode_id: null,
-    scene_number: '1',
-    title: 'Kitchen',
+    scene_number: '12',
+    title: 'Harbour office',
     description: null,
     int_ext: 'INT',
-    day_night: 'DAY',
+    day_night: 'NIGHT',
     page_eighths: null,
     location_id: null,
     duration_minutes: null,
-    ...soft,
-    ...over,
-  }
-}
-
-function shot(over: Partial<Shot> = {}): Shot {
-  return {
-    id: 'shot-1',
-    scene_id: 'scene-1',
-    shot_number: '1A',
-    shot_description: null,
-    subject: null,
-    shot_size: null,
-    support: null,
-    lens: null,
-    duration_seconds: null,
-    estimated_shoot_minutes: null,
-    camera_movement: null,
-    notes: null,
     ...soft,
     ...over,
   }
@@ -148,15 +129,36 @@ function section(over: Partial<ScriptSection> = {}): ScriptSection {
     script_version_id: 'ver-1',
     scene_id: 'scene-1',
     episode_id: null,
-    label: 'A section',
-    section_type: 'custom',
+    label: 'Scene 12 — Page 14',
+    section_type: 'action',
     status: 'unplanned',
     notes: null,
-    is_manual: 1,
+    is_manual: 0,
     ranges_user_edited: 0,
     ...soft,
     ...over,
   }
+}
+
+const PAGE_TEXT = Array.from({ length: 16 }, (_, i) => (i % 4 === 0 ? (i < 8 ? 'MAGGIE' : 'TOM') : `Line ${i}.`)).join('\n')
+const page: ScriptPage = {
+  id: 'page-14',
+  script_version_id: 'ver-1',
+  scene_id: 'scene-1',
+  page_number: '14',
+  page_index: 0,
+  content: PAGE_TEXT,
+  eighths: 8,
+  ...soft,
+}
+const lines = buildSceneLines([page])
+
+function rangeRow(sectionId: string, run: LineRun): ScriptSectionRange {
+  return { id: `range-${sectionId}`, section_id: sectionId, ...rangeForRun(lines, run), ...soft } as ScriptSectionRange
+}
+
+function progressShot(over: Partial<SectionShotProgress> = {}): SectionShotProgress {
+  return { shotId: 'shot-1', shotNumber: '12A', shootDays: [], printedTakes: [], sceneComplete: false, ...over }
 }
 
 function renderPage() {
@@ -164,11 +166,15 @@ function renderPage() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
-    <QueryClientProvider client={client}>
-      <ScriptSectionsPage />
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <ScriptSectionsPage />
+      </QueryClientProvider>
+    </MemoryRouter>
   )
 }
+
+const rowFor = (code: string) => screen.getByRole('option', { name: new RegExp(`^${code.replace('.', '\\.')}`) })
 
 describe('ScriptSectionsPage', () => {
   beforeEach(() => {
@@ -186,317 +192,176 @@ describe('ScriptSectionsPage', () => {
 
     listVersions.mockResolvedValue([version()])
     listScenes.mockResolvedValue([scene()])
-    listPages.mockResolvedValue([])
+    listPages.mockResolvedValue([page])
     listSections.mockResolvedValue([
-      section({ id: 'sec-manual', label: 'Manual Fight', is_manual: 1 }),
-      section({ id: 'sec-generated', label: 'Generated Scene', section_type: 'action', is_manual: 0 }),
+      section({ id: 'sec-a', created_at: '1' }),
+      section({ id: 'sec-b', created_at: '2', is_manual: 1, section_type: 'custom' }),
     ])
-    listRanges.mockResolvedValue([])
-    listCharacters.mockResolvedValue([])
-    createSection.mockResolvedValue(section({ id: 'sec-new' }))
-    updateSection.mockResolvedValue(section())
-    replaceRanges.mockResolvedValue([])
-    replaceCharacters.mockResolvedValue([])
-    softDeleteWithChildren.mockResolvedValue(undefined)
-    getLinkedShotCounts.mockResolvedValue(new Map<string, number>())
-    getLinkedSectionCounts.mockResolvedValue(new Map<string, number>())
-    listShotsBySection.mockResolvedValue([])
-    listShotsByScene.mockResolvedValue([])
-    loadSceneCoverage.mockResolvedValue({
-      sceneId: 'scene-1',
-      totalSections: 2,
-      coveredSections: 1,
-      uncoveredSections: 1,
-      linkedShots: 1,
-      unlinkedShots: 1,
-      coveragePercent: 50,
-      isPartialScene: false,
-      issues: [],
+    listRanges.mockResolvedValue(
+      new Map([
+        ['sec-a', [rangeRow('sec-a', { from: 0, to: 7 })]],
+        ['sec-b', [rangeRow('sec-b', { from: 8, to: 15 })]],
+      ])
+    )
+    listCharacters.mockResolvedValue(
+      new Map([['sec-a', [{ id: 'c1', section_id: 'sec-a', person_id: null, character_name: 'MAGGIE', ...soft }]]])
+    )
+    loadProgress.mockResolvedValue({
+      shotsBySectionId: new Map([
+        [
+          'sec-a',
+          [
+            progressShot({ shotId: 'shot-1', shotNumber: '12A', shootDays: [{ id: 'd6', dayNumber: 6, shootDate: '2026-10-08' }] }),
+          ],
+        ],
+      ]),
+      omittedSceneIds: new Set<string>(),
     })
+    applyLayout.mockResolvedValue('sec-a')
+    setCut.mockResolvedValue(section())
+    softDeleteWithChildren.mockResolvedValue(undefined)
+    getLinkedSectionCounts.mockResolvedValue(new Map<string, number>())
+    listShotsByScene.mockResolvedValue([])
   })
 
   afterEach(() => {
     cleanup()
   })
 
-  it('lists the script version and its sections', async () => {
+  it('groups sections under their scene with codes and a status set by the app', async () => {
     renderPage()
-    await waitFor(() => expect(screen.getByText('Manual Fight')).toBeTruthy())
-    expect(screen.getByText('Generated Scene')).toBeTruthy()
-    expect(listSections).toHaveBeenCalledWith('ver-1')
-    // Both Generated and Manual badges are present.
-    expect(screen.getByText('Generated')).toBeTruthy()
-    expect(screen.getByText('Manual')).toBeTruthy()
+    await waitFor(() => expect(rowFor('12.1')).toBeTruthy())
+    expect(rowFor('12.2')).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Scene 12' })).toBeTruthy()
+    expect(within(rowFor('12.1')).getByText('Scheduled · Day 6')).toBeTruthy()
+    expect(within(rowFor('12.2')).getByText('No coverage')).toBeTruthy()
+    expect(within(rowFor('12.1')).getByText('MAGGIE')).toBeTruthy()
+    // The old manual status and badges are gone.
+    expect(screen.queryByText('Unplanned')).toBeNull()
+    expect(screen.queryByText('No shots')).toBeNull()
+    expect(screen.queryByText('Generated')).toBeNull()
   })
 
-  it('creates a custom section', async () => {
+  it('filters by status', async () => {
     const user = userEvent.setup()
     renderPage()
-    await waitFor(() => expect(screen.getByText('Manual Fight')).toBeTruthy())
+    await waitFor(() => expect(rowFor('12.1')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: /^No coverage/ }))
+    expect(screen.queryByRole('option', { name: /^12\.1/ })).toBeNull()
+    expect(rowFor('12.2')).toBeTruthy()
+  })
 
-    await user.click(screen.getByRole('button', { name: 'New section' }))
+  it('shows progress steps and the shot table for the selected section', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(rowFor('12.1')).toBeTruthy())
+    await user.click(rowFor('12.1'))
+    const steps = await screen.findByRole('list', { name: 'Section progress' })
+    expect(within(steps).getByText('1 shot linked: 12A')).toBeTruthy()
+    expect(within(steps).getByText('On Day 6 · 2026-10-08')).toBeTruthy()
+    expect(screen.getByRole('cell', { name: 'Day 6 · 2026-10-08' })).toBeTruthy()
+  })
+
+  it('edits a range with the eighth nudges and takes the lines from the next section', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(rowFor('12.1')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: 'Edit section 12.1' }))
     const dlg = await screen.findByRole('dialog')
 
-    // Choose the linked scene (required on create).
-    await user.click(within(dlg).getByRole('combobox', { name: 'Linked scene' }))
-    await user.click(await screen.findByRole('option', { name: /Scene 1/ }))
+    expect(within(dlg).getByText(/Scene 12 —/)).toBeTruthy()
+    expect(within(dlg).queryByLabelText('Label')).toBeNull()
+    expect(within(dlg).queryByLabelText('Notes')).toBeNull()
+    expect(within(dlg).queryByRole('combobox', { name: /status/i })).toBeNull()
+    expect(within(dlg).getByText(/can’t be edited here/)).toBeTruthy()
 
-    await user.type(within(dlg).getByLabelText('Label'), 'New custom bit')
-    await user.click(within(dlg).getByRole('button', { name: 'Create section' }))
+    await user.click(within(dlg).getByRole('button', { name: 'Move end forward an eighth' }))
+    expect(await within(dlg).findByText('Saving changes other sections')).toBeTruthy()
+    expect(within(dlg).getByText(/12\.2 gives up/)).toBeTruthy()
 
-    await waitFor(() => expect(createSection).toHaveBeenCalledTimes(1))
-    expect(createSection.mock.calls[0]![0]).toMatchObject({
+    await user.click(within(dlg).getByRole('button', { name: 'Save and take from 12.2' }))
+    await waitFor(() => expect(applyLayout).toHaveBeenCalledTimes(1))
+    const input = applyLayout.mock.calls[0]![0]
+    expect(input).toMatchObject({
       production_id: 'prod-1',
       script_version_id: 'ver-1',
       scene_id: 'scene-1',
-      is_manual: true,
-      label: 'New custom bit',
+      removals: [],
+      splits: [],
+      current: { id: 'sec-a', cut: false },
     })
+    expect(input.current.range.start_offset).toBe(0)
+    expect(input.current.range.end_offset).toBeGreaterThan(lines[7]!.endOffset)
+    expect(input.updates).toHaveLength(1)
+    expect(input.updates[0].sectionId).toBe('sec-b')
+    expect(input.updates[0].range.start_offset).toBe(input.current.range.end_offset)
   })
 
-  it('edits a custom section', async () => {
-    const user = userEvent.setup()
+  it('highlights lines by dragging and hands released lines to the neighbour', async () => {
     renderPage()
-    await waitFor(() => expect(screen.getByText('Manual Fight')).toBeTruthy())
-
-    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]!)
+    await waitFor(() => expect(rowFor('12.2')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Edit section 12.2' }))
     const dlg = await screen.findByRole('dialog')
+    const lineEl = (i: number) => dlg.querySelector(`[data-line="${i}"]`)!
 
-    const labelInput = within(dlg).getByLabelText('Label')
-    await user.clear(labelInput)
-    await user.type(labelInput, 'Renamed fight')
-    await user.click(within(dlg).getByRole('button', { name: 'Save changes' }))
+    fireEvent.pointerDown(lineEl(12), { pointerType: 'mouse', button: 0 })
+    fireEvent.pointerEnter(lineEl(15), { pointerType: 'mouse' })
+    fireEvent.pointerUp(window)
 
-    await waitFor(() => expect(updateSection).toHaveBeenCalledTimes(1))
-    expect(updateSection.mock.calls[0]![0]).toBe('sec-manual')
-    expect(updateSection.mock.calls[0]![1]).toMatchObject({ label: 'Renamed fight' })
+    expect(await within(dlg).findByText(/12\.1 takes over/)).toBeTruthy()
+    fireEvent.click(within(dlg).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(applyLayout).toHaveBeenCalledTimes(1))
+    const input = applyLayout.mock.calls[0]![0]
+    expect(input.current.range.start_offset).toBe(lines[12]!.startOffset)
+    expect(input.updates).toEqual([
+      expect.objectContaining({ sectionId: 'sec-a', range: expect.objectContaining({ end_offset: lines[11]!.endOffset }) }),
+    ])
   })
 
-  it('deletes a custom section', async () => {
+  it('marks a section as cut without touching its range', async () => {
     const user = userEvent.setup()
     renderPage()
-    await waitFor(() => expect(screen.getByText('Manual Fight')).toBeTruthy())
-
-    await user.click(screen.getAllByRole('button', { name: 'Delete' })[0]!)
-    await waitFor(() => expect(softDeleteWithChildren).toHaveBeenCalledWith('sec-manual'))
-  })
-
-  it('deletes a generated section', async () => {
-    const user = userEvent.setup()
-    renderPage()
-    await waitFor(() => expect(screen.getByText('Generated Scene')).toBeTruthy())
-
-    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' }) as HTMLButtonElement[]
-    await user.click(deleteButtons[1]!)
-    await waitFor(() => expect(softDeleteWithChildren).toHaveBeenCalledWith('sec-generated'))
-  })
-
-  it('blocks saving an out-of-bounds eighth value', async () => {
-    const user = userEvent.setup()
-    renderPage()
-    await waitFor(() => expect(screen.getByText('Manual Fight')).toBeTruthy())
-
-    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]!)
+    await waitFor(() => expect(rowFor('12.2')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: 'Edit section 12.2' }))
     const dlg = await screen.findByRole('dialog')
-
-    await user.type(within(dlg).getByLabelText(/Start eighth/), '9')
+    await user.click(within(dlg).getByRole('button', { name: 'Mark as cut' }))
     await user.click(within(dlg).getByRole('button', { name: 'Save changes' }))
-
-    expect(await within(dlg).findByRole('alert')).toBeTruthy()
-    expect(updateSection).not.toHaveBeenCalled()
+    await waitFor(() => expect(setCut).toHaveBeenCalledWith('sec-b', true))
+    expect(applyLayout).not.toHaveBeenCalled()
   })
 
-  it('edits page/eighth ranges on a generated section', async () => {
-    listRanges.mockImplementation(async (sectionId: string) => {
-      if (sectionId === 'sec-generated') {
-        return [
-          {
-            id: 'range-1',
-            section_id: sectionId,
-            start_page: '1',
-            start_eighth: 0,
-            end_page: '1',
-            end_eighth: 4,
-            start_offset: 0,
-            end_offset: 20,
-            created_at: 't',
-            updated_at: 't',
-            deleted_at: null,
-          },
-        ]
-      }
-      return []
-    })
-
+  it('asks for confirmation before deleting', async () => {
     const user = userEvent.setup()
     renderPage()
-    await waitFor(() => expect(screen.getByText('Generated Scene')).toBeTruthy())
-
-    await user.click(screen.getAllByRole('button', { name: 'Edit' })[1]!)
+    await waitFor(() => expect(rowFor('12.2')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: 'Edit section 12.2' }))
     const dlg = await screen.findByRole('dialog')
-    expect(within(dlg).queryByText('Type')).toBeNull()
-
-    const startEighth = within(dlg).getByLabelText(/Start eighth/)
-    await user.clear(startEighth)
-    await user.type(startEighth, '2')
-    await user.click(within(dlg).getByRole('button', { name: 'Save changes' }))
-
-    await waitFor(() => expect(updateSection).toHaveBeenCalledTimes(1))
-    expect(updateSection.mock.calls[0]![0]).toBe('sec-generated')
-    await waitFor(() => expect(replaceRanges).toHaveBeenCalledTimes(1))
-    expect(replaceRanges.mock.calls[0]![0]).toBe('sec-generated')
-    expect(replaceRanges.mock.calls[0]![1]).toEqual([
-      expect.objectContaining({ start_eighth: 2 }),
-    ])
-    expect(replaceRanges.mock.calls[0]![2]).toEqual({ markUserEdited: true })
+    await user.click(within(dlg).getByRole('button', { name: 'Delete' }))
+    expect(softDeleteWithChildren).not.toHaveBeenCalled()
+    await user.click(within(dlg).getByRole('button', { name: 'Confirm delete' }))
+    await waitFor(() => expect(softDeleteWithChildren).toHaveBeenCalledWith('sec-b'))
   })
 
-  it('shows capitalized status labels', async () => {
+  it('creates a section from a highlighted selection, splitting the section it lands in', async () => {
     renderPage()
-    await waitFor(() => expect(screen.getByText('Manual Fight')).toBeTruthy())
-    expect(screen.getAllByText('Unplanned').length).toBeGreaterThan(0)
-    expect(screen.queryByText('unplanned')).toBeNull()
-  })
+    await waitFor(() => expect(rowFor('12.1')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'New section' }))
+    const dlg = await screen.findByRole('dialog')
+    expect(within(dlg).getByRole('button', { name: 'Highlight the script to save' })).toHaveProperty('disabled', true)
 
-  it('filters sections by scene and restores all scenes', async () => {
-    const user = userEvent.setup()
-    listScenes.mockResolvedValue([
-      scene({ id: 'scene-1', scene_number: '10', title: 'Office' }),
-      scene({ id: 'scene-2', scene_number: '11', title: 'Street' }),
-    ])
-    listSections.mockResolvedValue([
-      section({ id: 'sec-scene-1', scene_id: 'scene-1', label: 'Office section' }),
-      section({ id: 'sec-scene-2', scene_id: 'scene-2', label: 'Street section' }),
-    ])
+    const lineEl = (i: number) => dlg.querySelector(`[data-line="${i}"]`)!
+    await waitFor(() => expect(lineEl(3)).toBeTruthy())
+    fireEvent.pointerDown(lineEl(3), { pointerType: 'mouse', button: 0 })
+    fireEvent.pointerEnter(lineEl(4), { pointerType: 'mouse' })
+    fireEvent.pointerUp(window)
 
-    renderPage()
-    await waitFor(() => expect(screen.getByText('Office section')).toBeTruthy())
-    expect(screen.getByText('Street section')).toBeTruthy()
-
-    await user.click(screen.getByRole('combobox', { name: 'Scene' }))
-    await user.click(await screen.findByRole('option', { name: /Scene 11/ }))
-    expect(screen.queryByText('Office section')).toBeNull()
-    expect(screen.getByText('Street section')).toBeTruthy()
-
-    await user.click(screen.getByRole('combobox', { name: 'Scene' }))
-    await user.click(await screen.findByRole('option', { name: 'All scenes' }))
-    expect(await screen.findByText('Office section')).toBeTruthy()
-    expect(screen.getByText('Street section')).toBeTruthy()
-  })
-
-  it('clears section selection when filtered out by scene', async () => {
-    const user = userEvent.setup()
-    listScenes.mockResolvedValue([
-      scene({ id: 'scene-1', scene_number: '10', title: 'Office' }),
-      scene({ id: 'scene-2', scene_number: '11', title: 'Street' }),
-    ])
-    listSections.mockResolvedValue([
-      section({ id: 'sec-scene-1', scene_id: 'scene-1', label: 'Office section' }),
-      section({ id: 'sec-scene-2', scene_id: 'scene-2', label: 'Street section' }),
-    ])
-    listShotsBySection.mockResolvedValue([])
-    listShotsByScene.mockResolvedValue([])
-    loadSceneCoverage.mockResolvedValue({
-      sceneId: 'scene-1',
-      totalSections: 1,
-      coveredSections: 0,
-      uncoveredSections: 1,
-      linkedShots: 0,
-      unlinkedShots: 0,
-      coveragePercent: 0,
-      isPartialScene: false,
-      issues: [],
-    })
-
-    renderPage()
-    await waitFor(() => expect(screen.getByText('Office section')).toBeTruthy())
-
-    await user.click(screen.getByText('Office section'))
-    await waitFor(() => expect(screen.getByText(/Scene coverage/)).toBeTruthy())
-
-    await user.click(screen.getByRole('combobox', { name: 'Scene' }))
-    await user.click(await screen.findByRole('option', { name: /Scene 11/ }))
-
-    expect(screen.queryByText(/Scene coverage/)).toBeNull()
-  })
-
-  it('shows linked-shot coverage badges per section', async () => {
-    getLinkedShotCounts.mockResolvedValue(new Map<string, number>([['sec-manual', 2]]))
-    renderPage()
-    await waitFor(() => expect(screen.getByText('Manual Fight')).toBeTruthy())
-
-    // The covered section shows a shot count; the uncovered one shows a warning.
-    await waitFor(() => expect(screen.getByText('2 shots')).toBeTruthy())
-    expect(screen.getByText('No shots')).toBeTruthy()
-  })
-
-  it('shows a coverage panel with linked and uncovered shots when a section is selected', async () => {
-    listShotsBySection.mockResolvedValue([shot({ id: 'shot-1', shot_number: '1A' })])
-    listShotsByScene.mockResolvedValue([
-      shot({ id: 'shot-1', shot_number: '1A' }),
-      shot({ id: 'shot-2', shot_number: '1B' }),
-    ])
-    // shot-1 is covered (1 section), shot-2 is uncovered (absent from the map).
-    getLinkedSectionCounts.mockResolvedValue(new Map<string, number>([['shot-1', 1]]))
-
-    const user = userEvent.setup()
-    renderPage()
-    await waitFor(() => expect(screen.getByText('Manual Fight')).toBeTruthy())
-
-    await user.click(screen.getByText('Manual Fight'))
-
-    await waitFor(() => expect(screen.getByText(/Coverage for/)).toBeTruthy())
-    await waitFor(() => expect(screen.getByText(/Scene coverage/)).toBeTruthy())
-    expect(screen.getByText('50%')).toBeTruthy()
-    // Linked shot 1A appears, uncovered shot 1B is flagged.
-    expect(screen.getByText('Shot 1A')).toBeTruthy()
-    expect(screen.getByText('Shot 1B')).toBeTruthy()
-  })
-})
-
-describe('validateSectionEditorValues', () => {
-  it('requires a scene when requested', () => {
-    expect(validateSectionEditorValues(EMPTY_SECTION_VALUES, { requireScene: true })).toMatch(/scene/i)
-  })
-
-  it('rejects start page after end page', () => {
-    const result = validateSectionEditorValues({
-      ...EMPTY_SECTION_VALUES,
-      scene_id: 'scene-1',
-      start_page: '5',
-      end_page: '2',
-    })
-    expect(result).toMatch(/start page/i)
-  })
-
-  it('rejects start eighth after end eighth on the same page', () => {
-    const result = validateSectionEditorValues({
-      ...EMPTY_SECTION_VALUES,
-      scene_id: 'scene-1',
-      start_page: '3',
-      end_page: '3',
-      start_eighth: '6',
-      end_eighth: '2',
-    })
-    expect(result).toMatch(/eighth/i)
-  })
-
-  it('rejects eighth values outside 0–8', () => {
-    expect(
-      validateSectionEditorValues({ ...EMPTY_SECTION_VALUES, scene_id: 'scene-1', start_eighth: '9' })
-    ).toMatch(/between 0 and 8/i)
-  })
-
-  it('accepts a valid range', () => {
-    expect(
-      validateSectionEditorValues({
-        ...EMPTY_SECTION_VALUES,
-        scene_id: 'scene-1',
-        start_page: '1',
-        start_eighth: '0',
-        end_page: '2',
-        end_eighth: '4',
-      })
-    ).toBeNull()
+    expect(await within(dlg).findByText(/12\.1 is split/)).toBeTruthy()
+    fireEvent.click(within(dlg).getByRole('button', { name: 'Save and take from 12.1' }))
+    await waitFor(() => expect(applyLayout).toHaveBeenCalledTimes(1))
+    const input = applyLayout.mock.calls[0]![0]
+    expect(input.current.id).toBeNull()
+    expect(input.current.label).toMatch(/^Scene 12 — p14/)
+    expect(input.updates).toEqual([expect.objectContaining({ sectionId: 'sec-a' })])
+    expect(input.splits).toEqual([expect.objectContaining({ sourceSectionId: 'sec-a' })])
   })
 })
