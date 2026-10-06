@@ -346,3 +346,42 @@ export function nudgeSelection(
   const to = Math.min(last, Math.max(i, selection.from))
   return { from: selection.from, to }
 }
+
+// ─── Per-scene layouts ──────────────────────────────────────────────────────
+
+export type SceneLayout<P extends LayoutPage = LayoutPage> = {
+  /** The scene's pages in script order. */
+  pages: P[]
+  lines: SceneLine[]
+  /** Lines covered by each section of the scene. */
+  owners: Map<string, Set<number>>
+}
+
+/** Line layout and section ownership for every scene that has pages in the given set. */
+export function buildSceneLayouts<P extends LayoutPage & { scene_id: string | null }>(
+  pages: readonly P[],
+  sections: ReadonlyArray<{ id: string; scene_id: string }>,
+  rangesBySectionId: ReadonlyMap<string, readonly RangeLike[]>
+): Map<string, SceneLayout<P>> {
+  const pagesByScene = new Map<string, P[]>()
+  for (const page of pages) {
+    if (!page.scene_id) continue
+    const list = pagesByScene.get(page.scene_id) ?? []
+    list.push(page)
+    pagesByScene.set(page.scene_id, list)
+  }
+  const layouts = new Map<string, SceneLayout<P>>()
+  for (const [sceneId, scenePages] of pagesByScene) {
+    scenePages.sort((a, b) => a.page_index - b.page_index)
+    const lines = buildSceneLines(scenePages)
+    const owners = computeLineOwners(
+      lines,
+      scenePages,
+      sections
+        .filter((s) => s.scene_id === sceneId)
+        .map((s) => ({ id: s.id, ranges: rangesBySectionId.get(s.id) ?? [] }))
+    )
+    layouts.set(sceneId, { pages: scenePages, lines, owners })
+  }
+  return layouts
+}
