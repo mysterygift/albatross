@@ -29,26 +29,14 @@ import {
 } from '@/lib/db/repositories/scriptSections'
 import { loadScriptVersionSectionProgress } from '@/lib/db/scriptSectionStatusService'
 import {
-  buildSectionCodes,
-  deriveSectionStatus,
   formatShootDay,
-  sectionStatusLabel,
   sectionStatusSteps,
   type DerivedSectionStatus,
   type SectionShotProgress,
 } from '@/lib/db/scriptSectionStatus'
-import {
-  buildSceneLines,
-  computeLineOwners,
-  formatEighths,
-  formatRuns,
-  runEighths,
-  toRuns,
-  type LineRun,
-  type SceneLine,
-} from '@/lib/db/scriptSectionLayout'
+import { buildSceneLayouts, type SceneLayout } from '@/lib/db/scriptSectionLayout'
 import { conflictingSectionIds, findOverlappingSectionPairs } from '@/lib/db/scriptSectionMatching'
-import type { Scene, ScriptPage, ScriptSection, ScriptSectionRange } from '@/lib/db/types'
+import type { Scene, ScriptSection, ScriptSectionRange } from '@/lib/db/types'
 import { sceneDisplayLabel } from '@/lib/schedule/sceneDisplay'
 import { formatPageEighths } from '@/lib/script-supervisor/progress'
 import { Button } from '@/components/ui/button'
@@ -75,8 +63,8 @@ import {
   type SectionEditorSave,
   type SectionSceneOption,
 } from './script-section-edit-dialog'
-import { formatScriptSectionRange } from './script-section-script-panel'
-import { ScriptLines, SectionStatusBadge, SectionStatusSteps } from './script-section-ui'
+import { ScriptLines, SectionStatusBadge, SectionStatusSteps, SectionSummary } from './script-section-ui'
+import { buildSectionViews, ownerByLine, type SectionView } from './script-section-views'
 import { STATUS_FILL_CLASS } from './script-section-status-styles'
 import { SbRemoteNotice } from './sbRemoteNotice'
 
@@ -95,25 +83,6 @@ const STATUS_FILTERS: Array<{ key: StatusFilter; label: string; dot: string }> =
   { key: 'shot', label: 'Shot', dot: STATUS_FILL_CLASS.shot },
   { key: 'cut', label: 'Cut', dot: STATUS_FILL_CLASS.cut },
 ]
-
-type SceneLayout = {
-  pages: ScriptPage[]
-  lines: SceneLine[]
-  owners: Map<string, Set<number>>
-}
-
-type SectionView = {
-  section: ScriptSection
-  code: string
-  status: DerivedSectionStatus
-  statusLabel: string
-  shots: SectionShotProgress[]
-  runs: LineRun[]
-  rangeText: string
-  lengthText: string | null
-  estimated: boolean
-  characters: string[]
-}
 
 function compareSceneNumbers(a: Scene, b: Scene): number {
   return a.scene_number.localeCompare(b.scene_number, undefined, { numeric: true })
@@ -257,68 +226,25 @@ export function ScriptSectionsPage() {
   )
 
   // ─── Script layout per scene ──────────────────────────────────────────────
-  const layoutBySceneId = useMemo(() => {
-    const pagesByScene = new Map<string, ScriptPage[]>()
-    for (const page of pages) {
-      if (!page.scene_id) continue
-      const list = pagesByScene.get(page.scene_id) ?? []
-      list.push(page)
-      pagesByScene.set(page.scene_id, list)
-    }
-    const map = new Map<string, SceneLayout>()
-    for (const [sceneId, scenePages] of pagesByScene) {
-      scenePages.sort((a, b) => a.page_index - b.page_index)
-      const lines = buildSceneLines(scenePages)
-      const owners = computeLineOwners(
-        lines,
-        scenePages,
-        sections
-          .filter((s) => s.scene_id === sceneId)
-          .map((s) => ({ id: s.id, ranges: rangesBySectionId.get(s.id) ?? [] }))
-      )
-      map.set(sceneId, { pages: scenePages, lines, owners })
-    }
-    return map
-  }, [pages, sections, rangesBySectionId])
-
-  const sectionCodes = useMemo(
-    () =>
-      buildSectionCodes(
-        sections,
-        new Map(sections.map((s) => [s.id, rangesBySectionId.get(s.id)?.[0]])),
-        new Map(scenes.map((s) => [s.id, s.scene_number]))
-      ),
-    [sections, rangesBySectionId, scenes]
+  const layoutBySceneId = useMemo(
+    () => buildSceneLayouts(pages, sections, rangesBySectionId),
+    [pages, sections, rangesBySectionId]
   )
 
-  const views = useMemo(() => {
-    const map = new Map<string, SectionView>()
-    for (const section of sections) {
-      const shots = shotsBySectionId.get(section.id) ?? []
-      const status = deriveSectionStatus({
-        cut: section.status === 'omitted' || omittedSceneIds.has(section.scene_id),
-        shots,
-      })
-      const layout = layoutBySceneId.get(section.scene_id)
-      const runs = layout ? toRuns(layout.owners.get(section.id) ?? []) : []
-      const eighths = layout ? runs.reduce((n, r) => n + runEighths(layout.lines, r), 0) : 0
-      map.set(section.id, {
-        section,
-        code: sectionCodes.get(section.id) ?? '—',
-        status,
-        statusLabel: sectionStatusLabel(status, shots),
-        shots,
-        runs,
-        rangeText: layout && runs.length ? formatRuns(layout.lines, runs) : formatScriptSectionRange(rangesBySectionId.get(section.id)?.[0]),
-        lengthText: runs.length ? formatEighths(eighths) : null,
-        estimated: section.is_manual === 0 && section.ranges_user_edited === 0,
-        characters: (charactersBySectionId.get(section.id) ?? [])
-          .map((c: { character_name: string | null }) => c.character_name)
-          .filter((n: string | null): n is string => !!n),
-      })
-    }
-    return map
-  }, [sections, shotsBySectionId, omittedSceneIds, layoutBySceneId, sectionCodes, rangesBySectionId, charactersBySectionId])
+  const views = useMemo(
+    () =>
+      buildSectionViews({
+        sections,
+        rangesBySectionId,
+        charactersBySectionId,
+        layoutBySceneId,
+        shotsBySectionId,
+        omittedSceneIds,
+        sceneNumberById: new Map(scenes.map((s) => [s.id, s.scene_number])),
+      }),
+    [sections, rangesBySectionId, charactersBySectionId, layoutBySceneId, shotsBySectionId, omittedSceneIds, scenes]
+  )
+  const sectionCodes = useMemo(() => new Map([...views].map(([id, v]) => [id, v.code])), [views])
 
   const conflictSectionIds = useMemo(() => {
     const firstRange = new Map(sections.map((s) => [s.id, rangesBySectionId.get(s.id)?.[0]]))
@@ -764,30 +690,18 @@ export function ScriptSectionsPage() {
                                 <span className={cn('font-mono text-[13px] text-muted-foreground', isSelected && 'text-primary')}>
                                   {view.code}
                                 </span>
-                                <span className="min-w-0 tabular-nums">
-                                  <span className={cn(view.status === 'cut' && 'text-muted-foreground line-through')}>
-                                    {view.rangeText}
-                                  </span>
-                                  {view.lengthText && (
-                                    <span className="ml-1.5 text-xs text-muted-foreground">{view.lengthText}</span>
-                                  )}
-                                  {view.estimated && (
-                                    <span
-                                      className="ml-1.5 rounded border border-dashed border-border px-1 font-mono text-[10px] text-muted-foreground"
-                                      title="Generated from the import; boundaries are an estimate"
-                                    >
-                                      est.
-                                    </span>
-                                  )}
-                                  {hasConflict && (
-                                    <span className="ml-1.5 text-xs text-destructive">Overlaps another section</span>
-                                  )}
-                                  {view.characters.length > 0 && (
-                                    <span className="block text-xs tracking-wide text-muted-foreground">
-                                      {view.characters.join(' · ')}
-                                    </span>
-                                  )}
-                                </span>
+                                <SectionSummary
+                                  rangeText={view.rangeText}
+                                  lengthText={view.lengthText}
+                                  estimated={view.estimated}
+                                  characters={view.characters}
+                                  cut={view.status === 'cut'}
+                                  extra={
+                                    hasConflict && (
+                                      <span className="ml-1.5 text-xs text-destructive">Overlaps another section</span>
+                                    )
+                                  }
+                                />
                                 <SectionStatusBadge status={view.status} label={view.statusLabel} />
                                 <Button
                                   type="button"
@@ -945,11 +859,10 @@ function SceneMeter({
   statusOf: (sectionId: string) => DerivedSectionStatus | null
   codeOf: (sectionId: string) => string
 }) {
-  const ownerByLine = new Map<number, string>()
-  for (const [id, set] of layout.owners) for (const i of set) if (!ownerByLine.has(i)) ownerByLine.set(i, id)
+  const owners = ownerByLine(layout)
   const segments: Array<{ key: string; owner: string | null; count: number }> = []
   for (const line of layout.lines) {
-    const owner = ownerByLine.get(line.index) ?? null
+    const owner = owners.get(line.index) ?? null
     // Blank lines between sections are not gaps in coverage.
     if (!owner && !line.text.trim()) continue
     const last = segments[segments.length - 1]
