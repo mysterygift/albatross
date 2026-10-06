@@ -184,3 +184,39 @@ export const ScriptLines = forwardRef<HTMLDivElement, ScriptLinesProps>(function
     </div>
   )
 })
+
+/** Range, length, estimate tag and characters for a section row. */
+export function SectionSummary({
+  rangeText,
+  lengthText,
+  estimated,
+  characters,
+  cut,
+  extra,
+}: {
+  rangeText: string
+  lengthText: string | null
+  estimated: boolean
+  characters: string[]
+  cut?: boolean
+  extra?: ReactNode
+}) {
+  return (
+    <span className="min-w-0 tabular-nums">
+      <span className={cn(cut && 'text-muted-foreground line-through')}>{rangeText}</span>
+      {lengthText && <span className="ml-1.5 text-xs text-muted-foreground">{lengthText}</span>}
+      {estimated && (
+        <span
+          className="ml-1.5 rounded border border-dashed border-border px-1 font-mono text-[10px] text-muted-foreground"
+          title="Generated from the import; boundaries are an estimate"
+        >
+          est.
+        </span>
+      )}
+      {extra}
+      {characters.length > 0 && (
+        <span className="block text-xs tracking-wide text-muted-foreground">{characters.join(' · ')}</span>
+      )}
+    </span>
+  )
+}

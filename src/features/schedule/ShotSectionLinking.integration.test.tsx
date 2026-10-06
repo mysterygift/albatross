@@ -2,7 +2,7 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -38,6 +38,15 @@ const listPages = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/db/repositories/scriptPages', () => ({
   listScriptPagesByScriptVersion: listPages,
+}))
+
+vi.mock('@/lib/db/scriptSectionStatusService', () => ({
+  loadScriptVersionSectionProgress: vi.fn(async () => ({
+    shotsBySectionId: new Map([
+      ['sec-1', [{ shotId: 'shot-1', shotNumber: '1A', shootDays: [], printedTakes: [], sceneComplete: false }]],
+    ]),
+    omittedSceneIds: new Set<string>(),
+  })),
 }))
 
 vi.mock('@/lib/db/repositories/scriptVersions', () => ({
@@ -269,8 +278,8 @@ describe('ShotListPage script-section linking', () => {
 
     const dlg = await screen.findByRole('dialog')
     // Sections are listed by code (scene.number in script order), not by label.
-    expect(within(dlg).getByText('1.1')).toBeTruthy()
-    expect(within(dlg).getByText('1.2')).toBeTruthy()
+    expect(within(dlg).getByRole('checkbox', { name: 'Link section 1.1' })).toBeTruthy()
+    expect(within(dlg).getByRole('checkbox', { name: 'Link section 1.2' })).toBeTruthy()
 
     await user.click(within(dlg).getByRole('checkbox', { name: 'Link section 1.1' }))
     await user.click(within(dlg).getByRole('button', { name: /Save links/ }))
@@ -300,7 +309,7 @@ describe('ShotListPage script-section linking', () => {
     expect(sectionsSvc.replaceShotSectionLinks.mock.calls[0]).toEqual(['shot-1', []])
   })
 
-  it('shows script text preview when clicking a section row', async () => {
+  it('shows the scene script with derived status and links a section by clicking its text', async () => {
     const user = userEvent.setup()
     render(wrap(<ShotListPage />))
     await waitFor(() => expect(schedSvc.listScenesByProduction).toHaveBeenCalled())
@@ -311,16 +320,19 @@ describe('ShotListPage script-section linking', () => {
 
     const dlg = await screen.findByRole('dialog')
     await waitFor(() => expect(listPages).toHaveBeenCalled())
+    expect(await within(dlg).findByText('Hello there.')).toBeTruthy()
+    expect(within(dlg).getByText('ALICE')).toBeTruthy()
+    expect(await within(dlg).findByText('Covered · 1 shot')).toBeTruthy()
+    expect(within(dlg).getByText('No coverage')).toBeTruthy()
+    expect(within(dlg).getByText('No sections linked in this version.')).toBeTruthy()
 
-    expect(within(dlg).getByText('Hello there.')).toBeTruthy()
-    expect(within(dlg).getByText(/Characters: ALICE/)).toBeTruthy()
-    expect(within(dlg).getByText(/showing pages for 1\.1/)).toBeTruthy()
+    const line = within(dlg).getByText('MICHAEL enters the room.').closest('[data-line]')!
+    fireEvent.pointerDown(line, { pointerType: 'mouse', button: 0 })
+    fireEvent.pointerUp(window)
 
-    await user.click(within(dlg).getByRole('button', { name: /^1\.2/ }))
-
-    await waitFor(() =>
-      expect(within(dlg).getByText(/showing pages for 1\.2/)).toBeTruthy()
-    )
-    expect(within(dlg).getByText('MICHAEL enters the room.')).toBeTruthy()
+    expect(await within(dlg).findByText(/^1\.2/, { selector: 'p' })).toBeTruthy()
+    await user.click(within(dlg).getByRole('button', { name: /Save links/ }))
+    await waitFor(() => expect(sectionsSvc.replaceShotSectionLinks).toHaveBeenCalledTimes(1))
+    expect(sectionsSvc.replaceShotSectionLinks.mock.calls[0]).toEqual(['shot-1', ['sec-2']])
   })
 })
