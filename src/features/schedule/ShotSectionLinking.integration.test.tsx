@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 
 import { ShotListPage } from '@/features/schedule/shot-list-page'
 import type { Scene, ScriptPage, ScriptSection, ScriptSectionRange, Shot } from '@/lib/db/types'
@@ -91,7 +92,11 @@ function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+  return (
+    <MemoryRouter>
+      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+    </MemoryRouter>
+  )
 }
 
 function scene(over: Partial<Scene> = {}): Scene {
@@ -263,10 +268,11 @@ describe('ShotListPage script-section linking', () => {
     await user.click(screen.getByRole('button', { name: 'Sections' }))
 
     const dlg = await screen.findByRole('dialog')
-    expect(within(dlg).getByText('Dialogue A')).toBeTruthy()
-    expect(within(dlg).getByText('Action B')).toBeTruthy()
+    // Sections are listed by code (scene.number in script order), not by label.
+    expect(within(dlg).getByText('1.1')).toBeTruthy()
+    expect(within(dlg).getByText('1.2')).toBeTruthy()
 
-    await user.click(within(dlg).getByRole('checkbox', { name: 'Link section Dialogue A' }))
+    await user.click(within(dlg).getByRole('checkbox', { name: 'Link section 1.1' }))
     await user.click(within(dlg).getByRole('button', { name: /Save links/ }))
 
     await waitFor(() => expect(sectionsSvc.replaceShotSectionLinks).toHaveBeenCalledTimes(1))
@@ -287,7 +293,7 @@ describe('ShotListPage script-section linking', () => {
     const dlg = await screen.findByRole('dialog')
 
     // Toggle the already-linked section off via checkbox, then save -> empties the links.
-    await user.click(within(dlg).getByRole('checkbox', { name: 'Link section Dialogue A' }))
+    await user.click(within(dlg).getByRole('checkbox', { name: 'Link section 1.1' }))
     await user.click(within(dlg).getByRole('button', { name: /Save links/ }))
 
     await waitFor(() => expect(sectionsSvc.replaceShotSectionLinks).toHaveBeenCalledTimes(1))
@@ -308,12 +314,12 @@ describe('ShotListPage script-section linking', () => {
 
     expect(within(dlg).getByText('Hello there.')).toBeTruthy()
     expect(within(dlg).getByText(/Characters: ALICE/)).toBeTruthy()
-    expect(within(dlg).getByText(/showing pages for .Dialogue A/)).toBeTruthy()
+    expect(within(dlg).getByText(/showing pages for 1\.1/)).toBeTruthy()
 
-    await user.click(within(dlg).getByRole('button', { name: /Action B/ }))
+    await user.click(within(dlg).getByRole('button', { name: /^1\.2/ }))
 
     await waitFor(() =>
-      expect(within(dlg).getByText(/showing pages for .Action B/)).toBeTruthy()
+      expect(within(dlg).getByText(/showing pages for 1\.2/)).toBeTruthy()
     )
     expect(within(dlg).getByText('MICHAEL enters the room.')).toBeTruthy()
   })

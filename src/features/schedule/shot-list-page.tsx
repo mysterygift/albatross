@@ -655,6 +655,7 @@ export function ShotListPage() {
       queryClient.invalidateQueries({ queryKey: ['section-shot-counts'] })
       queryClient.invalidateQueries({ queryKey: ['section-linked-shots'] })
       queryClient.invalidateQueries({ queryKey: ['scene-shot-section-counts'] })
+      queryClient.invalidateQueries({ queryKey: ['script-section-progress'] })
       setSectionLinkError(null)
       setManageSectionsShotId(null)
     },
