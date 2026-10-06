@@ -38,7 +38,6 @@ import { buildSceneLayouts, type SceneLayout } from '@/lib/db/scriptSectionLayou
 import { conflictingSectionIds, findOverlappingSectionPairs } from '@/lib/db/scriptSectionMatching'
 import type { Scene, ScriptSection, ScriptSectionRange } from '@/lib/db/types'
 import { sceneDisplayLabel } from '@/lib/schedule/sceneDisplay'
-import { formatPageEighths } from '@/lib/script-supervisor/progress'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/components/ui/sonner'
@@ -623,15 +622,12 @@ export function ScriptSectionsPage() {
                   {(sections.length > 0 || groups.length > 0) && groups.length === 0 && (
                     <p className="p-4 text-sm text-muted-foreground">No sections match this filter.</p>
                   )}
-                  {groups.map(({ scene, sceneViews, visible, layout }) => {
-                    const live = sceneViews.filter((v) => v.status !== 'cut')
-                    const covered = live.filter((v) => v.shots.length > 0).length
+                  {groups.map(({ scene, visible, layout }) => {
                     const ownedLines = new Set<number>()
                     for (const set of layout?.owners.values() ?? []) for (const i of set) ownedLines.add(i)
                     const unsectioned = layout
                       ? layout.lines.filter((l) => l.text.trim() && !ownedLines.has(l.index)).length
                       : 0
-                    const pageNumbers = layout ? [...new Set(layout.lines.map((l) => l.pageNumber))] : []
                     return (
                       <section key={scene.id} className="border-b border-border last:border-b-0" aria-label={`Scene ${scene.scene_number}`}>
                         <div className="sticky top-0 z-[1] grid gap-2 bg-card px-4 pb-2.5 pt-3.5">
@@ -641,22 +637,11 @@ export function ScriptSectionsPage() {
                             </span>
                             <span className="font-semibold">{sceneHeading(scene)}</span>
                           </div>
-                          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-xs text-muted-foreground tabular-nums">
-                            {pageNumbers.length > 0 && (
-                              <span>
-                                {pageNumbers.length === 1 ? `p${pageNumbers[0]}` : `pp${pageNumbers[0]}–${pageNumbers[pageNumbers.length - 1]}`}
-                                {scene.page_eighths != null && ` · ${formatPageEighths(scene.page_eighths)} pg`}
-                              </span>
-                            )}
-                            <span>
-                              {covered} of {live.length} section{live.length === 1 ? '' : 's'} covered
-                            </span>
-                            {unsectioned > 0 && (
-                              <span className="text-amber-500">
-                                {unsectioned} line{unsectioned === 1 ? '' : 's'} not in any section
-                              </span>
-                            )}
-                          </div>
+                          {unsectioned > 0 && (
+                            <p className="text-xs text-amber-500">
+                              {unsectioned} line{unsectioned === 1 ? '' : 's'} not in any section
+                            </p>
+                          )}
                           {layout && layout.lines.length > 0 && (
                             <SceneMeter layout={layout} statusOf={(id) => views.get(id)?.status ?? null} codeOf={(id) => views.get(id)?.code ?? ''} />
                           )}
