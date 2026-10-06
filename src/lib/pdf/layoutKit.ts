@@ -221,7 +221,11 @@ export interface TableColumn {
   align?: 'left' | 'center' | 'right'
 }
 
-export type TableCell = string | { text: string; bold?: boolean; color?: PdfColor }
+export type TableCell =
+  | string
+  | { text: string; bold?: boolean; color?: PdfColor }
+  /** An empty tick box, centred in the cell, for paper checklists. */
+  | { checkbox: true }
 
 export interface NumberedRow {
   badge: string
@@ -578,15 +582,18 @@ export class PdfLayout {
     const headerH =
       Math.max(1, ...headerLines.map((l) => l.length)) * this.lineHeight(size) + TABLE_PAD_Y * 2
 
-    const cellText = (cell: TableCell) => (typeof cell === 'string' ? cell : cell.text)
-    const cellBold = (cell: TableCell) => typeof cell !== 'string' && cell.bold === true
+    const isCheckbox = (cell: TableCell) => typeof cell !== 'string' && 'checkbox' in cell
+    const cellText = (cell: TableCell) =>
+      typeof cell === 'string' ? cell : 'text' in cell ? cell.text : ''
+    const cellBold = (cell: TableCell) => typeof cell !== 'string' && 'bold' in cell && cell.bold === true
+    const boxSize = Math.round(size * 1.35)
     const measure = (row: TableCell[]) => {
       const lines = row.map((cell, i) =>
         this.wrap(cellText(cell), widths[i]! - TABLE_PAD_X * 2, size, cellBold(cell))
       )
-      const height =
-        Math.max(1, ...lines.map((l) => l.length)) * this.lineHeight(size) + TABLE_PAD_Y * 2
-      return { lines, height }
+      const textH = Math.max(1, ...lines.map((l) => l.length)) * this.lineHeight(size)
+      const boxH = row.some(isCheckbox) ? boxSize + 2 : 0
+      return { lines, height: Math.max(textH, boxH) + TABLE_PAD_Y * 2 }
     }
 
     const drawHeader = () => {
@@ -627,7 +634,21 @@ export class PdfLayout {
       }
       let x = this.xLeft
       row.forEach((cell, i) => {
-        const color = typeof cell !== 'string' && cell.color ? cell.color : COLOR_INK
+        if (isCheckbox(cell)) {
+          // Centred on the cap height of the first text line, so the box sits level with the text.
+          const baseline = this.y - TABLE_PAD_Y - size * 1.05
+          this.page.drawRectangle({
+            x: x + (widths[i]! - boxSize) / 2,
+            y: baseline + size * 0.36 - boxSize / 2,
+            width: boxSize,
+            height: boxSize,
+            borderColor: COLOR_FRAME,
+            borderWidth: 0.8,
+          })
+          x += widths[i]!
+          return
+        }
+        const color = typeof cell !== 'string' && 'color' in cell && cell.color ? cell.color : COLOR_INK
         lines[i]!.forEach((line, n) => {
           this.drawAligned(
             line,
@@ -695,6 +716,36 @@ export class PdfLayout {
         if (l) this.drawItems(l.items, x + CELL_PAD_X, this.y - CELL_PAD_Y)
       }
       this.y -= rowH
+    }
+    this.y -= 4
+  }
+
+  /**
+   * Bordered boxes to write in by hand: a small label at the top of each and blank space below,
+   * `columns` across. Rows never split across pages.
+   */
+  writeInGrid(labels: string[], columns: number, height = 34): void {
+    if (labels.length === 0) return
+    const cols = Math.max(1, Math.min(columns, labels.length))
+    const cellW = this.contentWidth / cols
+    for (let i = 0; i < labels.length; i += cols) {
+      const rowLabels = labels.slice(i, i + cols)
+      this.ensureSpace(height)
+      this.frame(this.xLeft, this.y, this.contentWidth, height)
+      for (let j = 0; j < cols; j += 1) {
+        const x = this.xLeft + j * cellW
+        if (j > 0) {
+          this.page.drawRectangle({ x, y: this.y - height, width: 0.8, height, color: COLOR_FRAME })
+        }
+        const label = rowLabels[j]
+        if (label) {
+          this.text(label.toUpperCase(), x + CELL_PAD_X, this.y - CELL_PAD_Y - LABEL, {
+            size: LABEL,
+            color: COLOR_MUTED,
+          })
+        }
+      }
+      this.y -= height
     }
     this.y -= 4
   }
