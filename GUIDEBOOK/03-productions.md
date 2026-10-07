@@ -69,7 +69,7 @@ This removes the production and all of its data and cannot be undone. Archive in
 
 ## Export and import a production file
 
-An `.apf` (Albatross Project File) holds one production, including its document attachments. Use it to back up a production, move it to another computer, or send it to a colleague.
+An `.apf` (Albatross Project File) holds one production, including its document attachments and storyboard images. Use it to back up a production, move it to another computer, or send it to a colleague.
 
 ### Export
 

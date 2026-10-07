@@ -42,6 +42,8 @@ The sidebar is grouped by stage of work:
 - **Keyboard shortcuts** (the keyboard icon, or `?`) opens the shortcut list.
 - **Tutorial** (the graduation cap) opens the tutorial menu; see [Getting started](01-getting-started.md).
 
+This guide is also available inside the app: open **Settings → Guidebook**, and use the contents list on the left to move between chapters and sections.
+
 ### Switch production
 
 1. Select the production name in the top bar.

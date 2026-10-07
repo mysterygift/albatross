@@ -26,7 +26,7 @@ Each page follows the same layout: code map, data model, how it works, connectio
 
 | Group | Docs |
 |---|---|
-| App | [Dashboard](features/dashboard.md) · [Search](features/search.md) · [Settings](features/settings.md) · [Tutorial](features/tutorial.md) · [Productions](features/productions.md) |
+| App | [Dashboard](features/dashboard.md) · [Search](features/search.md) · [Settings](features/settings.md) · [Guidebook viewer](features/guidebook.md) · [Tutorial](features/tutorial.md) · [Productions](features/productions.md) |
 | Plan | [Schedule](features/schedule.md) · [Script](features/script.md) · [Locations](features/locations.md) · [Equipment](features/equipment.md) · [Risk Assessments](features/risk-assessments.md) |
 | People | [People](features/people.md) · [Crew Manager](features/crew-manager.md) |
 | Money | [Budget](features/budget.md) · [Vendors](features/vendors.md) |

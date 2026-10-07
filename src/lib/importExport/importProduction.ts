@@ -9,6 +9,7 @@ import { executeBatch, getDb, runInSerializedTransaction } from '@/lib/db/client
 import { CURRENT_APF_FORMAT_VERSION } from '@/lib/importExport/constants'
 import { ApfError, ApfImportDbError } from '@/lib/importExport/errors'
 import { extractApfDocumentsForImport } from '@/lib/importExport/extractApfDocumentsForImport'
+import { extractApfStoryboardImagesForImport } from '@/lib/importExport/extractApfStoryboardImagesForImport'
 import type { ImportProductionResult } from '@/lib/importExport/importTypes'
 import { planApfImportStatements } from '@/lib/importExport/planImportStatements'
 import { isClientEncryptionEnabled } from '@/lib/security/dataEncryptionContext'
@@ -87,6 +88,14 @@ export async function importProductionFromApf(apfPath: string): Promise<ImportPr
       writtenRelPaths,
     })
 
+    const storyboard = await extractApfStoryboardImagesForImport({
+      zipIndex: index,
+      manifest: normalized.manifest,
+      productionId,
+      imageRows: dataForDb.tables.storyboard_images,
+      writtenRelPaths,
+    })
+
     const insertStatements = await planApfImportStatements(importDb, dataForDb)
     dbBatchAttempted = true
 
@@ -108,8 +117,8 @@ export async function importProductionFromApf(apfPath: string): Promise<ImportPr
       productionId,
       productionName,
       formatVersion: CURRENT_APF_FORMAT_VERSION,
-      filesRestored,
-      warnings,
+      filesRestored: filesRestored + storyboard.filesRestored,
+      warnings: [...warnings, ...storyboard.warnings],
     }
   } catch (e) {
     await removeWrittenPaths(writtenRelPaths)

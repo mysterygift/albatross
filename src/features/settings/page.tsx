@@ -66,7 +66,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox'
 import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown, Users, LayoutTemplate } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { SettingsNav } from '@/features/settings/SettingsNav'
 import { ScriptSupervisorSettingsSection } from '@/features/settings/ScriptSupervisorSettingsSection'
 import { sectionFromSearchParams, type SettingsSectionId } from '@/features/settings/settingsSections'
@@ -174,6 +174,10 @@ export function SettingsPage() {
   const section = sectionFromSearchParams(searchParams, developerMode)
   const selectSection = useCallback(
     (id: SettingsSectionId) => {
+      if (id === 'guidebook') {
+        navigate('/settings/guidebook')
+        return
+      }
       setSearchParams(
         (prev) => {
           const n = new URLSearchParams(prev)
@@ -184,7 +188,7 @@ export function SettingsPage() {
         { replace: false }
       )
     },
-    [setSearchParams]
+    [navigate, setSearchParams]
   )
   const queryClient = useQueryClient()
   const [orsApiKeyDraft, setOrsApiKeyDraft] = useState('')
@@ -418,6 +422,8 @@ export function SettingsPage() {
   })
 
   const accountTree = buildAccountTree(accounts)
+
+  if (section === 'guidebook') return <Navigate to="/settings/guidebook" replace />
 
   return (
     <TooltipProvider>

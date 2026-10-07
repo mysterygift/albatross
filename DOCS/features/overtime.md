@@ -36,5 +36,5 @@ Experimental estimate of what running over costs, per shoot day and crew member:
 
 ## Gotchas
 
-- Local SQLite only: repository functions throw `OVERTIME_REMOTE_ERROR` for `remote_server` productions. These tables are not in the `.apf` export or Duplicate production, and have no Postgres counterpart.
+- Local SQLite only: repository functions throw `OVERTIME_REMOTE_ERROR` for `remote_server` productions. These tables travel in the `.apf` export (format version 11) but are not copied by Duplicate production and have no Postgres counterpart.
 - Cast (Equity) overtime and meal penalties are not modelled.

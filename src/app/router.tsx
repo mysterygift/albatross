@@ -79,6 +79,10 @@ export const router = createBrowserRouter([
       { path: 'settings', element: <SettingsPage /> },
       { path: 'settings/users', element: <AdminOnlyUserManagementRoute /> },
       { path: 'settings/project-access', element: <ProjectAccessRoute /> },
+      {
+        path: 'settings/guidebook/:chapter?',
+        lazy: async () => ({ Component: (await import('@/features/guidebook/GuidebookPage')).GuidebookPage }),
+      },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },

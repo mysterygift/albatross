@@ -10,9 +10,9 @@ The UI is **Productions → Import project** and **Export project** (the current
 |---|---|
 | Constants, versions | `constants.ts` (`CURRENT_APF_FORMAT_VERSION`, min/max supported) |
 | Table list and order | `tableKeys.ts` (`APF_V1_TABLE_KEYS`) |
-| Export | `exportProduction.ts`, `exportLoadProductionData.ts`, `resolveVendorsForExport.ts`, `pruneOrphanedRows.ts`, `collectApfDocumentFiles.ts`, `buildExportPayload.ts`, `buildExportManifest.ts`, `buildApfArchive.ts` |
+| Export | `exportProduction.ts`, `exportLoadProductionData.ts`, `resolveVendorsForExport.ts`, `pruneOrphanedRows.ts`, `collectApfDocumentFiles.ts`, `collectApfStoryboardFiles.ts`, `buildExportPayload.ts`, `buildExportManifest.ts`, `buildApfArchive.ts` |
 | Read and validate | `readApfArchive.ts`, `sniff.ts`, `validateLayout.ts`, `manifest.ts`, `payload.ts`, `compatibility.ts`, `migrate.ts`, `pipeline.ts` |
-| Import | `importProduction.ts`, `preflightApfImport.ts`, `extractApfDocumentsForImport.ts`, `planImportStatements.ts` |
+| Import | `importProduction.ts`, `preflightApfImport.ts`, `extractApfDocumentsForImport.ts`, `extractApfStoryboardImagesForImport.ts`, `planImportStatements.ts` |
 | Errors, user text | `errors.ts`, `apfUserMessages.ts` |
 | UI | `src/features/productions/` (`useApfActions.ts`, `apfImportFlow.ts`, `ApfDesktopOpenBridge.tsx`), dialogs in `src/lib/files/apfProjectDialogs.ts` |
 | Desktop routing | `src-tauri/src/apf_desktop.rs`, `fileAssociations` in `src-tauri/tauri.conf.json` |
@@ -22,15 +22,16 @@ The UI is **Productions → Import project** and **Export project** (the current
 
 | Entry | Required | Content |
 |---|---|---|
-| `manifest.json` | Yes | `formatVersion`, `kind: "albatross-project-file"`, `exportedAt`, `production` (`id`, `name`, `slug?`), optional `dataEntryPath`, `filesPrefix`, `app`, and `export` diagnostics (`tableRowCounts`, `bundledDocumentIds`, `missingDocumentFileIds`) |
+| `manifest.json` | Yes | `formatVersion`, `kind: "albatross-project-file"`, `exportedAt`, `production` (`id`, `name`, `slug?`), optional `dataEntryPath`, `filesPrefix`, `app`, and `export` diagnostics (`tableRowCounts`, `bundledDocumentIds`, `missingDocumentFileIds`, `bundledStoryboardImageIds`, `missingStoryboardImageIds`) |
 | `data/production.json` | Yes | `{ formatVersion, tables }`: one array of row objects per table key, sorted by `id`, object keys sorted, so exports are deterministic |
 | `files/documents/<documentId>/<fileName>` | No | Bytes for each `documents` row. The file name is sanitised to a single segment (no separators, 200 characters at most) |
+| `files/storyboards/<imageId>/<fileName>` | No | Bytes for each `storyboard_images` row, sanitised the same way |
 
 Readers detect ZIP by the `PK` magic bytes, not the extension, and ignore other entries. The `tables` object must contain exactly the known keys: a missing key or an unknown key is a validation error (missing keys from older files are injected as empty arrays first). Rows are stored as database columns, and the importer inserts only the columns that exist in the target schema, so extra keys from newer builds and missing keys from older ones are both tolerated.
 
 ## Versioning
 
-`CURRENT_APF_FORMAT_VERSION` is 10 and the importable range is 1 to 10. Manifest and data versions must match.
+`CURRENT_APF_FORMAT_VERSION` is 11 and the importable range is 1 to 11. Manifest and data versions must match.
 
 - **Newer than this build:** refused before any database work (`UNSUPPORTED_FORMAT_VERSION`).
 - **Older:** `migrateApfToCurrentVersion` applies one registered migrator per step (`APF_FILE_MIGRATIONS`, `v → v+1`) to the in-memory payload. A gap in the chain is an error (`MIGRATION_MISSING`).
@@ -46,33 +47,37 @@ Readers detect ZIP by the `PK` magic bytes, not the extension, and ignore other 
 | 7→8 | Risk assessments and hazard templates |
 | 8→9 | Script sections, sides and script supervisor tables |
 | 9→10 | Script breakdown (`breakdown_elements`, `breakdown_tags`) |
+| 10→11 | Storyboards (`storyboard_imports`, `storyboard_images` and their image files), `vendor_production_exclusions`, overtime (`production_crew_hours_settings`, `crew_hours_person_settings`, `crew_day_hours`) |
 
 Tables with no migrator (`production_budget_features`, `tax_credit_schemes`, `vat_reclaim_rates`, `crew_availability`, `expense_tax_credit_allocations`) are covered by `injectMissingApfTableKeys`, which gives older files an empty array.
 
 ## What is exported
 
-89 tables (`APF_V1_TABLE_KEYS` is the 68 original keys, then the 19 `APF_V9_TABLE_KEYS` and 2 `APF_V10_TABLE_KEYS`), loaded by `loadApfV1ProductionTables`. Grouped:
+95 tables (`APF_V1_TABLE_KEYS` is the 68 original keys, then the 19 `APF_V9_TABLE_KEYS`, 2 `APF_V10_TABLE_KEYS` and 6 `APF_V11_TABLE_KEYS`), loaded by `loadApfV1ProductionTables`. Grouped:
 
 | Group | Tables |
 |---|---|
 | Production and structure | `productions`, `episodes`, `shooting_blocs`, `units`, `shoot_days`, `shoot_day_units`, `production_crew_hierarchy_configs` |
-| Script and schedule | `scenes`, `shots`, `location_scene`, `stripboard_items`, `stripboard_strips`, `scene_cast`, `shot_cast`, `script_documents`, all v9 script tables (`script_versions` … `script_revision_items`), `breakdown_elements`, `breakdown_tags` |
-| People and places | `people`, `locations`, `bookings`, `cast_availability`, `crew_availability`, `key_contacts` |
+| Script and schedule | `scenes`, `shots`, `location_scene`, `stripboard_items`, `stripboard_strips`, `scene_cast`, `shot_cast`, `script_documents`, all v9 script tables (`script_versions` … `script_revision_items`), `breakdown_elements`, `breakdown_tags`, `storyboard_imports`, `storyboard_images` |
+| People and places | `people`, `locations`, `bookings`, `cast_availability`, `crew_availability`, `key_contacts`, overtime: `production_crew_hours_settings`, `crew_hours_person_settings`, `crew_day_hours` |
 | Budget | `budget_categories`, `budget_accounts`, `budget_revisions`, `budget_items`, `budget_item_details`, `expenses`, `expense_transaction_details`, `expense_tax_credit_allocations`, `expense_receipts`, `budget_item_expense_links`, `floats`, `float_expense_links`, fringe, contingency, cost-report and production-total rules and their scope tables, `production_budget_features`, `tax_credit_schemes`, `vat_reclaim_rates` |
-| Vendors | `vendors`, `vendor_purchase_orders`, `vendor_purchase_order_amendments`, `vendor_purchase_order_expenses`, `vendor_invoices`, `vendor_invoice_expenses` |
+| Vendors | `vendors`, `vendor_production_exclusions`, `vendor_purchase_orders`, `vendor_purchase_order_amendments`, `vendor_purchase_order_expenses`, `vendor_invoices`, `vendor_invoice_expenses` |
 | Equipment, tasks, delivery | `equipment`, `equipment_lists`, `equipment_list_items`, `equipment_terms`, `production_task_sections`, `production_tasks`, `deliverables`, `technical_specs`, `music_tracks`, `clearances`, `checklist_items`, `cue_sheets`, `call_sheets` |
 | Risk | `hazard_templates`, `risk_assessments`, `risk_assessment_units`, `risk_assessment_hazards` |
 | Files | `documents` |
 
-**Not exported** (instance-level, or not yet handled): `settings`, `clients` (a production's `client_id` is cleared on import if that client does not exist on the target), users, sessions and memberships, templates (`task_templates`, `deliverable_templates` and their items), `exchange_rates`, outbox and sync tables, `storyboard_imports` / `storyboard_images`, `vendor_production_exclusions`, and the overtime tables (`crew_day_hours`, `crew_hours_person_settings`, `production_crew_hours_settings`).
+**Not exported** (instance-level, or not yet handled): `settings`, `clients` (a production's `client_id` is cleared on import if that client does not exist on the target), users, sessions and memberships, templates (`task_templates`, `deliverable_templates` and their items), `exchange_rates`, and the outbox, sync, publish and server-link tables. `src/test/apf/exportCoverage.test.ts` lists every production-scoped table that is deliberately left out.
 
 ### Row selection (tombstones)
 
 - Rows with `deleted_at` set are omitted. Join and detail tables are included only when their parent is live (SQL joins in `exportLoadProductionData.ts`).
 - **Exceptions:** `episodes` and `shooting_blocs` export every row, including archived and soft-deleted ones, because scenes, tracks, deliverables and shoot days can still reference them.
 - `productions.archived_at` and `budget_accounts.archived_at` are not tombstones; those rows are exported.
-- `pruneOrphanedApfRows` runs last. It walks the tables in order and, mirroring the foreign-key actions, drops a row whose required parent was left out and clears an optional link to one. The rules are the `PARENT_LINKS` map and cover the v9 and v10 tables.
+- `pruneOrphanedApfRows` runs last. It walks the tables in order and, mirroring the foreign-key actions, drops a row whose required parent was left out and clears an optional link to one. The rules are the `PARENT_LINKS` map and cover the v9 to v11 tables.
 - **Vendors:** production vendors plus a local copy of each global vendor the production's expenses, invoices or purchase orders reference (`is_global` set to 0), so the file is self-contained.
+- **Storyboards:** live `storyboard_images` and `storyboard_imports`. Image bytes are bundled from `storage_key`; a missing file keeps its row and goes in `manifest.export.missingStoryboardImageIds`.
+- **Vendor exclusions:** a row hides a global vendor from this production. Global vendors travel as local copies only when referenced, so an exclusion whose vendor is not in the package is dropped by `pruneOrphanedApfRows`; one for a vendor in the package is kept and keeps it hidden.
+- **Overtime:** the production settings row, per-person exemptions and live logged hours. The settings tables have no `id` or `deleted_at`.
 - **Documents:** every live `documents` row for the production. Rows whose file cannot be read stay in the JSON and their ids go in `manifest.export.missingDocumentFileIds`; export does not fail.
 
 ## Import
@@ -88,6 +93,7 @@ Tables with no migrator (`production_budget_features`, `tax_credit_schemes`, `va
    - episode and bloc consistency: an episodic production needs a valid `episode_id` on every scene; a non-episodic one must have none; track and deliverable `episode_id` and `shoot_days.shooting_bloc_id` must point at rows in the payload (`IMPORT_PREFLIGHT`).
 4. Re-encrypt `people`, `locations` and `vendors` with the importer's DEK when field encryption is on.
 5. `extractApfDocumentsForImport` writes each bundled file to `attachments/<productionId>/<documentId>-<fileName>` under app data and rewrites `documents.file_path` to that app-relative path. A document with no bytes in the archive keeps its row and path, and the result carries a warning.
+5b. `extractApfStoryboardImagesForImport` does the same for storyboard images: each `storage_key` is rewritten to `storyboards/<productionId>/shots/<shotId>/imported/<imageId>-<fileName>` (a key from the file is never trusted) and the bytes written there. A missing image keeps its row and adds a warning.
 6. `planApfImportStatements` builds one `INSERT` per row in `APF_V1_TABLE_KEYS` order, filtered to the columns in the live schema (via `PRAGMA table_info`; `information_schema` on Postgres). Self-referencing tables are ordered row by row first: `production_tasks`, `budget_accounts`, `budget_revisions`, `script_versions`, `tramlines`, `script_annotations`, `breakdown_tags`. A parent link that is missing from the payload, or part of a cycle, is set to `NULL`.
 7. One `executeBatch([BEGIN, ...inserts, COMMIT])` inside `runInSerializedTransaction`, as required by [database.md](database.md#sqlite-access-and-transactions).
 8. On any failure the written attachment files are deleted and no rows remain. Errors map to the codes in `errors.ts` (`NOT_ZIP_PAYLOAD`, `ZIP_CORRUPT`, `ARCHIVE_LAYOUT`, `INVALID_MANIFEST`, `INVALID_DATA`, `IMPORT_IO`, `IMPORT_DB`, and those above); `apfUserMessages.ts` turns them into UI text.
@@ -125,4 +131,4 @@ Foreign keys are enforced during import (`PRAGMA foreign_keys = ON`), so table o
 7. Add a sample row to the round-trip test in `__tests__/apf-e2e-sqljs.integration.test.ts` and, if you added a migrator, a case in `apf-payload-pipeline.test.ts`.
 8. Decide whether `duplicateProduction.ts` and server publish should include it.
 
-Nothing automatically fails when a new production-scoped table is left out of the export; step 1 to 4 are by review. `src/test/apf/productionDeleteCascade.test.ts` checks that production and person deletes cascade, and `rustMigrationRegistration.test.ts` checks that every migration file is registered in `lib.rs`.
+`src/test/apf/exportCoverage.test.ts` fails when a table with a `production_id` column is neither in `APF_V1_TABLE_KEYS` nor on its reviewed exclusion list, so step 2 cannot be forgotten. `src/test/apf/productionDeleteCascade.test.ts` checks that production and person deletes cascade, and `rustMigrationRegistration.test.ts` checks that every migration file is registered in `lib.rs`.

@@ -18,6 +18,7 @@ Click **Settings** at the bottom of the sidebar. A list on the left groups the s
 | | **User management** | Create and manage users (instance admins) |
 | | **Project access** | Who can see and edit the current production |
 | Integrations | **APIs & publishing** | Travel-time key, map tiles, server connection |
+| Help | **Guidebook** | This guide, readable inside the app |
 | Advanced | **Demo & tutorial** | Reopen the tutorial, demo production |
 | | **Developer** | Experimental features switch |
 

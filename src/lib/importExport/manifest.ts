@@ -31,6 +31,8 @@ export const apfManifestSchemaV1 = z.object({
       tableRowCounts: z.record(z.string(), z.number().int().nonnegative()).optional(),
       bundledDocumentIds: z.array(z.string()).optional(),
       missingDocumentFileIds: z.array(z.string()).optional(),
+      bundledStoryboardImageIds: z.array(z.string()).optional(),
+      missingStoryboardImageIds: z.array(z.string()).optional(),
     })
     .optional(),
   app: z

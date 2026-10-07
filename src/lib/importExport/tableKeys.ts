@@ -29,6 +29,20 @@ export const APF_V9_TABLE_KEYS = [
 export const APF_V10_TABLE_KEYS = ['breakdown_elements', 'breakdown_tags'] as const
 
 /**
+ * Tables added in formatVersion 11: storyboard imports and images (image bytes ship in `files/storyboards/`),
+ * per-production hidden global vendors, and the overtime settings and logged hours.
+ * Parents come before children (`storyboard_imports` before `storyboard_images`).
+ */
+export const APF_V11_TABLE_KEYS = [
+  'storyboard_imports',
+  'storyboard_images',
+  'vendor_production_exclusions',
+  'production_crew_hours_settings',
+  'crew_hours_person_settings',
+  'crew_day_hours',
+] as const
+
+/**
  * v1 table keys for `data/production.json` → `tables`.
  * Names match SQLite table names per DOCS/import-export.md (INCLUDE set).
  * Order matches audit §3 import layers for documentation; export/import need not sort JSON by this array.
@@ -104,6 +118,7 @@ export const APF_V1_TABLE_KEYS = [
   'risk_assessment_hazards',
   ...APF_V9_TABLE_KEYS,
   ...APF_V10_TABLE_KEYS,
+  ...APF_V11_TABLE_KEYS,
 ] as const
 
 export type ApfV1TableKey = (typeof APF_V1_TABLE_KEYS)[number]
