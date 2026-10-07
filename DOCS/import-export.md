@@ -88,7 +88,7 @@ Tables with no migrator (`production_budget_features`, `tax_credit_schemes`, `va
 2. `parseApfArchiveBytes`: ZIP magic, unzip, check required entries, parse and validate the manifest, check the version, inject missing keys, validate `tables`, migrate to current.
 3. `preflightApfImportDb` (reads the database, writes nothing):
    - exactly one `productions` row, matching `manifest.production.id`;
-   - no existing `productions` row with that `id`, deleted or not, and no live production with the same `slug` (`IMPORT_CONFLICT`);
+   - no live `productions` row with that `id` (a soft-deleted one is replaced), and no live production with the same `slug` (`IMPORT_CONFLICT`);
    - `client_id` cleared if the client does not exist;
    - episode and bloc consistency: an episodic production needs a valid `episode_id` on every scene; a non-episodic one must have none; track and deliverable `episode_id` and `shoot_days.shooting_bloc_id` must point at rows in the payload (`IMPORT_PREFLIGHT`).
 4. Re-encrypt `people`, `locations` and `vendors` with the importer's DEK when field encryption is on.
@@ -98,7 +98,7 @@ Tables with no migrator (`production_budget_features`, `tax_credit_schemes`, `va
 7. One `executeBatch([BEGIN, ...inserts, COMMIT])` inside `runInSerializedTransaction`, as required by [database.md](database.md#sqlite-access-and-transactions).
 8. On any failure the written attachment files are deleted and no rows remain. Errors map to the codes in `errors.ts` (`NOT_ZIP_PAYLOAD`, `ZIP_CORRUPT`, `ARCHIVE_LAYOUT`, `INVALID_MANIFEST`, `INVALID_DATA`, `IMPORT_IO`, `IMPORT_DB`, and those above); `apfUserMessages.ts` turns them into UI text.
 
-**Ids are preserved**, not remapped. Foreign keys and `documents.entity_id` stay valid with no mapping table, and it means a production cannot be re-imported on a machine that already has it, including after a soft delete. Permanently delete it first.
+**Ids are preserved**, not remapped. Foreign keys and `documents.entity_id` stay valid with no mapping table, so a package cannot be imported while a live production with the same id exists. A soft-deleted copy does not block it: the importer deletes that row (its children cascade) in the same transaction and removes its attachment and storyboard files that the new import did not rewrite.
 
 Foreign keys are enforced during import (`PRAGMA foreign_keys = ON`), so table order is load-bearing.
 
@@ -113,11 +113,11 @@ Foreign keys are enforced during import (`PRAGMA foreign_keys = ON`), so table o
 ## Security notes
 
 - `.apf` files are plain ZIPs. People, locations and vendors are decrypted on export, so contact details are in plaintext in the file. Treat exports as sensitive; see [security.md](security.md#what-is-encrypted-where).
-- Export for a signed-in user goes through `exportProductionAsApfForActor` (view access). Import does not check project access and does not create a `project_memberships` row, so a non-admin who imports a production will not see it in their list until an admin grants access.
+- Export for a signed-in user goes through `exportProductionAsApfForActor` (view access). Import does not check project access; it adds the signed-in importer as `administrator` of the imported production so a non-admin can see it.
 
 ## Relationship to other features
 
-- **Duplicate production** (`src/lib/db/duplicateProduction.ts`) is a separate hand-written copier, not built on `.apf`. It assigns new ids and a new slug, copies a smaller set of tables and re-homes files under the new production id. Adding a table to `.apf` does not add it to duplication; update both when a feature should survive both.
+- **Duplicate production** (`src/lib/db/duplicateProduction.ts`) is a separate hand-written copier, not built on `.apf`. It assigns new ids and a new slug, copies a smaller set of tables (every column of each) and re-homes files under the new production id. Tables it skips are named, with reasons, in `DUPLICATE_EXCLUDED_TABLES`, and `src/lib/db/duplicateProduction.coverage.test.ts` fails when a production-scoped table or column is added without being copied or excluded. Adding a table to `.apf` does not add it to duplication; update both when a feature should survive both.
 - **Server publish** reuses `loadApfV1ProductionTables` (`src/lib/publish/loadPublishProductionData.ts`) and adds extra tables. A change to the export loader changes publish. See [collaboration.md](collaboration.md#publish).
 
 ## Add a table to export and import

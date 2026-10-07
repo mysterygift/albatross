@@ -185,7 +185,7 @@ Instance admins have administrator rights on every production without a membersh
 - **Memberships:** `project_memberships` (SQLite `0066`, Postgres `0004`) has at most one active row per `(production_id, user_id)` (`revoked_at IS NULL`); revocation is soft. The last project administrator cannot be removed or demoted.
 - **Service boundary:** `projectAccessService.ts` provides `requireProjectViewAccess`, `requireProjectEditAccess`, `requireProjectAdminAccess`. They throw `ProjectAuthorizationError` (`401 UNAUTHENTICATED`, `403 FORBIDDEN`). `projectAccessService.ts` and `projectDomainService.ts` expose `*ForActor` resolvers that check access, then call the repository. Pages call the `ForActor` variants when auth is active; repositories do not check access themselves.
 - **Visibility:** `listVisibleProjectsForActor` returns every production to admins and only membership productions to everyone else.
-- **Lifecycle:** `createProjectForActor` inserts the creator as `administrator` in the same batch as the production, but the Productions page does not call it and `importProductionFromApf` creates no membership. Productions created or imported in the app therefore have no members and are visible only to instance admins until one grants access.
+- **Lifecycle:** `createProduction` and `importProductionFromApf` insert the signed-in user (`getCurrentSessionUserId` in `src/lib/auth/currentSessionUser.ts`) as `administrator` in the same batch as the production; with no one signed in no membership is created. `duplicateProduction` does too (memberships themselves are not copied). `createProjectForActor` does the same for an explicit actor.
 - **UI:** **Settings → Project Access** (`/settings/project-access`) manages members of the current production; it needs production administrator or instance admin. Admin-side grants live in `adminUserManagementService.ts` (`grantUserProjectAccessAsAdmin` and friends).
 - The same service code runs against the optional server's Postgres database. Server sign-in and project listing are in [collaboration.md](collaboration.md).
 
@@ -193,7 +193,7 @@ Instance admins have administrator rights on every production without a membersh
 
 `appendAuditLog` writes to `audit_logs` (actor, target, production, action, sanitised metadata, IP, user agent). Metadata is deny-by-default: each known action in `AUDIT_METADATA_POLICY` whitelists a few validated scalar fields; usernames, contact data, hashes, keys and tokens are never recorded, and unknown actions keep no metadata. Covered: `auth.*` (setup, login, recovery, escrow), `admin.*` (user create, disable, enable, delete, role change, password reset, denied admin calls, project-access grants) and `project_access.*`.
 
-The table exists only in Postgres (`postgres/migrations/0005_uam6_audit_logs.sql`). Writes are best-effort and errors are swallowed, so a local desktop install records no audit trail.
+The table exists in SQLite (`0106_audit_logs.sql`) and Postgres (`postgres/migrations/0005_uam6_audit_logs.sql`); `appendAuditLog` writes `metadata_json` as JSONB on Postgres and as JSON text on SQLite. Writes are best-effort: a failure never fails the operation, but it is logged to the console (action and message only). The table is not part of `.apf` export.
 
 ## Legacy installs
 Older installs derived the file key from the admin password and `kdf_salt` (meta v1). On the next sign-in, `migrateToInstanceKeyModeIfNeeded` unlocks with that key, verifies the password, takes the backup, rekeys to a random instance key, writes the user's wrapper, updates the recovery escrow and rewrites the meta as v2. The v1 code paths in `dbFileEncryption.ts`, `dbUnlock.ts` and `passwordRecoveryService.ts` exist only for this.
@@ -215,6 +215,6 @@ Not protected:
 
 ## Known limitations
 
-- **Per-user DEK.** Each user derives their own DEK from their own `dek_salt`, and recovery escrows only the recovering admin's DEK. Protected columns written by one user are not decryptable with another user's DEK, so multi-user local installs do not share people, location, vendor or client fields reliably. Confirm before relying on more than one local user.
+- **Per-user DEK (confirmed bug).** Each user derives their own DEK from their own `dek_salt`, and recovery escrows only the recovering admin's DEK. Protected columns (`clients`, `people`, `locations`, `vendors`) written by one user fail AES-GCM authentication for any other local user, so a second local user cannot read the first user's records (and vice versa). `src/test/encryption/multiUserFieldAccess.test.ts` pins this with `it.fails` cases; switch them to `it` when the DEK becomes instance-wide. Until then, use one local user per install for real data. Planned fix: one random instance-wide DEK wrapped per user under their password (see the design in the change report), which also removes the re-encryption step from **Forgot password?**.
 - If a recovery rekey succeeds but a later step fails, the file key and database rows can disagree. Do not interrupt **Forgot password?** on a legacy install.
-- Rate limits are per process and reset on restart. There is no local audit trail.
+- Rate limits are per process and reset on restart. The local audit log has no UI and is never pruned.

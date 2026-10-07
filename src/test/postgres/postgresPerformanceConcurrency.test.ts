@@ -167,7 +167,7 @@ describe('postgres phase 6 performance and concurrency hardening', () => {
           const stat = scenarioStats.get(name) ?? { durations: [], errors: 0 }
           stat.durations.push(durationMs)
           scenarioStats.set(name, stat)
-        } catch (error) {
+        } catch {
           const stat = scenarioStats.get(name) ?? { durations: [], errors: 0 }
           stat.errors += 1
           scenarioStats.set(name, stat)

@@ -30,10 +30,11 @@ describe('apf export coverage', () => {
     })
     const db = new SQL.Database()
     applyAlbatrossMigrationsSqlJs(db)
-    const tables = db.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)[0]!
-      .values.map((r) => String(r[0]))
+    // The local sql.js typings are loose; narrow to the one call shape used here.
+    const q = (sql: string) => (db as unknown as { exec(s: string): { values: unknown[][] }[] }).exec(sql)[0]!.values
+    const tables = q(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`).map((r) => String(r[0]))
     const scoped = tables.filter((name) => {
-      const cols = db.exec(`PRAGMA table_info(${name})`)[0]!.values.map((r) => String(r[1]))
+      const cols = q(`PRAGMA table_info(${name})`).map((r) => String(r[1]))
       return cols.includes('production_id')
     })
     db.close()

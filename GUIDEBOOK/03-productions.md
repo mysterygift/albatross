@@ -4,13 +4,13 @@ A production is the container for everything else in Albatross: script, schedule
 
 ![Productions page](images/03-productions-list.png)
 
-The page lists every production with its **Name**, **Notes**, **Client** and **Delivery date**. Badges mark **Episodic** and **Archived** productions. Each row has four buttons: **Edit**, **Duplicate production**, **Archive project** and **Delete permanently**.
+The page lists every production with its **Name**, **Notes**, **Client** and **Delivery date**. Badges mark **Episodic** and **Archived** productions. Each row has four buttons: **Edit**, **Duplicate production**, **Archive production** and **Delete permanently**.
 
 > **Note** If your account has limited access to a production, the buttons you cannot use are disabled. See [Settings and admin](14-settings-and-admin.md).
 
 ## Create a production
 
-1. Go to **Productions** and select **New production**. You can also use **File → New Project…**, ⌘N (Ctrl+N), or **New production…** in the production switcher.
+1. Go to **Productions** and select **New production**. You can also use **File → New Production…**, ⌘N (Ctrl+N), or **New production…** in the production switcher.
 2. Enter a **Name** and, optionally, a **Project description**.
 3. Optionally choose a **Client** and a **Delivery date** (see [Clients](#clients)).
 4. Tick **Episodic production** for a series (see [Episodic productions](#episodic-productions)). Leave it unticked for a film, commercial or single programme.
@@ -52,13 +52,15 @@ Duplicate makes a full working copy: schedule, script, people, budget, documents
 
 The copy becomes the current production. A confirmation message appears above the list.
 
+Some records are left behind on purpose or are not copied yet, so set them up again on the copy if you need them: Script Supervisor records (slates, takes, progress, annotations), call sheets, crew bookings, equipment and equipment lists, vendor invoices and purchase orders, and budget floats, fringe and contingency rules and tax-credit setup. The chart of accounts, budget revisions, budget lines and expenses are copied with their account coding.
+
 ## Archive and restore
 
 Archiving hides a production from the list and the switcher without deleting anything. [Wrapping a production](13-tasks-and-wrap.md) also archives it.
 
-1. Select **Archive project** on the row. The production disappears from the list.
-2. To see archived productions, select the box icon at the top right of the page (its tooltip reads **Show archived projects**). Archived rows are greyed and badged **Archived**.
-3. To restore one, select **Unarchive project** on its row.
+1. Select **Archive production** on the row. The production disappears from the list.
+2. To see archived productions, select the box icon at the top right of the page (its tooltip reads **Show archived productions**). Archived rows are greyed and badged **Archived**.
+3. To restore one, select **Unarchive production** on its row.
 
 ## Delete a production
 
@@ -74,17 +76,17 @@ An `.apf` (Albatross Project File) holds one production, including its document 
 ### Export
 
 1. Open the production you want to export, so it is the current production.
-2. On **Productions**, select **Export project**. (**File → Export Project…** and ⇧⌘E do the same.)
+2. On **Productions**, select **Export project**. (**File → Export Production…** and ⇧⌘E do the same.)
 3. Choose a name and location in the save dialog and confirm.
 
 A message confirms `Project exported as "…apf"`.
 
 ### Import
 
-1. On **Productions**, select **Import project**. (**File → Import Project…** and ⌘O do the same.)
+1. On **Productions**, select **Import project**. (**File → Import Production…** and ⌘O do the same.)
 2. Choose an `.apf` file in the open dialog.
 
-The production is added and becomes the current production. If the file has attachments missing, those documents are imported without their files and Albatross tells you. If the exported production was archived, it imports as archived and Albatross tells you to use **Show archived projects** to find it.
+The production is added and becomes the current production. If the file has attachments missing, those documents are imported without their files and Albatross tells you. If the exported production was archived, it imports as archived and Albatross tells you to use **Show archived productions** to find it.
 
 > **Tip** On an installed copy of Albatross, double-click an `.apf` file in Finder or File Explorer. Albatross opens (sign in if asked) and imports it automatically. If the file opens in another program instead, see [Troubleshooting](16-troubleshooting.md).
 

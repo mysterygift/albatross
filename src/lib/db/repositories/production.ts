@@ -20,6 +20,7 @@ import { seedDefaultBudgetCategories } from './budget'
 import { listAccounts, seedDefaultBudgetAccounts } from './budgetAccounts'
 import { createContingencyRule } from './budgetDerived'
 import { listDocumentsByProduction } from './document'
+import { getCurrentSessionUserId } from '@/lib/auth/currentSessionUser'
 import { projectMembershipInsertStatement } from './projectMemberships'
 
 const ATTACHMENTS_PREFIX = 'attachments/'
@@ -265,26 +266,6 @@ export async function withSlugLock<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/**
- * Allocate a unique slug and INSERT the production row inside a transaction.
- * Caller must run the rest of duplicateProduction and then COMMIT.
- * Used so slug allocation and INSERT are atomic with other create/duplicate operations.
- */
-export async function reserveSlugAndInsertProduction(
-  db: Awaited<ReturnType<typeof getDb>>,
-  params: { id: string; name: string; baseSlug: string; currencyCode: string; notes: string | null; ts: string }
-): Promise<string> {
-  return withSlugLock(async () => {
-    const slug = await ensureUniqueSlug(params.baseSlug)
-    await db.execute('BEGIN TRANSACTION')
-    await db.execute(
-      `INSERT INTO ${TABLE} (id, name, slug, currency_code, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [params.id, params.name, slug, params.currencyCode, params.notes, params.ts, params.ts]
-    )
-    return slug
-  })
-}
-
 export type CreateProductionOptions = {
   /** When true, skip default budget categories, accounts, and contingency. Used by Default template which seeds its own chart. */
   skipBudgetSeed?: boolean
@@ -292,7 +273,7 @@ export type CreateProductionOptions = {
    * When non-empty after trim, inserts production with `is_episodic = 1` and first episode in one transaction.
    */
   episodicInitialEpisodeName?: string
-  /** Optional: grant creator project administrator membership at create time. */
+  /** Grant this user project administrator membership at create time. Defaults to the signed-in user. */
   creatorUserId?: string
   /** Link to an existing instance-scoped client. */
   clientId?: string | null
@@ -310,7 +291,8 @@ export async function createProduction(
   const currencyCode = (data as { currency_code?: string }).currency_code ?? 'GBP'
   const skipBudgetSeed = options?.skipBudgetSeed === true
   const rawEpisodic = options?.episodicInitialEpisodeName
-  const creatorUserId = options?.creatorUserId
+  // Whoever is signed in owns what they create; without this a non-admin cannot see their own new production.
+  const creatorUserId = options?.creatorUserId ?? (await getCurrentSessionUserId()) ?? undefined
   const episodicName = rawEpisodic !== undefined ? rawEpisodic.trim() : ''
   const asEpisodic = rawEpisodic !== undefined && episodicName.length > 0
 

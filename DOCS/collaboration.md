@@ -132,9 +132,9 @@ PostgreSQL is not used by the desktop app at runtime. This repo holds the schema
 
 | Item | Location |
 |---|---|
-| Consolidated baseline schema (final state, UUID/TIMESTAMPTZ/JSONB types, no replay of SQLite history) | `postgres/schema/baseline.sql`, identical copy as `postgres/migrations/0001_baseline.sql` |
-| Incremental migrations after the baseline | `postgres/migrations/0002_*` to `0027_*` (auth, memberships, audit logs, clients, field encryption, instance-key wrapper, feature changes) |
-| Baseline generator (reads `src-tauri/migrations/*.sql` through sql.js) | `scripts/postgres/generatePhase2Artifacts.mjs`, run with `node scripts/postgres/generatePhase2Artifacts.mjs` |
+| End-state schema snapshot generated from SQLite (UUID/TIMESTAMPTZ/JSONB types, tables in dependency order). The parity test reads this file. | `postgres/schema/baseline.sql` |
+| Numbered migrations a server applies in order: `0001_baseline.sql` (the original 67-table baseline), then `0002_*` to `0027_*` (auth, memberships, audit logs, clients, field encryption, feature changes) and `0028_*` to `0034_*` (server collaboration tables, script sections, sync-v2, risk assessments, script supervisor, crew hours, script breakdown) | `postgres/migrations/` |
+| Snapshot generator (replays `src-tauri/migrations/*.sql` through sql.js and writes `baseline.sql`; the human-readable audit goes to the git-ignored `scripts/postgres/.generated/`). It never touches `0001_baseline.sql`. | `node scripts/postgres/generatePhase2Artifacts.mjs` |
 | `pg`-backed `DatabaseAdapter` (`dialect = 'postgres'`, `$n` placeholders, slow-query metrics) | `src/lib/db/postgresDatabaseAdapter.ts` |
 | Postgres access control and auth services used by the tests | `src/lib/access`, `src/lib/auth` |
 | Tests | `src/test/postgres/*.test.ts`, helpers `pgTestEnv.ts`, `postgresRepositoryHarness.ts`, `schemaAudit.ts` |
@@ -146,11 +146,25 @@ npm run test:postgres   # all src/test/postgres suites
 npm run test:publish    # SQLite -> publish package -> PostgreSQL round trip only
 ```
 
-Connection: set `PGHOST` (default `127.0.0.1`), `PGPORT` (5432), `PGDATABASE` (`albatross_ci`), `PGUSER`, `PGPASSWORD`. Without these the helper tries the OS user, `postgres` and `albatross` against `albatross_ci` and `postgres`. Most suites log a warning and pass vacuously when no server is reachable, so check the output rather than the exit code.
+Connection: set `PGHOST` (default `127.0.0.1`), `PGPORT` (5432), `PGDATABASE` (`albatross_ci`), `PGUSER`, `PGPASSWORD`. Without these the helper tries the OS user, `postgres` and `albatross` against `albatross_ci` and `postgres`. When no server is reachable most suites skip their tests with a logged warning and vitest reports the connection error, so a run without a database is not a pass.
 
-CI: `.github/workflows/postgres-infrastructure.yml` starts a PostgreSQL 16 service on pull requests and pushes to `main` and runs only a `SELECT 1` smoke check. It does not run `test:postgres`.
+CI: `.github/workflows/postgres-infrastructure.yml` starts a PostgreSQL 16 service on pull requests and pushes to `main` and `dev`, runs the `SELECT 1` smoke check, then `npm run test:postgres` against the service container (the `PG*` variables are set on the job). The test step is `continue-on-error` for now, see below. Lint, unit tests and the build run in `.github/workflows/ci.yml` ([contributing.md](contributing.md)), which excludes the Postgres suites.
 
-Known drift: the baseline lags the SQLite schema. `postgresSchemaParity.test.ts` currently fails (71 tables in the baseline against 118 in SQLite; for example `breakdown_elements` is missing), and the SQLite-only tables added after the baseline was generated (script breakdown, risk assessments, script supervisor, `sync_*`) have no PostgreSQL equivalent. Regenerate the baseline, or add migrations, before relying on PostgreSQL parity.
+### Schema parity status
+
+Keeping PostgreSQL in step with SQLite is manual:
+
+1. Write the Postgres migration (`postgres/migrations/NNNN_*.sql`) for the new SQLite migration, translating types as in `0011_crew_availability.sql` and `0012_tax_credits.sql` (UUID ids with `gen_random_uuid()`, `TIMESTAMPTZ`, `DATE`, `NUMERIC`, `JSONB` for `*_json`, `BOOLEAN` for the audited columns in `BOOLEAN_COLUMN_ALLOWLIST`). Never edit a shipped migration; add a new one.
+2. Run `node scripts/postgres/generatePhase2Artifacts.mjs` to refresh `postgres/schema/baseline.sql`.
+3. `postgresSchemaParity.test.ts` then checks that every SQLite table exists in the baseline with the expected column types. It compares files only, not a live database. The column-type rules are duplicated in the generator and in `src/test/postgres/schemaAudit.ts`; change both together.
+
+Status: the baseline covers all 119 SQLite tables and the parity test passes. When `0001` to `0034` were replayed on a live PostgreSQL 18 (after the two fixes below) and compared with `baseline.sql`, the tables, columns, types, nullability and defaults were identical. Constraint and index names differ for the tables created by `0003` to `0007` (hand-written auto names against `pk_*`/`fk_*`), and the migration chain has three performance indexes the baseline lacks. Column types the migrations fixed and the generator now mirrors: `tax_credits_enabled`, `vat_tracking_enabled`, `is_vfx`, `is_global` are `BOOLEAN`, and `movement_order_json` / `movement_pins_json` stay `TEXT`.
+
+Known problems that still keep the Postgres suites red (not fixed here because they need a change to shipped migrations or to repository code):
+
+- `0001_baseline.sql` cannot run: it creates tables before the tables their foreign keys reference (`bookings` before `shoot_days`). Reordering the `CREATE TABLE` blocks parents-first fixes it (the generator now does this for `baseline.sql`).
+- `0009_equipment_list_item_quantity.sql` adds `quantity`, which `0001` already contains. Use `ADD COLUMN IF NOT EXISTS`, or remove the column from `0001`.
+- With those two fixed, about 20 tests in the repository-level suites still fail: repositories bind `0`/`1` to `BOOLEAN` columns (`boolean = integer`), the `pg` driver returns `DATE` as a JavaScript `Date`, and some tests assume a signed-in encryption key (the repository harness now sets a test key).
 
 ## Not implemented
 
@@ -160,4 +174,4 @@ Known drift: the baseline lags the SQLite schema. `postgresSchemaParity.test.ts`
 - Running a server from this repo, or a PostgreSQL mode for the desktop app.
 - Server-side encryption of published data; encrypted publish payloads.
 - Real-time co-editing; presence is a collaborator count only.
-- Automated PostgreSQL tests in CI.
+- A green PostgreSQL test job in CI (the job runs the suites but does not gate on them yet).

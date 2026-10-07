@@ -36,10 +36,10 @@ Production-scoped tracking of post-production delivery items (masters, mixes, ca
 - **Dashboard**: card counts overdue (due before today, not `delivered`) and due within 14 days.
 - **Wrap Production**: [wrap-production.md](wrap-production.md) reads all live deliverables.
 - **Default template** (Productions → New): seeds six starter deliverables (Picture Master, Textless Master, Stereo Mix, 5.1 Surround Mix, Closed Captions, QC Report) in `createProductionFromTemplate.ts`.
-- **Duplicate production**: copies `name`, `due_date`, `status`, `episode_id` (remapped) and a spec's `resolution`, `codec`, `notes` only; recipient, delivery fields, approval and other spec columns are not copied. Attachments are copied with `entity_id` remapped (`mapEntityId`).
+- **Duplicate production**: copies every deliverable column (`episode_id` remapped; recipient, delivery fields and approval included) and every technical-spec column. Attachments are copied with `entity_id` remapped (`mapEntityId`).
 - **.apf export/import** includes `deliverables` (`src/lib/importExport/tableKeys.ts`); see [import-export.md](../import-export.md).
 
 ## Gotchas
-- The Wrap Production check does not understand the Deliverables statuses: it only treats `signed_off` / `complete` / `completed` as done, so `delivered` counts as "not reviewed" and the check can never be Ready from UI-set statuses (see [wrap-production.md](wrap-production.md#gotchas)).
+- The Wrap Production check counts only `delivered` (and legacy `signed_off` / `complete` / `completed` / `done`) as done; `not_started`, `preparing`, `qc` and `ready` are pending, so a deliverable that is `ready` still blocks Ready (see [wrap-production.md](wrap-production.md#gotchas)).
 - No UI exists to create or edit templates; only the repository functions do.
 - Spec fields are free text. There is no platform validation.

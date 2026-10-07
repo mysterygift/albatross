@@ -696,7 +696,7 @@ export function ProductionsPage() {
       if (currentProductionId === id) setCurrentProductionId(null)
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
-      toast.success('Project archived.')
+      toast.success('Production archived.')
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Archive failed')
@@ -715,7 +715,7 @@ export function ProductionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productions'] })
       refetchProductions()
-      toast.success('Project restored.')
+      toast.success('Production restored.')
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Unarchive failed')
@@ -890,7 +890,7 @@ export function ProductionsPage() {
                 size="icon"
                 onClick={() => unarchiveMutation.mutate(row.original.id)}
                 disabled={unarchiveMutation.isPending || !caps.canAdmin}
-                title="Unarchive project"
+                title="Unarchive production"
                 className="text-mint-600 hover:bg-mint-500/10 hover:text-mint-700 dark:text-mint-400 dark:hover:text-mint-300"
               >
                 <Archive className="size-4" />
@@ -901,7 +901,7 @@ export function ProductionsPage() {
                 size="icon"
                 onClick={() => archiveMutation.mutate(row.original.id)}
                 disabled={archiveMutation.isPending || !caps.canAdmin}
-                title="Archive project"
+                title="Archive production"
                 className="text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
               >
                 <Archive className="size-4" />
@@ -987,15 +987,15 @@ export function ProductionsPage() {
               variant="outline"
               size="sm"
               onClick={toggleShowArchived}
-              title={showArchived ? 'Hide archived projects' : 'Show archived projects'}
-              aria-label={showArchived ? 'Hide archived projects' : 'Show archived projects'}
+              title={showArchived ? 'Hide archived productions' : 'Show archived productions'}
+              aria-label={showArchived ? 'Hide archived productions' : 'Show archived productions'}
               className={`flex max-w-[260px] flex-none items-center overflow-hidden transition-colors duration-200 ease-out focus-visible:ring-mint-500 ${showArchived ? 'border-mint-500/40 bg-mint-500/5 pr-2 text-mint-700 hover:bg-mint-500/15 hover:text-foreground dark:text-mint-400 dark:hover:bg-mint-500/20 dark:hover:text-foreground' : ''}`}
             >
               <PackageOpen className="size-4 shrink-0" />
               <span
                 className={`inline-block shrink-0 whitespace-nowrap overflow-hidden transition-all duration-200 ease-out max-[900px]:!max-w-0 max-[900px]:!opacity-0 max-[900px]:!ml-0 ${showArchived ? 'max-w-[220px] opacity-100 ml-2' : 'max-w-0 opacity-0 ml-0'}`}
               >
-                Hide archived projects
+                Hide archived productions
               </span>
             </Button>
             <Dialog open={open} onOpenChange={setOpen}>
@@ -1426,7 +1426,7 @@ function ProductionFormDialog({
                 <div className="space-y-1 min-w-0">
                   <span className="text-sm font-medium text-foreground leading-snug">Episodic production</span>
                   <p className="text-muted-foreground text-xs leading-snug">
-                    For series and multi-episode work. Scenes, schedule, and deliverables can be tied to episodes in later releases.
+                    For series and multi-episode work. Scenes, schedule, and deliverables can be tied to episodes.
                   </p>
                 </div>
               </label>

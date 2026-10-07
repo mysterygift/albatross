@@ -55,11 +55,13 @@ export async function preflightApfImportDb(params: {
     prod.delivery_date = null
   }
 
-  const existingById = await db.select<{ id: string }[]>(
-    `SELECT id FROM productions WHERE id = $1 LIMIT 1`,
+  // A soft-deleted production with this id does not block the import: `importProductionFromApf` purges it
+  // (rows and files) in the same transaction, because ids are preserved and would otherwise collide.
+  const existingById = await db.select<{ id: string; deleted_at?: string | null }[]>(
+    `SELECT id, deleted_at FROM productions WHERE id = $1 LIMIT 1`,
     [productionId]
   )
-  if (existingById.length > 0) {
+  if (existingById.length > 0 && !existingById[0]!.deleted_at) {
     throw new ApfImportConflictError(
       'production_id',
       `A production with id ${productionId} already exists. Remove it or use a different package (import does not merge or overwrite).`

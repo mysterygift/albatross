@@ -93,7 +93,7 @@ Each deliverable has one spec. The **Audio** and **Subtitles** columns in the ta
 
 ### Delete a deliverable
 
-Click the bin icon on the row. The deliverable is removed straight away without a confirmation.
+Click the bin icon on the row. Albatross asks you to confirm, then removes the deliverable.
 
 > **Tip:** The Dashboard shows deliverables that are overdue or due within 14 days. See [Finding your way](02-finding-your-way.md).
 

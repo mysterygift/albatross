@@ -26,12 +26,15 @@ npm run tauri:dev
 | `npm run build` | `tsc -b && vite build`: type-check and build the frontend to `dist/` |
 | `npm run tauri:build` | Release bundle; output in `src-tauri/target/release/bundle/` |
 | `npm test` | Vitest, all `src/**/*.test.ts(x)` (`npm run test:watch` to watch) |
-| `npm run test:postgres` | Postgres adapter and schema tests in `src/test/postgres/`; needs a reachable Postgres (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`; default database `albatross_ci`) |
+| `npm run test:postgres` | Postgres adapter and schema tests in `src/test/postgres/`; needs a reachable Postgres for everything except schema parity (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`; default database `albatross_ci`) |
 | `npm run lint` / `npm run lint:ci` | ESLint; `lint:ci` fails above 60 warnings |
 
 Tests use the default `node` environment; component tests opt in with a `// @vitest-environment jsdom` first line. Repository tests run against in-memory SQLite (`sql.js`) through `setDbAdapterForTests`.
 
-**CI**: the only workflow, `.github/workflows/postgres-infrastructure.yml`, starts Postgres 16 and runs a `SELECT 1` smoke check on pull requests and pushes to `main`. It does not run lint, tests or builds, so run `npm run build`, `npm test` and `npm run lint:ci` locally before pushing.
+**CI** (GitHub Actions, on pull requests and pushes to `main` and `dev`):
+- `.github/workflows/ci.yml` runs `npm ci`, `npm run lint:ci`, `npm test` (without the Postgres suites) and `npm run build`.
+- `.github/workflows/postgres-infrastructure.yml` starts Postgres 16, runs a `SELECT 1` check and then `npm run test:postgres`.
+- The lint, test, build and Postgres-test steps are `continue-on-error` because they were already failing when CI was added; each workflow lists the known failures in a comment. A step failure is visible in the log but does not fail the check. Remove `continue-on-error` from a step once it is green. Until then, run `npm run lint:ci`, `npm test` and `npm run build` locally and compare with the known failures rather than trusting a green check.
 
 ## Dev database
 - Location: the Tauri app config directory for identifier `Albatross`, shared by dev runs and any installed build on the same machine.
@@ -69,10 +72,10 @@ Tests use the default `node` environment; component tests opt in with a `// @vit
 6. Add `DOCS/features/<feature>.md` from the template in [README.md](README.md).
 
 ## Add a migration
-Local SQLite schema changes are numbered files in `src-tauri/migrations/` (currently up to `0105`). For a new one:
+Local SQLite schema changes are numbered files in `src-tauri/migrations/` (currently up to `0106`). For a new one:
 1. Create `src-tauri/migrations/NNNN_short_name.sql` with the next number.
 2. Add a `Migration { version: NNNN, description, sql: include_str!(...), kind: MigrationKind::Up }` entry at the end of the list in `src-tauri/src/lib.rs`. A file without an entry never runs.
-3. Add the matching Postgres migration in `postgres/migrations/` and keep the schema parity tests passing.
+3. Add the matching Postgres migration in `postgres/migrations/` (currently up to `0034`), run `node scripts/postgres/generatePhase2Artifacts.mjs` to refresh `postgres/schema/baseline.sql`, and keep `npm run test:postgres` schema parity passing ([collaboration.md](collaboration.md)).
 4. Restart `tauri:dev`. Never edit a migration that has shipped; add a new one.
 
 Rules for writing migrations, SQLite/Postgres differences and the parity tests: [database.md](database.md).

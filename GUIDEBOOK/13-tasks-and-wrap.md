@@ -30,7 +30,7 @@ Subtasks can be nested further by adding a subtask to a subtask. A subtask alway
 - Click the **Incomplete** / **Complete** button in the Status column to toggle a task.
 - Click the pencil icon to edit. The **Edit task** dialog also has a **Mark as complete** checkbox.
 - Click the chevron on a parent task to collapse or expand its subtasks. Collapsed state is not remembered between visits.
-- Click the bin icon to delete a task. This also deletes its subtasks and asks for no confirmation.
+- Click the bin icon to delete a task. A confirmation first tells you how many subtasks will be deleted with it.
 
 ### Sections
 
@@ -99,8 +99,7 @@ Click a section header to expand it. Each header shows **Ready** or **Needs revi
 |---|---|---|
 | **Budget and Actualisation** | All spend is allocated to line items, no line item is unmatched, none is overspent, and every petty cash float is reconciled | **Budget**, including its actualisation and floats tabs |
 | **Schedule and Calendar** | No shoot day falls after today | **Schedule → Calendar** |
-| **Deliverables** | At least one deliverable exists and all are signed off | **Deliverables** |
-| **Archive Readiness** | Placeholder only. It has no checks. | |
+| **Deliverables** | At least one deliverable exists and every one has status **Delivered** (Ready, QC, Preparing and Not started do not count yet) | **Deliverables** |
 
 Expanded sections show counts and detail tables:
 

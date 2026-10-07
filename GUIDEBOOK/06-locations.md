@@ -16,7 +16,7 @@ Open **Locations** in the sidebar (Plan group).
 | **Location Fee** | In the production's currency. |
 | **Contact** | Contact name, with email and phone beneath. |
 
-Use the pencil icon at the end of a row to edit, and the bin icon to delete. Deleting is immediate and has no confirmation. It also removes the location's permits and release forms.
+Use the pencil icon at the end of a row to edit, and the bin icon to delete. Deleting asks for confirmation first. It also removes the location's permits and release forms.
 
 > **Tip** Searching (⌘K / Ctrl+K) for a location name takes you to this page with the row highlighted.
 

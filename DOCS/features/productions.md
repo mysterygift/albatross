@@ -39,12 +39,12 @@ The **New production** dialog takes name, notes, template, optional client (exis
 | Demo | Full sample content (`seedDemoStyleContentIntoProduction`), marks `created_from_template = 'demo'`. Hidden in the dialog (`VISIBLE_TEMPLATE_OPTIONS`); creating another asks to override the existing demo copy |
 | Tutorial | Default plus a small starter budget; used by the in-app tutorial only |
 
-Everything for the production row, client, optional membership and (if episodic) first episode and bloc is written in one transaction; budget seeding runs after it, so a failure there leaves a created production without accounts. `createProduction` accepts `creatorUserId` to add an administrator membership, but the Productions page does not pass it.
+Everything for the production row, client, optional membership and (if episodic) first episode and bloc is written in one transaction; budget seeding runs after it, so a failure there leaves a created production without accounts. `createProduction` adds the signed-in user (or an explicit `creatorUserId`) as `administrator` in that transaction.
 
 ## Edit, archive, delete
 - **Edit**: name, production code, notes, client, delivery date. Currency and episodic mode cannot be changed here (`updateProduction` throws if asked to disable episodic).
 - **Archive / Unarchive**: reversible, sets or clears `archived_at`; archived rows are hidden unless **Show archived** is on. Wrapping (`wrapped_at`) archives too.
-- **Duplicate**: `duplicateProduction` copies an explicit list of tables (the `INSERT INTO` statements in the file) in one `executeBatch` transaction, with new ids, a new slug and copied attachment files. It does not write the outbox and does not copy archive/wrap state, budget revisions or server links. Archived source episodes become null on copied rows.
+- **Duplicate**: `duplicateProduction` copies an explicit list of tables (the `INSERT INTO` statements in the file) in one `executeBatch` transaction, with new ids, a new slug and copied attachment files. It does not write the outbox and does not copy archive/wrap state or server links. Every column of a copied table is inserted, or listed with a reason in `DUPLICATE_EXCLUDED_COLUMNS`; tables that are not copied (Script Supervisor records, budget derived rules, vendor invoices and purchase orders, call sheets, bookings, equipment, sync state) are listed in `DUPLICATE_EXCLUDED_TABLES`. `duplicateProduction.coverage.test.ts` fails when a new production-scoped table or column is in neither place. Archived source episodes become null on copied rows.
 - **Delete permanently**: confirm dialog, then `permanentlyDeleteProduction`: list the production's documents, `DELETE` the `productions` row, then remove files under `attachments/`. Every child table must reference `productions` with `ON DELETE CASCADE` (SQLite runs with `PRAGMA foreign_keys = ON`); a table without it makes the delete fail with "FOREIGN KEY constraint failed" (migration 0105 fixed `crew_availability`). `productionDeleteCascade.test.ts` asserts every foreign key to `productions` and `people` has a delete action, so new tables need it too. `deleteProduction` (soft) exists but the UI uses the hard delete. With sign-in enabled, archive and delete require project administrator (`assertCanAdminProject`).
 
 ## Episodic productions
@@ -59,6 +59,6 @@ Turned on at creation (episodic switch plus first episode name) or later from Se
 `getEffectiveDataSourceForProduction` returns `local_sqlite` unless collaboration is enabled, the legacy server-runtime flag is on, and the production has a `linked_projects` row in state `linked`, `offline` or `conflict`; then it returns `remote_server`. A handful of repositories (schedule, script breakdown, script sections, coverage) branch on it; everything else reads local SQLite. The list shows a "Linked to Server" badge and **Unlink from server**. See [collaboration.md](../collaboration.md).
 
 ## Gotchas
-- With sign-in enabled, a non-admin who creates a production gets no membership (see above), so `listVisibleProjectsForActor` will not return it.
+- Create, duplicate and import all add the signed-in user as `administrator` of the new production (`getCurrentSessionUserId`); with no one signed in no membership is created.
 - Duplicate is not synced; a duplicated production starts unlinked.
 - Deleting an episode leaves episodic scenes with a null `episode_id` until reassigned, although normal writes forbid that state.

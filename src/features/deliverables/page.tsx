@@ -62,6 +62,7 @@ import {
 import { listDocumentsByEntity, createDocument, deleteDocument } from '@/lib/db/repositories/document'
 import { pickAndSaveAttachment, getFileUrl, openInSystem } from '@/lib/files'
 import { documentsQueryKey } from '@/lib/documents/persistDocument'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Paperclip, Upload, ExternalLink, Trash2, Loader2 } from 'lucide-react'
 
 const EMPTY = '—'
@@ -112,6 +113,7 @@ type ScopeMode = 'project_wide' | 'episode'
 export function DeliverablesPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const isEpisodic = Boolean(currentProduction?.is_episodic)
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [open, setOpen] = useState(false)
   const [applyTemplateOpen, setApplyTemplateOpen] = useState(false)
   const [applyTemplateId, setApplyTemplateId] = useState<string>('')
@@ -243,6 +245,17 @@ export function DeliverablesPage() {
       queryClient.invalidateQueries({ queryKey: ['technical-specs-by-deliverables'] })
     },
   })
+
+  async function handleDeleteDeliverable(d: { id: string; name: string }) {
+    const ok = await confirm({
+      title: `Delete "${d.name}"?`,
+      description: 'This deliverable will be removed from the list.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+    deleteDeliverableMutation.mutate(d.id)
+  }
 
   useEffect(() => {
     const onAddDeliverable = () => setOpen(true)
@@ -576,7 +589,7 @@ export function DeliverablesPage() {
                           variant="ghost"
                           size="sm"
                           className="size-8 p-0 text-red-600 hover:text-red-700"
-                          onClick={() => deleteDeliverableMutation.mutate(d.id)}
+                          onClick={() => void handleDeleteDeliverable(d)}
                           disabled={deleteDeliverableMutation.isPending}
                           title="Delete deliverable"
                         >
@@ -606,6 +619,7 @@ export function DeliverablesPage() {
           onClose={() => setSpecDeliverableId(null)}
         />
       )}
+      {confirmDialog}
     </div>
   )
 }

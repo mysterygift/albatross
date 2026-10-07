@@ -5,7 +5,7 @@
  */
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ChevronLeft, ChevronRight, Lock, Unlock, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Lock, Unlock, AlertTriangle, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -39,6 +39,7 @@ import {
   formatRuntime,
   runtimeWarningLevel,
 } from '@/lib/schedule/stripboardDayTotals'
+import { unitNameToKey } from '@/lib/schedule/unitKey'
 import { shootingBlocLabelFromAssociation } from '@/lib/schedule/episodicScheduleDisplay'
 import { StripTableRow } from './stripboard-table-row'
 
@@ -73,6 +74,10 @@ export type StripboardDayViewProps = {
   onUpdateMoveStrip: (stripId: string, data: UpdateStripData) => void
   onSendToBoneyard: (strip: StripboardStrip) => void
   onDeleteStrip: (strip: StripboardStrip) => void
+  /** Shows a "Delete shoot day" button in the day header when provided. */
+  onRequestDeleteDay?: (day: ShootDay) => void
+  /** Shows a "Remove Second Unit" button on Second Unit tables when provided. */
+  onRequestRemoveSecondUnit?: (shootDayUnit: ShootDayUnit, unitName: string, day: ShootDay) => void
 }
 
 const TABLE_HEADERS = ['', 'Sc', 'Shot', 'Description', 'INT/EXT', 'D/N', 'Location', 'Pages', 'Cast', 'Est. min']
@@ -130,6 +135,18 @@ export function StripboardDayView(props: StripboardDayViewProps) {
           {dayTotals.dayCount > 0 && <Badge variant="outline" className="text-[11px]">DAY {dayTotals.dayCount}</Badge>}
           {dayTotals.nightCount > 0 && <Badge variant="outline" className="text-[11px]">NIGHT {dayTotals.nightCount}</Badge>}
           <RuntimeLabel minutes={dayTotals.runtimeMinutes} level={dayWarning} prefix="Day runtime" />
+          {props.onRequestDeleteDay && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-destructive hover:text-destructive"
+              title="Delete shoot day"
+              aria-label={`Delete shoot day ${day.shoot_date}`}
+              onClick={() => props.onRequestDeleteDay?.(day)}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -165,12 +182,17 @@ export function StripboardDayView(props: StripboardDayViewProps) {
               onUpdateMoveStrip={props.onUpdateMoveStrip}
               onSendToBoneyard={props.onSendToBoneyard}
               onDeleteStrip={props.onDeleteStrip}
+              onRemoveSecondUnit={
+                props.onRequestRemoveSecondUnit && unitNameToKey(unit.name) === 'second'
+                  ? () => props.onRequestRemoveSecondUnit?.(shootDayUnit, unit.name, day)
+                  : undefined
+              }
             />
           )
         })}
         {dayUnits.length === 0 && (
           <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            This day has no units. Add a unit to this day from the board view.
+            This day has no units. Use Add Second Unit above to add a Second Unit to it.
           </div>
         )}
       </div>
@@ -328,6 +350,7 @@ function UnitTable({
   onUpdateMoveStrip,
   onSendToBoneyard,
   onDeleteStrip,
+  onRemoveSecondUnit,
 }: {
   unitName: string
   shootDayUnit: ShootDayUnit
@@ -352,6 +375,7 @@ function UnitTable({
   onUpdateMoveStrip: (stripId: string, data: UpdateStripData) => void
   onSendToBoneyard: (strip: StripboardStrip) => void
   onDeleteStrip: (strip: StripboardStrip) => void
+  onRemoveSecondUnit?: () => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: colId })
   const isLocked = shootDayUnit.is_locked !== 0
@@ -378,6 +402,18 @@ function UnitTable({
         >
           {isLocked ? <Unlock className="size-3.5" /> : <Lock className="size-3.5" />}
         </Button>
+        {onRemoveSecondUnit && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive hover:text-destructive"
+            title="Remove Second Unit from this day"
+            aria-label={`Remove ${unitName} from this day`}
+            onClick={onRemoveSecondUnit}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        )}
         <div className="flex flex-wrap gap-1">
           {(COLUMN_FILTER_KEYS).map((key) => (
             <Button

@@ -80,7 +80,7 @@ A feature lives in `src/features/<name>/`:
 ## Rust side (`src-tauri/src/`)
 | File | Role |
 |---|---|
-| `lib.rs` | `run()`: registers the migration list (105 entries, versions 1 to 105), plugins, command handlers; builds the native menu (`rebuild_menu`) and forwards menu clicks as Tauri events (`albatross-menu-*`); `set_active_menu_section`, `set_budget_duplicate_live_as_draft_enabled` commands |
+| `lib.rs` | `run()`: registers the migration list (106 entries, versions 1 to 106), plugins, command handlers; builds the native menu (`rebuild_menu`) and forwards menu clicks as Tauri events (`albatross-menu-*`); `set_active_menu_section`, `set_budget_duplicate_live_as_draft_enabled` commands |
 | `sqlite_load.rs` | `load_sqlite_with_passphrase`, `run_sqlite_migrations`, `execute_sqlite_transaction`: open the SQLCipher file with the key, then run the embedded migrations |
 | `db_encryption.rs` | Local DB status, plain-to-SQLCipher migration, rekey, backups and restore, passphrase probe, self-test |
 | `sqlite_paths.rs` | `albatross.db` and `albatross.db.meta.json` in the app config directory |

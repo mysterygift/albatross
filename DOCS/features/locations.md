@@ -27,7 +27,7 @@ There are no latitude/longitude columns. Coordinates are resolved on demand (bel
 
 `location_scene` (location, scene) is a many-to-many link written when a script import matches a scene's slugline location. The primary scene to location link is `scenes.location_id`, which the Shot Lists, Stripboard filter and Calendar use.
 
-Permits and location release forms are ordinary documents (`entity_type` `permit` / `location_release`, `entity_id` = location id) shown under Documents. Files picked while creating a location are staged and persisted after the row exists. `deleteLocation` soft-deletes the location and its documents.
+Permits and location release forms are ordinary documents (`entity_type` `permit` / `location_release`, `entity_id` = location id) shown under Documents. Files picked while creating a location are staged and persisted after the row exists. `deleteLocation` soft-deletes the location and its documents, and clears `scenes.location_id` and `stripboard_strips.origin_location_id` / `destination_location_id` that point at it, all in one `runInSerializedTransaction` batch with outbox rows (`location.delete.test.ts`).
 
 ## How it works
 
@@ -49,4 +49,4 @@ Permits and location release forms are ordinary documents (`entity_type` `permit
 
 - `location_scene` is written on import and copied on duplicate/export, but nothing in the UI reads it back; do not rely on it for "scenes at this location". Use `scenes.location_id`.
 - `permit_fee` was dropped in `0091`; use `location_fee`.
-- `deleteLocation` is a soft delete, so the `ON DELETE SET NULL` on `scenes.location_id` never fires: scenes and MOVE strips can keep pointing at a deleted location. Readers must treat a missing/deleted location as none.
+- `deleteLocation` is a soft delete, so `ON DELETE SET NULL` never fires; the function clears the scene and strip references itself. Other tables that hold a location id (for example `location_scene` links) are not touched; readers should still treat a missing/deleted location as none.

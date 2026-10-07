@@ -43,6 +43,26 @@ describe('menu command metadata', () => {
     expect(acc('view_go_music_clearance')).toBe('CmdOrCtrl+Alt+4')
   })
 
+  it('routes the Help menu items to window events the shortcut bridge handles', () => {
+    expect(menuCommandTargets.help_getting_started).toEqual({
+      eventName: 'albatross-menu-help-getting-started',
+      to: undefined,
+      browserEvent: 'albatross-menu-help-getting-started',
+    })
+    expect(menuCommandTargets.help_keyboard_shortcuts.browserEvent).toBe('albatross-menu-help-keyboard-shortcuts')
+    expect(commandLabels.help_getting_started).toBe('Getting started')
+  })
+
+  it('uses production vocabulary for the File menu commands', () => {
+    expect(commandLabels.new_project).toBe('New production')
+    expect(commandLabels.import_project).toBe('Import production')
+    expect(commandLabels.export_project).toBe('Export production')
+  })
+
+  it('opens Cast Manager for the People shortcut, matching the sidebar default child', () => {
+    expect(menuCommandTargets.view_go_people.to).toBe('/people/cast-manager')
+  })
+
   it('derives native event names for routed commands', () => {
     expect(menuCommandTargets.view_go_music_clearance.eventName).toBe('albatross-menu-view-go-music-clearance')
     expect(menuCommandTargets.locations_add_location).toEqual({

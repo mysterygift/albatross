@@ -56,7 +56,7 @@ Double-clicking an `.apf` file should open Albatross. If it doesn't:
 
 - macOS: right-click the file, choose **Open With → Albatross**, and tick **Always Open With** if offered.
 - Windows: right-click the file, choose **Open with → Choose another app**, pick Albatross and tick **Always use this app**.
-- Any platform: open Albatross and use **Productions → Import project**, or **File → Import Project...**.
+- Any platform: open Albatross and use **Productions → Import project**, or **File → Import Production...**.
 
 If an import fails, Albatross shows a message saying why. Try exporting the file again from the source machine.
 

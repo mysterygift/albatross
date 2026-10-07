@@ -80,18 +80,18 @@ fn rebuild_menu(
     state: &tauri::State<AppMenuState>,
     section: ActiveMenuSection,
 ) -> Result<(), String> {
-    let import_item = MenuItemBuilder::with_id("import_project", "Import Project...")
+    let import_item = MenuItemBuilder::with_id("import_project", "Import Production...")
         .accelerator("CmdOrCtrl+O")
         .build(app)
         .map_err(|err| err.to_string())?;
-    let export_item = MenuItemBuilder::with_id("export_project", "Export Project...")
+    let export_item = MenuItemBuilder::with_id("export_project", "Export Production...")
         .accelerator("CmdOrCtrl+Shift+E")
         .build(app)
         .map_err(|err| err.to_string())?;
     let publish_server_item = MenuItemBuilder::with_id("publish_to_server", "Publish to Server…")
         .build(app)
         .map_err(|err| err.to_string())?;
-    let new_project_item = MenuItemBuilder::with_id("new_project", "New Project...")
+    let new_project_item = MenuItemBuilder::with_id("new_project", "New Production...")
         .accelerator("CmdOrCtrl+N")
         .build(app)
         .map_err(|err| err.to_string())?;
@@ -99,16 +99,6 @@ fn rebuild_menu(
         .accelerator("CmdOrCtrl+,")
         .build(app)
         .map_err(|err| err.to_string())?;
-    let no_recent_item = MenuItemBuilder::with_id("no_recent_projects", "No Recent Projects")
-        .enabled(false)
-        .build(app)
-        .map_err(|err| err.to_string())?;
-
-    let open_recent_menu = SubmenuBuilder::new(app, "Open Recent")
-        .item(&no_recent_item)
-        .build()
-        .map_err(|err| err.to_string())?;
-
     let file_logout_item = MenuItemBuilder::with_id("file_logout", "Log Out")
         .build(app)
         .map_err(|err| err.to_string())?;
@@ -133,8 +123,6 @@ fn rebuild_menu(
         .item(&import_item)
         .item(&export_item)
         .item(&publish_server_item)
-        .separator()
-        .item(&open_recent_menu)
         .separator()
         .item(&file_logout_item)
         .build()
@@ -1074,6 +1062,12 @@ pub fn run() {
             sql: include_str!("../migrations/0105_crew_availability_cascade.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 106,
+            description: "audit_logs",
+            sql: include_str!("../migrations/0106_audit_logs.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
@@ -1247,6 +1241,12 @@ pub fn run() {
                 }
                 "deliverables_apply_template" => {
                     let _ = app_handle.emit("albatross-menu-deliverables-apply-template", ());
+                }
+                "help_getting_started" => {
+                    let _ = app_handle.emit("albatross-menu-help-getting-started", ());
+                }
+                "help_keyboard_shortcuts" => {
+                    let _ = app_handle.emit("albatross-menu-help-keyboard-shortcuts", ());
                 }
                 _ => {}
             });

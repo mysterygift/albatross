@@ -106,7 +106,7 @@ Every table also has a Postgres twin in `postgres/migrations/`; see [database.md
 - **Dashboard** ([dashboard.md](dashboard.md)): budget health (`src/lib/dashboard/budgetHealth.ts`), outstanding float reminders (links to `/budget?tab=floats&floats=outstanding`), vendor finance and Risk Watch ([vendors.md](vendors.md)).
 - **Wrap production** ([wrap-production.md](wrap-production.md)): `wrapReadiness.ts` finds overspent and underspent line items and reallocation opportunities.
 - **Locations / equipment / people:** purchase saves can update a location's booked status; labour links a person; floats link crew; vendors link equipment.
-- **Duplicate production:** `duplicateProduction.ts` copies budget items and expenses with no account (`account_id` null, so they appear as legacy/uncoded) and seeds the starter chart; it does not copy floats, links, rules, totals or revisions.
+- **Duplicate production:** `duplicateProduction.ts` copies the chart of accounts (parents first; the starter chart is seeded only when the source has none), budget revisions with `created_from_revision_id`, budget items (account, revision, `line_item_type`) with `budget_item_details`, and expenses (account, vendor, VAT columns) with `expense_transaction_details`, remapping every id so coding survives. It does not copy floats, budget-to-expense links, fringe/contingency rules, cost-report groups, production totals or tax-credit setup (listed in `DUPLICATE_EXCLUDED_TABLES`).
 - **.apf export/import:** budget tables and revisions are part of the package; see [import-export.md](../import-export.md).
 - **Sync:** budget and vendor tables write outbox rows but are not in the sync-v2 registry; see [collaboration.md](../collaboration.md).
 

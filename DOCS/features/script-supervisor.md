@@ -61,7 +61,7 @@ The marked-up PDF uses the same `layoutLinedScript` output as the screen via a p
 
 - Reads shoot days, units, scenes, shots and strips ([schedule.md](schedule.md)) and script versions/pages ([script.md](script.md)).
 - Feeds Script Sections status and the Overtime page (day log `call_time`/`wrap_time`, see [overtime.md](overtime.md)).
-- `.apf` export/import includes slates, takes, progress, day logs, elements, tramlines, annotations, continuity media and revision items (format version 9 tables in `src/lib/importExport/tableKeys.ts`). Duplicate production does not copy them: they record what was shot.
+- `.apf` export/import includes slates, takes, progress, day logs, elements, tramlines, annotations, continuity media and revision items (format version 9 tables in `src/lib/importExport/tableKeys.ts`). Duplicate production deliberately does not copy them (they record what was shot); they are listed in `DUPLICATE_EXCLUDED_TABLES` in `duplicateProduction.ts`.
 
 ## Gotchas
 

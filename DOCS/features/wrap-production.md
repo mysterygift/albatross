@@ -20,8 +20,7 @@ All checks are read-only and computed in the page from the same queries other fe
 |---|---|---|
 | Budget and Actualisation | No unallocated or partly allocated spend, no unmatched line items, no overspent line items, **and** no outstanding petty cash floats | budget items, expenses, budget-item/expense links, accounts, floats and float-expense links, people (for float holders), for the selected budget revision |
 | Schedule and Calendar | No shoot day dated after today (local date) | shoot days, calendar shoot-day events from today to +2 years (for the unit-level detail list) |
-| Deliverables | At least one deliverable and every one signed off | all live deliverables |
-| Archive Readiness | Placeholder, always "—" | nothing |
+| Deliverables | At least one deliverable and every one **Delivered** | all live deliverables |
 
 Budget extras shown but not part of the status: overspent and remaining-estimate rows and potential reallocation suggestions (`getPotentialReallocationOpportunities`, informational only). Floats outstanding for over 14 days (or overspent and stale) are flagged critical.
 
@@ -35,6 +34,6 @@ Budget extras shown but not part of the status: overspent and remaining-estimate
 - Tasks are not read by the wrap check.
 
 ## Gotchas
-- **Deliverables check cannot reach Ready from the UI.** `getDeliverableWrapStatus` only treats `signed_off`, `signed off`, `complete` and `completed` as done and `pending` as pending; the Deliverables page writes `not_started`, `preparing`, `qc`, `ready`, `delivered`, so `delivered` counts as "Not reviewed". Either map `delivered` to done or align the status values.
+- **Deliverables status mapping.** `getDeliverableWrapStatus` counts `delivered` (plus legacy `signed_off`, `signed off`, `complete`, `completed`, `done`) as done. `not_started`, `preparing`, `qc`, `ready` and legacy `pending` are "Pending"; `ready` (packaged but not yet sent) is deliberately not done. Any other free-text status is "Not reviewed". The badge label for done is still "Signed off". Tests: `src/lib/wrap-production/deliverablesReadiness.test.ts`.
 - With zero deliverables the section is "Needs review".
 - "Future" is `shoot_date > today`; a shoot day dated today does not count.

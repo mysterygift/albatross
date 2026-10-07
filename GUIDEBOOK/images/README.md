@@ -45,7 +45,7 @@ Demo data present (Settings → Demo & tutorial → Create Demo Production creat
 
 | file | route / menu path | exact state to set up before capture | framing |
 |---|---|---|---|
-| 03-productions-list.png | Productions `/productions` | Mint Heist is the current production. Both demo productions listed (North Shore shows the Episodic badge). "Show archived projects" off. No dialogs open, no toasts visible. | window |
+| 03-productions-list.png | Productions `/productions` | Mint Heist is the current production. Both demo productions listed (North Shore shows the Episodic badge). "Show archived productions" off. No dialogs open, no toasts visible. | window |
 | 03-new-production.png | Productions → **New production** | Click **New production**; dialog open and empty (Name blank, "Episodic production" unticked, **Default** template selected, Client "Optional"). Scroll the dialog to the top. | dialog |
 | 03-episodes-blocs.png | Settings → Production `/settings?section=production` | North Shore is the current production (switch with the top-bar switcher). Scroll so the "Episodic production" card is in view with the Episodes table and the Shooting blocs table both visible (scroll the page down past the Currency card). No dialogs open. | region: the Episodic production card (Episodes and Shooting blocs tables) |
 

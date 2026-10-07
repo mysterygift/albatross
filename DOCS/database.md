@@ -45,8 +45,6 @@ Serialising does **not** make a multi-statement transaction safe. The rules:
 
 `executeBatch` renumbers `$n` placeholders, joins the statements and sends **one** `execute()`, so the whole block runs on one connection. **Never** split `BEGIN`, the writes and `COMMIT` across separate `execute()` calls. `adapter.executeTransaction` is the stricter alternative (a Rust command, `execute_sqlite_transaction`, using a real sqlx transaction with rollback); today only sync v2 uses it (`src/lib/server/syncV2/localStore.ts`).
 
-`reserveSlugAndInsertProduction` in `repositories/production.ts` still splits `BEGIN` from the insert. Nothing calls it; do not copy it.
-
 Reference implementations: `moveShootDayToDate` in `repositories/schedule.ts`, `duplicateProduction.ts`, `seed/demoCrewSeed.ts`.
 
 ## Adapters
@@ -63,7 +61,7 @@ Reference implementations: `moveShootDayToDate` in `repositories/schedule.ts`, `
 
 ## Migrations
 
-SQLite migrations are plain SQL files in `src-tauri/migrations/` named `NNNN_<entity>_<descriptor>.sql` (currently `0001` to `0105`). Each is registered in `src-tauri/src/lib.rs`, in the `migrations` vec in `run()`:
+SQLite migrations are plain SQL files in `src-tauri/migrations/` named `NNNN_<entity>_<descriptor>.sql` (currently `0001` to `0106`). Each is registered in `src-tauri/src/lib.rs`, in the `migrations` vec in `run()`:
 
 ```rust
 Migration { version: 105, description: "crew_availability_cascade",
@@ -109,7 +107,7 @@ Postgres: `postgres/schema/baseline.sql` is the full baseline and `postgres/migr
 
 ## Schema map
 
-118 tables after migration `0105`, derived by applying all migrations. Almost all rows are production-scoped with `id` (UUID text) and the three timestamps; only notable details are listed.
+119 tables after migration `0106`, derived by applying all migrations. Almost all rows are production-scoped with `id` (UUID text) and the three timestamps; only notable details are listed.
 
 **Productions and episodes**
 
@@ -196,7 +194,7 @@ Postgres: `postgres/schema/baseline.sql` is the full baseline and `postgres/migr
 
 **Risk assessments**: `risk_assessments`, `risk_assessment_hazards`, `risk_assessment_units`, `hazard_templates`.
 
-**Auth and security**: `users` (local accounts, key wrapping material), `sessions`, `project_memberships` (access per production). See [security.md](security.md).
+**Auth and security**: `users` (local accounts, key wrapping material), `sessions`, `project_memberships` (access per production), `audit_logs` (auth and access events). See [security.md](security.md).
 
 **Server and sync (client side)**: `server_connections`, `linked_projects`, `publish_jobs`, `server_outbox_pending`, and the sync v2 tables `sync_client_identity`, `sync_project_state`, `sync_mutation_batches`, `sync_mutations`, `sync_row_state`, `sync_conflicts`, `sync_apply_guard`. See [collaboration.md](collaboration.md).
 
@@ -213,7 +211,7 @@ Worked example: `what3words` on `locations` (migration `0033_locations_w3w.sql`)
 5. **Sensitive data.** If the field is personal or confidential on `people`, `locations`, `vendors` or `clients`, add it to `SENSITIVE_TABLES` and the matching `*_PROTECTED_FIELDS`/encrypt/decrypt helpers; otherwise it is stored in clear ([security.md](security.md)).
 6. **Form.** Zod schema, `defaultValues` and a field in the feature page (`src/features/<feature>/`); add a table column if it should show in the list.
 7. **Export/import.** Export reads `SELECT *` and import inserts only columns that exist in the target, so plain columns travel automatically. Check any hand-written export SQL, redaction or `pruneOrphanedRows` rules, and see [import-export.md](import-export.md) for format-version rules (needed for new tables, not plain columns).
-8. **`duplicateProduction.ts`.** It copies rows with explicit column lists; add the column to that table's `INSERT` and the source-row mapping.
+8. **`duplicateProduction.ts`.** It copies rows with explicit column lists; add the column to that table's `INSERT` and the source-row mapping (or to `DUPLICATE_EXCLUDED_COLUMNS` with a reason); `duplicateProduction.coverage.test.ts` fails otherwise.
 9. **Postgres parity.** Add the same column to a new `postgres/migrations/` file and to `postgres/schema/baseline.sql`; `postgresSchemaParity.test.ts` compares table coverage. If sync v2 replicates the table, review `src/lib/server/syncV2/registry.ts` ([collaboration.md](collaboration.md)).
 10. **Seed and tests.** Update demo seeders if the field should be populated, and any repository tests that assert full rows.
 

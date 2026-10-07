@@ -30,7 +30,7 @@ The page has two tabs: **Registry** (every item) and **Equipment Lists** (kits m
 
 ![The Add equipment dialog](images/08-add-equipment-dialog.png)
 
-The table shows **Name**, **Qty**, **Category**, **Department**, **Source**, **Status**, **Vendor**, **Rental Window** and **Replacement Value**. Use the pencil icon to edit an item and the bin icon to remove it. The bin removes the item immediately, without asking, and also removes its return reminder (see below).
+The table shows **Name**, **Qty**, **Category**, **Department**, **Source**, **Status**, **Vendor**, **Rental Window** and **Replacement Value**. Use the pencil icon to edit an item and the bin icon to remove it. The bin asks for confirmation, then removes the item and its return reminder (see below).
 
 ### Find items
 

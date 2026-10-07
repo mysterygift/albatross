@@ -63,7 +63,7 @@ The new day has a **Main Unit** table. A day cannot be created on a date that al
 
 ### Move through the days
 
-Use the day selector, the previous and next arrows, or the row of day buttons to choose which day you are viewing. The day heading shows the date, the **Day N** badge, the number of shots, pages in eighths, INT and EXT counts, DAY and NIGHT counts, and **Day runtime**. A warning appears when the runtime passes 10 hours, and a stronger one past 10.5 hours (which allows for a 30 minute lunch).
+Use the day selector, the previous and next arrows, or the row of day buttons to choose which day you are viewing. The bin button at the right of the day heading deletes the shoot day (see below). The day heading shows the date, the **Day N** badge, the number of shots, pages in eighths, INT and EXT counts, DAY and NIGHT counts, and **Day runtime**. A warning appears when the runtime passes 10 hours, and a stronger one past 10.5 hours (which allows for a 30 minute lunch).
 
 ### Schedule shots
 
@@ -112,6 +112,12 @@ Icons on a strip let you edit it:
 2. Tick the shoot days that need one and click **Add Second Unit**.
 
 The button is disabled when every day already has a second unit. Main Unit always appears first. Each unit has its own totals, and a unit that goes over 48 eighths of a page shows **Over 48 eighths**.
+
+To take a Second Unit off a day, click the bin icon beside its name and confirm. Shots scheduled on it return to **Unscheduled Shots**, and its Call, Lunch, Wrap, Move and Note strips are deleted. Main Unit cannot be removed.
+
+### Delete a shoot day
+
+Click the bin icon at the right of the day heading and confirm. Shots and scenes scheduled on the day move to the **Boneyard**, and the day's other strips and units are deleted. The Boneyard is the only way back, so check it before you rely on those shots.
 
 ### Lock a unit
 

@@ -96,14 +96,14 @@ Press `?` (when you are not typing in a field) or select the keyboard icon to se
 | ⌘2 | Productions |
 | ⌘3 | Budget |
 | ⌘4 | Schedule (Calendar) |
-| ⌘5 | People (Bookings) |
+| ⌘5 | People (Cast Manager) |
 | ⌘6 | Locations |
 | ⌘7 | Documents |
 | ⌘8 | Deliverables |
 | ⌘9 | Tasks |
 | ⌥⌘1 / ⌥⌘2 / ⌥⌘3 / ⌥⌘4 | Call Sheets / Movement Orders / Equipment / Music & Archive |
 
-Create shortcuts follow the page you are on: for example ⇧⌘D adds a shoot day, ⇧⌘T adds a strip, ⇧⌘C adds cast, ⇧⌘R adds crew, ⇧⌘K adds a booking, ⇧⌘L logs spend and ⇧⌘I adds a budget line item. The menu bar shows them too: the **File** and **View** menus are always present, and a menu for the current area (**People**, **Budget**, **Schedule**, **Tasks**, **Locations**, **Documents** or **Deliverables**) appears when you open that area.
+Create shortcuts follow the page you are on: for example ⇧⌘D adds a shoot day, ⇧⌘T adds a strip, ⇧⌘C adds cast, ⇧⌘R adds crew, ⇧⌘K adds a booking, ⇧⌘L logs spend and ⇧⌘I adds a budget line item. The menu bar shows them too: the **File** and **View** menus are always present, and a menu for the current area (**People**, **Budget**, **Schedule**, **Tasks**, **Locations**, **Documents** or **Deliverables**) appears when you open that area. The **Help** menu has **Getting Started**, which opens the tutorial section list, and **Keyboard Shortcuts**, which opens the shortcut list.
 
 ## Dashboard
 

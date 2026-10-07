@@ -69,6 +69,11 @@ const BOOLEAN_COLUMN_ALLOWLIST = new Set([
   'is_episodic',
   'checked_out',
   'checked_back_in',
+  // Added by postgres migrations 0012/0013/0015 as BOOLEAN.
+  'tax_credits_enabled',
+  'vat_tracking_enabled',
+  'is_vfx',
+  'is_global',
 ])
 
 const NUMERIC_COLUMN_ALLOWLIST = new Set([
@@ -109,8 +114,11 @@ function toSnakeUpper(value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9]+/g, '_')
 }
 
+// JSON-shaped columns that postgres/migrations 0025/0026 deliberately shipped as TEXT.
+const TEXT_JSON_COLUMN_ALLOWLIST = new Set(['movement_order_json', 'movement_pins_json'])
+
 function isJsonColumn(columnName: string): boolean {
-  return columnName.endsWith('_json')
+  return columnName.endsWith('_json') && !TEXT_JSON_COLUMN_ALLOWLIST.has(columnName)
 }
 
 function isDateColumn(columnName: string): boolean {

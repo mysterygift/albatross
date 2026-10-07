@@ -933,6 +933,34 @@ describe('apf E2E (sql.js + real FS)', () => {
     expect(existsSync(join(apfNodeFsTestContext.appDataRoot, fp))).toBe(false)
   })
 
+  it('re-imports over a soft-deleted copy of the same production: purges its rows and stale files', async () => {
+    await seedRoundTripFixture()
+    await exportProductionAsApf(PROD_ID, apfPath)
+
+    // Trash the production, and leave an extra attachment behind that the package does not contain.
+    const adapter = sqlJsApfE2eContext.adapter!
+    await adapter.execute(`UPDATE productions SET deleted_at = $1 WHERE id = $2`, [TS, PROD_ID])
+    const strayRel = `attachments/${PROD_ID}/stray-old-file.pdf`
+    await adapter.execute(
+      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
+       VALUES ($1, $2, NULL, NULL, 'stray-old-file.pdf', $3, 'application/pdf', $4, $4)`,
+      ['bbbbbbbb-e2e1-4e21-8f99-a1e2e2e2e299', PROD_ID, strayRel, TS]
+    )
+    await writeFile(join(apfNodeFsTestContext.appDataRoot, strayRel), Buffer.from('old'))
+
+    const imp = await importProductionFromApf(apfPath)
+    expect(imp.ok).toBe(true)
+    if (!imp.ok) throw imp.error
+
+    const prod = await adapter.select<Record<string, unknown>[]>(`SELECT id, deleted_at FROM productions WHERE id = $1`, [PROD_ID])
+    expect(prod).toEqual([{ id: PROD_ID, deleted_at: null }])
+    const docs = await adapter.select<Record<string, unknown>[]>(`SELECT id FROM documents WHERE production_id = $1`, [PROD_ID])
+    expect(docs).toEqual([{ id: DOC_ID }])
+    const restored = `attachments/${PROD_ID}/${DOC_ID}-brief.pdf`
+    expect(existsSync(join(apfNodeFsTestContext.appDataRoot, restored))).toBe(true)
+    expect(existsSync(join(apfNodeFsTestContext.appDataRoot, strayRel))).toBe(false)
+  })
+
   it('duplicate production id: preflight blocks import; DB unchanged; no attachment dir', async () => {
     await seedRoundTripFixture()
     await exportProductionAsApf(PROD_ID, apfPath)

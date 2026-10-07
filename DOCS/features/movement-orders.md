@@ -42,10 +42,9 @@ One URL template feeds both the interactive Leaflet maps and the PDF maps (drawn
 - **Schedule**: stripboard order, MOVE strips, shoot day and unit; unit-specific orders.
 - **Locations**: address, what3words, parking info, optional coordinates. **Crew Manager**: contacts are crew whose department resolves to "Locations" in the effective hierarchy ([crew-manager.md](crew-manager.md)).
 - **Call sheets** share the shoot day's base address, safety text and bloc label.
-- **Documents**: saved PDFs appear under set paperwork. **.apf export** carries the two JSON columns with their tables; duplicate production copies `movement_order_json` with `shoot_day_units` but not `movement_pins_json`; the copied leg keys refer to the source production's location ids.
+- **Documents**: saved PDFs appear under set paperwork. **.apf export** carries the two JSON columns with their tables; duplicate production copies both columns: `movement_pins_json` as is, and `movement_order_json` with its leg keys rewritten to the copied location ids.
 
 ## Gotchas
 - ORS and map tiles are network calls from the desktop app; offline use yields blanks, not errors.
 - A location with neither coordinates, address nor name cannot be routed; its legs stay empty.
 - Leg keys are `fromLocationId>toLocationId` (a repeated pair gets `#n`). Changing the stop order or replacing a location orphans the times entered for the affected legs.
-- The warning text from `renderMovementOrderMaps` says "Settings → Integrations", but the section is labelled **APIs & publishing**.

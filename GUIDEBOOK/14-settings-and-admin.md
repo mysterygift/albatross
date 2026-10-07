@@ -155,7 +155,7 @@ At the end of first-time setup Albatross shows a **recovery key** once. Store it
 
 Albatross has no automatic backup. Do both of these regularly:
 
-1. Export each production as an `.apf` file with **File → Export Project...** (see [Productions](03-productions.md)).
+1. Export each production as an `.apf` file with **File → Export Production...** (see [Productions](03-productions.md)).
 2. With Albatross closed, copy the whole data folder to external storage. See [Troubleshooting](16-troubleshooting.md) for where it is. Copy the entire folder, not just one file, or the copy cannot be opened.
 
 ### Demo production and tutorial
