@@ -64,7 +64,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown, Users } from 'lucide-react'
+import { Wrench, AlertTriangle, Plus, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight, ChevronDown, Users, LayoutTemplate } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { SettingsNav } from '@/features/settings/SettingsNav'
@@ -94,6 +94,7 @@ import { TaxCreditsSettingsSection } from '@/features/settings/TaxCreditsSetting
 import { ShootingBlocsSettingsSection } from '@/features/settings/ShootingBlocsSettingsSection'
 import { ClientsSettingsSection } from '@/features/settings/ClientsSettingsSection'
 import { MapTilesSettingsCard } from '@/features/settings/MapTilesSettingsCard'
+import { ApplyChartTemplateDialog } from '@/features/settings/ApplyChartTemplateDialog'
 import {
   API_CALL_TRACKER_IDS,
   API_CALL_TRACKER_LABELS,
@@ -166,6 +167,7 @@ export function SettingsPage() {
   const [addAccountOpen, setAddAccountOpen] = useState(false)
   const [editAccount, setEditAccount] = useState<BudgetAccount | null>(null)
   const [accountToDelete, setAccountToDelete] = useState<BudgetAccount | null>(null)
+  const [applyTemplateOpen, setApplyTemplateOpen] = useState(false)
   const [expandedAccountIds, setExpandedAccountIds] = useState<Set<string>>(new Set())
   const [searchParams, setSearchParams] = useSearchParams()
   const { developerMode, setDeveloperMode } = useDeveloperMode()
@@ -395,8 +397,14 @@ export function SettingsPage() {
     mutationFn: (accountId: string) => hardDeleteAccount(accountId),
     onSuccess: () => {
       invalidateAccountKeys()
-      queryClient.invalidateQueries({ queryKey: ['budget-accounts-eligible-delete', currentProductionId] })
+      // Deleting detaches the account from rule scopes, report groups and totals.
+      for (const key of ['budget-accounts-eligible-delete', 'fringe-rules', 'contingency-rules', 'production-totals', 'cost-report-groups', 'cost-report-groups-with-accounts']) {
+        queryClient.invalidateQueries({ queryKey: [key, currentProductionId] })
+      }
       setAccountToDelete(null)
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Could not delete the account')
     },
   })
 
@@ -643,7 +651,11 @@ export function SettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex justify-end">
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="outline" onClick={() => setApplyTemplateOpen(true)}>
+                <LayoutTemplate className="mr-2 size-4" />
+                Apply template…
+              </Button>
               <Button onClick={() => setAddAccountOpen(true)}>
                 <Plus className="mr-2 size-4" />
                 Add account
@@ -666,6 +678,15 @@ export function SettingsPage() {
             />
           </CardContent>
         </Card>
+      )}
+
+      {currentProductionId && (
+        <ApplyChartTemplateDialog
+          open={applyTemplateOpen}
+          onOpenChange={setApplyTemplateOpen}
+          productionId={currentProductionId}
+          revisionId={revisionId}
+        />
       )}
 
           {!currentProductionId && (
@@ -1156,7 +1177,8 @@ export function SettingsPage() {
                 <DialogTitle>Delete account</DialogTitle>
               </DialogHeader>
               <p className="text-sm text-muted-foreground">
-                Permanently remove &quot;{accountToDelete.code} — {accountToDelete.name}&quot;? This cannot be undone.
+                Permanently remove &quot;{accountToDelete.code} — {accountToDelete.name}&quot;? It will also be taken out of any
+                fringe or contingency rules, cost report groups and production totals. This cannot be undone.
               </p>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setAccountToDelete(null)}>Cancel</Button>
@@ -1386,7 +1408,7 @@ function ChartOfAccountsRow({
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Account must have no children, line items, expenses, or rule/group references to delete.</p>
+                  <p>Only accounts with no sub-accounts, line items or expenses can be deleted. Archive it instead.</p>
                 </TooltipContent>
               </Tooltip>
             )}

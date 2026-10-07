@@ -1,5 +1,6 @@
-import { getDb, now, uuid } from '../client'
-import { outboxPush } from '../outbox'
+import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
+import type { SqlStatement } from '../databaseAdapter'
+import { outboxPush, outboxStatementForRows, type OutboxRow } from '../outbox'
 import { coerceBoolean } from '../sqlValueCoercion'
 import type { BudgetAccount } from '../types'
 
@@ -54,6 +55,22 @@ export async function getAccountById(id: string): Promise<BudgetAccount | null> 
 }
 
 /**
+ * Deleted accounts keep their row, and UNIQUE(production_id, code) still counts them, so creating an account
+ * with a deleted account's code revives that row with the new details instead of inserting.
+ */
+export async function listDeletedAccountIdsByCode(productionId: string): Promise<Map<string, string>> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT id, code FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NOT NULL`,
+    [productionId]
+  )
+  return new Map(rows.map((r) => [r.code as string, r.id as string]))
+}
+
+/** Binds: name, parent_account_id, sort_order, is_postable, updated_at, id. */
+export const reviveAccountSql = `UPDATE ${TABLE} SET name = $1, parent_account_id = $2, sort_order = $3, is_postable = $4, color_hex = NULL, archived_at = NULL, deleted_at = NULL, updated_at = $5 WHERE id = $6`
+
+/**
  * Create a budget account. Enforces: code unique per production; parent must exist and be non-postable if provided.
  * archived_at defaults to NULL.
  */
@@ -84,9 +101,23 @@ export async function createAccount(account: {
     if (parent.production_id !== account.production_id) throw new Error('Parent account must belong to the same production')
     if (parent.is_postable) throw new Error('Postable accounts cannot have children; choose a header account as parent')
   }
-  const id = uuid()
   const ts = now()
   const isPostable = account.is_postable ?? true
+  const revivedId = (await listDeletedAccountIdsByCode(account.production_id)).get(code)
+  if (revivedId) {
+    await db.execute(reviveAccountSql, [
+      name,
+      parentId,
+      account.sort_order ?? 0,
+      isPostable,
+      ts,
+      revivedId,
+    ])
+    await outboxPush(TABLE, revivedId, 'update', JSON.stringify({ ...account, code, name, id: revivedId, deleted_at: null }))
+    const revived = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1`, [revivedId])
+    return rowToAccount(revived[0]!)
+  }
+  const id = uuid()
   await db.execute(
     `INSERT INTO ${TABLE} (id, production_id, code, name, parent_account_id, sort_order, is_postable, archived_at, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, $9)`,
@@ -179,13 +210,56 @@ async function isReferencedInDerivedScopes(accountId: string): Promise<boolean> 
   return !!contingency
 }
 
-async function isReferencedInCostReportGroups(accountId: string): Promise<boolean> {
+/** Config rows that point at an account. They carry no money, so deleting an account detaches them. */
+const ACCOUNT_REFERENCE_TABLES = [
+  'fringe_rule_scopes',
+  'contingency_rule_scopes',
+  'cost_report_group_accounts',
+  'production_total_accounts',
+] as const
+
+/**
+ * Statements (no BEGIN/COMMIT) that detach accounts from rule scopes, cost report groups and production
+ * totals, then soft-delete them. Callers must already have checked the accounts have no posted amounts.
+ */
+export async function accountDeletionStatements(accountIds: string[], ts: string): Promise<SqlStatement[]> {
+  if (accountIds.length === 0) return []
   const db = await getDb()
-  const rows = await db.select<Record<string, unknown>[]>(
-    `SELECT 1 FROM cost_report_group_accounts WHERE account_id = $1 LIMIT 1`,
-    [accountId]
-  )
-  return rows.length > 0
+  const placeholders = accountIds.map((_, i) => `$${i + 1}`).join(', ')
+  const statements: SqlStatement[] = []
+  const outboxRows: OutboxRow[] = []
+  for (const table of ACCOUNT_REFERENCE_TABLES) {
+    const refs = await db.select<Record<string, unknown>[]>(
+      `SELECT id FROM ${table} WHERE account_id IN (${placeholders})`,
+      accountIds
+    )
+    if (refs.length === 0) continue
+    statements.push({ sql: `DELETE FROM ${table} WHERE account_id IN (${placeholders})`, bindValues: accountIds })
+    for (const r of refs) outboxRows.push({ entity: table, entityId: r.id as string, operation: 'delete', payloadJson: null })
+  }
+  const tsBase = accountIds.length + 1
+  statements.push({
+    sql: `UPDATE ${TABLE} SET deleted_at = $${tsBase}, updated_at = $${tsBase + 1} WHERE id IN (${placeholders})`,
+    bindValues: [...accountIds, ts, ts],
+  })
+  for (const id of accountIds) outboxRows.push({ entity: TABLE, entityId: id, operation: 'delete', payloadJson: null })
+  const outbox = outboxStatementForRows(outboxRows)
+  if (outbox) statements.push(outbox)
+  return statements
+}
+
+/** Account ids with budget line items or expenses (posted amounts). */
+export async function listPostedAccountIds(productionId: string): Promise<Set<string>> {
+  const db = await getDb()
+  const posted = new Set<string>()
+  for (const table of ['budget_items', 'expenses']) {
+    const rows = await db.select<Record<string, unknown>[]>(
+      `SELECT DISTINCT account_id FROM ${table} WHERE production_id = $1 AND account_id IS NOT NULL AND deleted_at IS NULL`,
+      [productionId]
+    )
+    for (const r of rows) posted.add(r.account_id as string)
+  }
+  return posted
 }
 
 /** Archive account: prevents new posting; historical totals remain (listAccounts still includes archived). */
@@ -265,23 +339,16 @@ export async function hardDeleteAccount(accountId: string): Promise<void> {
   if (ex) {
     throw new Error('Cannot delete: this account has expenses. Archive it instead.')
   }
-  if (await isReferencedInDerivedScopes(accountId)) {
-    throw new Error(
-      'Cannot delete: this account is used in derived cost rules. Remove it from rule scopes first, or archive the account.'
-    )
-  }
-  if (await isReferencedInCostReportGroups(accountId)) {
-    throw new Error(
-      'Cannot delete: this account is in one or more cost report groups. Remove it from groups first, or archive the account.'
-    )
-  }
 
-  const ts = now()
-  await db.execute(
-    `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
-    [ts, ts, accountId]
-  )
-  await outboxPush(TABLE, accountId, 'delete', null)
+  // Rule scopes, cost report groups and production totals are detached rather than blocking the delete.
+  await runInSerializedTransaction(async () => {
+    const statements = await accountDeletionStatements([accountId], now())
+    await executeBatch(await getDb(), [
+      { sql: 'BEGIN', bindValues: [] },
+      ...statements,
+      { sql: 'COMMIT', bindValues: [] },
+    ])
+  })
 }
 
 /** Returns whether the account can be hard-deleted (unused). Use for UI to show or disable the delete action. */
@@ -305,12 +372,6 @@ export async function getHardDeleteEligibility(accountId: string): Promise<{ all
     [accountId]
   )
   if (ex) return { allowed: false, reason: 'Has expenses' }
-  if (await isReferencedInDerivedScopes(accountId)) {
-    return { allowed: false, reason: 'Used in derived cost rules' }
-  }
-  if (await isReferencedInCostReportGroups(accountId)) {
-    return { allowed: false, reason: 'In cost report groups' }
-  }
   return { allowed: true }
 }
 
@@ -318,52 +379,11 @@ export async function getHardDeleteEligibility(accountId: string): Promise<{ all
 export async function getHardDeleteEligibleAccountIds(productionId: string): Promise<Set<string>> {
   const accounts = await listAccounts(productionId)
   if (accounts.length === 0) return new Set()
-  const allIds = new Set(accounts.map((a) => a.id))
-  const ineligible = new Set<string>()
-  const db = await getDb()
-
+  const ineligible = await listPostedAccountIds(productionId)
   for (const a of accounts) {
-    if ((await countChildren(a.id)) > 0) ineligible.add(a.id)
+    if (a.parent_account_id) ineligible.add(a.parent_account_id)
   }
-  const withItems = await db.select<Record<string, unknown>[]>(
-    `SELECT DISTINCT account_id FROM budget_items WHERE production_id = $1 AND account_id IS NOT NULL AND deleted_at IS NULL`,
-    [productionId]
-  )
-  for (const r of withItems) {
-    const id = r.account_id as string
-    if (id) ineligible.add(id)
-  }
-  const withExpenses = await db.select<Record<string, unknown>[]>(
-    `SELECT DISTINCT account_id FROM expenses WHERE production_id = $1 AND account_id IS NOT NULL AND deleted_at IS NULL`,
-    [productionId]
-  )
-  for (const r of withExpenses) {
-    const id = r.account_id as string
-    if (id) ineligible.add(id)
-  }
-  const placeholders = accounts.map((_, i) => `$${i + 1}`).join(', ')
-  const accountIds = accounts.map((a) => a.id)
-  const fringeScopes = await db.select<Record<string, unknown>[]>(
-    `SELECT account_id FROM fringe_rule_scopes WHERE account_id IN (${placeholders})`,
-    accountIds
-  )
-  for (const r of fringeScopes) ineligible.add(r.account_id as string)
-  const contingencyScopes = await db.select<Record<string, unknown>[]>(
-    `SELECT account_id FROM contingency_rule_scopes WHERE account_id IN (${placeholders})`,
-    accountIds
-  )
-  for (const r of contingencyScopes) ineligible.add(r.account_id as string)
-  const groupAccounts = await db.select<Record<string, unknown>[]>(
-    `SELECT account_id FROM cost_report_group_accounts WHERE account_id IN (${placeholders})`,
-    accountIds
-  )
-  for (const r of groupAccounts) ineligible.add(r.account_id as string)
-
-  const eligible = new Set<string>()
-  for (const id of allIds) {
-    if (!ineligible.has(id)) eligible.add(id)
-  }
-  return eligible
+  return new Set(accounts.map((a) => a.id).filter((id) => !ineligible.has(id)))
 }
 
 /**
