@@ -3,7 +3,7 @@
  *
  * Orchestrates creation of SB1 script data (a script version, best-effort script pages, and
  * default script sections with ranges and characters) from parsed scene records. Composes the
- * repository statement builders into a single serialized transaction per DATABASE_LAYER.md;
+ * repository statement builders into a single serialized transaction per DOCS/database.md;
  * there are no per-row async database writes.
  *
  * Scope notes:

@@ -447,7 +447,7 @@ export function buildSoftDeleteNonManualSectionsStatements(
 
 /**
  * Creates a section together with its ranges and characters in a single transaction.
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md; no per-row async loops.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md; no per-row async loops.
  */
 export async function createSectionWithRangesAndCharacters(
   data: CreateSectionWithDetailsData

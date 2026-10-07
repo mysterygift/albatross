@@ -1,6 +1,6 @@
 /**
  * Albatross Project File (.apf) — format identifiers and version bounds.
- * @see docs/project-import-export-format-v1.md
+ * @see DOCS/import-export.md
  */
 
 /** UTI-style constant stored in manifest `kind`. */

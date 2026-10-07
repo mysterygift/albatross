@@ -20,8 +20,8 @@ export function SetupBlockedScreen({ busy, lastError, onRetry }: SetupBlockedScr
         </p>
         <p className="text-sm text-muted-foreground">
           Review the recovery guidance in{' '}
-          <a href="/docs/DATA_ENCRYPTION.md" className="underline underline-offset-2">
-            Data encryption
+          <a href="https://github.com/mysterygift/albatross/blob/main/GUIDEBOOK/16-troubleshooting.md#passwords-and-the-recovery-key" className="underline underline-offset-2">
+            Passwords and the recovery key
           </a>{' '}
           or contact support if you need help restoring access.
         </p>

@@ -5,7 +5,7 @@
  * Sync/outbox: Reconciliation links are not synced to external systems; no outbox rows
  * are written for this table. Sync is driven by budget_items and expenses if needed.
  *
- * Writes follow docs/DATABASE_LAYER.md: runInSerializedTransaction + one executeBatch per
+ * Writes follow DOCS/database.md: runInSerializedTransaction + one executeBatch per
  * logical persist (multi-row INSERT = single round-trip, atomic without nested BEGIN/COMMIT).
  */
 

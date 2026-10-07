@@ -1,6 +1,6 @@
 /**
  * Load all v1 INCLUDE tables for a production with Phase 1 tombstone / parent-join rules.
- * @see docs/project-import-export-audit.md
+ * @see DOCS/import-export.md
  */
 import { getDb } from '@/lib/db/client'
 import type { ApfTableRow, ApfV1Tables } from '@/lib/importExport/payload'

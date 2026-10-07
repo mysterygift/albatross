@@ -30,7 +30,7 @@ export const APF_V10_TABLE_KEYS = ['breakdown_elements', 'breakdown_tags'] as co
 
 /**
  * v1 table keys for `data/production.json` → `tables`.
- * Names match SQLite table names per docs/project-import-export-audit.md §2 (INCLUDE set).
+ * Names match SQLite table names per DOCS/import-export.md (INCLUDE set).
  * Order matches audit §3 import layers for documentation; export/import need not sort JSON by this array.
  */
 export const APF_V1_TABLE_KEYS = [

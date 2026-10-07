@@ -1,7 +1,7 @@
 /**
  * Full-project import from `.apf` into SQLite + app-local document storage.
- * @see docs/project-import-export-format-v1.md
- * @see docs/DATABASE_LAYER.md — one `executeBatch(BEGIN, …, COMMIT)` inside `runInSerializedTransaction`.
+ * @see DOCS/import-export.md
+ * @see DOCS/database.md — one `executeBatch(BEGIN, …, COMMIT)` inside `runInSerializedTransaction`.
  */
 import { BaseDirectory, readFile, remove } from '@tauri-apps/plugin-fs'
 

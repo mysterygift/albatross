@@ -2,7 +2,7 @@
  * Demo production vendor finance seed: invoices, purchase orders, invoice reminder tasks,
  * and invoice/PO ↔ expense links. Used only for the singleton demo production (DEMO_SLUG).
  * Call after seedDemoBudget and seedDemoVendors so vendors and expenses (with vendor_id) exist.
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md.
  * Invoice reminder tasks are seeded directly so they arise from the seeded invoices (due_date).
  */
 

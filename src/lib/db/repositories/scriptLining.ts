@@ -3,7 +3,7 @@
  *
  * Elements are generated lazily from `script_pages` the first time a script version is lined, inside one
  * serialized transaction (so two views can never generate twice). They are derived data, so no outbox rows
- * are written for them. Tramline writes follow DATABASE_LAYER.md §4 with outbox rows in the same batch.
+ * are written for them. Tramline writes follow DOCS/database.md with outbox rows in the same batch.
  */
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { outboxStatementForRow } from '../outbox'

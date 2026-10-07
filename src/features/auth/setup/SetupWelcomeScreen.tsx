@@ -36,7 +36,7 @@ export function SetupWelcomeScreen({ busy, onBeginSetup }: SetupWelcomeScreenPro
         </Button>
         <p className="text-center text-xs text-muted-foreground">
           <a
-            href="/docs/DATA_ENCRYPTION.md"
+            href="https://github.com/mysterygift/albatross/blob/main/GUIDEBOOK/16-troubleshooting.md#passwords-and-the-recovery-key"
             className="underline underline-offset-2 hover:text-foreground"
             target="_blank"
             rel="noopener noreferrer"

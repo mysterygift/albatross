@@ -133,7 +133,7 @@ export function buildCreateVendorInvoiceStatements(
 }
 
 /**
- * Creates a vendor invoice. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * Creates a vendor invoice. Uses runInSerializedTransaction + executeBatch per DOCS/database.md
  * so the INSERT and outbox row are in the same transaction.
  * invoice_number is required.
  */
@@ -160,7 +160,7 @@ export type UpdateVendorInvoicePatch = Partial<Pick<VendorInvoice, (typeof EDITA
 type UpdatePatch = UpdateVendorInvoicePatch
 
 /**
- * Updates a vendor invoice. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * Updates a vendor invoice. Uses runInSerializedTransaction + executeBatch per DOCS/database.md
  * so the UPDATE and outbox row are in the same transaction.
  */
 export async function updateVendorInvoice(
@@ -240,7 +240,7 @@ export function buildSoftDeleteVendorInvoiceStatements(
 }
 
 /**
- * Soft-deletes a vendor invoice. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * Soft-deletes a vendor invoice. Uses runInSerializedTransaction + executeBatch per DOCS/database.md
  * so the UPDATE and outbox row are in the same transaction.
  */
 export async function softDeleteVendorInvoice(invoiceId: string): Promise<void> {
