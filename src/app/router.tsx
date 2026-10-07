@@ -9,6 +9,7 @@ import { ShotListPage } from '@/features/schedule/shot-list-page'
 import { StoryboardPage } from '@/features/schedule/storyboard-page'
 import { ScriptImportPage } from '@/features/schedule/script-import-page'
 import { ScriptSectionsPage } from '@/features/schedule/script-sections-page'
+import { ScriptBreakdownPage } from '@/features/schedule/script-breakdown-page'
 import { ScriptSupervisorPage } from '@/features/script-supervisor/script-supervisor-page'
 import { BookingsPage } from '@/features/people/pages/BookingsPage'
 import { DayOutOfDaysPage } from '@/features/people/pages/DayOutOfDaysPage'
@@ -54,6 +55,7 @@ export const router = createBrowserRouter([
       { path: 'schedule/storyboard', element: <StoryboardPage /> },
       { path: 'schedule/script-import', element: <ScriptImportPage /> },
       { path: 'schedule/script-sections', element: <ScriptSectionsPage /> },
+      { path: 'schedule/script-breakdown', element: <ScriptBreakdownPage /> },
       { path: 'schedule/script-supervisor', element: <ScriptSupervisorPage /> },
       { path: 'people', element: <Navigate to="/people/cast-manager" replace /> },
       { path: 'people/bookings', element: <BookingsPage /> },

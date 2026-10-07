@@ -53,6 +53,7 @@ function rowToProduction(r: Record<string, unknown>): Production {
     created_from_template: (r.created_from_template as string | null) ?? null,
     client_id: (r.client_id as string | null) ?? null,
     delivery_date: (r.delivery_date as string | null) ?? null,
+    production_code: (r.production_code as string | null) ?? null,
   }
 }
 
@@ -505,6 +506,7 @@ export type UpdateProductionData = Partial<Pick<Production, 'name' | 'notes'>> &
   clientId?: string | null
   newClient?: CreateClientData
   deliveryDate?: string | null
+  productionCode?: string | null
 }
 
 export async function updateProduction(
@@ -523,6 +525,8 @@ export async function updateProduction(
   const notes = data.notes !== undefined ? data.notes : existing.notes
   const deliveryDate =
     data.deliveryDate !== undefined ? normalizeDeliveryDate(data.deliveryDate) : existing.delivery_date
+  const productionCode =
+    data.productionCode !== undefined ? data.productionCode?.trim() || null : existing.production_code
 
   const ts = now()
   const resolvedClient =
@@ -540,6 +544,7 @@ export async function updateProduction(
     notes,
     client_id: clientId,
     delivery_date: deliveryDate,
+    production_code: productionCode,
   }
 
   if (resolvedClient.preamble.length > 0) {
@@ -549,12 +554,12 @@ export async function updateProduction(
         { sql: 'BEGIN', bindValues: [] },
         ...resolvedClient.preamble,
         {
-          sql: `UPDATE ${TABLE} SET name = $1, notes = $2, client_id = $3, delivery_date = $4, updated_at = $5 WHERE id = $6${
-            options?.expectedUpdatedAt ? ' AND updated_at = $7' : ''
+          sql: `UPDATE ${TABLE} SET name = $1, notes = $2, client_id = $3, delivery_date = $4, updated_at = $5, production_code = $7 WHERE id = $6${
+            options?.expectedUpdatedAt ? ' AND updated_at = $8' : ''
           }`,
           bindValues: options?.expectedUpdatedAt
-            ? [name, notes, clientId, deliveryDate, ts, id, options.expectedUpdatedAt]
-            : [name, notes, clientId, deliveryDate, ts, id],
+            ? [name, notes, clientId, deliveryDate, ts, id, productionCode, options.expectedUpdatedAt]
+            : [name, notes, clientId, deliveryDate, ts, id, productionCode],
         },
         outboxStatementForRow({
           entity: TABLE,
@@ -572,10 +577,10 @@ export async function updateProduction(
   }
 
   const db = await getDb()
-  const bindValues: unknown[] = [name, notes, clientId, deliveryDate, ts, id]
-  let sql = `UPDATE ${TABLE} SET name = $1, notes = $2, client_id = $3, delivery_date = $4, updated_at = $5 WHERE id = $6`
+  const bindValues: unknown[] = [name, notes, clientId, deliveryDate, ts, id, productionCode]
+  let sql = `UPDATE ${TABLE} SET name = $1, notes = $2, client_id = $3, delivery_date = $4, updated_at = $5, production_code = $7 WHERE id = $6`
   if (options?.expectedUpdatedAt) {
-    sql += ' AND updated_at = $7'
+    sql += ' AND updated_at = $8'
     bindValues.push(options.expectedUpdatedAt)
   }
   const result = await db.execute(sql, bindValues)

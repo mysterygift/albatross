@@ -704,6 +704,7 @@ CREATE TABLE productions (
   wrapped_at TIMESTAMPTZ,
   created_from_template TEXT,
   is_episodic BOOLEAN NOT NULL DEFAULT FALSE,
+  production_code TEXT,
   CONSTRAINT pk_productions PRIMARY KEY (id),
   CONSTRAINT ck_productions_1 CHECK (is_episodic IN (FALSE, TRUE))
 );

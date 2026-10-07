@@ -58,6 +58,7 @@ describe('exportProductionAsApf', () => {
       notes: null,
       client_id: null,
       delivery_date: null,
+      production_code: null,
       is_episodic: false,
       created_at: '2025-01-01T00:00:00.000Z',
       updated_at: '2025-01-01T00:00:00.000Z',

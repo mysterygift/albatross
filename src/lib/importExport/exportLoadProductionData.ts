@@ -112,6 +112,8 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     scriptAnnotationTakes,
     continuityMedia,
     scriptRevisionItems,
+    breakdownElements,
+    breakdownTags,
   ] = await Promise.all([
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM productions WHERE id = $1 AND deleted_at IS NULL`,
@@ -532,6 +534,14 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
       `SELECT * FROM script_revision_items WHERE production_id = $1 AND deleted_at IS NULL`,
       [$1]
     ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM breakdown_elements WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM breakdown_tags WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
   ])
 
   const exportedDocumentIds = new Set(documents.map((d) => d.id as string))
@@ -635,6 +645,8 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     script_annotation_takes: asRows(scriptAnnotationTakes),
     continuity_media: asRows(continuityMedia),
     script_revision_items: asRows(scriptRevisionItems),
+    breakdown_elements: asRows(breakdownElements),
+    breakdown_tags: asRows(breakdownTags),
   }
 
   for (const key of APF_V1_TABLE_KEYS) {

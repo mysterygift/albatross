@@ -1,6 +1,7 @@
 import type { ScriptSectionRange } from './types'
 import type { ScriptSectionRangeInput } from './repositories/scriptSections'
 import { parseLeadingPageNumber } from './sidesBuilderService'
+import { segmentByCoverage, type CoverageSlice } from '@/lib/text/segments'
 
 const EIGHTHS_PER_PAGE = 8
 
@@ -189,32 +190,17 @@ export function buildPageHighlightSegments(
   selectedSlice: TextOffsetSlice | null,
   conflictSlices: TextOffsetSlice[]
 ): PageHighlightSegment[] {
-  const boundaries = new Set<number>([0, contentLength])
-  if (selectedSlice) {
-    boundaries.add(selectedSlice.start)
-    boundaries.add(selectedSlice.end)
-  }
-  for (const slice of conflictSlices) {
-    boundaries.add(slice.start)
-    boundaries.add(slice.end)
-  }
-
-  const points = [...boundaries].sort((a, b) => a - b)
-  const segments: PageHighlightSegment[] = []
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const start = points[i]!
-    const end = points[i + 1]!
-    if (start >= end) continue
-    const mid = start + (end - start) / 2
-    const inSelected = selectedSlice != null && mid >= selectedSlice.start && mid < selectedSlice.end
-    const inConflict = conflictSlices.some((s) => mid >= s.start && mid < s.end)
-    if (!inSelected && !inConflict) continue
-    let kind: PageHighlightSegment['kind'] = 'selected'
-    if (inSelected && inConflict) kind = 'overlap'
-    else if (inConflict) kind = 'conflict'
-    segments.push({ start, end, kind })
-  }
-
-  return segments
+  const clamp = (slice: TextOffsetSlice) => ({
+    start: Math.max(0, slice.start),
+    end: Math.min(contentLength, slice.end),
+  })
+  const slices: CoverageSlice<'selected' | 'conflict'>[] = [
+    ...(selectedSlice ? [{ ...clamp(selectedSlice), id: 'selected' as const }] : []),
+    ...conflictSlices.map((slice) => ({ ...clamp(slice), id: 'conflict' as const })),
+  ]
+  return segmentByCoverage(slices).map(({ start, end, ids }) => ({
+    start,
+    end,
+    kind: ids.length > 1 ? 'overlap' : ids[0]!,
+  }))
 }
