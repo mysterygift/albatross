@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { SegmentedControl } from '@/components/ui/segmented-control'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
 import { toast } from '@/components/ui/sonner'
 import { CHART_TEMPLATES, type ChartTemplateId, type ChartTemplateMode } from '@/lib/budget/chartTemplates'
 import { applyChartTemplate, previewChartTemplate } from '@/lib/db/applyChartTemplate'
@@ -11,6 +12,12 @@ import { applyChartTemplate, previewChartTemplate } from '@/lib/db/applyChartTem
 const MODE_OPTIONS: { value: ChartTemplateMode; label: string }[] = [
   { value: 'merge', label: 'Add missing accounts' },
   { value: 'replace', label: 'Replace unused accounts' },
+]
+
+/* The full labels truncate in a phone-width dialog; the help text below spells them out. */
+const PHONE_MODE_OPTIONS: { value: ChartTemplateMode; label: string }[] = [
+  { value: 'merge', label: 'Add missing' },
+  { value: 'replace', label: 'Replace unused' },
 ]
 
 const MODE_HELP: Record<ChartTemplateMode, string> = {
@@ -35,6 +42,7 @@ export function ApplyChartTemplateDialog({
   revisionId: string | undefined
 }) {
   const queryClient = useQueryClient()
+  const phone = usePhoneWidth()
   const [templateId, setTemplateId] = useState<ChartTemplateId>('standard')
   const [mode, setMode] = useState<ChartTemplateMode>('merge')
   const template = CHART_TEMPLATES.find((t) => t.id === templateId)!
@@ -114,7 +122,7 @@ export function ApplyChartTemplateDialog({
 
           <div className="space-y-2">
             <Label>How to apply</Label>
-            <SegmentedControl value={mode} onValueChange={setMode} options={MODE_OPTIONS} size="sm" ariaLabel="How to apply" />
+            <SegmentedControl value={mode} onValueChange={setMode} options={phone ? PHONE_MODE_OPTIONS : MODE_OPTIONS} size={phone ? 'md' : 'sm'} ariaLabel="How to apply" />
             <p className="text-xs text-muted-foreground leading-snug">{MODE_HELP[mode]}</p>
           </div>
 
