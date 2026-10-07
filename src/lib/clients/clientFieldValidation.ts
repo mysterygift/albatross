@@ -1,9 +1,14 @@
 import { z } from 'zod'
+import {
+  CONTACT_PHONE_MAX_DIGITS,
+  CONTACT_PHONE_PATTERN,
+  validateOptionalContactPhone,
+} from '@/lib/contacts/contactFieldValidation'
 
 /** local@domain.tld — lowercase local part, domain, and TLD */
 export const CLIENT_EMAIL_PATTERN = /^[a-z0-9._+-]+@[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/
-export const CLIENT_PHONE_PATTERN = /^\+?[0-9]+$/
-export const CLIENT_PHONE_MAX_DIGITS = 17
+export const CLIENT_PHONE_PATTERN = CONTACT_PHONE_PATTERN
+export const CLIENT_PHONE_MAX_DIGITS = CONTACT_PHONE_MAX_DIGITS
 
 export function validateOptionalClientEmail(
   value: string
@@ -22,16 +27,7 @@ export function validateOptionalClientEmail(
 export function validateOptionalClientPhone(
   value: string
 ): { ok: true } | { ok: false; message: string } {
-  const trimmed = value.trim()
-  if (!trimmed) return { ok: true }
-  if (!CLIENT_PHONE_PATTERN.test(trimmed)) {
-    return { ok: false, message: 'Phone may only contain + and numbers' }
-  }
-  const digitCount = trimmed.replace(/\D/g, '').length
-  if (digitCount > CLIENT_PHONE_MAX_DIGITS) {
-    return { ok: false, message: `Phone number must be at most ${CLIENT_PHONE_MAX_DIGITS} digits` }
-  }
-  return { ok: true }
+  return validateOptionalContactPhone(value)
 }
 
 export const optionalClientEmailField = z

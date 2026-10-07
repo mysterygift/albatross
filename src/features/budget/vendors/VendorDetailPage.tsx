@@ -6,6 +6,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { optionalContactEmailField } from '@/lib/contacts/contactFieldValidation'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useHighlightParam } from '@/features/search/useHighlightParam'
 import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
@@ -147,7 +148,7 @@ import { MoneyAmountInput } from '@/components/budget/MoneyAmountInput'
 const editVendorSchema = z.object({
   company_name: z.string().min(1, 'Company name is required'),
   primary_contact_full_name: z.string().optional(),
-  primary_contact_email: z.string().email('Invalid email').optional().or(z.literal('')),
+  primary_contact_email: optionalContactEmailField,
 })
 
 const invoiceFormSchema = z.object({

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
+import { optionalContactEmailField } from '@/lib/contacts/contactFieldValidation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 
@@ -15,7 +16,7 @@ import { GlobalVendorBadge } from '@/features/budget/vendors/GlobalVendorBadge'
 const vendorSchema = z.object({
   company_name: z.string().min(1, 'Company name is required'),
   primary_contact_full_name: z.string().optional(),
-  primary_contact_email: z.string().email('Enter a valid email').optional().or(z.literal('')),
+  primary_contact_email: optionalContactEmailField,
 })
 
 export function VendorPicker({

@@ -20,20 +20,24 @@ import { Button } from '@/components/ui/button'
 import type { Person } from '@/lib/db/types'
 import { parsePhases } from '@/lib/people/productionPhases'
 import { PhaseTagsInput } from '@/features/people/components/PhaseTagsInput'
+import {
+  optionalContactEmailField,
+  optionalContactPhoneField,
+} from '@/lib/contacts/contactFieldValidation'
 
 export const personSchema = z.object({
   name: z.string().min(1),
   is_cast: z.boolean(),
-  email: z.string().optional(),
-  phone: z.string().optional(),
+  email: optionalContactEmailField,
+  phone: optionalContactPhoneField,
   department: z.string().optional(),
   phases: z.array(z.string()),
   notes: z.string().optional(),
   contributor_form_status: z.enum(['not_requested', 'requested', 'signed', 'expired']),
   cast_number: z.string().optional(),
   agent_name: z.string().optional(),
-  agent_email: z.string().optional().refine((v) => !v || v.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), { message: 'Invalid email' }),
-  agent_phone: z.string().optional(),
+  agent_email: optionalContactEmailField,
+  agent_phone: optionalContactPhoneField,
   role_name: z.string().optional(),
 })
 
@@ -89,11 +93,13 @@ export function PersonForm({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <Label>Email</Label>
-            <Input {...form.register('email')} />
+            <Input {...form.register('email')} type="email" />
+            {form.formState.errors.email && <p className="text-destructive text-sm">{form.formState.errors.email.message}</p>}
           </div>
           <div>
             <Label>Phone</Label>
-            <Input {...form.register('phone')} />
+            <Input {...form.register('phone')} type="tel" inputMode="tel" />
+            {form.formState.errors.phone && <p className="text-destructive text-sm">{form.formState.errors.phone.message}</p>}
           </div>
         </div>
         <div>
@@ -143,7 +149,8 @@ export function PersonForm({
             </div>
             <div>
               <Label>Agent phone</Label>
-              <Input {...form.register('agent_phone')} />
+              <Input {...form.register('agent_phone')} type="tel" inputMode="tel" />
+              {form.formState.errors.agent_phone && <p className="text-destructive text-sm">{form.formState.errors.agent_phone.message}</p>}
             </div>
           </>
         )}
