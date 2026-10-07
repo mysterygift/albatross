@@ -4,18 +4,10 @@
  */
 import { createLocation, listLocationsByProduction } from './repositories/location'
 import type { Location } from './types'
-
-/** Normalizes screenplay punctuation variants before case-insensitive lookup. */
-function normalizeLocationPunctuation(name: string): string {
-  return name
-    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
-    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015]/g, '-')
-}
+import { normalizeNameKey } from '@/lib/text/similarity'
 
 /** Normalizes a location name for case-insensitive lookup. */
-export function normalizeLocationKey(name: string): string {
-  return normalizeLocationPunctuation(name).trim().replace(/\s+/g, ' ').toUpperCase()
-}
+export const normalizeLocationKey = normalizeNameKey
 
 /**
  * Resolves a batch of parsed location names to location IDs for a production.

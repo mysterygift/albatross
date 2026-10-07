@@ -174,7 +174,7 @@ function orderRowsForTable(table: ApfV1TableKey, rows: ApfTableRow[]): ApfTableR
   if (table === 'script_versions') {
     return sortRowsByParentColumn(rows, 'previous_script_version_id')
   }
-  if (table === 'tramlines' || table === 'script_annotations') {
+  if (table === 'tramlines' || table === 'script_annotations' || table === 'breakdown_tags') {
     return sortRowsByParentColumn(rows, 'carried_from_id')
   }
   return rows

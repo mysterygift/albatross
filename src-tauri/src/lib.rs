@@ -636,6 +636,18 @@ pub fn run() {
             sql: include_str!("../migrations/0103_crew_availability_cascade.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 104,
+            description: "productions_production_code",
+            sql: include_str!("../migrations/0104_productions_production_code.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 105,
+            description: "script_breakdown",
+            sql: include_str!("../migrations/0105_script_breakdown.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     #[cfg_attr(mobile, allow(unused_mut))]

@@ -251,6 +251,8 @@ export interface TextBlock {
   /** Small uppercase grey label; on its own line unless `inline`. */
   label?: string
   labelColor?: PdfColor
+  /** Fills behind the label (a highlighter swatch); the label is then drawn bold and slightly larger. */
+  labelFill?: PdfColor
   inline?: boolean
 }
 
@@ -309,6 +311,8 @@ type DrawItem = {
   dx: number
   /** Inline label drawn at the start of this line. */
   label?: { text: string; color: PdfColor }
+  /** Highlight behind this line's text. */
+  fill?: PdfColor
 }
 
 export class PdfLayout {
@@ -530,14 +534,16 @@ export class PdfLayout {
       const labelColor = block.labelColor ?? COLOR_MUTED
       let indent = 0
       if (block.label && !block.inline) {
+        const labelSize = block.labelFill ? LABEL + 1.5 : LABEL
         items.push({
           text: block.label.toUpperCase(),
-          size: LABEL,
-          bold: false,
+          size: labelSize,
+          bold: block.labelFill != null,
           color: labelColor,
           dx: 0,
+          fill: block.labelFill,
         })
-        height += this.lineHeight(LABEL)
+        height += this.lineHeight(labelSize) + (block.labelFill ? 2 : 0)
       } else if (block.label) {
         indent = this.textWidth(block.label.toUpperCase(), LABEL) + 4
       }
@@ -565,6 +571,15 @@ export class PdfLayout {
     let cursor = yTop
     for (const item of items) {
       const baseline = cursor - item.size * 1.05
+      if (item.fill) {
+        this.page.drawRectangle({
+          x: x + item.dx - 1.5,
+          y: baseline - item.size * 0.28,
+          width: this.textWidth(item.text, item.size, item.bold) + 3,
+          height: item.size * 1.22,
+          color: item.fill,
+        })
+      }
       if (item.label) {
         this.text(item.label.text, x, baseline, { size: LABEL, color: item.label.color })
       }
@@ -573,7 +588,7 @@ export class PdfLayout {
         bold: item.bold,
         color: item.color,
       })
-      cursor -= this.lineHeight(item.size)
+      cursor -= this.lineHeight(item.size) + (item.fill ? 2 : 0)
     }
   }
 
@@ -741,16 +756,16 @@ export class PdfLayout {
 
   /**
    * Bordered grid of text cells, `columns` across, row by row. Each row is as tall as its tallest
-   * cell and never splits across pages.
+   * cell (at least `minRowHeight`, to leave room to write) and never splits across pages.
    */
-  blockGrid(cells: TextBlock[][], columns: number): void {
+  blockGrid(cells: TextBlock[][], columns: number, minRowHeight = 0): void {
     if (cells.length === 0) return
     const cols = Math.max(1, Math.min(columns, cells.length))
     const cellW = this.contentWidth / cols
     for (let i = 0; i < cells.length; i += cols) {
       const rowCells = cells.slice(i, i + cols)
       const laid = rowCells.map((blocks) => this.layoutBlocks(blocks, cellW - CELL_PAD_X * 2))
-      const rowH = Math.max(...laid.map((l) => l.height)) + CELL_PAD_Y * 2
+      const rowH = Math.max(minRowHeight, Math.max(...laid.map((l) => l.height)) + CELL_PAD_Y * 2)
       this.ensureSpace(rowH)
       this.frame(this.xLeft, this.y, this.contentWidth, rowH)
       for (let j = 0; j < cols; j += 1) {

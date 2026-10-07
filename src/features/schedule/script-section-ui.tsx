@@ -7,6 +7,7 @@ import {
   type SectionStatusStep,
 } from '@/lib/db/scriptSectionStatus'
 import { STATUS_BADGE_CLASS } from './script-section-status-styles'
+import { stackedHighlightBackground } from './script-highlight'
 
 const STEP_TEXT_CLASS: Record<SectionStatusStep['key'], string> = {
   covered: 'text-slate-400',
@@ -124,6 +125,67 @@ export type ScriptLineDecor = {
   /** Gutter label replacing the eighth tick (e.g. a section code). */
   tag?: ReactNode
   dim?: boolean
+  /** Inline highlights over parts of the line; offsets are relative to the line text. */
+  segments?: readonly ScriptLineSegment[]
+  /** Colours stacked top to bottom in the gutter band (overrides its background). */
+  bandColours?: readonly string[]
+}
+
+export type ScriptLineSegment = {
+  start: number
+  end: number
+  /** One colour per highlight covering this run; more than one stacks them in horizontal bands. */
+  colours: readonly string[]
+  key: string
+  title?: string
+}
+
+/** Line text split into plain and highlighted runs; each run carries its line-relative start for selection mapping. */
+function LineText({
+  text,
+  segments,
+  onSegmentClick,
+}: {
+  text: string
+  segments: readonly ScriptLineSegment[]
+  onSegmentClick?: (segment: ScriptLineSegment, event: React.MouseEvent<HTMLElement>) => void
+}) {
+  const parts: ReactNode[] = []
+  let cursor = 0
+  for (const seg of [...segments].sort((a, b) => a.start - b.start)) {
+    const start = Math.max(cursor, Math.min(seg.start, text.length))
+    const end = Math.max(start, Math.min(seg.end, text.length))
+    if (start > cursor) {
+      parts.push(
+        <span key={`t${cursor}`} data-chunk-start={cursor}>
+          {text.slice(cursor, start)}
+        </span>
+      )
+    }
+    if (end > start) {
+      parts.push(
+        <mark
+          key={seg.key}
+          data-chunk-start={start}
+          title={seg.title}
+          className={cn('rounded-[2px] text-inherit [box-decoration-break:clone]', onSegmentClick && 'cursor-pointer')}
+          style={{ background: stackedHighlightBackground(seg.colours) }}
+          onClick={onSegmentClick ? (e) => onSegmentClick(seg, e) : undefined}
+        >
+          {text.slice(start, end)}
+        </mark>
+      )
+    }
+    cursor = end
+  }
+  if (cursor < text.length) {
+    parts.push(
+      <span key={`t${cursor}`} data-chunk-start={cursor}>
+        {text.slice(cursor)}
+      </span>
+    )
+  }
+  return <>{parts}</>
 }
 
 type ScriptLinesProps = {
@@ -139,11 +201,13 @@ type ScriptLinesProps = {
   onLinePointerDown?: (line: SceneLine, event: React.PointerEvent<HTMLDivElement>) => void
   onLinePointerEnter?: (line: SceneLine, event: React.PointerEvent<HTMLDivElement>) => void
   onLineClick?: (line: SceneLine, event: React.MouseEvent<HTMLDivElement>) => void
+  /** Click on an inline highlight (see ScriptLineDecor.segments). */
+  onSegmentClick?: (line: SceneLine, segment: ScriptLineSegment, event: React.MouseEvent<HTMLElement>) => void
 } & Omit<HTMLAttributes<HTMLDivElement>, 'children'>
 
 /** Script text rendered line by line with page headers, eighth ticks and a status/section gutter. */
 export const ScriptLines = forwardRef<HTMLDivElement, ScriptLinesProps>(function ScriptLines(
-  { lines, decorate, interactive, phone, onLinePointerDown, onLinePointerEnter, onLineClick, className, ...rest },
+  { lines, decorate, interactive, phone, onLinePointerDown, onLinePointerEnter, onLineClick, onSegmentClick, className, ...rest },
   ref
 ) {
   return (
@@ -179,8 +243,13 @@ export const ScriptLines = forwardRef<HTMLDivElement, ScriptLinesProps>(function
               >
                 {decor.tag ?? (isEighthStart(lines, i) ? `${line.startEighth}/8` : '')}
               </span>
-              <span className={cn(decor.bandClassName)} />
               <span
+                className={cn(decor.bandClassName)}
+                style={decor.bandColours?.length ? { background: stackedHighlightBackground(decor.bandColours, 100) } : undefined}
+              />
+              <span
+                data-page-id={line.pageId}
+                data-line-start={line.startOffset}
                 className={cn(
                   'min-w-0 whitespace-pre-wrap px-1.5 font-mono text-[12.5px] leading-[1.55] text-foreground',
                   // Padding (not row spacing) so highlights and bands stay continuous across lines.
@@ -189,7 +258,15 @@ export const ScriptLines = forwardRef<HTMLDivElement, ScriptLinesProps>(function
                 )}
                 style={decor.textStyle}
               >
-                {line.text || ' '}
+                {decor.segments?.length && line.text ? (
+                  <LineText
+                    text={line.text}
+                    segments={decor.segments}
+                    onSegmentClick={onSegmentClick ? (seg, e) => onSegmentClick(line, seg, e) : undefined}
+                  />
+                ) : (
+                  line.text || ' '
+                )}
               </span>
             </div>
           </div>
