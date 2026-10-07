@@ -27,6 +27,10 @@ export const DOCUMENT_ENTITY_TYPES = {
   continuitySheets: 'continuity_sheets',
   editorsLog: 'editors_log',
   markedUpScript: 'marked_up_script',
+  /** Script breakdown sheets, one page per scene (entity_id = script version id). */
+  scriptBreakdownSheets: 'script_breakdown_sheets',
+  /** Script breakdown department list (entity_id = script version id). */
+  scriptBreakdownReport: 'script_breakdown_report',
   locationRelease: 'location_release',
   /** Location permit (entity_id = location id). */
   permit: 'permit',
@@ -91,13 +95,15 @@ export const DOCUMENT_CATEGORIES: DocumentCategoryConfig[] = [
   {
     id: 'schedule',
     label: 'Script & sides',
-    description: 'Imported scripts and shoot-day sides exports',
+    description: 'Imported scripts, script breakdowns and shoot-day sides exports',
     icon: Calendar,
     sourceRoute: '/schedule/script-import',
     emptyMessage: 'No scripts or sides yet. Import a script or export sides from the schedule.',
     entityTypes: [
       DOCUMENT_ENTITY_TYPES.script,
       DOCUMENT_ENTITY_TYPES.sidesExport,
+      DOCUMENT_ENTITY_TYPES.scriptBreakdownSheets,
+      DOCUMENT_ENTITY_TYPES.scriptBreakdownReport,
       DOCUMENT_ENTITY_TYPES.manualUploadSchedule,
     ],
   },

@@ -8,6 +8,7 @@ const PILOT_COLUMNS: Record<PilotCollaborationTable, ReadonlySet<string>> = {
   productions: new Set([
     'id', 'name', 'notes', 'created_at', 'updated_at', 'deleted_at', 'currency_code',
     'wrapped_at', 'slug', 'archived_at', 'is_episodic', 'delivery_date', 'created_from_template',
+    'production_code',
   ]),
   scenes: new Set([
     'id', 'production_id', 'scene_number', 'description', 'title', 'int_ext',

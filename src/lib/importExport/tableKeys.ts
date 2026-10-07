@@ -25,6 +25,9 @@ export const APF_V9_TABLE_KEYS = [
   'script_revision_items',
 ] as const
 
+/** Tables added in formatVersion 10: script breakdown elements, then their tags (self-referencing via carried_from_id). */
+export const APF_V10_TABLE_KEYS = ['breakdown_elements', 'breakdown_tags'] as const
+
 /**
  * v1 table keys for `data/production.json` → `tables`.
  * Names match SQLite table names per docs/project-import-export-audit.md §2 (INCLUDE set).
@@ -100,6 +103,7 @@ export const APF_V1_TABLE_KEYS = [
   'risk_assessment_units',
   'risk_assessment_hazards',
   ...APF_V9_TABLE_KEYS,
+  ...APF_V10_TABLE_KEYS,
 ] as const
 
 export type ApfV1TableKey = (typeof APF_V1_TABLE_KEYS)[number]

@@ -149,6 +149,7 @@ const PRODUCTION_DIALOG_CONTENT_CLASS =
 const editProductionSchema = z
   .object({
     name: z.string().min(1, 'Name is required'),
+    productionCode: z.string().max(64, 'Keep the production code under 64 characters').optional(),
     notes: z.string().optional(),
     ...productionClientFieldsSchema,
   })
@@ -639,6 +640,7 @@ export function ProductionsPage() {
       const payload = {
         name: data.name,
         notes: data.notes ?? null,
+        productionCode: data.productionCode?.trim() || null,
         ...clientOpts,
       }
       if (authSession.authSupported && authSession.currentUser) {
@@ -1531,6 +1533,7 @@ function EditProductionForm({
     resolver: zodResolver(editProductionSchema),
     defaultValues: {
       name: production.name,
+      productionCode: production.production_code ?? '',
       notes: production.notes ?? '',
       ...defaultClientFieldsFromProduction(production),
     },
@@ -1552,6 +1555,14 @@ function EditProductionForm({
               <p className="text-destructive text-sm">
                 {form.formState.errors.name.message}
               </p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-production-code">Production code</Label>
+            <Input id="edit-production-code" {...form.register('productionCode')} placeholder="e.g. WR-2026/01" />
+            <p className="text-muted-foreground text-xs">Optional. Printed as the production number on script breakdown sheets.</p>
+            {form.formState.errors.productionCode && (
+              <p className="text-destructive text-sm">{form.formState.errors.productionCode.message}</p>
             )}
           </div>
           <div className="space-y-2">

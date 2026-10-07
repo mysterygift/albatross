@@ -15,24 +15,15 @@
  * a tramline with no surviving lines is "unmatched" and is never dropped silently.
  */
 import type { LiningElement, SegmentState } from './lining'
+import { normaliseLine, sharedWords, words } from '@/lib/text/similarity'
+
+export { lineSimilarity, normaliseLine } from '@/lib/text/similarity'
 
 export type RemapElement = Pick<LiningElement, 'id' | 'sort_index' | 'element_type' | 'character_name' | 'text'>
 
 export type ElementMatch = { newId: string; exact: boolean }
 
 const SIMILARITY_THRESHOLD = 0.5
-
-/** Text compared across drafts: case, spacing, quote and dash styles and trailing (CONT'D) ignored. */
-export function normaliseLine(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[‘’]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/[–—]/g, '-')
-    .replace(/…/g, '...')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
 
 function speaker(el: RemapElement): string {
   return (el.character_name ?? '')
@@ -44,36 +35,6 @@ function speaker(el: RemapElement): string {
 
 function key(el: RemapElement): string {
   return `${el.element_type}|${el.element_type === 'dialogue' ? speaker(el) : ''}|${normaliseLine(el.text)}`
-}
-
-function words(text: string): string[] {
-  return normaliseLine(text)
-    .replace(/[^\p{L}\p{N} ]+/gu, ' ')
-    .split(' ')
-    .filter(Boolean)
-}
-
-function sharedWords(wa: string[], wb: string[]): number {
-  const counts = new Map<string, number>()
-  for (const w of wa) counts.set(w, (counts.get(w) ?? 0) + 1)
-  let shared = 0
-  for (const w of wb) {
-    const n = counts.get(w) ?? 0
-    if (n > 0) {
-      shared += 1
-      counts.set(w, n - 1)
-    }
-  }
-  return shared
-}
-
-/** Dice coefficient over word multisets (0 = nothing shared, 1 = same words). */
-export function lineSimilarity(a: string, b: string): number {
-  const wa = words(a)
-  const wb = words(b)
-  if (wa.length === 0 && wb.length === 0) return 1
-  if (wa.length === 0 || wb.length === 0) return 0
-  return (2 * sharedWords(wa, wb)) / (wa.length + wb.length)
 }
 
 /** Match score for a reworded line, or 0 when the lines are too different. */

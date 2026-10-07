@@ -5,10 +5,12 @@ export const SB_REMOTE_UNSUPPORTED_MESSAGE =
 
 type SbRemoteNoticeProps = {
   className?: string
+  /** Defaults to the Script Sections & Sides message. */
+  message?: string
 }
 
 /** Banner shown on Script Sections & Sides surfaces for remote-server productions. */
-export function SbRemoteNotice({ className }: SbRemoteNoticeProps) {
+export function SbRemoteNotice({ className, message = SB_REMOTE_UNSUPPORTED_MESSAGE }: SbRemoteNoticeProps) {
   return (
     <div
       role="status"
@@ -18,7 +20,7 @@ export function SbRemoteNotice({ className }: SbRemoteNoticeProps) {
       }
     >
       <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden />
-      <span>{SB_REMOTE_UNSUPPORTED_MESSAGE}</span>
+      <span>{message}</span>
     </div>
   )
 }

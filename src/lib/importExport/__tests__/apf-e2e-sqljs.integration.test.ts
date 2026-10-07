@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import initSqlJs from 'sql.js'
 
+import { CURRENT_APF_FORMAT_VERSION } from '@/lib/importExport/constants'
 import { ApfImportConflictError } from '@/lib/importExport/errors'
 import { exportProductionAsApf } from '@/lib/importExport/exportProduction'
 import { loadApfV1ProductionTables } from '@/lib/importExport/exportLoadProductionData'
@@ -189,7 +190,7 @@ describe('apf E2E (sql.js + real FS)', () => {
     const exportedBytes = new Uint8Array(await readFile(apfPath))
     const parsedExport = parseApfArchiveBytes(exportedBytes)
     expect(parsedExport.normalized.data.tables.budget_revisions).toHaveLength(1)
-    expect(parsedExport.normalized.data.formatVersion).toBe(9)
+    expect(parsedExport.normalized.data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
 
     clearUserData()
     const imp = await importProductionFromApf(apfPath)
@@ -295,7 +296,7 @@ describe('apf E2E (sql.js + real FS)', () => {
     expect(tpl).toEqual([{ name: 'Saved' }])
   })
 
-  it('round-trips script sections, script supervisor data and movement order columns', async () => {
+  it('round-trips script sections, script supervisor data, script breakdown and movement order columns', async () => {
     clearUserData()
     const adapter = sqlJsApfE2eContext.adapter!
     const id = (n: number) => `aaaaaaaa-e2e9-4e29-8f${String(n).padStart(2, '0')}-a1e2e2e2e2a1`
@@ -323,6 +324,9 @@ describe('apf E2E (sql.js + real FS)', () => {
     const PHOTO_DOC = id(21)
     const SIDES_DOC = id(22)
     const PERSON = id(23)
+    const BD_ELEMENT = id(34)
+    const BD_TAG1 = id(35)
+    const BD_TAG2 = id(24)
     const photoRel = `attachments/${PROD_ID}/${PHOTO_DOC}-photo.jpg`
     await mkdir(join(apfNodeFsTestContext.appDataRoot, 'attachments', PROD_ID), { recursive: true })
     await writeFile(join(apfNodeFsTestContext.appDataRoot, photoRel), Buffer.from('jpeg-bytes'))
@@ -457,6 +461,19 @@ describe('apf E2E (sql.js + real FS)', () => {
        VALUES ('sri-1', $1, $2, $3, $4, 'tramline', $5, 'carried', $6, $7, $7)`,
       [PROD_ID, SCENE, V1, V2, TL1, TL2, TS]
     )
+    await run(
+      `INSERT INTO breakdown_elements (id, production_id, category, name, manual_status, created_at, updated_at)
+       VALUES ($1, $2, 'locations', 'KITCHEN', 'sourced', $3, $3)`,
+      [BD_ELEMENT, PROD_ID, TS]
+    )
+    for (const [tagId, carriedFrom] of [[BD_TAG1, null], [BD_TAG2, BD_TAG1]] as const) {
+      await run(
+        `INSERT INTO breakdown_tags (id, production_id, element_id, script_version_id, scene_id, start_page_id, start_offset,
+           end_page_id, end_offset, tagged_text, carried_from_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 5, $6, 12, 'KITCHEN', $7, $8, $8)`,
+        [tagId, PROD_ID, BD_ELEMENT, V2, SCENE, PAGE, carriedFrom, TS]
+      )
+    }
 
     await exportProductionAsApf(PROD_ID, apfPath)
     const exported = parseApfArchiveBytes(new Uint8Array(await readFile(apfPath))).normalized.data.tables
@@ -509,6 +526,13 @@ describe('apf E2E (sql.js + real FS)', () => {
     ])
     expect(await rows(`SELECT outcome, new_item_id FROM script_revision_items WHERE production_id = $1`)).toEqual([
       { outcome: 'carried', new_item_id: TL2 },
+    ])
+    expect(await rows(`SELECT name, manual_status FROM breakdown_elements WHERE production_id = $1`)).toEqual([
+      { name: 'KITCHEN', manual_status: 'sourced' },
+    ])
+    expect(await rows(`SELECT id, carried_from_id, start_offset, end_offset FROM breakdown_tags WHERE production_id = $1 ORDER BY carried_from_id IS NOT NULL`)).toEqual([
+      { id: BD_TAG1, carried_from_id: null, start_offset: 5, end_offset: 12 },
+      { id: BD_TAG2, carried_from_id: BD_TAG1, start_offset: 5, end_offset: 12 },
     ])
     expect(await rows(`SELECT movement_pins_json FROM shoot_days WHERE id = $1`, [DAY])).toEqual([{ movement_pins_json: '[{"kind":"base"}]' }])
     expect(await rows(`SELECT movement_order_json FROM shoot_day_units WHERE id = $1`, [SDU])).toEqual([{ movement_order_json: '{"revision":"B"}' }])

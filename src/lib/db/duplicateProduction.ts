@@ -63,9 +63,10 @@ export async function duplicateProduction(
   const isEpisodic = coerceBoolean(prodRows[0]!.is_episodic, false)
   const clientId = (prodRows[0]!.client_id as string | null) ?? null
   const deliveryDate = (prodRows[0]!.delivery_date as string | null) ?? null
+  const productionCode = (prodRows[0]!.production_code as string | null) ?? null
 
   // Load all source data first (reads only).
-  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, crewAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs, episodes, shootingBlocs, scriptVersions, scriptPages, scriptSections, scriptSectionRanges, scriptSectionCharacters, shotScriptSections, shootDaySidesExports, hazardTemplateRows, riskAssessmentRows, riskAssessmentUnitRows, riskAssessmentHazardRows] = await Promise.all([
+  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, crewAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs, episodes, shootingBlocs, scriptVersions, scriptPages, scriptSections, scriptSectionRanges, scriptSectionCharacters, shotScriptSections, shootDaySidesExports, hazardTemplateRows, riskAssessmentRows, riskAssessmentUnitRows, riskAssessmentHazardRows, breakdownElements, breakdownTags] = await Promise.all([
     db.select<Record<string, unknown>[]>(`SELECT * FROM units WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM people WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM locations WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -138,6 +139,8 @@ export async function duplicateProduction(
        WHERE h.deleted_at IS NULL`,
       [sourceProductionId]
     ),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM breakdown_elements WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM breakdown_tags WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
   ])
 
   const taskIdMap: IdMap = new Map()
@@ -170,8 +173,8 @@ export async function duplicateProduction(
   const statements: Stmt[] = [
     { sql: 'BEGIN TRANSACTION', bindValues: [] },
     {
-      sql: `INSERT INTO ${TABLE_PRODUCTIONS} (id, name, slug, currency_code, notes, client_id, delivery_date, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      bindValues: [newProdId, newName, slug, currencyCode, notes, clientId, deliveryDate, isEpisodic ? 1 : 0, ts, ts],
+      sql: `INSERT INTO ${TABLE_PRODUCTIONS} (id, name, slug, currency_code, notes, client_id, delivery_date, is_episodic, created_at, updated_at, production_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      bindValues: [newProdId, newName, slug, currencyCode, notes, clientId, deliveryDate, isEpisodic ? 1 : 0, ts, ts, productionCode],
     },
   ]
 
@@ -752,6 +755,36 @@ export async function duplicateProduction(
         r.at_risk_crew, r.at_risk_cast, r.at_risk_public,
         r.severity_before, r.probability_before, r.severity_after, r.probability_after, ts, ts,
       ],
+    })
+  }
+
+  // Script breakdown: elements keep their status and notes; links follow the copied location / cast / music
+  // track (equipment is not copied, so equipment links are dropped). Tags follow the copied script pages;
+  // carried-from history stays with the original.
+  const breakdownElementIdMap: IdMap = new Map()
+  for (const r of breakdownElements) {
+    const id = newId()
+    breakdownElementIdMap.set(r.id as string, id)
+    const linkedType = (r.linked_entity_type as string | null) ?? null
+    const linkedOld = (r.linked_entity_id as string | null) ?? null
+    const linkMap =
+      linkedType === 'location' ? locationIdMap : linkedType === 'person' ? personIdMap : linkedType === 'music_track' ? musicTrackIdMap : null
+    const linkedId = linkMap ? mapId(linkMap, linkedOld) : null
+    statements.push({
+      sql: `INSERT INTO breakdown_elements (id, production_id, category, name, notes, manual_status, linked_entity_type, linked_entity_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      bindValues: [id, newProdId, r.category, r.name, r.notes ?? null, r.manual_status ?? 'needed', linkedId ? linkedType : null, linkedId, ts, ts],
+    })
+  }
+  for (const r of breakdownTags) {
+    const elementId = breakdownElementIdMap.get(r.element_id as string)
+    const versionId = scriptVersionIdMap.get(r.script_version_id as string)
+    const sceneId = sceneIdMap.get(r.scene_id as string)
+    const startPageId = scriptPageIdMap.get(r.start_page_id as string)
+    const endPageId = scriptPageIdMap.get(r.end_page_id as string)
+    if (!elementId || !versionId || !sceneId || !startPageId || !endPageId) continue
+    statements.push({
+      sql: `INSERT INTO breakdown_tags (id, production_id, element_id, script_version_id, scene_id, start_page_id, start_offset, end_page_id, end_offset, tagged_text, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      bindValues: [newId(), newProdId, elementId, versionId, sceneId, startPageId, r.start_offset, endPageId, r.end_offset, r.tagged_text, ts, ts],
     })
   }
 

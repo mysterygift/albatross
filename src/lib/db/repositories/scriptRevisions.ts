@@ -342,6 +342,7 @@ export async function loadRevisionReview(productionId: string, sceneId: string):
      LEFT JOIN slates s ON s.id = COALESCE(t.slate_id, a.slate_id)
      LEFT JOIN scenes sc ON sc.id = s.scene_id
      WHERE r.production_id = $1 AND r.scene_id = $2 AND r.to_script_version_id = $3 AND r.deleted_at IS NULL
+       AND r.item_type IN ('tramline', 'annotation')
      ORDER BY r.created_at, r.item_type DESC, e.sort_index`,
     [productionId, sceneId, toVersionId]
   )
