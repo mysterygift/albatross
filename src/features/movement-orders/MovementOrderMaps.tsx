@@ -227,7 +227,7 @@ export function MovementOrderMaps({
   if (isMapTileConfigIncomplete(tileConfig)) {
     return (
       <p className="text-sm text-muted-foreground">
-        Add a map tile API key under Settings → Integrations to show the maps.
+        Add a map tile API key under Settings → APIs & publishing to show the maps.
       </p>
     )
   }

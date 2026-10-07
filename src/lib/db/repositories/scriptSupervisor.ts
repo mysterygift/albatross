@@ -3,7 +3,7 @@
  *
  * Local SQLite only, like the SB1 script-section tables: writes refuse productions whose effective
  * data source is `remote_server`, and nothing here is published or exported yet.
- * Multi-statement writes follow DATABASE_LAYER.md §4 (runInSerializedTransaction + one executeBatch,
+ * Multi-statement writes follow DOCS/database.md (runInSerializedTransaction + one executeBatch,
  * outbox rows in the same batch).
  *
  * Slating (SS2): UK consecutive numbers per unit series (default) or US scene + setup letter, chosen per

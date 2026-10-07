@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useContext, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet } from 'react-router-dom'
 import { SidebarInset, SidebarProvider, useSidebar } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
 import { TutorialProvider } from '@/features/tutorial/engine/TutorialProvider'
+import { TutorialContext } from '@/features/tutorial/engine/context'
 import { DemoProductionBanner } from '@/features/onboarding/DemoProductionBanner'
 import { TopBar } from '@/components/top-bar'
 import { SectionTabs } from '@/components/section-tabs'
@@ -201,7 +202,7 @@ function AppLayoutShell() {
       <SidebarProvider>
         <MenuSidebarBridge />
         <SidebarSwipeGestures />
-        <GlobalShortcutBridge
+        <GlobalShortcutBridgeWithTutorial
           searchOpen={searchOpen}
           onToggleSearch={toggleSearch}
           onOpenShortcuts={openShortcuts}
@@ -235,6 +236,17 @@ function AppLayoutShell() {
       </SidebarProvider>
     </TutorialProvider>
   )
+}
+
+/** Wires Help -> Getting Started to the tutorial home (needs TutorialProvider above it). */
+function GlobalShortcutBridgeWithTutorial(props: {
+  searchOpen: boolean
+  onToggleSearch: () => void
+  onOpenShortcuts: () => void
+}) {
+  const setPickerOpen = useContext(TutorialContext)?.setPickerOpen
+  const openGettingStarted = useCallback(() => setPickerOpen?.(true), [setPickerOpen])
+  return <GlobalShortcutBridge {...props} onOpenGettingStarted={openGettingStarted} />
 }
 
 function MenuSidebarBridge() {

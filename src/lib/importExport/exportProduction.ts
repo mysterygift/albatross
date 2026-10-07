@@ -1,5 +1,5 @@
 /**
- * Full-project export to `.apf` (ZIP + manifest + data/production.json + files/documents/...).
+ * Full-project export to `.apf` (ZIP + manifest + data/production.json + files/documents/... + files/storyboards/...).
  */
 import { writeFile } from '@tauri-apps/plugin-fs'
 
@@ -11,6 +11,7 @@ import { buildApfZipBytes } from '@/lib/importExport/buildApfArchive'
 import { buildApfExportManifest } from '@/lib/importExport/buildExportManifest'
 import { buildApfV1ExportDataFile, countTableRows } from '@/lib/importExport/buildExportPayload'
 import { collectApfDocumentBundledEntries } from '@/lib/importExport/collectApfDocumentFiles'
+import { collectApfStoryboardBundledEntries } from '@/lib/importExport/collectApfStoryboardFiles'
 import { ApfExportError } from '@/lib/importExport/errors'
 import { loadApfV1ProductionTables } from '@/lib/importExport/exportLoadProductionData'
 import { parseApfManifestJson } from '@/lib/importExport/manifest'
@@ -31,6 +32,7 @@ function validateExportArtifacts(
  * - Overwrites `outputPath` if it already exists.
  * - Does not create parent directories (caller or OS dialog typically ensures they exist).
  * - Missing document files: rows stay in JSON; ids listed in `manifest.export.missingDocumentFileIds`.
+ * - Missing storyboard image files: rows stay in JSON; ids listed in `manifest.export.missingStoryboardImageIds`.
  */
 export async function exportProductionAsApf(productionId: string, outputPath: string): Promise<void> {
   const prod = await getProductionById(productionId)
@@ -49,6 +51,9 @@ export async function exportProductionAsApf(productionId: string, outputPath: st
 
   const { entries, missingDocumentFileIds } = await collectApfDocumentBundledEntries(tables.documents)
   const bundledDocumentIds = entries.map((e) => e.documentId).sort()
+  const { entries: storyboardEntries, missingImageIds: missingStoryboardImageIds } =
+    await collectApfStoryboardBundledEntries(tables.storyboard_images)
+  const bundledStoryboardImageIds = storyboardEntries.map((e) => e.imageId).sort()
 
   const manifest = buildApfExportManifest({
     productionId: prod.id,
@@ -58,11 +63,13 @@ export async function exportProductionAsApf(productionId: string, outputPath: st
     tableRowCounts,
     bundledDocumentIds,
     missingDocumentFileIds,
+    bundledStoryboardImageIds,
+    missingStoryboardImageIds,
   })
 
   validateExportArtifacts(manifest, dataFile)
 
-  const zipBytes = buildApfZipBytes(manifest, dataFile, entries)
+  const zipBytes = buildApfZipBytes(manifest, dataFile, [...entries, ...storyboardEntries])
 
   await writeFile(outputPath, zipBytes)
 }

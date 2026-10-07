@@ -1565,7 +1565,7 @@ function validateShotFieldEnums(data: Pick<CreateShotInput, 'shot_size' | 'camer
  * Create a shot in a scene. Validates scene existence, shot number (required), optional enums and
  * integers, duplicate shot_number within the scene (application rule), and optional cast people.
  * When `person_ids` is non-empty, inserts `shot_cast` rows and any missing `scene_cast` rows in one
- * serialized transaction (per DATABASE_LAYER.md).
+ * serialized transaction (per DOCS/database.md).
  */
 export async function createShot(data: CreateShotInput): Promise<CreateShotResult> {
   const result = await createShotCore(data)

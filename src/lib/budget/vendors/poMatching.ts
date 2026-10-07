@@ -2,7 +2,7 @@
  * PO matching — pure helpers for committed / remaining amounts and mismatch warnings.
  * No DB or UI dependencies. Warnings never block: the user makes the call.
  *
- * Allocation rules (see docs/vendors.md):
+ * Allocation rules (see DOCS/features/vendors.md):
  * - A PO <-> expense link carries an optional `allocatedAmount`.
  * - NULL allocation + the expense linked to exactly one PO => the whole expense amount.
  * - NULL allocation + the expense linked to several POs => unallocated (counts as 0, flagged).

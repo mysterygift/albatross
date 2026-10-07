@@ -998,6 +998,21 @@ export function StripboardPage() {
                 })
               }}
               onDeleteStrip={(strip) => deleteStripMutation.mutate(strip.id)}
+              onRequestDeleteDay={(d) => {
+                setDeleteShootDayError(null)
+                setDeleteShootDayTarget({ id: d.id, shoot_date: d.shoot_date, day_number: d.day_number })
+                setDeleteShootDayDialogOpen(true)
+              }}
+              onRequestRemoveSecondUnit={(sdu, unitName, d) => {
+                setRemoveSecondUnitError(null)
+                setRemoveSecondUnitTarget({
+                  shootDayUnitId: sdu.id,
+                  shootDate: d.shoot_date,
+                  dayNumber: d.day_number,
+                  unitName,
+                })
+                setRemoveSecondUnitDialogOpen(true)
+              }}
             />
           </div>
 

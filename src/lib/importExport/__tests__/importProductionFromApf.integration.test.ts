@@ -22,6 +22,10 @@ vi.mock('@/lib/db/client', () => ({
   executeBatch: vi.fn(),
 }))
 
+vi.mock('@/lib/auth/currentSessionUser', () => ({
+  getCurrentSessionUserId: vi.fn(() => Promise.resolve(null)),
+}))
+
 vi.mock('@tauri-apps/plugin-fs', () => ({
   BaseDirectory: { AppData: 1 },
   readFile: vi.fn(),
@@ -30,6 +34,7 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
   writeFile: vi.fn(() => Promise.resolve()),
 }))
 
+import { getCurrentSessionUserId } from '@/lib/auth/currentSessionUser'
 import { executeBatch, getDb } from '@/lib/db/client'
 import { mkdir, readFile, remove, writeFile } from '@tauri-apps/plugin-fs'
 
@@ -93,6 +98,37 @@ describe('importProductionFromApf (mocked I/O + DB)', () => {
     const docInsert = stmts.find((s) => s.sql.includes('INSERT INTO documents'))
     expect(docInsert).toBeDefined()
     expect(JSON.stringify(docInsert!.bindValues)).toContain(rel)
+  })
+
+  it('makes the signed-in importer an administrator of the imported production', async () => {
+    vi.mocked(getCurrentSessionUserId).mockResolvedValueOnce('user-1')
+    vi.mocked(readFile).mockResolvedValue(asReadFileResult(buildMinimalProductionZip()))
+    vi.mocked(getDb).mockResolvedValue(
+      createMockApfImportDb({ tableSamples: { productions: minimalProductionRow() } }) as never
+    )
+
+    const result = await importProductionFromApf('/tmp/member.apf')
+    expect(result.ok).toBe(true)
+    const stmts = vi.mocked(executeBatch).mock.calls[0]![1]
+    const membership = stmts.find((s) => s.sql.includes('INSERT INTO project_memberships'))
+    expect(membership).toBeDefined()
+    expect(membership!.bindValues).toEqual(
+      expect.arrayContaining([TEST_PRODUCTION_ID, 'user-1', 'administrator'])
+    )
+    // Membership comes after the production row so its foreign key resolves.
+    const prodIdx = stmts.findIndex((s) => s.sql.includes('INSERT INTO productions'))
+    expect(stmts.indexOf(membership!)).toBeGreaterThan(prodIdx)
+  })
+
+  it('adds no membership when nobody is signed in', async () => {
+    vi.mocked(readFile).mockResolvedValue(asReadFileResult(buildMinimalProductionZip()))
+    vi.mocked(getDb).mockResolvedValue(
+      createMockApfImportDb({ tableSamples: { productions: minimalProductionRow() } }) as never
+    )
+    const result = await importProductionFromApf('/tmp/nomember.apf')
+    expect(result.ok).toBe(true)
+    const stmts = vi.mocked(executeBatch).mock.calls[0]![1]
+    expect(stmts.some((s) => s.sql.includes('project_memberships'))).toBe(false)
   })
 
   it('returns IMPORT_CONFLICT when production id already exists (no DB batch, no files)', async () => {

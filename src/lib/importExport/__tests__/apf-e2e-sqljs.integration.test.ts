@@ -540,6 +540,135 @@ describe('apf E2E (sql.js + real FS)', () => {
     expect(existsSync(join(apfNodeFsTestContext.appDataRoot, photoRel))).toBe(true)
   })
 
+  it('round-trips storyboards (with image files), vendor exclusions and overtime data', async () => {
+    clearUserData()
+    const adapter = sqlJsApfE2eContext.adapter!
+    const id = (n: number) => `aaaaaaaa-e2ea-4e2a-8f${String(n).padStart(2, '0')}-a1e2e2e2e2a1`
+    const OTHER_PROD = id(1)
+    const DAY = id(2)
+    const DAY_GONE = id(3)
+    const SCENE = id(4)
+    const SHOT = id(5)
+    const IMPORT = id(6)
+    const IMG_OK = id(7)
+    const IMG_MISSING = id(8)
+    const IMG_GONE = id(9)
+    const VENDOR = id(10)
+    const GLOBAL_OTHER = id(11)
+    const EXCL_KEPT = id(12)
+    const EXCL_DROPPED = id(13)
+    const CREW = id(14)
+    const CREW_GONE = id(15)
+    const HOURS = id(16)
+    const HOURS_GONE = id(17)
+    const okKey = `storyboards/${PROD_ID}/shots/${SHOT}/manual/abc123-frame.png`
+    await mkdir(join(apfNodeFsTestContext.appDataRoot, 'storyboards', PROD_ID, 'shots', SHOT, 'manual'), { recursive: true })
+    await writeFile(join(apfNodeFsTestContext.appDataRoot, okKey), Buffer.from('png-bytes'))
+
+    const run = (sql: string, params: unknown[] = []) => adapter.execute(sql, params)
+    for (const [pid, slug] of [[PROD_ID, 'sb-e2e'], [OTHER_PROD, 'sb-other']] as const) {
+      await run(
+        `INSERT INTO productions (id, name, notes, created_at, updated_at, deleted_at, slug, currency_code, archived_at, wrapped_at, created_from_template)
+         VALUES ($1, $2, NULL, $3, $3, NULL, $4, 'GBP', NULL, NULL, NULL)`,
+        [pid, slug, TS, slug]
+      )
+    }
+    await run(`INSERT INTO people (id, production_id, name, created_at, updated_at) VALUES ($1, $2, 'Crew', $3, $3)`, [CREW, PROD_ID, TS])
+    await run(`INSERT INTO people (id, production_id, name, created_at, updated_at, deleted_at) VALUES ($1, $2, 'Gone', $3, $3, $3)`, [CREW_GONE, PROD_ID, TS])
+    await run(`INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at) VALUES ($1, $2, '2025-03-01', $3, $3)`, [DAY, PROD_ID, TS])
+    await run(`INSERT INTO shoot_days (id, production_id, shoot_date, created_at, updated_at, deleted_at) VALUES ($1, $2, '2025-03-02', $3, $3, $3)`, [DAY_GONE, PROD_ID, TS])
+    await run(`INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, '1', $3, $3)`, [SCENE, PROD_ID, TS])
+    await run(`INSERT INTO shots (id, scene_id, shot_number, created_at, updated_at) VALUES ($1, $2, '1A', $3, $3)`, [SHOT, SCENE, TS])
+
+    // Storyboards: one image with bytes, one whose file is gone, one soft-deleted.
+    await run(
+      `INSERT INTO storyboard_imports (id, production_id, scene_id, source_filename, source_type, status, metadata_json, created_at, updated_at)
+       VALUES ($1, $2, $3, 'gallery.pdf', 'athena_pdf_import', 'completed', '{"pages":2}', $4, $4)`,
+      [IMPORT, PROD_ID, SCENE, TS]
+    )
+    const img = (imgId: string, key: string, name: string, sort: number, deleted: string | null) =>
+      run(
+        `INSERT INTO storyboard_images (id, production_id, scene_id, shot_id, storage_key, original_filename, mime_type, width, height, sort_order, source_type, source_import_id, created_at, updated_at, deleted_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'image/png', 640, 360, $7, 'athena_pdf_import', $8, $9, $9, $10)`,
+        [imgId, PROD_ID, SCENE, SHOT, key, name, sort, IMPORT, TS, deleted]
+      )
+    await img(IMG_OK, okKey, 'frame.png', 0, null)
+    await img(IMG_MISSING, `storyboards/${PROD_ID}/shots/${SHOT}/manual/zzz-lost.png`, 'lost.png', 1, null)
+    await img(IMG_GONE, `storyboards/${PROD_ID}/shots/${SHOT}/manual/del-gone.png`, 'gone.png', 2, TS)
+
+    // Vendor exclusions: one for a vendor in the package, one for a global vendor owned by another production.
+    await run(`INSERT INTO vendors (id, production_id, company_name, created_at, updated_at) VALUES ($1, $2, 'Local Co', $3, $3)`, [VENDOR, PROD_ID, TS])
+    await run(`INSERT INTO vendors (id, production_id, company_name, is_global, created_at, updated_at) VALUES ($1, $2, 'Shared Co', 1, $3, $3)`, [GLOBAL_OTHER, OTHER_PROD, TS])
+    await run(`INSERT INTO vendor_production_exclusions (id, vendor_id, production_id, created_at) VALUES ($1, $2, $3, $4)`, [EXCL_KEPT, VENDOR, PROD_ID, TS])
+    await run(`INSERT INTO vendor_production_exclusions (id, vendor_id, production_id, created_at) VALUES ($1, $2, $3, $4)`, [EXCL_DROPPED, GLOBAL_OTHER, PROD_ID, TS])
+
+    // Overtime: settings, a per-person flag and logged hours (one for a soft-deleted shoot day).
+    await run(
+      `INSERT INTO production_crew_hours_settings (production_id, overtime_basis, standard_day_minutes, hourly_rate_divisor, overtime_multiplier, overtime_increment_minutes, minimum_rest_minutes, created_at, updated_at)
+       VALUES ($1, 'day_length', 600, 8, 2, 15, 720, $2, $2)`,
+      [PROD_ID, TS]
+    )
+    await run(`INSERT INTO crew_hours_person_settings (production_id, person_id, overtime_exempt, created_at, updated_at) VALUES ($1, $2, 1, $3, $3)`, [PROD_ID, CREW, TS])
+    await run(
+      `INSERT INTO crew_day_hours (id, production_id, shoot_day_id, person_id, call_time, wrap_time, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, '07:00', '19:30', 'late', $5, $5)`,
+      [HOURS, PROD_ID, DAY, CREW, TS]
+    )
+    await run(
+      `INSERT INTO crew_day_hours (id, production_id, shoot_day_id, person_id, call_time, wrap_time, created_at, updated_at, deleted_at) VALUES ($1, $2, $3, $4, '08:00', '18:00', $5, $5, $5)`,
+      [HOURS_GONE, PROD_ID, DAY, CREW, TS]
+    )
+
+    await exportProductionAsApf(PROD_ID, apfPath)
+    const exported = parseApfArchiveBytes(new Uint8Array(await readFile(apfPath)))
+    const t = exported.normalized.data.tables
+    expect(t.storyboard_images.map((r) => r.id).sort()).toEqual([IMG_OK, IMG_MISSING].sort())
+    expect(t.vendor_production_exclusions.map((r) => r.id)).toEqual([EXCL_KEPT])
+    expect(t.crew_day_hours.map((r) => r.id)).toEqual([HOURS])
+    const exportInfo = exported.normalized.manifest.export
+    expect(exportInfo?.bundledStoryboardImageIds).toEqual([IMG_OK])
+    expect(exportInfo?.missingStoryboardImageIds).toEqual([IMG_MISSING])
+    expect(exportInfo?.tableRowCounts?.storyboard_images).toBe(2)
+    expect(exported.index.has(`files/storyboards/${IMG_OK}/frame.png`)).toBe(true)
+
+    clearUserData()
+    await rm(join(apfNodeFsTestContext.appDataRoot, 'storyboards'), { recursive: true, force: true })
+
+    const imp = await importProductionFromApf(apfPath)
+    expect(imp.ok).toBe(true)
+    if (!imp.ok) throw imp.error
+    expect(imp.filesRestored).toBe(1)
+    expect(imp.warnings.some((w) => w.includes(IMG_MISSING))).toBe(true)
+
+    const rows = (sql: string, params: unknown[] = [PROD_ID]) => adapter.select<Record<string, unknown>[]>(sql, params)
+    expect(await rows(`SELECT id, scene_id, source_filename, status, metadata_json FROM storyboard_imports WHERE production_id = $1`)).toEqual([
+      { id: IMPORT, scene_id: SCENE, source_filename: 'gallery.pdf', status: 'completed', metadata_json: '{"pages":2}' },
+    ])
+    const importedKey = `storyboards/${PROD_ID}/shots/${SHOT}/imported/${IMG_OK}-frame.png`
+    expect(await rows(`SELECT id, shot_id, storage_key, source_import_id, sort_order FROM storyboard_images WHERE production_id = $1 ORDER BY sort_order`)).toEqual([
+      { id: IMG_OK, shot_id: SHOT, storage_key: importedKey, source_import_id: IMPORT, sort_order: 0 },
+      {
+        id: IMG_MISSING,
+        shot_id: SHOT,
+        storage_key: `storyboards/${PROD_ID}/shots/${SHOT}/imported/${IMG_MISSING}-lost.png`,
+        source_import_id: IMPORT,
+        sort_order: 1,
+      },
+    ])
+    expect(Buffer.from(await readFile(join(apfNodeFsTestContext.appDataRoot, importedKey))).toString()).toBe('png-bytes')
+    expect(await rows(`SELECT id, vendor_id FROM vendor_production_exclusions WHERE production_id = $1`)).toEqual([
+      { id: EXCL_KEPT, vendor_id: VENDOR },
+    ])
+    expect(
+      await rows(`SELECT overtime_basis, standard_day_minutes, hourly_rate_divisor, overtime_multiplier, overtime_increment_minutes, minimum_rest_minutes FROM production_crew_hours_settings WHERE production_id = $1`)
+    ).toEqual([
+      { overtime_basis: 'day_length', standard_day_minutes: 600, hourly_rate_divisor: 8, overtime_multiplier: 2, overtime_increment_minutes: 15, minimum_rest_minutes: 720 },
+    ])
+    expect(await rows(`SELECT person_id, overtime_exempt FROM crew_hours_person_settings WHERE production_id = $1`)).toEqual([{ person_id: CREW, overtime_exempt: 1 }])
+    expect(await rows(`SELECT id, shoot_day_id, person_id, call_time, wrap_time, notes FROM crew_day_hours WHERE production_id = $1`)).toEqual([
+      { id: HOURS, shoot_day_id: DAY, person_id: CREW, call_time: '07:00', wrap_time: '19:30', notes: 'late' },
+    ])
+  })
+
   it('imports legacy v3 scenes.heading via file migration into title', async () => {
     clearUserData()
     const adapter = sqlJsApfE2eContext.adapter!
@@ -802,6 +931,34 @@ describe('apf E2E (sql.js + real FS)', () => {
     expect(drows).toHaveLength(1)
     expect(String(drows[0]!.file_path)).toBe(fp)
     expect(existsSync(join(apfNodeFsTestContext.appDataRoot, fp))).toBe(false)
+  })
+
+  it('re-imports over a soft-deleted copy of the same production: purges its rows and stale files', async () => {
+    await seedRoundTripFixture()
+    await exportProductionAsApf(PROD_ID, apfPath)
+
+    // Trash the production, and leave an extra attachment behind that the package does not contain.
+    const adapter = sqlJsApfE2eContext.adapter!
+    await adapter.execute(`UPDATE productions SET deleted_at = $1 WHERE id = $2`, [TS, PROD_ID])
+    const strayRel = `attachments/${PROD_ID}/stray-old-file.pdf`
+    await adapter.execute(
+      `INSERT INTO documents (id, production_id, entity_type, entity_id, file_name, file_path, mime_type, created_at, updated_at)
+       VALUES ($1, $2, NULL, NULL, 'stray-old-file.pdf', $3, 'application/pdf', $4, $4)`,
+      ['bbbbbbbb-e2e1-4e21-8f99-a1e2e2e2e299', PROD_ID, strayRel, TS]
+    )
+    await writeFile(join(apfNodeFsTestContext.appDataRoot, strayRel), Buffer.from('old'))
+
+    const imp = await importProductionFromApf(apfPath)
+    expect(imp.ok).toBe(true)
+    if (!imp.ok) throw imp.error
+
+    const prod = await adapter.select<Record<string, unknown>[]>(`SELECT id, deleted_at FROM productions WHERE id = $1`, [PROD_ID])
+    expect(prod).toEqual([{ id: PROD_ID, deleted_at: null }])
+    const docs = await adapter.select<Record<string, unknown>[]>(`SELECT id FROM documents WHERE production_id = $1`, [PROD_ID])
+    expect(docs).toEqual([{ id: DOC_ID }])
+    const restored = `attachments/${PROD_ID}/${DOC_ID}-brief.pdf`
+    expect(existsSync(join(apfNodeFsTestContext.appDataRoot, restored))).toBe(true)
+    expect(existsSync(join(apfNodeFsTestContext.appDataRoot, strayRel))).toBe(false)
   })
 
   it('duplicate production id: preflight blocks import; DB unchanged; no attachment dir', async () => {

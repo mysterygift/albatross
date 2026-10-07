@@ -1,6 +1,7 @@
 import { RequireProduction } from '@/components/require-production'
 import { PageHeader } from '@/components/page-header'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useHighlightParam } from '@/features/search/useHighlightParam'
@@ -171,6 +172,7 @@ type EquipmentTab = 'registry' | 'lists'
 
 export function EquipmentPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<EquipmentTab>('registry')
@@ -345,6 +347,20 @@ export function EquipmentPage() {
     },
   })
 
+  const handleDeleteEquipment = useCallback(
+    async (item: Equipment) => {
+      const ok = await confirm({
+        title: `Delete "${item.name}"?`,
+        description: 'This item will be removed from the registry, along with its return reminder task if it has one.',
+        confirmLabel: 'Delete',
+        destructive: true,
+      })
+      if (!ok) return
+      deleteMutation.mutate(item.id)
+    },
+    [confirm, deleteMutation]
+  )
+
   const columns: ColumnDef<Equipment>[] = useMemo(
     () => [
       {
@@ -431,7 +447,7 @@ export function EquipmentPage() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => deleteMutation.mutate(row.original.id)}
+              onClick={() => void handleDeleteEquipment(row.original)}
               aria-label="Delete"
               className="text-destructive hover:text-destructive"
             >
@@ -441,7 +457,7 @@ export function EquipmentPage() {
         ),
       },
     ],
-    [vendors, invoiceById, equipmentIdsWithReminder, deleteMutation.mutate]
+    [vendors, invoiceById, equipmentIdsWithReminder, handleDeleteEquipment]
   )
 
   const table = useReactTable({
@@ -673,7 +689,7 @@ export function EquipmentPage() {
           )}
         </TabsContent>
       </Tabs>
-
+      {confirmDialog}
     </div>
   )
 }
@@ -874,6 +890,7 @@ function EquipmentListsIndex({
   onSelectList: (listId: string) => void
 }) {
   const queryClient = useQueryClient()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [createOpen, setCreateOpen] = useState(false)
   const { data: lists = [] } = useQuery({
     queryKey: ['equipmentLists', productionId],
@@ -998,7 +1015,15 @@ function EquipmentListsIndex({
                       size="icon"
                       className="text-destructive hover:text-destructive"
                       aria-label="Delete list"
-                      onClick={() => deleteMutation.mutate(list.id)}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: `Delete "${list.name}"?`,
+                          description: 'The list will be deleted. Equipment in the registry is not affected.',
+                          confirmLabel: 'Delete',
+                          destructive: true,
+                        })
+                        if (ok) deleteMutation.mutate(list.id)
+                      }}
                     >
                       <Trash2 className="size-4" />
                     </Button>
@@ -1009,6 +1034,7 @@ function EquipmentListsIndex({
           </TableBody>
         </Table>
       </div>
+      {confirmDialog}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { APF_DOCUMENTS_FILES_PREFIX } from '@/lib/importExport/constants'
+import { APF_DOCUMENTS_FILES_PREFIX, APF_STORYBOARD_FILES_PREFIX } from '@/lib/importExport/constants'
 import { getManifestFilesPrefix, type ApfManifestV1 } from '@/lib/importExport/manifest'
 
 /**
@@ -34,4 +34,22 @@ export function apfDocumentBundledZipPathForManifest(
 ): string {
   const prefix = getManifestFilesPrefix(manifest)
   return `${prefix}documents/${documentId}/${apfSanitizeDocumentBasename(fileName)}`
+}
+
+/**
+ * Canonical zip entry path for a bundled `storyboard_images` row:
+ * `files/storyboards/{imageId}/{safeFileName}` (forward slashes). One directory per image UUID.
+ */
+export function apfStoryboardBundledZipPath(imageId: string, fileName: string): string {
+  return `${APF_STORYBOARD_FILES_PREFIX}${imageId}/${apfSanitizeDocumentBasename(fileName)}`
+}
+
+/** Bundled storyboard image path inside the zip using manifest `filesPrefix` (default `files/`). */
+export function apfStoryboardBundledZipPathForManifest(
+  manifest: ApfManifestV1,
+  imageId: string,
+  fileName: string
+): string {
+  const prefix = getManifestFilesPrefix(manifest)
+  return `${prefix}storyboards/${imageId}/${apfSanitizeDocumentBasename(fileName)}`
 }

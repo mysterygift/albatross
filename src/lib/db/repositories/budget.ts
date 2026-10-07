@@ -572,7 +572,7 @@ export async function createExpense(data: {
 /**
  * Soft-delete an expense and any active reconciliation links in one transaction.
  * Does not modify expense_transaction_details, budget_items, or any roll-up totals.
- * Per DATABASE_LAYER.md: runInSerializedTransaction + executeBatch(BEGIN, ..., COMMIT).
+ * Per DOCS/database.md: runInSerializedTransaction + executeBatch(BEGIN, ..., COMMIT).
  */
 export async function deleteExpense(expenseId: string): Promise<void> {
   const db = await getDb()

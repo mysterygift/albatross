@@ -30,7 +30,7 @@ export type DemoTaskSeedIdSource = {
 
 /**
  * Seed demo production task sections and tasks. Call after seedDemoBudget.
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md.
  */
 export async function seedDemoTasks(
   pid: string,

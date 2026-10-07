@@ -1,8 +1,8 @@
-import { getDb, now, uuid } from '../client'
+import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'
 import { tutorialEmitted } from '@/features/tutorial/engine/events'
-import { outboxPush } from '../outbox'
+import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { Location } from '../types'
-import { deleteDocument, listDocumentsByEntity } from './document'
+import { buildDeleteDocumentStatements, listDocumentsByEntity } from './document'
 import { isClientEncryptionEnabled } from '@/lib/security/dataEncryptionContext'
 import { requireSensitiveDataAccess } from '@/lib/security/sensitiveDataAccess'
 import {
@@ -166,16 +166,84 @@ export async function updateLocation(
 /** Entity types of documents attached to a location (entity_id = location id). */
 const LOCATION_DOCUMENT_ENTITY_TYPES = ['permit', 'location_release'] as const
 
+/**
+ * Soft-deletes a location. Because the row is only flagged, the schema's ON DELETE SET NULL never fires,
+ * so references are cleared here, in the same transaction: scenes.location_id and
+ * stripboard_strips.origin_location_id / destination_location_id. Attached permit and release documents
+ * are soft-deleted too. Everything (with outbox rows) commits or rolls back together.
+ */
 export async function deleteLocation(id: string): Promise<void> {
-  const db = await getDb()
-  const ts = now()
-  for (const entityType of LOCATION_DOCUMENT_ENTITY_TYPES) {
-    const docs = await listDocumentsByEntity(entityType, id)
-    for (const doc of docs) await deleteDocument(doc.id)
-  }
-  await db.execute(
-    `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
-    [ts, ts, id]
-  )
-  await outboxPush(TABLE, id, 'delete', null)
+  await runInSerializedTransaction(async () => {
+    const db = await getDb()
+    const ts = now()
+    const statements: Array<{ sql: string; bindValues: unknown[] }> = [{ sql: 'BEGIN', bindValues: [] }]
+
+    for (const entityType of LOCATION_DOCUMENT_ENTITY_TYPES) {
+      const docs = await listDocumentsByEntity(entityType, id)
+      for (const doc of docs) statements.push(...buildDeleteDocumentStatements(doc.id, ts))
+    }
+
+    const scenes = await db.select<{ id: string }[]>(
+      'SELECT id FROM scenes WHERE location_id = $1',
+      [id]
+    )
+    if (scenes.length > 0) {
+      statements.push({
+        sql: 'UPDATE scenes SET location_id = NULL, updated_at = $1 WHERE location_id = $2',
+        bindValues: [ts, id],
+      })
+      for (const r of scenes) {
+        statements.push(
+          outboxStatementForRow({
+            entity: 'scenes',
+            entityId: r.id,
+            operation: 'update',
+            payloadJson: JSON.stringify({ location_id: null }),
+          })
+        )
+      }
+    }
+
+    const strips = await db.select<{
+      id: string
+      origin_location_id: string | null
+      destination_location_id: string | null
+    }[]>(
+      'SELECT id, origin_location_id, destination_location_id FROM stripboard_strips WHERE origin_location_id = $1 OR destination_location_id = $1',
+      [id]
+    )
+    if (strips.length > 0) {
+      statements.push({
+        sql: `UPDATE stripboard_strips
+              SET origin_location_id = CASE WHEN origin_location_id = $2 THEN NULL ELSE origin_location_id END,
+                  destination_location_id = CASE WHEN destination_location_id = $2 THEN NULL ELSE destination_location_id END,
+                  updated_at = $1
+              WHERE origin_location_id = $2 OR destination_location_id = $2`,
+        bindValues: [ts, id],
+      })
+      for (const r of strips) {
+        const payload: Record<string, null> = {}
+        if (r.origin_location_id === id) payload.origin_location_id = null
+        if (r.destination_location_id === id) payload.destination_location_id = null
+        statements.push(
+          outboxStatementForRow({
+            entity: 'stripboard_strips',
+            entityId: r.id,
+            operation: 'update',
+            payloadJson: JSON.stringify(payload),
+          })
+        )
+      }
+    }
+
+    statements.push({
+      sql: `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+      bindValues: [ts, ts, id],
+    })
+    statements.push(
+      outboxStatementForRow({ entity: TABLE, entityId: id, operation: 'delete', payloadJson: null })
+    )
+    statements.push({ sql: 'COMMIT', bindValues: [] })
+    await executeBatch(db, statements)
+  })
 }

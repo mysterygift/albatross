@@ -51,7 +51,7 @@ describe('AppActionsMenu', () => {
   it('offers the menu-bar-only actions plus the current section commands', () => {
     production.current = { id: 'p1' }
     openMenu('/budget')
-    for (const name of ['New production', 'Import project', 'Export project', 'Settings', 'Log out']) {
+    for (const name of ['New production', 'Import production', 'Export production', 'Settings', 'Log out']) {
       expect(screen.getByRole('menuitem', { name })).toBeTruthy()
     }
     expect(screen.getByRole('menuitem', { name: 'Duplicate live budget as draft' })).toBeTruthy()
@@ -64,8 +64,8 @@ describe('AppActionsMenu', () => {
     openMenu('/documents')
     expect(screen.getByRole('menuitem', { name: 'Upload document' }).getAttribute('aria-disabled')).toBe('true')
     expect(screen.queryByRole('menuitem', { name: 'Export document bundle' })).toBeNull()
-    expect(screen.getByRole('menuitem', { name: 'Export project' }).getAttribute('aria-disabled')).toBe('true')
-    expect(screen.getByRole('menuitem', { name: 'Import project' }).getAttribute('aria-disabled')).toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Export production' }).getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByRole('menuitem', { name: 'Import production' }).getAttribute('aria-disabled')).toBeNull()
   })
 
   it('runs the native menu command when an item is chosen', () => {
