@@ -641,7 +641,8 @@ export function ScriptSupervisorPage() {
     <header className="flex flex-wrap items-center gap-3">
       {/* On tablets the breadcrumb and section tab already name the page, so the toolbar keeps only controls. */}
       <h1 className={cn(touch ? 'sr-only' : 'text-2xl')}>Script Supervisor</h1>
-      <ExperimentalBadge />
+      {/* On a phone the word would leave the day picker too narrow to read; the flask alone marks it. */}
+      <ExperimentalBadge compact={touch && phoneWidth} />
       {daySelect}
       {!touch && <span className="text-xs text-muted-foreground">{isUs ? 'US slating' : 'UK slating'}</span>}
       {touch && modeControl}

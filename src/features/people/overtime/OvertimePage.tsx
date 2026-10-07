@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useCurrentProduction } from '@/features/productions/context'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
 import { useWorkingBudgetRevision } from '@/hooks/useWorkingBudgetRevision'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
 import { listShootDaysByProduction } from '@/lib/db/repositories/schedule'
 import { listPeopleByProduction } from '@/lib/db/repositories/person'
 import { listBookingsByProduction } from '@/lib/db/repositories/booking'
@@ -72,6 +73,7 @@ function OvertimeWorkspace() {
   const [filter, setFilter] = useState<Filter>('all')
   const [ruleOpen, setRuleOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const phone = usePhoneWidth()
 
   const enabled = dataSource !== undefined && !isRemote
   const { data: days = [] } = useQuery({
@@ -207,6 +209,12 @@ function OvertimeWorkspace() {
   })
   const noRateCount = rows.filter((r) => r.dayRate == null && !r.overtimeExempt).length
   const restHours = settings ? formatDuration(settings.minimum_rest_minutes) : ''
+  const filterOptions: Array<{ value: Filter; short: string; label: string }> = [
+    { value: 'all', short: `All ${rows.length}`, label: `Everyone (${rows.length})` },
+    { value: 'own', short: `Own times ${summary?.ownTimesCount ?? 0}`, label: `Own call or wrap (${summary?.ownTimesCount ?? 0})` },
+    { value: 'no_rate', short: `No rate ${noRateCount}`, label: `No day rate (${noRateCount})` },
+    { value: 'short_rest', short: `Short rest ${summary?.shortRestCount ?? 0}`, label: `Short rest (${summary?.shortRestCount ?? 0})` },
+  ]
 
   return (
     <div className="space-y-5">
@@ -227,11 +235,11 @@ function OvertimeWorkspace() {
       {sortedDays.length === 0 ? (
         <p className="text-sm text-muted-foreground">Add shoot days on the stripboard to estimate overtime.</p>
       ) : (
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="space-y-1.5">
+        <div className={cn('flex flex-wrap items-end', phone ? 'gap-3' : 'gap-4')}>
+          <div className={cn('space-y-1.5', phone && 'w-full')}>
             <Label htmlFor="ch-day">Shoot day</Label>
             <Select value={day?.id} onValueChange={setChosenDayId}>
-              <SelectTrigger id="ch-day" className="h-11 w-60 text-base md:text-base">
+              <SelectTrigger id="ch-day" className={cn('h-11 text-base md:text-base', phone ? 'w-full' : 'w-60')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -265,7 +273,7 @@ function OvertimeWorkspace() {
                   className="w-32"
                 />
               </div>
-              <p className="pb-2.5 text-xs text-muted-foreground">
+              <p className={cn('text-xs text-muted-foreground', phone ? 'w-full' : 'pb-2.5')}>
                 Planned {day.call_time ?? '—'}–{day.wrap_time ?? '—'}. Shared with Script Supervisor’s daily progress report.
               </p>
             </>
@@ -288,9 +296,11 @@ function OvertimeWorkspace() {
             </div>
           ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Tile label="Crew on the day" value={String(summary.crewCount)} note={`${summary.ownTimesCount} with their own call or wrap`} />
+          {/* Two by two on a phone, so the crew list starts on the first screen. */}
+          <div className={cn('grid', phone ? 'grid-cols-2 gap-2' : 'gap-3 sm:grid-cols-2 xl:grid-cols-4')}>
+            <Tile compact={phone} label="Crew on the day" value={String(summary.crewCount)} note={`${summary.ownTimesCount} with their own call or wrap`} />
             <Tile
+              compact={phone}
               label="Unit overtime"
               value={formatOvertime(summary.unitOvertime.billedOvertimeMinutes) === '—' ? 'None' : formatOvertime(summary.unitOvertime.billedOvertimeMinutes)}
               note={
@@ -300,6 +310,7 @@ function OvertimeWorkspace() {
               }
             />
             <Tile
+              compact={phone}
               label="Overtime cost"
               value={formatMoney(summary.overtimeCost, currency)}
               note={
@@ -310,6 +321,7 @@ function OvertimeWorkspace() {
               warn={summary.unpricedCount > 0}
             />
             <Tile
+              compact={phone}
               label="Short rest before next day"
               value={nextDay ? String(summary.shortRestCount) : '—'}
               note={nextDay ? `Under ${restHours} before ${formatShootDay(nextDay)}` : 'No later shoot day'}
@@ -318,18 +330,34 @@ function OvertimeWorkspace() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <SegmentedControl<Filter>
-              value={filter}
-              onValueChange={setFilter}
-              ariaLabel="Show"
-              className="max-w-xl"
-              options={[
-                { value: 'all', label: `All ${rows.length}` },
-                { value: 'own', label: `Own times ${summary.ownTimesCount}` },
-                { value: 'no_rate', label: `No rate ${noRateCount}` },
-                { value: 'short_rest', label: `Short rest ${summary.shortRestCount}` },
-              ]}
-            />
+            {phone ? (
+              // Four segments don't fit their labels on a phone; a menu does.
+              <div className="flex w-full items-center gap-3">
+                <Label htmlFor="ch-filter" className="shrink-0">
+                  Show
+                </Label>
+                <Select value={filter} onValueChange={(v) => setFilter(v as Filter)}>
+                  <SelectTrigger id="ch-filter" className="h-11 min-w-0 flex-1 text-base">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filterOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <SegmentedControl<Filter>
+                value={filter}
+                onValueChange={setFilter}
+                ariaLabel="Show"
+                className="max-w-xl"
+                options={filterOptions.map((o) => ({ value: o.value, label: o.short }))}
+              />
+            )}
           </div>
 
           <Card className="py-0">
@@ -340,6 +368,26 @@ function OvertimeWorkspace() {
                     ? 'No crew booked on this day. Book crew in People → Bookings.'
                     : 'Nobody matches this filter.'}
                 </p>
+              ) : phone ? (
+                // A 60rem table would scroll sideways on a phone; each person is a card instead.
+                <ul className="divide-y" aria-label="Crew">
+                  {visibleRows.map((r) => {
+                    const person = personById.get(r.personId)
+                    return (
+                      <CrewCard
+                        key={r.personId}
+                        row={r}
+                        name={person?.name ?? 'Unknown'}
+                        role={[person?.role_name, person?.department].filter(Boolean).join(' · ')}
+                        unitCall={summary.unitCall}
+                        unitWrap={summary.unitWrap}
+                        currency={currency}
+                        onTimes={(v) => personTimes.mutate({ personId: r.personId, ...v })}
+                        onBuyout={(v) => buyout.mutate({ personId: r.personId, exempt: v })}
+                      />
+                    )
+                  })}
+                </ul>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[60rem] text-sm">
@@ -404,16 +452,40 @@ function OvertimeWorkspace() {
   )
 }
 
-function Tile({ label, value, note, warn, danger }: { label: string; value: string; note: string; warn?: boolean; danger?: boolean }) {
+function Tile({
+  label,
+  value,
+  note,
+  warn,
+  danger,
+  compact,
+}: {
+  label: string
+  value: string
+  note: string
+  warn?: boolean
+  danger?: boolean
+  /** Half-width phone tile: tighter padding and a smaller figure. */
+  compact?: boolean
+}) {
   return (
     <div
       className={cn(
-        'flex flex-col gap-1 rounded-xl border bg-card px-4 py-3',
+        'flex min-w-0 flex-col gap-1 rounded-xl border bg-card',
+        compact ? 'px-3 py-2.5' : 'px-4 py-3',
         danger && 'border-destructive/60 bg-destructive/10'
       )}
     >
       <span className={cn('text-xs font-medium text-muted-foreground', danger && 'text-destructive')}>{label}</span>
-      <span className={cn('font-mono text-2xl font-semibold tabular-nums', danger && 'text-destructive')}>{value}</span>
+      <span
+        className={cn(
+          'font-mono font-semibold tabular-nums',
+          compact ? 'break-words text-xl' : 'text-2xl',
+          danger && 'text-destructive'
+        )}
+      >
+        {value}
+      </span>
       <span className={cn('flex items-center gap-1 text-xs text-muted-foreground', warn && 'font-medium text-amber-600')}>
         {warn ? <AlertTriangle className="size-3.5 shrink-0" aria-hidden /> : null}
         {note}
@@ -507,5 +579,109 @@ function CrewRow({
         </div>
       </td>
     </tr>
+  )
+}
+
+/** One person on a phone: the same fields as a table row, stacked. */
+function CrewCard({
+  row,
+  name,
+  role,
+  unitCall,
+  unitWrap,
+  currency,
+  onTimes,
+  onBuyout,
+}: {
+  row: OvertimeRow
+  name: string
+  role: string
+  unitCall: string | null
+  unitWrap: string | null
+  currency: string
+  onTimes: (v: { callTime?: string | null; wrapTime?: string | null }) => void
+  onBuyout: (exempt: boolean) => void
+}) {
+  let cost: ReactNode
+  if (row.overtimeExempt) cost = <span className="text-muted-foreground">Buyout</span>
+  else if (row.billedOvertimeMinutes === 0) cost = <span className="text-muted-foreground">—</span>
+  else if (row.overtimeCost == null) cost = <span className="text-xs font-medium text-amber-600">No day rate</span>
+  else cost = formatMoney(row.overtimeCost, currency)
+
+  return (
+    <li className={cn('grid gap-3 px-4 py-3', row.ownTimes && 'bg-primary/5')}>
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">{name}</div>
+          {role ? <div className="text-xs text-muted-foreground">{role}</div> : null}
+        </div>
+        {row.ownTimes ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="-mt-1.5 -mr-2 shrink-0"
+            aria-label={`Reset ${name} to the unit's call and wrap`}
+            title="Back to unit times"
+            onClick={() => onTimes({ callTime: null, wrapTime: null })}
+          >
+            <RotateCcw aria-hidden />
+          </Button>
+        ) : null}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="grid gap-1 text-xs text-muted-foreground">
+          Call
+          <TimeField
+            aria-label={`${name} call`}
+            value={row.ownCall}
+            placeholder={unitCall}
+            onCommit={(v) => onTimes({ callTime: v })}
+            className="w-full text-foreground"
+          />
+        </label>
+        <label className="grid gap-1 text-xs text-muted-foreground">
+          Wrap
+          <TimeField
+            aria-label={`${name} wrap`}
+            value={row.ownWrap}
+            placeholder={unitWrap}
+            onCommit={(v) => onTimes({ wrapTime: v })}
+            className="w-full text-foreground"
+          />
+        </label>
+      </div>
+      <dl className="grid grid-cols-4 gap-2 text-sm">
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Hours</dt>
+          <dd className="font-mono tabular-nums">{formatDuration(row.workedMinutes)}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Overtime</dt>
+          <dd className="font-mono tabular-nums">{formatOvertime(row.billedOvertimeMinutes)}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs text-muted-foreground">Cost</dt>
+          <dd className="break-words font-mono tabular-nums">{cost}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className={cn('text-xs text-muted-foreground', row.shortRest && 'text-destructive')}>Rest</dt>
+          <dd className={cn('font-mono tabular-nums', row.shortRest && 'font-semibold text-destructive')}>
+            {row.shortRest ? <AlertTriangle className="mr-1 inline size-3.5 align-[-2px]" aria-label="Short rest" /> : null}
+            {formatDuration(row.restMinutes)}
+          </dd>
+        </div>
+      </dl>
+      {/* The whole row is the target, not just the 20pt box. */}
+      <label className="-my-1 flex min-h-11 items-center gap-3 text-sm">
+        <input
+          type="checkbox"
+          className="size-5 rounded border-border"
+          checked={row.overtimeExempt}
+          onChange={(e) => onBuyout(e.target.checked)}
+        />
+        On a buyout (no overtime)
+      </label>
+    </li>
   )
 }

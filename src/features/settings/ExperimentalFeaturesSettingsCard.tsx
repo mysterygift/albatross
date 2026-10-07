@@ -24,15 +24,16 @@ export function ExperimentalFeaturesSettingsCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex items-center gap-2">
+        {/* min-h-11 and a label that fills the row: a 44pt target on touch screens, not just the box. */}
+        <div className="flex min-h-11 items-center gap-2">
           <input
             type="checkbox"
             id="show-experimental-toggle"
             checked={showExperimental}
             onChange={(e) => setShowExperimental(e.target.checked)}
-            className="size-4 rounded border-border"
+            className="size-4 rounded border-border pointer-coarse:size-5"
           />
-          <Label htmlFor="show-experimental-toggle" className="font-medium">
+          <Label htmlFor="show-experimental-toggle" className="min-h-11 flex-1 font-medium">
             Show experimental features
           </Label>
         </div>
