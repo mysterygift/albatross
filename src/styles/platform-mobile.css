@@ -307,3 +307,32 @@ html[data-phone-tab-bar]
   opacity: 0;
   pointer-events: none;
 }
+
+/*
+ * Page-sheet dialogs (`data-phone-sheet` on DialogContent): editors whose desktop layout is two panes
+ * (script beside details) take the whole screen on a phone, upright or on its side, and keep their
+ * content clear of the notch, Dynamic Island and home indicator. The close button grows to a 40pt
+ * target and moves below the status bar.
+ */
+@media (max-width: 767px), (max-height: 500px) {
+  html[data-platform] [data-slot="dialog-content"][data-phone-sheet] {
+    top: 0;
+    left: 0;
+    translate: none;
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+    /* The panes inside scroll; the sheet itself stays put. */
+    overflow: hidden;
+  }
+
+  html[data-platform] [data-slot="dialog-content"][data-phone-sheet] > [data-slot="dialog-close"] {
+    top: calc(var(--safe-top) + 0.375rem);
+    right: calc(var(--safe-right) + 0.375rem);
+    padding: 0.75rem;
+  }
+}

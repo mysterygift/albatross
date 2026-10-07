@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
 import type { SectionLayoutPart } from '@/lib/db/repositories/scriptSections'
 import {
   buildSceneLines,
@@ -132,6 +133,7 @@ export function ScriptSectionEditDialog({
   const dragAnchor = useRef<number | null>(null)
   const lastPointerType = useRef<string>('mouse')
   const linesRef = useRef<HTMLDivElement>(null)
+  const phone = usePhoneWidth()
 
   const currentId = mode === 'edit' ? section?.id ?? null : null
   const scene = scenes.find((s) => s.id === sceneId) ?? null
@@ -423,13 +425,16 @@ export function ScriptSectionEditDialog({
     })
   }
 
+  // 40pt nudge buttons on a phone (the fine adjustment when a tapped line is a little off).
+  const nudgeClass = phone ? 'size-10 p-0 text-base' : 'h-7 w-7 p-0'
+
   const legendPrev = [...roles].find(([, r]) => r === 'prev')?.[0]
   const legendNext = [...roles].find(([, r]) => r === 'next')?.[0]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[88vh] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
-        <div className="grid gap-1.5 border-b border-border px-5 pb-3.5 pt-4">
+      <DialogContent data-phone-sheet className="flex h-[88vh] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
+        <div className={cn('grid gap-1.5 border-b border-border pb-3.5 pt-4', phone ? 'px-4 pr-14' : 'px-5')}>
           <DialogTitle className="flex items-center gap-2.5 text-lg">
             {mode === 'create' ? 'New section' : 'Edit section'}
             {currentId && <span className="font-mono text-base text-primary">{currentCode}</span>}
@@ -477,7 +482,11 @@ export function ScriptSectionEditDialog({
           </p>
         )}
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] md:overflow-hidden">
+        {/*
+          Narrow screens stack the script above the details. Each scrolls on its own, so the range and its
+          nudge buttons stay in reach while the script is scrolled.
+        */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden md:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] md:grid-rows-1">
           <div className="flex min-h-0 flex-col border-b border-border bg-background/40 md:border-b-0 md:border-r">
             <div className="flex flex-wrap gap-x-3.5 gap-y-1 border-b border-border bg-card px-4 py-2 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
@@ -500,7 +509,7 @@ export function ScriptSectionEditDialog({
                 </span>
               )}
             </div>
-            <div className="min-h-[40vh] flex-1 overflow-y-auto pb-5 md:min-h-0" style={{ touchAction: 'pan-y' }}>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-5" style={{ touchAction: 'pan-y' }}>
               {layout.lines.length === 0 ? (
                 <p className="p-4 text-sm text-muted-foreground">
                   {sceneId
@@ -513,16 +522,21 @@ export function ScriptSectionEditDialog({
                   lines={layout.lines}
                   decorate={decorate}
                   interactive
+                  phone={phone}
                   onLinePointerDown={onLinePointerDown}
                   onLinePointerEnter={onLinePointerEnter}
                   onLineClick={onLineClick}
-                  aria-label="Script text. Drag across lines to set the section’s range."
+                  aria-label={
+                    phone
+                      ? 'Script text. Tap the first line of the section, then the last.'
+                      : 'Script text. Drag across lines to set the section’s range.'
+                  }
                 />
               )}
             </div>
           </div>
 
-          <div className="grid content-start gap-5 px-5 py-4 md:overflow-y-auto">
+          <div className="grid max-h-[30dvh] content-start gap-4 overflow-y-auto overscroll-contain px-4 py-3 md:max-h-none md:gap-5 md:px-5 md:py-4">
             <section className="grid gap-2">
               <h4 className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">Script range</h4>
               {selection ? (
@@ -538,13 +552,13 @@ export function ScriptSectionEditDialog({
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1">
                   <span className="mr-1">Start</span>
-                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0" aria-label="Move start back an eighth" disabled={!selection} onClick={() => nudge('start', -1)}>−</Button>
-                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0" aria-label="Move start forward an eighth" disabled={!selection} onClick={() => nudge('start', 1)}>+</Button>
+                  <Button type="button" variant="outline" size="sm" className={nudgeClass} aria-label="Move start back an eighth" disabled={!selection} onClick={() => nudge('start', -1)}>−</Button>
+                  <Button type="button" variant="outline" size="sm" className={nudgeClass} aria-label="Move start forward an eighth" disabled={!selection} onClick={() => nudge('start', 1)}>+</Button>
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <span className="mr-1">End</span>
-                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0" aria-label="Move end back an eighth" disabled={!selection} onClick={() => nudge('end', -1)}>−</Button>
-                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0" aria-label="Move end forward an eighth" disabled={!selection} onClick={() => nudge('end', 1)}>+</Button>
+                  <Button type="button" variant="outline" size="sm" className={nudgeClass} aria-label="Move end back an eighth" disabled={!selection} onClick={() => nudge('end', -1)}>−</Button>
+                  <Button type="button" variant="outline" size="sm" className={nudgeClass} aria-label="Move end forward an eighth" disabled={!selection} onClick={() => nudge('end', 1)}>+</Button>
                 </span>
                 {mode === 'edit' && originalSelection && selectionChanged && (
                   <Button type="button" variant="ghost" size="sm" onClick={() => setSelection(originalSelection)}>
@@ -552,10 +566,21 @@ export function ScriptSectionEditDialog({
                   </Button>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Drag across the script to set the range. Shift-click extends it. On a touch screen, tap the first
-                line and then the last.
-              </p>
+              {touchAnchor != null ? (
+                <p className="text-xs font-medium text-primary" aria-live="polite">
+                  Now tap the last line of the section.
+                </p>
+              ) : phone ? (
+                <p className="text-xs text-muted-foreground">
+                  Tap the first line of the section in the script, then the last. Use − and + to move either end by
+                  an eighth.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Drag across the script to set the range. Shift-click extends it. On a touch screen, tap the first
+                  line and then the last.
+                </p>
+              )}
             </section>
 
             {impact.length > 0 && selectionChanged && (
@@ -616,7 +641,7 @@ export function ScriptSectionEditDialog({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-3">
+        <div className={cn('flex flex-wrap items-center gap-2 border-t border-border py-3', phone ? 'px-4' : 'px-5')}>
           {mode === 'edit' && section && (
             <>
               <Button type="button" variant="ghost" onClick={() => setCut((c) => !c)} disabled={pending}>
@@ -638,11 +663,23 @@ export function ScriptSectionEditDialog({
               )}
             </>
           )}
-          <span className="flex-1" />
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+          {/* On a phone Cancel and Save share their own row, so a long save label can wrap. */}
+          <span className={cn(phone ? '-my-1 basis-full' : 'flex-1', phone && mode !== 'edit' && 'hidden')} />
+          <Button
+            type="button"
+            variant="outline"
+            className={cn(phone && 'flex-1')}
+            onClick={() => onOpenChange(false)}
+            disabled={pending}
+          >
             Cancel
           </Button>
-          <Button type="button" onClick={handleSave} disabled={pending || !canSave || !scene}>
+          <Button
+            type="button"
+            className={cn(phone && 'h-auto min-w-0 flex-[2] whitespace-normal py-2')}
+            onClick={handleSave}
+            disabled={pending || !canSave || !scene}
+          >
             {pending ? 'Saving…' : saveLabel}
           </Button>
         </div>

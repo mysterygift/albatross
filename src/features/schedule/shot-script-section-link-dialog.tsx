@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import {
   Select,
@@ -23,6 +24,7 @@ import type {
   ScriptVersion,
 } from '@/lib/db/types'
 import { cn } from '@/lib/utils'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
 import { ScriptLines, SectionStatusBadge, SectionSummary, type ScriptLineDecor } from './script-section-ui'
 import { STATUS_FILL_CLASS } from './script-section-status-styles'
 import { buildSectionViews, ownerByLine } from './script-section-views'
@@ -86,6 +88,9 @@ export function ShotScriptSectionLinkDialog({
   const paint = useRef<boolean | null>(null)
   const lastPointerType = useRef<string>('mouse')
   const linesRef = useRef<HTMLDivElement>(null)
+  const phone = usePhoneWidth()
+  // On a phone the section list and the script take turns at full width; the list comes first.
+  const [phoneView, setPhoneView] = useState<'sections' | 'script'>('sections')
 
   // Versions that have sections for this scene, newest first.
   const versionIds = useMemo(() => {
@@ -99,10 +104,13 @@ export function ShotScriptSectionLinkDialog({
   const touched = useRef(false)
   const wasOpen = useRef(false)
   useEffect(() => {
-    if (open && !wasOpen.current) touched.current = false
+    const opening = open && !wasOpen.current
+    if (opening) touched.current = false
     wasOpen.current = open
-    if (!open || touched.current) return
     /* eslint-disable react-hooks/set-state-in-effect -- sync picker with saved links until the user edits */
+    // Each opening starts on the section list (phone layout).
+    if (opening) setPhoneView('sections')
+    if (!open || touched.current) return
     setSelection(new Set(initialSectionIds))
     setVersionId(defaultVersionId(sections, initialSectionIds, latestScriptVersion, versionIds))
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -242,10 +250,112 @@ export function ShotScriptSectionLinkDialog({
   const changed =
     selection.size !== initialSectionIds.length || initialSectionIds.some((id) => !selection.has(id))
 
+  // Pieces shared by the desktop two-pane layout and the phone layout, where they take turns.
+  const scriptPane = (
+    <div
+      className={cn(
+        'flex min-h-0 flex-col bg-background/40',
+        phone ? 'flex-1' : 'border-b border-border md:border-b-0 md:border-r'
+      )}
+    >
+      <div className="flex flex-wrap gap-x-3.5 gap-y-1 border-b border-border bg-card px-4 py-2 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <i className="size-3 rounded-sm bg-primary/60" /> Linked to shot {shotNumber}
+        </span>
+        <span>
+          {phone
+            ? 'Tap a line to link or unlink its section.'
+            : 'Click or drag across the script to link sections. Tap on a touch screen.'}
+        </span>
+      </div>
+      <div
+        className={cn('flex-1 overflow-y-auto pb-5', phone ? 'min-h-0 overscroll-contain' : 'min-h-[40vh] md:min-h-0')}
+        style={{ touchAction: 'pan-y' }}
+      >
+        {layout && layout.lines.length > 0 ? (
+          <ScriptLines
+            ref={linesRef}
+            lines={layout.lines}
+            decorate={decorate}
+            interactive
+            phone={phone}
+            onLinePointerDown={onLinePointerDown}
+            onLinePointerEnter={onLinePointerEnter}
+            onLineClick={onLineClick}
+            aria-label="Script text. Click or drag across lines to link their sections."
+          />
+        ) : (
+          <p className="p-4 text-sm text-muted-foreground">
+            No script text for this scene in this version. Tick sections in the list instead.
+          </p>
+        )}
+      </div>
+    </div>
+  )
+  const coverSummary = (
+    <div className={cn('grid gap-1 border-b border-border', phone ? 'px-4 py-2.5' : 'px-5 py-3.5')}>
+      <h4 className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">Shot {shotNumber} covers</h4>
+      {linkedHere.length ? (
+        <p className="text-lg font-semibold tabular-nums" aria-live="polite">
+          {linkedHere.map((v) => v.code).join(', ')}
+          {layout && linkedRuns.length > 0 && (
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              {formatRuns(layout.lines, linkedRuns)} · {formatEighths(linkedEighths)}
+            </span>
+          )}
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground" aria-live="polite">
+          No sections linked in this version.
+        </p>
+      )}
+      {linkedElsewhere.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Also linked to {linkedElsewhere.length} section{linkedElsewhere.length === 1 ? '' : 's'} in another revision.
+          Those links are kept.
+        </p>
+      )}
+    </div>
+  )
+  const sectionRows = orderedViews.map((view) => {
+    const linked = selection.has(view.section.id)
+    return (
+      <div
+        key={view.section.id}
+        className={cn(
+          'grid cursor-pointer grid-cols-[auto_3rem_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-transparent p-2 hover:bg-secondary',
+          phone && 'min-h-12',
+          linked && 'border-primary/45 bg-primary/10 hover:bg-primary/10'
+        )}
+        onClick={() => {
+          setLinked(view.section.id, !linked)
+          // The phone shows the list or the script, not both, so there is nothing to scroll.
+          if (!phone) scrollToSection(view.section.id)
+        }}
+      >
+        <Checkbox
+          checked={linked}
+          aria-label={`Link section ${view.code}`}
+          onClick={(e) => e.stopPropagation()}
+          onCheckedChange={(checked) => setLinked(view.section.id, checked === true)}
+        />
+        <span className={cn('font-mono text-[13px] text-muted-foreground', linked && 'text-primary')}>{view.code}</span>
+        <SectionSummary
+          rangeText={view.rangeText}
+          lengthText={view.lengthText}
+          estimated={view.estimated}
+          characters={view.characters}
+          cut={view.status === 'cut'}
+        />
+        <SectionStatusBadge status={view.status} label={view.statusLabel} />
+      </div>
+    )
+  })
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[88vh] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
-        <div className="grid gap-1.5 border-b border-border px-5 pb-3.5 pt-4">
+      <DialogContent data-phone-sheet className="flex h-[88vh] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
+        <div className={cn('grid gap-1.5 border-b border-border pb-3.5 pt-4', phone ? 'px-4 pr-14' : 'px-5')}>
           <DialogTitle className="flex items-center gap-2.5 text-lg">
             Link script sections
             <span className="font-mono text-base text-primary">Shot {shotNumber}</span>
@@ -306,102 +416,53 @@ export function ShotScriptSectionLinkDialog({
           <p className="flex-1 px-5 py-6 text-sm text-muted-foreground">
             No script sections for this scene yet. Import a script or add sections on the Script Sections page first.
           </p>
+        ) : phone ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {coverSummary}
+            <div className="border-b border-border px-4 py-2">
+              <SegmentedControl<'sections' | 'script'>
+                ariaLabel="Show"
+                value={phoneView}
+                onValueChange={(next) => {
+                  setPhoneView(next)
+                  // Open the script at the first linked section, as the desktop layout does.
+                  const first = orderedViews.find((v) => selection.has(v.section.id) && v.runs.length)
+                  if (next === 'script' && first) {
+                    window.requestAnimationFrame(() =>
+                      linesRef.current
+                        ?.querySelector(`[data-line="${first.runs[0]!.from}"]`)
+                        ?.scrollIntoView?.({ block: 'center' })
+                    )
+                  }
+                }}
+                options={[
+                  { value: 'sections', label: `Sections (${orderedViews.length})` },
+                  { value: 'script', label: 'Script' },
+                ]}
+              />
+            </div>
+            {phoneView === 'script' ? (
+              scriptPane
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2" role="group" aria-label="Sections">
+                {sectionRows}
+              </div>
+            )}
+          </div>
         ) : (
           <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] md:overflow-hidden">
-            <div className="flex min-h-0 flex-col border-b border-border bg-background/40 md:border-b-0 md:border-r">
-              <div className="flex flex-wrap gap-x-3.5 gap-y-1 border-b border-border bg-card px-4 py-2 text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <i className="size-3 rounded-sm bg-primary/60" /> Linked to shot {shotNumber}
-                </span>
-                <span>Click or drag across the script to link sections. Tap on a touch screen.</span>
-              </div>
-              <div className="min-h-[40vh] flex-1 overflow-y-auto pb-5 md:min-h-0" style={{ touchAction: 'pan-y' }}>
-                {layout && layout.lines.length > 0 ? (
-                  <ScriptLines
-                    ref={linesRef}
-                    lines={layout.lines}
-                    decorate={decorate}
-                    interactive
-                    onLinePointerDown={onLinePointerDown}
-                    onLinePointerEnter={onLinePointerEnter}
-                    onLineClick={onLineClick}
-                    aria-label="Script text. Click or drag across lines to link their sections."
-                  />
-                ) : (
-                  <p className="p-4 text-sm text-muted-foreground">
-                    No script text for this scene in this version. Tick sections in the list instead.
-                  </p>
-                )}
-              </div>
-            </div>
+            {scriptPane}
 
             <div className="flex min-h-0 flex-col">
-              <div className="grid gap-1 border-b border-border px-5 py-3.5">
-                <h4 className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                  Shot {shotNumber} covers
-                </h4>
-                {linkedHere.length ? (
-                  <p className="text-lg font-semibold tabular-nums" aria-live="polite">
-                    {linkedHere.map((v) => v.code).join(', ')}
-                    {layout && linkedRuns.length > 0 && (
-                      <span className="ml-2 text-sm font-normal text-muted-foreground">
-                        {formatRuns(layout.lines, linkedRuns)} · {formatEighths(linkedEighths)}
-                      </span>
-                    )}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground" aria-live="polite">
-                    No sections linked in this version.
-                  </p>
-                )}
-                {linkedElsewhere.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Also linked to {linkedElsewhere.length} section{linkedElsewhere.length === 1 ? '' : 's'} in another
-                    revision. Those links are kept.
-                  </p>
-                )}
-              </div>
+              {coverSummary}
               <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2" role="group" aria-label="Sections">
-                {orderedViews.map((view) => {
-                  const linked = selection.has(view.section.id)
-                  return (
-                    <div
-                      key={view.section.id}
-                      className={cn(
-                        'grid cursor-pointer grid-cols-[auto_3rem_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-transparent p-2 hover:bg-secondary',
-                        linked && 'border-primary/45 bg-primary/10 hover:bg-primary/10'
-                      )}
-                      onClick={() => {
-                        setLinked(view.section.id, !linked)
-                        scrollToSection(view.section.id)
-                      }}
-                    >
-                      <Checkbox
-                        checked={linked}
-                        aria-label={`Link section ${view.code}`}
-                        onClick={(e) => e.stopPropagation()}
-                        onCheckedChange={(checked) => setLinked(view.section.id, checked === true)}
-                      />
-                      <span className={cn('font-mono text-[13px] text-muted-foreground', linked && 'text-primary')}>
-                        {view.code}
-                      </span>
-                      <SectionSummary
-                        rangeText={view.rangeText}
-                        lengthText={view.lengthText}
-                        estimated={view.estimated}
-                        characters={view.characters}
-                        cut={view.status === 'cut'}
-                      />
-                      <SectionStatusBadge status={view.status} label={view.statusLabel} />
-                    </div>
-                  )
-                })}
+                {sectionRows}
               </div>
             </div>
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-3">
+        <div className={cn('flex flex-wrap items-center gap-2 border-t border-border py-3', phone ? 'px-4' : 'px-5')}>
           {selection.size > 0 && (
             <Button type="button" variant="ghost" onClick={() => {
                 touched.current = true

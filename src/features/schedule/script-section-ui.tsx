@@ -131,6 +131,11 @@ type ScriptLinesProps = {
   decorate?: (line: SceneLine) => ScriptLineDecor
   /** Adds data-line and pointer handlers so lines can be selected. */
   interactive?: boolean
+  /**
+   * Phone layout: a narrower gutter so more of the line fits, and taller rows so a single line is
+   * easy to tap (selection on touch is tap-based).
+   */
+  phone?: boolean
   onLinePointerDown?: (line: SceneLine, event: React.PointerEvent<HTMLDivElement>) => void
   onLinePointerEnter?: (line: SceneLine, event: React.PointerEvent<HTMLDivElement>) => void
   onLineClick?: (line: SceneLine, event: React.MouseEvent<HTMLDivElement>) => void
@@ -138,7 +143,7 @@ type ScriptLinesProps = {
 
 /** Script text rendered line by line with page headers, eighth ticks and a status/section gutter. */
 export const ScriptLines = forwardRef<HTMLDivElement, ScriptLinesProps>(function ScriptLines(
-  { lines, decorate, interactive, onLinePointerDown, onLinePointerEnter, onLineClick, className, ...rest },
+  { lines, decorate, interactive, phone, onLinePointerDown, onLinePointerEnter, onLineClick, className, ...rest },
   ref
 ) {
   return (
@@ -156,21 +161,30 @@ export const ScriptLines = forwardRef<HTMLDivElement, ScriptLinesProps>(function
             <div
               data-line={line.index}
               className={cn(
-                'grid min-h-[1.55em] grid-cols-[2.75rem_4px_minmax(0,1fr)] gap-x-2.5 pr-3',
-                interactive && 'cursor-text select-none',
+                'grid min-h-[1.55em] gap-x-2.5 pr-3',
+                phone ? 'grid-cols-[2.25rem_4px_minmax(0,1fr)] gap-x-2' : 'grid-cols-[2.75rem_4px_minmax(0,1fr)]',
+                // No text selection or iOS long-press callout: a press picks lines here.
+                interactive && 'cursor-text select-none [-webkit-touch-callout:none]',
                 decor.dim && 'opacity-40'
               )}
               onPointerDown={onLinePointerDown ? (e) => onLinePointerDown(line, e) : undefined}
               onPointerEnter={onLinePointerEnter ? (e) => onLinePointerEnter(line, e) : undefined}
               onClick={onLineClick ? (e) => onLineClick(line, e) : undefined}
             >
-              <span className="text-right font-mono text-[10.5px] leading-[1.9] text-muted-foreground/80 tabular-nums">
+              <span
+                className={cn(
+                  'text-right font-mono text-[10.5px] leading-[1.9] text-muted-foreground/80 tabular-nums',
+                  phone && 'pt-1'
+                )}
+              >
                 {decor.tag ?? (isEighthStart(lines, i) ? `${line.startEighth}/8` : '')}
               </span>
               <span className={cn(decor.bandClassName)} />
               <span
                 className={cn(
                   'min-w-0 whitespace-pre-wrap px-1.5 font-mono text-[12.5px] leading-[1.55] text-foreground',
+                  // Padding (not row spacing) so highlights and bands stay continuous across lines.
+                  phone && 'py-1',
                   decor.textClassName
                 )}
                 style={decor.textStyle}

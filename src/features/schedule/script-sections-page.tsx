@@ -40,6 +40,7 @@ import type { Scene, ScriptSection, ScriptSectionRange } from '@/lib/db/types'
 import { sceneDisplayLabel } from '@/lib/schedule/sceneDisplay'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import { toast } from '@/components/ui/sonner'
 import {
   Select,
@@ -57,6 +58,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
 import {
   ScriptSectionEditDialog,
   type SectionEditorSave,
@@ -153,6 +155,10 @@ export function ScriptSectionsPage() {
   const [reconcileReport, setReconcileReport] = useState<ScriptSectionReconciliationReport | null>(null)
   const [reconcileMessage, setReconcileMessage] = useState<string | null>(null)
   const scriptScrollRef = useRef<HTMLDivElement>(null)
+  const detailPanelRef = useRef<HTMLDivElement>(null)
+  const phone = usePhoneWidth()
+  // A phone shows the section list or the script (with the selected section's detail), not both.
+  const [phoneView, setPhoneView] = useState<'sections' | 'script'>('sections')
 
   const { dataSourceKey } = useEffectiveDataSourceForProduction(currentProductionId)
   const isRemoteProduction = dataSourceKey === 'remote_server'
@@ -450,13 +456,14 @@ export function ScriptSectionsPage() {
   }, [selectedView, versionScenes, inSceneScope, layoutBySceneId])
 
   useEffect(() => {
-    if (!selectedView || selectedView.runs.length === 0) return
+    // On a phone the script scrolls with the page; opening a section brings its detail to the top instead.
+    if (phone || !selectedView || selectedView.runs.length === 0) return
     const box = scriptScrollRef.current
     const el = box?.querySelector<HTMLElement>(
       `[data-scene="${selectedView.section.scene_id}"] [data-line="${selectedView.runs[0]!.from}"]`
     )
     if (box && el) box.scrollTop = Math.max(0, el.offsetTop - 60)
-  }, [selectedView])
+  }, [selectedView, phone])
 
   const ownerStatus = (sceneId: string, lineIndex: number): DerivedSectionStatus | null => {
     const layout = layoutBySceneId.get(sceneId)
@@ -516,7 +523,7 @@ export function ScriptSectionsPage() {
                   setSelectedSectionId(null)
                 }}
               >
-                <SelectTrigger className="bg-input border-border sm:w-64" aria-label="Script version">
+                <SelectTrigger className={cn('bg-input border-border sm:w-64', phone && 'w-full')} aria-label="Script version">
                   <SelectValue placeholder="Select a script version…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -536,7 +543,7 @@ export function ScriptSectionsPage() {
                 onValueChange={setSelectedSceneFilterId}
                 disabled={!selectedVersionId}
               >
-                <SelectTrigger className="bg-input border-border sm:max-w-md" aria-label="Scene">
+                <SelectTrigger className={cn('bg-input border-border sm:max-w-md', phone && 'w-full')} aria-label="Scene">
                   <SelectValue placeholder="All scenes" />
                 </SelectTrigger>
                 <SelectContent>
@@ -592,7 +599,15 @@ export function ScriptSectionsPage() {
 
           {selectedVersionId && (
             <>
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by status">
+              <div
+                className={cn(
+                  'flex gap-2',
+                  // One row that scrolls sideways on a phone, with chips tall enough to tap.
+                  phone ? 'no-scrollbar -mx-3 overflow-x-auto px-3' : 'flex-wrap'
+                )}
+                role="group"
+                aria-label="Filter by status"
+              >
                 {STATUS_FILTERS.map((f) => (
                   <button
                     key={f.key}
@@ -601,6 +616,7 @@ export function ScriptSectionsPage() {
                     onClick={() => setStatusFilter(f.key)}
                     className={cn(
                       'inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-sm transition-colors hover:bg-secondary',
+                      phone && 'h-10 shrink-0 whitespace-nowrap',
                       statusFilter === f.key && 'border-foreground/35 bg-secondary'
                     )}
                   >
@@ -613,9 +629,27 @@ export function ScriptSectionsPage() {
                 ))}
               </div>
 
+              {phone && (
+                <SegmentedControl<'sections' | 'script'>
+                  ariaLabel="Show"
+                  value={phoneView}
+                  onValueChange={setPhoneView}
+                  options={[
+                    { value: 'sections', label: `Sections (${statusCounts.get(statusFilter) ?? 0})` },
+                    { value: 'script', label: selectedView ? `Script · ${selectedView.code}` : 'Script' },
+                  ]}
+                />
+              )}
+
               <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-                {/* Sections, grouped by scene */}
-                <div className="max-h-[72vh] overflow-y-auto rounded-lg border border-border bg-card" aria-label="Sections">
+                {/* Sections, grouped by scene. On a phone the list scrolls with the page. */}
+                <div
+                  className={cn(
+                    'rounded-lg border border-border bg-card',
+                    phone ? (phoneView === 'sections' ? '' : 'hidden') : 'max-h-[72vh] overflow-y-auto'
+                  )}
+                  aria-label="Sections"
+                >
                   {sections.length === 0 && groups.length === 0 && (
                     <p className="p-4 text-sm text-muted-foreground">No sections in this version.</p>
                   )}
@@ -653,21 +687,37 @@ export function ScriptSectionsPage() {
                           {visible.map((view) => {
                             const isSelected = view.section.id === selectedSectionId
                             const hasConflict = conflictSectionIds.has(view.section.id)
+                            // On a phone a tap opens the section in the script view; elsewhere it toggles.
+                            const choose = () => {
+                              if (phone) {
+                                setSelectedSectionId(view.section.id)
+                                setPhoneView('script')
+                                // Show the section's detail (status, shots) first; its lines are highlighted below.
+                                window.requestAnimationFrame(() =>
+                                  detailPanelRef.current?.scrollIntoView?.({ block: 'start' })
+                                )
+                              } else {
+                                setSelectedSectionId(isSelected ? null : view.section.id)
+                              }
+                            }
                             return (
                               <div
                                 key={view.section.id}
                                 role="option"
                                 tabIndex={0}
                                 aria-selected={isSelected}
-                                onClick={() => setSelectedSectionId(isSelected ? null : view.section.id)}
+                                onClick={choose}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault()
-                                    setSelectedSectionId(isSelected ? null : view.section.id)
+                                    choose()
                                   }
                                 }}
                                 className={cn(
-                                  'grid cursor-pointer grid-cols-[3.25rem_minmax(0,1fr)_auto_auto] items-center gap-2.5 rounded-md border border-transparent p-2 hover:bg-secondary',
+                                  'grid cursor-pointer items-center gap-2.5 rounded-md border border-transparent p-2 hover:bg-secondary',
+                                  phone
+                                    ? 'min-h-12 grid-cols-[2.5rem_minmax(0,1fr)_auto_auto] gap-2'
+                                    : 'grid-cols-[3.25rem_minmax(0,1fr)_auto_auto]',
                                   isSelected && 'border-primary/45 bg-primary/10 hover:bg-primary/10',
                                   hasConflict && 'border-destructive/60'
                                 )}
@@ -692,7 +742,7 @@ export function ScriptSectionsPage() {
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  className="size-8 p-0 text-muted-foreground"
+                                  className={cn('p-0 text-muted-foreground', phone ? 'size-10' : 'size-8')}
                                   aria-label={`Edit section ${view.code}`}
                                   title="Edit section"
                                   onClick={(e) => {
@@ -712,9 +762,17 @@ export function ScriptSectionsPage() {
                 </div>
 
                 {/* Selected section + script */}
-                <div className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+                <div
+                  ref={detailPanelRef}
+                  className={cn(
+                    'flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card',
+                    phone && 'scroll-mt-3',
+                    phone && phoneView !== 'script' && 'hidden'
+                  )}
+                >
                   {selectedView ? (
                     <SectionDetail
+                      phone={phone}
                       view={selectedView}
                       sceneNumber={sceneById.get(selectedView.section.scene_id)?.scene_number ?? ''}
                       unlinkedShots={unlinkedSceneShots.map((s) => s.shot_number)}
@@ -722,10 +780,15 @@ export function ScriptSectionsPage() {
                     />
                   ) : (
                     <p className="border-b border-border px-4 py-3.5 text-sm text-muted-foreground">
-                      Select a section to highlight it in the script and see its shots.
+                      {phone
+                        ? 'Tap a line, or a section in the list, to see its shots.'
+                        : 'Select a section to highlight it in the script and see its shots.'}
                     </p>
                   )}
-                  <div ref={scriptScrollRef} className="relative max-h-[58vh] overflow-y-auto bg-background/40 pb-4">
+                  <div
+                    ref={scriptScrollRef}
+                    className={cn('relative bg-background/40 pb-4', !phone && 'max-h-[58vh] overflow-y-auto')}
+                  >
                     {panelScenes.length === 0 && (
                       <p className="p-4 text-sm text-muted-foreground">No page text available for this version.</p>
                     )}
@@ -744,6 +807,7 @@ export function ScriptSectionsPage() {
                           )}
                           <ScriptLines
                             lines={layout.lines}
+                            phone={phone}
                             decorate={(line) => {
                               const status = ownerStatus(scene.id, line.index)
                               return {
@@ -876,12 +940,25 @@ function SectionDetail({
   sceneNumber,
   unlinkedShots,
   onEdit,
+  phone = false,
 }: {
   view: SectionView
   sceneNumber: string
   unlinkedShots: string[]
   onEdit: () => void
+  /** Shots as a stacked list rather than a three-column table. */
+  phone?: boolean
 }) {
+  const shootDayText = (shot: SectionShotProgress) =>
+    shot.shootDays.length
+      ? shot.shootDays.map((d) => `${formatShootDay(d)} · ${d.shootDate}`).join(', ')
+      : 'Not scheduled'
+  const supervisorText = (shot: SectionShotProgress) =>
+    shot.printedTakes.length
+      ? `Printed · ${shot.printedTakes.join(', ')}`
+      : shot.sceneComplete
+        ? 'Scene marked complete'
+        : '—'
   return (
     <div className="grid gap-3 border-b border-border px-4 py-3.5">
       <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
@@ -892,7 +969,7 @@ function SectionDetail({
         </span>
         <SectionStatusBadge status={view.status} label={view.statusLabel} />
         <span className="flex-1" />
-        <Button size="sm" variant="outline" onClick={onEdit}>
+        <Button size="sm" variant="outline" className={cn(phone && 'h-10 px-4')} onClick={onEdit}>
           Edit
         </Button>
       </div>
@@ -903,7 +980,22 @@ function SectionDetail({
       ) : (
         <SectionStatusSteps steps={sectionStatusSteps(view.shots)} />
       )}
-      {view.shots.length > 0 && (
+      {view.shots.length > 0 && phone && (
+        <ul className="grid divide-y divide-border/60 text-sm tabular-nums" aria-label="Shots">
+          {view.shots.map((shot) => (
+            <li key={shot.shotId} className="grid gap-0.5 py-2 first:pt-0 last:pb-0">
+              <span className="font-medium">Shot {shot.shotNumber}</span>
+              <span className={cn('text-xs', shot.shootDays.length === 0 ? 'text-muted-foreground' : 'text-foreground')}>
+                {shootDayText(shot)}
+              </span>
+              {(shot.printedTakes.length > 0 || shot.sceneComplete) && (
+                <span className="text-xs text-muted-foreground">{supervisorText(shot)}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {view.shots.length > 0 && !phone && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm tabular-nums">
             <thead>
@@ -918,16 +1010,10 @@ function SectionDetail({
                 <tr key={shot.shotId} className="border-b border-border/50 last:border-b-0">
                   <td className="py-1 pr-2">{shot.shotNumber}</td>
                   <td className={cn('py-1 pr-2', shot.shootDays.length === 0 && 'text-muted-foreground')}>
-                    {shot.shootDays.length
-                      ? shot.shootDays.map((d) => `${formatShootDay(d)} · ${d.shootDate}`).join(', ')
-                      : 'Not scheduled'}
+                    {shootDayText(shot)}
                   </td>
                   <td className={cn('py-1', !shot.printedTakes.length && !shot.sceneComplete && 'text-muted-foreground')}>
-                    {shot.printedTakes.length
-                      ? `Printed · ${shot.printedTakes.join(', ')}`
-                      : shot.sceneComplete
-                        ? 'Scene marked complete'
-                        : '—'}
+                    {supervisorText(shot)}
                   </td>
                 </tr>
               ))}
