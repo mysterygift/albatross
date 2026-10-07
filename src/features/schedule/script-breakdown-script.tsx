@@ -21,6 +21,7 @@ import {
 } from '@/lib/db/repositories/scriptBreakdown'
 import type { SceneLayout } from '@/lib/db/scriptSectionLayout'
 import type { BreakdownCategory, BreakdownElement, BreakdownTag, ScriptPage } from '@/lib/db/types'
+import { isMobilePlatform } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { invalidateBreakdown } from './script-breakdown-data'
 import { ScriptLines, type ScriptLineSegment } from './script-section-ui'
@@ -29,6 +30,18 @@ import { BreakdownStatusDot } from './script-breakdown-ui'
 type Anchor = { x: number; y: number }
 type PendingSelection = { range: PageTextRange; text: string; anchor: Anchor }
 type OpenTags = { tagIds: string[]; anchor: Anchor }
+
+/**
+ * Touch screens (iPad, iPhone) select text by press-and-hold and drag handles, with no mouseup at the end, so
+ * the panel follows `selectionchange` there instead.
+ */
+function isTouchDevice(): boolean {
+  if (isMobilePlatform()) return true
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+}
+
+/** How long the selection must sit still before the category picker follows it (handles are still moving). */
+const SELECTION_SETTLE_MS = 350
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
@@ -62,6 +75,7 @@ export function BreakdownScriptPanel({
   const [pending, setPending] = useState<PendingSelection | null>(null)
   const [openTags, setOpenTags] = useState<OpenTags | null>(null)
   const [suggestOpen, setSuggestOpen] = useState(false)
+  const [touch] = useState(isTouchDevice)
 
   const pageTexts = useMemo(() => layout.pages.map((p) => ({ id: p.id, content: p.content ?? '' })), [layout.pages])
   const categoryOfTag = useCallback((t: BreakdownTag) => elementsById.get(t.element_id)?.category ?? null, [elementsById])
@@ -76,7 +90,7 @@ export function BreakdownScriptPanel({
 
   const tagById = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags])
 
-  const anchorFor = (rect: DOMRect): Anchor | null => {
+  const anchorFor = useCallback((rect: DOMRect): Anchor | null => {
     const box = scrollRef.current
     if (!box) return null
     const boxRect = box.getBoundingClientRect()
@@ -84,30 +98,52 @@ export function BreakdownScriptPanel({
       x: Math.min(Math.max(rect.left - boxRect.left + rect.width / 2, 120), Math.max(boxRect.width - 120, 120)),
       y: rect.bottom - boxRect.top + box.scrollTop + 6,
     }
-  }
+  }, [])
 
-  const readSelection = () => {
-    if (readOnly) return
-    const sel = window.getSelection()
-    const container = linesRef.current
-    if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !container) {
-      setPending(null)
-      return
+  /**
+   * Reads the current text selection into the category picker. `keepOnCollapse`: on touch, tapping the picker
+   * clears the browser selection before the tap lands, so an emptied selection must not close the picker.
+   */
+  const readSelection = useCallback(
+    (keepOnCollapse = false) => {
+      if (readOnly) return
+      const sel = window.getSelection()
+      const container = linesRef.current
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !container) {
+        if (!keepOnCollapse) setPending(null)
+        return
+      }
+      const domRange = sel.getRangeAt(0)
+      if (!container.contains(domRange.commonAncestorContainer)) return
+      const raw = domRangeToPageRange(domRange, container)
+      const snapped = raw ? snapRangeToWords(pageTexts, raw) : null
+      // jsdom has no Range rects; fall back to the element the selection ends in.
+      const rectSource = typeof domRange.getBoundingClientRect === 'function' ? domRange : domRange.endContainer.parentElement
+      const anchor = rectSource ? anchorFor(rectSource.getBoundingClientRect()) : null
+      if (!snapped || !anchor) {
+        if (!keepOnCollapse) setPending(null)
+        return
+      }
+      setOpenTags(null)
+      setPending({ range: snapped, text: rangeText(pageTexts, snapped), anchor })
+    },
+    [readOnly, pageTexts, anchorFor]
+  )
+
+  // Touch: follow the selection handles once they settle.
+  useEffect(() => {
+    if (!touch || readOnly) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const onChange = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => readSelection(true), SELECTION_SETTLE_MS)
     }
-    const domRange = sel.getRangeAt(0)
-    if (!container.contains(domRange.commonAncestorContainer)) return
-    const raw = domRangeToPageRange(domRange, container)
-    const snapped = raw ? snapRangeToWords(pageTexts, raw) : null
-    // jsdom has no Range rects; fall back to the element the selection ends in.
-    const rectSource = typeof domRange.getBoundingClientRect === 'function' ? domRange : domRange.endContainer.parentElement
-    const anchor = rectSource ? anchorFor(rectSource.getBoundingClientRect()) : null
-    if (!snapped || !anchor) {
-      setPending(null)
-      return
+    document.addEventListener('selectionchange', onChange)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('selectionchange', onChange)
     }
-    setOpenTags(null)
-    setPending({ range: snapped, text: rangeText(pageTexts, snapped), anchor })
-  }
+  }, [touch, readOnly, readSelection])
 
   const clearSelection = () => {
     window.getSelection()?.removeAllRanges()
@@ -185,7 +221,9 @@ export function BreakdownScriptPanel({
         <p className="text-sm text-muted-foreground">
           {readOnly
             ? 'Older draft: tags are shown for reference. Switch to the latest draft to tag.'
-            : 'Highlight words in the script, then pick a category (or press its number).'}
+            : touch
+              ? 'Press and hold a word, drag the handles over what needs sourcing, then pick a category.'
+              : 'Highlight words in the script, then pick a category (or press its number).'}
         </p>
         {!readOnly && (
           <Button type="button" variant="outline" size="sm" onClick={() => setSuggestOpen(true)} disabled={suggestions.length === 0}>
@@ -197,7 +235,7 @@ export function BreakdownScriptPanel({
       <div
         ref={scrollRef}
         className="relative max-h-[62vh] overflow-y-auto bg-background/40 pb-4"
-        onMouseUp={readSelection}
+        onMouseUp={() => readSelection()}
         onKeyUp={(e) => {
           if (e.shiftKey) readSelection()
         }}
@@ -271,6 +309,10 @@ function Floating({ anchor, children, label }: { anchor: Anchor; children: React
       className="absolute z-20 w-[min(22rem,calc(100%-1rem))] -translate-x-1/2 rounded-lg border border-border bg-popover p-2.5 text-popover-foreground shadow-lg"
       style={{ left: anchor.x, top: anchor.y }}
       onMouseUp={(e) => e.stopPropagation()}
+      // Pressing a button here must not clear the text selection it acts on (desktop browsers do on mousedown).
+      onMouseDown={(e) => {
+        if ((e.target as HTMLElement).closest('button')) e.preventDefault()
+      }}
     >
       {children}
     </div>
@@ -296,7 +338,12 @@ function CategoryToolbar({
         <p className="min-w-0 truncate text-sm">
           Tag <span className="font-mono font-semibold">“{text}”</span> as
         </p>
-        <button type="button" aria-label="Cancel" className="text-muted-foreground hover:text-foreground" onClick={onClose}>
+        <button
+          type="button"
+          aria-label="Cancel"
+          className="-m-1 flex items-center justify-center text-muted-foreground hover:text-foreground pointer-coarse:size-10"
+          onClick={onClose}
+        >
           <X className="size-4" />
         </button>
       </div>
@@ -307,11 +354,11 @@ function CategoryToolbar({
             type="button"
             disabled={busy}
             onClick={() => onPick(c.key)}
-            className="flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-secondary disabled:opacity-50"
+            className="flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-secondary disabled:opacity-50 pointer-coarse:min-h-11 pointer-coarse:text-base"
           >
             <span aria-hidden className="size-3 shrink-0 rounded-sm" style={{ background: c.colour }} />
             <span className="min-w-0 flex-1 truncate">{c.label}</span>
-            <kbd className="font-mono text-[11px] text-muted-foreground">{c.shortcut}</kbd>
+            <kbd className="font-mono text-[11px] text-muted-foreground pointer-coarse:hidden">{c.shortcut}</kbd>
           </button>
         ))}
       </div>
@@ -366,7 +413,12 @@ function TagPopover({
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {tags.length === 1 ? 'Tag' : `${tags.length} tags`}
         </p>
-        <button type="button" aria-label="Close" className="text-muted-foreground hover:text-foreground" onClick={onClose}>
+        <button
+          type="button"
+          aria-label="Close"
+          className="-m-1 flex items-center justify-center text-muted-foreground hover:text-foreground pointer-coarse:size-10"
+          onClick={onClose}
+        >
           <X className="size-4" />
         </button>
       </div>
@@ -417,7 +469,7 @@ function TagPopover({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="size-8 p-0 text-muted-foreground hover:text-destructive"
+                    className="size-8 p-0 text-muted-foreground hover:text-destructive pointer-coarse:size-10"
                     aria-label={`Remove ${info.label} tag`}
                     title="Remove tag"
                     disabled={remove.isPending}
@@ -482,7 +534,7 @@ function SuggestDialog({
   })
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent data-touch-targets className="max-w-md">
         <DialogHeader>
           <DialogTitle>Suggested tags</DialogTitle>
           <DialogDescription>
@@ -495,7 +547,7 @@ function SuggestDialog({
             const checked = !unchecked.has(s.key)
             return (
               <li key={s.key}>
-                <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-secondary">
+                <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-secondary pointer-coarse:min-h-11">
                   <Checkbox
                     checked={checked}
                     onCheckedChange={(c) =>
@@ -549,7 +601,7 @@ export function CategoryLegend({
             aria-pressed={shown}
             onClick={() => onToggle(c.key)}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-xs transition-colors hover:bg-secondary',
+              'inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-xs transition-colors hover:bg-secondary pointer-coarse:min-h-10 pointer-coarse:px-3.5 pointer-coarse:text-sm',
               !shown && 'opacity-45'
             )}
           >
