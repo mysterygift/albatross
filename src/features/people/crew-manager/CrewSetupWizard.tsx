@@ -15,6 +15,10 @@ import { Label } from '@/components/ui/label'
 import { getResolvedCrewDepartmentNames, getResolvedHodRoleForDepartment } from '@/lib/people/crewHierarchyResolver'
 import type { CrewHierarchyConfig } from '@/lib/people/crewHierarchyTypes'
 import type { CrewFormValues } from '@/features/people/components/CrewForm'
+import {
+  validateOptionalContactEmail,
+  validateOptionalContactPhone,
+} from '@/lib/contacts/contactFieldValidation'
 
 type HodRow = {
   department: string
@@ -94,8 +98,18 @@ export function CrewSetupWizard({
       .map(([, row]) => row)
   }, [hodRows])
 
+  const hasInvalidContact = useMemo(
+    () =>
+      Array.from(hodRows.values()).some(
+        (row) =>
+          !validateOptionalContactEmail(row.email).ok ||
+          !validateOptionalContactPhone(row.phone).ok
+      ),
+    [hodRows]
+  )
+
   const handleAddHods = async () => {
-    if (rowsToCreate.length === 0) return
+    if (rowsToCreate.length === 0 || hasInvalidContact) return
     setIsSubmitting(true)
     try {
       for (const row of rowsToCreate) {
@@ -183,6 +197,8 @@ export function CrewSetupWizard({
               {departmentNames.map((dept) => {
                 const checked = selectedDepartments.has(dept)
                 const row = hodRows.get(dept)
+                const emailCheck = validateOptionalContactEmail(row?.email ?? '')
+                const phoneCheck = validateOptionalContactPhone(row?.phone ?? '')
                 const hodRole = getResolvedHodRoleForDepartment(hierarchy, dept)
                 return (
                   <div
@@ -227,16 +243,26 @@ export function CrewSetupWizard({
                             onChange={(e) => updateHodRow(dept, 'email', e.target.value)}
                             placeholder="email@example.com"
                             className="mt-1 bg-muted border-border text-foreground"
+                            aria-invalid={!emailCheck.ok}
                           />
+                          {!emailCheck.ok && (
+                            <p className="text-destructive text-xs mt-1">{emailCheck.message}</p>
+                          )}
                         </div>
                         <div className="sm:col-span-2">
                           <Label className="text-xs text-muted-foreground">Phone</Label>
                           <Input
+                            type="tel"
+                            inputMode="tel"
                             value={row.phone}
                             onChange={(e) => updateHodRow(dept, 'phone', e.target.value)}
-                            placeholder="Phone"
+                            placeholder="+441234567890"
                             className="mt-1 bg-muted border-border text-foreground"
+                            aria-invalid={!phoneCheck.ok}
                           />
+                          {!phoneCheck.ok && (
+                            <p className="text-destructive text-xs mt-1">{phoneCheck.message}</p>
+                          )}
                         </div>
                       </div>
                     )}
@@ -262,7 +288,7 @@ export function CrewSetupWizard({
               </Button>
               <Button
                 onClick={handleFinish}
-                disabled={isSubmitting}
+                disabled={isSubmitting || hasInvalidContact}
                 className="bg-primary/90 hover:bg-primary"
               >
                 {isSubmitting

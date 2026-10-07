@@ -19,25 +19,20 @@ import { Button } from '@/components/ui/button'
 import type { Person } from '@/lib/db/types'
 import { parsePhases } from '@/lib/people/productionPhases'
 import { PhaseTagsInput } from '@/features/people/components/PhaseTagsInput'
-
-const emailRefine = (v: string | undefined) =>
-  !v || v.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
+import {
+  optionalContactEmailField,
+  optionalContactPhoneField,
+} from '@/lib/contacts/contactFieldValidation'
 
 export const castFormSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   cast_number: z.string().optional(),
   role_name: z.string().optional(),
-  email: z
-    .string()
-    .optional()
-    .refine(emailRefine, { message: 'Invalid email' }),
-  phone: z.string().optional(),
+  email: optionalContactEmailField,
+  phone: optionalContactPhoneField,
   agent_name: z.string().optional(),
-  agent_email: z
-    .string()
-    .optional()
-    .refine(emailRefine, { message: 'Invalid email' }),
-  agent_phone: z.string().optional(),
+  agent_email: optionalContactEmailField,
+  agent_phone: optionalContactPhoneField,
   contributor_form_status: z.enum(['not_requested', 'requested', 'signed', 'expired']),
   notes: z.string().optional(),
   phases: z.array(z.string()),
@@ -122,7 +117,10 @@ export function CastForm({
             </div>
             <div>
               <Label>Phone</Label>
-              <Input {...form.register('phone')} placeholder="Phone number" />
+              <Input {...form.register('phone')} type="tel" inputMode="tel" placeholder="+441234567890" />
+              {form.formState.errors.phone && (
+                <p className="text-destructive text-sm">{form.formState.errors.phone.message}</p>
+              )}
             </div>
           </div>
         </div>
@@ -145,7 +143,10 @@ export function CastForm({
               </div>
               <div>
                 <Label>Agent phone</Label>
-                <Input {...form.register('agent_phone')} />
+                <Input {...form.register('agent_phone')} type="tel" inputMode="tel" placeholder="+441234567890" />
+                {form.formState.errors.agent_phone && (
+                  <p className="text-destructive text-sm">{form.formState.errors.agent_phone.message}</p>
+                )}
               </div>
             </div>
           </div>
