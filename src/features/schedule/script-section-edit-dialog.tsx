@@ -538,13 +538,13 @@ export function ScriptSectionEditDialog({
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1">
                   <span className="mr-1">Start</span>
-                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0" aria-label="Move start back an eighth" disabled={!selection} onClick={() => nudge('start', -1)}>−</Button>
-                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0" aria-label="Move start forward an eighth" disabled={!selection} onClick={() => nudge('start', 1)}>+</Button>
+                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0 pointer-coarse:size-10 pointer-coarse:text-base" aria-label="Move start back an eighth" disabled={!selection} onClick={() => nudge('start', -1)}>−</Button>
+                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0 pointer-coarse:size-10 pointer-coarse:text-base" aria-label="Move start forward an eighth" disabled={!selection} onClick={() => nudge('start', 1)}>+</Button>
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <span className="mr-1">End</span>
-                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0" aria-label="Move end back an eighth" disabled={!selection} onClick={() => nudge('end', -1)}>−</Button>
-                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0" aria-label="Move end forward an eighth" disabled={!selection} onClick={() => nudge('end', 1)}>+</Button>
+                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0 pointer-coarse:size-10 pointer-coarse:text-base" aria-label="Move end back an eighth" disabled={!selection} onClick={() => nudge('end', -1)}>−</Button>
+                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0 pointer-coarse:size-10 pointer-coarse:text-base" aria-label="Move end forward an eighth" disabled={!selection} onClick={() => nudge('end', 1)}>+</Button>
                 </span>
                 {mode === 'edit' && originalSelection && selectionChanged && (
                   <Button type="button" variant="ghost" size="sm" onClick={() => setSelection(originalSelection)}>
