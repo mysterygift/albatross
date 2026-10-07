@@ -31,7 +31,7 @@ export function BreakdownSheet({
 }) {
   const h = sheet.header
   return (
-    <div className="grid gap-5 p-4" aria-label={`Breakdown sheet for scene ${h.sceneNumber}`}>
+    <div className="grid gap-5 p-3 sm:p-4" aria-label={`Breakdown sheet for scene ${h.sceneNumber}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-xl font-semibold">
@@ -50,7 +50,7 @@ export function BreakdownSheet({
             <dd>{h.dayNight ?? '—'}</dd>
           </dl>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto [&>button]:max-sm:flex-1">
           <Button type="button" variant="outline" size="sm" onClick={onExportScene} disabled={exporting}>
             <FileDown className="size-4" aria-hidden />
             Export scene PDF

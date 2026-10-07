@@ -58,6 +58,11 @@ vi.mock('@/lib/platform', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/platform')>()),
   isMobilePlatform: () => touchDevice.on,
 }))
+const phoneWidth = vi.hoisted(() => ({ on: false }))
+vi.mock('@/hooks/use-is-phone', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/use-is-phone')>()),
+  usePhoneWidth: () => phoneWidth.on,
+}))
 vi.mock('@/hooks/useEffectiveDataSourceForProduction', () => ({
   useEffectiveDataSourceForProduction: () => ({ dataSourceKey: 'local_sqlite' }),
 }))
@@ -127,6 +132,7 @@ describe('Script Breakdown page', () => {
     cleanup()
     vi.clearAllMocks()
     touchDevice.on = false
+    phoneWidth.on = false
     window.getSelection()?.removeAllRanges()
   })
 
@@ -194,6 +200,27 @@ describe('Script Breakdown page', () => {
     await userEvent.click(within(picker).getByRole('button', { name: /Props/ }))
     await waitFor(() => expect(createTag).toHaveBeenCalledTimes(1))
     expect(createTag.mock.calls[0]![0]).toMatchObject({ category: 'props', text: 'Mary' })
+  })
+
+  it('on a phone, swaps the scene list for a scene picker and docks the category picker to the bottom', async () => {
+    phoneWidth.on = true
+    renderPage()
+    const script = await screen.findByLabelText('Script text')
+    await waitFor(() => expect(script.querySelector('mark')).not.toBeNull())
+    expect(screen.queryByRole('navigation', { name: 'Scenes' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Next scene' })).toBeTruthy()
+
+    const cell = [...script.querySelectorAll<HTMLElement>('[data-page-id]')].find((el) => el.textContent?.startsWith('Mary'))!
+    const textNode = cell.querySelector('[data-chunk-start="0"]')!.firstChild!
+    const range = document.createRange()
+    range.setStart(textNode, 0)
+    range.setEnd(textNode, 4)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+    fireEvent.mouseUp(cell)
+    const picker = await screen.findByRole('dialog', { name: 'Tag selection' })
+    expect(picker.className).toContain('fixed')
+    expect(picker.className).toContain('bottom-0')
   })
 
   it('fills the sheet from the scene and production, and matches a location already on Locations', async () => {

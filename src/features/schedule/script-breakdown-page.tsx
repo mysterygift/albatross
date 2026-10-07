@@ -30,6 +30,8 @@ import { saveFileWithDialog } from '@/lib/files'
 import { generateBreakdownReportPdf, generateSceneBreakdownPdf, type BreakdownReportRow } from '@/lib/pdf/scriptBreakdown'
 import { sceneDisplayLabel } from '@/lib/schedule/sceneDisplay'
 import { cn } from '@/lib/utils'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
 import { useScriptBreakdownData } from './script-breakdown-data'
 import { BreakdownElementsPanel, type ElementRow } from './script-breakdown-elements'
 import { CategoryLegend, BreakdownScriptPanel } from './script-breakdown-script'
@@ -60,6 +62,8 @@ export function ScriptBreakdownPage() {
   const [tab, setTab] = useState<Tab>('script')
   const [hidden, setHidden] = useState<Set<BreakdownCategory>>(new Set())
   const [focusElementId, setFocusElementId] = useState<string | null>(null)
+  // A phone has no room for the scene list beside the script: a scene picker with previous/next replaces it.
+  const phone = usePhoneWidth()
 
   const versionsQ = useQuery({
     queryKey: ['script-versions', currentProductionId],
@@ -267,7 +271,7 @@ export function ScriptBreakdownPage() {
       {selectedVersionId && !isRemote && (
         <>
           <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-            <div>
+            <div className={cn(phone && 'w-full')}>
               <Label className="mb-2 block text-sm text-muted-foreground">Script version</Label>
               <Select
                 value={selectedVersionId ?? SELECT_NONE}
@@ -276,7 +280,7 @@ export function ScriptBreakdownPage() {
                   setSelectedSceneId(null)
                 }}
               >
-                <SelectTrigger className="bg-input border-border sm:w-64" aria-label="Script version">
+                <SelectTrigger className="w-full bg-input border-border sm:w-64" aria-label="Script version">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -289,7 +293,7 @@ export function ScriptBreakdownPage() {
               </Select>
             </div>
             <SegmentedControl<Tab>
-              className="w-auto sm:w-96"
+              className="w-full sm:w-96"
               ariaLabel="Breakdown view"
               value={tab}
               onValueChange={setTab}
@@ -323,7 +327,7 @@ export function ScriptBreakdownPage() {
                         {item.outcome === 'unmatched' ? 'could not be placed' : 'was moved'} — {item.notes.join('; ')}
                       </span>
                     </span>
-                    <span className="ml-auto flex gap-1">
+                    <span className={cn('flex gap-1', phone ? 'w-full justify-end' : 'ml-auto')}>
                       <Button type="button" size="sm" variant="ghost" onClick={() => openScene(item.sceneId)}>
                         Go to scene
                       </Button>
@@ -353,51 +357,64 @@ export function ScriptBreakdownPage() {
             </div>
           ) : (
             <div className="grid items-start gap-4 md:grid-cols-[minmax(13rem,0.38fr)_minmax(0,1fr)] lg:grid-cols-[minmax(15rem,0.42fr)_minmax(0,1fr)]">
-              <nav className="max-h-[74vh] overflow-y-auto rounded-lg border border-border bg-card p-1.5" aria-label="Scenes">
-                {versionScenes.length === 0 && !data.isLoading && (
-                  <p className="p-3 text-sm text-muted-foreground">No scene text in this version.</p>
-                )}
-                {versionScenes.map((scene) => {
-                  const summary = sceneSummary(scene.id)
-                  const selected = scene.id === selectedSceneId
-                  return (
-                    <button
-                      key={scene.id}
-                      type="button"
-                      aria-current={selected ? 'true' : undefined}
-                      onClick={() => setSelectedSceneId(scene.id)}
-                      className={cn(
-                        'grid w-full grid-cols-[3rem_minmax(0,1fr)] gap-x-2 rounded-md border border-transparent px-2 py-1.5 text-left hover:bg-secondary pointer-coarse:py-2.5',
-                        selected && 'border-primary/45 bg-primary/10 hover:bg-primary/10'
-                      )}
-                    >
-                      <span className="font-mono text-[13px] font-semibold">{scene.scene_number}</span>
-                      <span className="min-w-0 truncate text-sm">{sceneHeading(scene)}</span>
-                      <span />
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        {summary.categories.map((c) => (
-                          <span
-                            key={c}
-                            aria-hidden
-                            title={breakdownCategory(c).label}
-                            className="size-2 rounded-sm"
-                            style={{ background: breakdownCategory(c).colour }}
-                          />
-                        ))}
-                        <span className="ml-1 tabular-nums">
-                          {summary.elements === 0 ? 'Not broken down' : `${summary.sourced}/${summary.elements} sourced`}
+              {phone ? (
+                <ScenePicker
+                  scenes={versionScenes}
+                  selectedSceneId={selectedSceneId}
+                  label={(scene) => {
+                    const summary = sceneSummary(scene.id)
+                    const status = summary.elements === 0 ? 'not broken down' : `${summary.sourced}/${summary.elements} sourced`
+                    return `${scene.scene_number} · ${sceneHeading(scene)} · ${status}`
+                  }}
+                  onSelect={setSelectedSceneId}
+                />
+              ) : (
+                <nav className="max-h-[74vh] overflow-y-auto rounded-lg border border-border bg-card p-1.5" aria-label="Scenes">
+                  {versionScenes.length === 0 && !data.isLoading && (
+                    <p className="p-3 text-sm text-muted-foreground">No scene text in this version.</p>
+                  )}
+                  {versionScenes.map((scene) => {
+                    const summary = sceneSummary(scene.id)
+                    const selected = scene.id === selectedSceneId
+                    return (
+                      <button
+                        key={scene.id}
+                        type="button"
+                        aria-current={selected ? 'true' : undefined}
+                        onClick={() => setSelectedSceneId(scene.id)}
+                        className={cn(
+                          'grid w-full grid-cols-[3rem_minmax(0,1fr)] gap-x-2 rounded-md border border-transparent px-2 py-1.5 text-left hover:bg-secondary pointer-coarse:py-2.5',
+                          selected && 'border-primary/45 bg-primary/10 hover:bg-primary/10'
+                        )}
+                      >
+                        <span className="font-mono text-[13px] font-semibold">{scene.scene_number}</span>
+                        <span className="min-w-0 truncate text-sm">{sceneHeading(scene)}</span>
+                        <span />
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          {summary.categories.map((c) => (
+                            <span
+                              key={c}
+                              aria-hidden
+                              title={breakdownCategory(c).label}
+                              className="size-2 rounded-sm"
+                              style={{ background: breakdownCategory(c).colour }}
+                            />
+                          ))}
+                          <span className="ml-1 tabular-nums">
+                            {summary.elements === 0 ? 'Not broken down' : `${summary.sourced}/${summary.elements} sourced`}
+                          </span>
                         </span>
-                      </span>
-                    </button>
-                  )
-                })}
-              </nav>
+                      </button>
+                    )
+                  })}
+                </nav>
+              )}
 
               <div className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
                 {selectedScene && selectedLayout ? (
                   tab === 'script' ? (
                     <>
-                      <div className="grid gap-2 border-b border-border px-4 py-3">
+                      <div className={cn('grid gap-2 border-b border-border py-3', phone ? 'px-3' : 'px-4')}>
                         <p className="font-semibold">
                           <span className="mr-2 rounded border border-border bg-secondary px-1.5 py-0.5 font-mono text-[13px]">
                             {selectedScene.scene_number}
@@ -447,6 +464,55 @@ export function ScriptBreakdownPage() {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+/** Phone scene picker: previous / next (40pt) either side of a full-width scene select. */
+function ScenePicker({
+  scenes,
+  selectedSceneId,
+  label,
+  onSelect,
+}: {
+  scenes: Scene[]
+  selectedSceneId: string | null
+  label: (scene: Scene) => string
+  onSelect: (sceneId: string) => void
+}) {
+  const index = scenes.findIndex((s) => s.id === selectedSceneId)
+  const step = (delta: number) => {
+    const next = scenes[index + delta]
+    if (next) onSelect(next.id)
+  }
+  if (scenes.length === 0) return <p className="text-sm text-muted-foreground">No scene text in this version.</p>
+  return (
+    <div className="flex items-center gap-2" role="group" aria-label="Scene">
+      <Button type="button" variant="outline" className="size-10 shrink-0 p-0" aria-label="Previous scene" disabled={index <= 0} onClick={() => step(-1)}>
+        <ChevronLeft className="size-5" />
+      </Button>
+      <Select value={selectedSceneId ?? undefined} onValueChange={onSelect}>
+        <SelectTrigger className="h-10 min-w-0 flex-1 bg-input" aria-label="Scene">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {scenes.map((scene) => (
+            <SelectItem key={scene.id} value={scene.id}>
+              {label(scene)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        type="button"
+        variant="outline"
+        className="size-10 shrink-0 p-0"
+        aria-label="Next scene"
+        disabled={index < 0 || index >= scenes.length - 1}
+        onClick={() => step(1)}
+      >
+        <ChevronRight className="size-5" />
+      </Button>
     </div>
   )
 }

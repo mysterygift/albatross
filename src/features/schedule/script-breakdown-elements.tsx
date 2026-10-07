@@ -16,6 +16,7 @@ import {
 } from '@/lib/db/repositories/scriptBreakdown'
 import type { BreakdownCategory, BreakdownElement, Scene } from '@/lib/db/types'
 import { cn } from '@/lib/utils'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
 import { invalidateBreakdown } from './script-breakdown-data'
 import { BreakdownStatusBadge, CategoryLabel } from './script-breakdown-ui'
 
@@ -80,14 +81,14 @@ export function BreakdownElementsPanel({
   })).filter((g) => g.rows.length > 0)
 
   return (
-    <div className="grid gap-3 p-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-[180px]">
+    <div className="grid gap-3 p-3 sm:p-4">
+      <div className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap">
+        <div className="min-w-0 sm:min-w-[180px]">
           <label className="mb-1.5 block text-sm text-muted-foreground" htmlFor="bd-category">
             Department
           </label>
           <Select value={category} onValueChange={(v) => setCategory(v as BreakdownCategory | typeof ALL)}>
-            <SelectTrigger id="bd-category" className="w-52 bg-input" aria-label="Category">
+            <SelectTrigger id="bd-category" className="w-full bg-input sm:w-52" aria-label="Category">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -100,12 +101,12 @@ export function BreakdownElementsPanel({
             </SelectContent>
           </Select>
         </div>
-        <div>
+        <div className="min-w-0">
           <label className="mb-1.5 block text-sm text-muted-foreground" htmlFor="bd-status">
             Status
           </label>
           <Select value={status} onValueChange={(v) => setStatus(v as BreakdownStatus | typeof ALL)}>
-            <SelectTrigger id="bd-status" className="w-40 bg-input" aria-label="Status">
+            <SelectTrigger id="bd-status" className="w-full bg-input sm:w-40" aria-label="Status">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -123,10 +124,10 @@ export function BreakdownElementsPanel({
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search elements and notes"
           aria-label="Search elements"
-          className="h-9 w-56"
+          className="col-span-2 h-9 w-full sm:w-56"
         />
-        <div className="ml-auto">
-          <Button type="button" variant="outline" size="sm" disabled={exporting} onClick={() => onExport(category === ALL ? null : category)}>
+        <div className="col-span-2 sm:ml-auto">
+          <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" disabled={exporting} onClick={() => onExport(category === ALL ? null : category)}>
             <FileDown className="size-4" aria-hidden />
             {category === ALL ? 'Export department list' : `Export ${breakdownCategory(category).label} list`}
           </Button>
@@ -192,6 +193,7 @@ function ElementRowView({
   onOpenScene: (sceneId: string) => void
 }) {
   const queryClient = useQueryClient()
+  const phone = usePhoneWidth()
   const { element, match, scenes } = row
   const [name, setName] = useState(element.name)
   const [notes, setNotes] = useState(element.notes ?? '')
@@ -221,7 +223,12 @@ function ElementRowView({
   const linkable = match.source === 'auto' && match.entity
   return (
     <li data-element={element.id} className={cn('border-b border-border last:border-b-0', focused && 'bg-primary/5')}>
-      <div className="grid grid-cols-[auto_minmax(0,1.3fr)_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2">
+      <div
+        className={cn(
+          'grid items-center gap-3 py-2',
+          phone ? 'grid-cols-[auto_minmax(0,1fr)_auto] gap-y-1.5 px-2' : 'grid-cols-[auto_minmax(0,1.3fr)_minmax(0,1fr)_auto] px-3'
+        )}
+      >
         <button
           type="button"
           onClick={onToggle}
@@ -235,7 +242,7 @@ function ElementRowView({
           <p className="truncate font-medium">{element.name}</p>
           <p className="truncate text-xs text-muted-foreground">{match.detail}</p>
         </div>
-        <div className="flex min-w-0 flex-wrap gap-1" aria-label="Scenes">
+        <div className={cn('flex min-w-0 flex-wrap gap-1', phone && 'order-last col-span-3 pl-12')} aria-label="Scenes">
           {scenes.map((s) => (
             <button
               key={s.id}
@@ -252,7 +259,7 @@ function ElementRowView({
       </div>
 
       {expanded && (
-        <div className="grid gap-3 border-t border-dashed border-border bg-background/40 px-10 py-3 text-sm">
+        <div className={cn('grid gap-3 border-t border-dashed border-border bg-background/40 py-3 text-sm', phone ? 'px-3' : 'px-10')}>
           <div className="flex flex-wrap items-center gap-2">
             {match.entity ? (
               <span className="inline-flex items-center gap-1.5">
@@ -317,7 +324,7 @@ function ElementRowView({
                 <label className="text-muted-foreground" htmlFor={`name-${element.id}`}>
                   Name
                 </label>
-                <Input id={`name-${element.id}`} value={name} onChange={(e) => setName(e.target.value)} className="h-8 w-64" />
+                <Input id={`name-${element.id}`} value={name} onChange={(e) => setName(e.target.value)} className="h-8 min-w-0 flex-1 sm:w-64 sm:flex-none" />
                 <Button type="submit" size="sm" variant="outline" disabled={!name.trim() || name === element.name}>
                   Rename
                 </Button>
@@ -341,7 +348,7 @@ function ElementRowView({
                   <>
                     <span className="text-muted-foreground">Merge into</span>
                     <Select value={mergeTarget} onValueChange={setMergeTarget}>
-                      <SelectTrigger className="h-8 w-56 bg-input" aria-label="Merge into">
+                      <SelectTrigger className="h-8 w-full bg-input sm:w-56" aria-label="Merge into">
                         <SelectValue placeholder={`Another ${breakdownCategory(element.category).label} element`} />
                       </SelectTrigger>
                       <SelectContent>

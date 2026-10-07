@@ -21,6 +21,7 @@ import {
 } from '@/lib/db/repositories/scriptBreakdown'
 import type { SceneLayout } from '@/lib/db/scriptSectionLayout'
 import type { BreakdownCategory, BreakdownElement, BreakdownTag, ScriptPage } from '@/lib/db/types'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
 import { isMobilePlatform } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { invalidateBreakdown } from './script-breakdown-data'
@@ -76,6 +77,8 @@ export function BreakdownScriptPanel({
   const [openTags, setOpenTags] = useState<OpenTags | null>(null)
   const [suggestOpen, setSuggestOpen] = useState(false)
   const [touch] = useState(isTouchDevice)
+  // Phone: the script scrolls with the page and the picker docks to the bottom of the screen.
+  const phone = usePhoneWidth()
 
   const pageTexts = useMemo(() => layout.pages.map((p) => ({ id: p.id, content: p.content ?? '' })), [layout.pages])
   const categoryOfTag = useCallback((t: BreakdownTag) => elementsById.get(t.element_id)?.category ?? null, [elementsById])
@@ -217,7 +220,12 @@ export function BreakdownScriptPanel({
 
   return (
     <div className="flex min-h-0 flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+      <div
+        className={cn(
+          'flex flex-wrap items-center justify-between gap-2 border-b border-border py-2.5',
+          phone ? 'px-3' : 'px-4'
+        )}
+      >
         <p className="text-sm text-muted-foreground">
           {readOnly
             ? 'Older draft: tags are shown for reference. Switch to the latest draft to tag.'
@@ -226,7 +234,14 @@ export function BreakdownScriptPanel({
               : 'Highlight words in the script, then pick a category (or press its number).'}
         </p>
         {!readOnly && (
-          <Button type="button" variant="outline" size="sm" onClick={() => setSuggestOpen(true)} disabled={suggestions.length === 0}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={cn(phone && 'w-full')}
+            onClick={() => setSuggestOpen(true)}
+            disabled={suggestions.length === 0}
+          >
             <Sparkles className="size-4" aria-hidden />
             Suggest cast &amp; location{suggestions.length > 0 ? ` (${suggestions.length})` : ''}
           </Button>
@@ -234,7 +249,7 @@ export function BreakdownScriptPanel({
       </div>
       <div
         ref={scrollRef}
-        className="relative max-h-[62vh] overflow-y-auto bg-background/40 pb-4"
+        className={cn('relative bg-background/40 pb-4', !phone && 'max-h-[62vh] overflow-y-auto')}
         onMouseUp={() => readSelection()}
         onKeyUp={(e) => {
           if (e.shiftKey) readSelection()
@@ -243,6 +258,7 @@ export function BreakdownScriptPanel({
         <ScriptLines
           ref={linesRef}
           lines={layout.lines}
+          phone={phone}
           aria-label="Script text"
           decorate={(line) => {
             const placed = tagLayout.get(line.index)
@@ -269,6 +285,7 @@ export function BreakdownScriptPanel({
 
         {pending && (
           <CategoryToolbar
+            docked={phone}
             anchor={pending.anchor}
             text={tidyTagText(pending.text)}
             busy={tagMutation.isPending}
@@ -278,6 +295,7 @@ export function BreakdownScriptPanel({
         )}
         {openTags && (
           <TagPopover
+            docked={phone}
             anchor={openTags.anchor}
             tags={openTags.tagIds.map((id) => tagById.get(id)).filter((t): t is BreakdownTag => t != null)}
             elements={elements}
@@ -292,7 +310,7 @@ export function BreakdownScriptPanel({
       {suggestOpen && (
         <SuggestDialog
           onClose={() => setSuggestOpen(false)}
-        suggestions={suggestions}
+          suggestions={suggestions}
           scriptVersionId={scriptVersionId}
           sceneId={sceneId}
         />
@@ -301,13 +319,32 @@ export function BreakdownScriptPanel({
   )
 }
 
-function Floating({ anchor, children, label }: { anchor: Anchor; children: React.ReactNode; label: string }) {
+/**
+ * Picker and tag details: beside the selection, or docked to the bottom of the screen on a phone (in thumb
+ * reach, clear of the iOS edit callout above the selection, and above the home indicator).
+ */
+function Floating({
+  anchor,
+  children,
+  label,
+  docked = false,
+}: {
+  anchor: Anchor
+  children: React.ReactNode
+  label: string
+  docked?: boolean
+}) {
   return (
     <div
       role="dialog"
       aria-label={label}
-      className="absolute z-20 w-[min(22rem,calc(100%-1rem))] -translate-x-1/2 rounded-lg border border-border bg-popover p-2.5 text-popover-foreground shadow-lg"
-      style={{ left: anchor.x, top: anchor.y }}
+      className={cn(
+        'z-20 border border-border bg-popover text-popover-foreground shadow-lg',
+        docked
+          ? 'fixed inset-x-0 bottom-0 z-50 max-h-[60dvh] overflow-y-auto overscroll-contain rounded-t-xl border-x-0 border-b-0 px-3 pt-3 pb-[calc(0.75rem+var(--safe-bottom,0px))]'
+          : 'absolute w-[min(22rem,calc(100%-1rem))] -translate-x-1/2 rounded-lg p-2.5'
+      )}
+      style={docked ? undefined : { left: anchor.x, top: anchor.y }}
       onMouseUp={(e) => e.stopPropagation()}
       // Pressing a button here must not clear the text selection it acts on (desktop browsers do on mousedown).
       onMouseDown={(e) => {
@@ -320,12 +357,14 @@ function Floating({ anchor, children, label }: { anchor: Anchor; children: React
 }
 
 function CategoryToolbar({
+  docked,
   anchor,
   text,
   busy,
   onPick,
   onClose,
 }: {
+  docked: boolean
   anchor: Anchor
   text: string
   busy: boolean
@@ -333,7 +372,7 @@ function CategoryToolbar({
   onClose: () => void
 }) {
   return (
-    <Floating anchor={anchor} label="Tag selection">
+    <Floating anchor={anchor} label="Tag selection" docked={docked}>
       <div className="mb-2 flex items-start justify-between gap-2">
         <p className="min-w-0 truncate text-sm">
           Tag <span className="font-mono font-semibold">“{text}”</span> as
@@ -367,6 +406,7 @@ function CategoryToolbar({
 }
 
 function TagPopover({
+  docked,
   anchor,
   tags,
   elements,
@@ -375,6 +415,7 @@ function TagPopover({
   readOnly,
   onClose,
 }: {
+  docked: boolean
   anchor: Anchor
   tags: BreakdownTag[]
   elements: readonly BreakdownElement[]
@@ -408,7 +449,7 @@ function TagPopover({
 
   if (tags.length === 0) return null
   return (
-    <Floating anchor={anchor} label="Tags on this text">
+    <Floating anchor={anchor} label="Tags on this text" docked={docked}>
       <div className="mb-1.5 flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {tags.length === 1 ? 'Tag' : `${tags.length} tags`}
@@ -591,7 +632,11 @@ export function CategoryLegend({
   onToggle: (category: BreakdownCategory) => void
 }) {
   return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Show categories">
+    <div
+      className="flex gap-1.5 max-md:-mx-3 max-md:overflow-x-auto max-md:px-3 max-md:pb-1 max-md:[scrollbar-width:none] md:flex-wrap"
+      role="group"
+      aria-label="Show categories"
+    >
       {BREAKDOWN_CATEGORIES.map((c) => {
         const shown = !hidden.has(c.key)
         return (
@@ -601,7 +646,7 @@ export function CategoryLegend({
             aria-pressed={shown}
             onClick={() => onToggle(c.key)}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-xs transition-colors hover:bg-secondary pointer-coarse:min-h-10 pointer-coarse:px-3.5 pointer-coarse:text-sm',
+              'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border px-2.5 py-0.5 text-xs transition-colors hover:bg-secondary pointer-coarse:min-h-10 pointer-coarse:px-3.5 pointer-coarse:text-sm',
               !shown && 'opacity-45'
             )}
           >
