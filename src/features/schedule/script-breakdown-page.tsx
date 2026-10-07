@@ -244,7 +244,7 @@ export function ScriptBreakdownPage() {
 
   const reviewItems = reviewQ.data ?? []
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-touch-targets>
       <PageHeader
         title="Script Breakdown"
         description="Tag what each scene needs, check it against the production's databases and hand departments their lists."
@@ -352,7 +352,7 @@ export function ScriptBreakdownPage() {
               />
             </div>
           ) : (
-            <div className="grid items-start gap-4 lg:grid-cols-[minmax(15rem,0.42fr)_minmax(0,1fr)]">
+            <div className="grid items-start gap-4 md:grid-cols-[minmax(13rem,0.38fr)_minmax(0,1fr)] lg:grid-cols-[minmax(15rem,0.42fr)_minmax(0,1fr)]">
               <nav className="max-h-[74vh] overflow-y-auto rounded-lg border border-border bg-card p-1.5" aria-label="Scenes">
                 {versionScenes.length === 0 && !data.isLoading && (
                   <p className="p-3 text-sm text-muted-foreground">No scene text in this version.</p>
@@ -367,7 +367,7 @@ export function ScriptBreakdownPage() {
                       aria-current={selected ? 'true' : undefined}
                       onClick={() => setSelectedSceneId(scene.id)}
                       className={cn(
-                        'grid w-full grid-cols-[3rem_minmax(0,1fr)] gap-x-2 rounded-md border border-transparent px-2 py-1.5 text-left hover:bg-secondary',
+                        'grid w-full grid-cols-[3rem_minmax(0,1fr)] gap-x-2 rounded-md border border-transparent px-2 py-1.5 text-left hover:bg-secondary pointer-coarse:py-2.5',
                         selected && 'border-primary/45 bg-primary/10 hover:bg-primary/10'
                       )}
                     >

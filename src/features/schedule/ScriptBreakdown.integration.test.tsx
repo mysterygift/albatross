@@ -53,6 +53,11 @@ vi.mock('@/lib/documents/persistDocument', () => ({
   documentsQueryKey: (id: string) => ['documents', id],
 }))
 vi.mock('@/lib/files', () => ({ saveFileWithDialog: vi.fn() }))
+const touchDevice = vi.hoisted(() => ({ on: false }))
+vi.mock('@/lib/platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/platform')>()),
+  isMobilePlatform: () => touchDevice.on,
+}))
 vi.mock('@/hooks/useEffectiveDataSourceForProduction', () => ({
   useEffectiveDataSourceForProduction: () => ({ dataSourceKey: 'local_sqlite' }),
 }))
@@ -121,6 +126,8 @@ describe('Script Breakdown page', () => {
   afterEach(() => {
     cleanup()
     vi.clearAllMocks()
+    touchDevice.on = false
+    window.getSelection()?.removeAllRanges()
   })
 
   it('stacks the colours of overlapping tags in one highlight', async () => {
@@ -161,6 +168,32 @@ describe('Script Breakdown page', () => {
       range: { startPageId: 'page-1', startOffset: at, endPageId: 'page-1', endOffset: at + 4 },
       text: 'Mary',
     })
+  })
+
+  it('on a touch screen, follows the selection handles and keeps the picker when a tap clears the selection', async () => {
+    touchDevice.on = true
+    renderPage()
+    const script = await screen.findByLabelText('Script text')
+    await waitFor(() => expect(script.querySelector('mark')).not.toBeNull())
+    expect(screen.getByText(/Press and hold a word/)).toBeTruthy()
+    const cell = [...script.querySelectorAll<HTMLElement>('[data-page-id]')].find((el) => el.textContent?.startsWith('Mary'))!
+    const textNode = cell.querySelector('[data-chunk-start="0"]')!.firstChild!
+    const range = document.createRange()
+    range.setStart(textNode, 0)
+    range.setEnd(textNode, 4)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+
+    const picker = await screen.findByRole('dialog', { name: 'Tag selection' })
+    // iOS clears the selection as the button is tapped; the picker must stay.
+    sel.removeAllRanges()
+    document.dispatchEvent(new Event('selectionchange'))
+    await new Promise((r) => setTimeout(r, 450))
+    await userEvent.click(within(picker).getByRole('button', { name: /Props/ }))
+    await waitFor(() => expect(createTag).toHaveBeenCalledTimes(1))
+    expect(createTag.mock.calls[0]![0]).toMatchObject({ category: 'props', text: 'Mary' })
   })
 
   it('fills the sheet from the scene and production, and matches a location already on Locations', async () => {

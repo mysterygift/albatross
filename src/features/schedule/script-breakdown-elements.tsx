@@ -227,7 +227,7 @@ function ElementRowView({
           onClick={onToggle}
           aria-expanded={expanded}
           aria-label={`${expanded ? 'Hide' : 'Show'} details for ${element.name}`}
-          className="text-muted-foreground hover:text-foreground"
+          className="flex items-center justify-center text-muted-foreground hover:text-foreground pointer-coarse:size-10"
         >
           {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
         </button>
@@ -241,7 +241,7 @@ function ElementRowView({
               key={s.id}
               type="button"
               onClick={() => onOpenScene(s.id)}
-              className="rounded border border-border bg-secondary px-1.5 font-mono text-xs hover:border-foreground/40"
+              className="rounded border border-border bg-secondary px-1.5 font-mono text-xs hover:border-foreground/40 pointer-coarse:min-h-9 pointer-coarse:min-w-9 pointer-coarse:px-2 pointer-coarse:text-sm"
               title={`Open scene ${s.scene_number}`}
             >
               {s.scene_number}

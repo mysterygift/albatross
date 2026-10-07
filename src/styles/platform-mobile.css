@@ -336,3 +336,15 @@ html[data-phone-tab-bar]
     padding: 0.75rem;
   }
 }
+
+/*
+ * Pages that opt in with `data-touch-targets` (Script Breakdown) get 40pt buttons, select triggers and
+ * inputs on touch screens, instead of each control carrying its own touch size.
+ */
+@media (pointer: coarse) {
+  html[data-platform] [data-touch-targets] [data-slot="button"],
+  html[data-platform] [data-touch-targets] [data-slot="select-trigger"],
+  html[data-platform] [data-touch-targets] [data-slot="input"] {
+    min-height: 2.5rem;
+  }
+}
