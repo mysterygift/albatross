@@ -1,5 +1,6 @@
 import { RequireProduction } from '@/components/require-production'
 import { PageHeader } from '@/components/page-header'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
@@ -107,6 +108,7 @@ export function LocationsPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
   const { format } = useCurrency()
   const productionCurrency = currentProduction?.currency_code ?? 'GBP'
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
@@ -178,6 +180,17 @@ export function LocationsPage() {
     },
   })
 
+  async function handleDeleteLocation(loc: Location) {
+    const ok = await confirm({
+      title: `Delete "${loc.name}"?`,
+      description: 'The location and its permits and release forms will be deleted. Scenes using it will be left without a location.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+    deleteMutation.mutate(loc.id)
+  }
+
   const columns: ColumnDef<Location>[] = [
     { accessorKey: 'name', header: 'Name' },
     { accessorKey: 'booked_status', header: 'Status' },
@@ -215,7 +228,13 @@ export function LocationsPage() {
           <Button variant="ghost" size="icon" onClick={() => { setUpdateError(null); setEditingId(row.original.id) }}>
             <Pencil className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(row.original.id)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            title="Delete location"
+            aria-label="Delete location"
+            onClick={() => void handleDeleteLocation(row.original)}
+          >
             <Trash2 className="size-4 text-destructive" />
           </Button>
         </div>
@@ -322,6 +341,7 @@ export function LocationsPage() {
           </DialogContent>
         </Dialog>
       )}
+      {confirmDialog}
     </div>
   )
 }

@@ -4,7 +4,7 @@
  * Orchestrates a single sides export: render the SB6 draft model to a PDF, store the file in the
  * app-managed attachment storage, and record a `shoot_day_sides_exports` row linked to the stored
  * document. The PDF is generated before any DB/file write so a generation failure leaves zero rows;
- * the document and export inserts are coordinated in one transaction (per DATABASE_LAYER.md), and a
+ * the document and export inserts are coordinated in one transaction (per DOCS/database.md), and a
  * failed DB write removes the orphaned file.
  *
  * Read-only with respect to script data: this never mutates script sections, ranges, or versions.

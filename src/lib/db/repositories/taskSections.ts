@@ -122,7 +122,7 @@ export async function updateTaskSection(
 
 /**
  * Soft-delete a section and unassign all tasks in that section (section_id = NULL).
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md.
  */
 export async function deleteTaskSection(id: string): Promise<void> {
   await runInSerializedTransaction(async () => {

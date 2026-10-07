@@ -36,7 +36,7 @@ export async function runApfImportWithUiFollowUp(
 
   if (prod?.archived_at) {
     ctx.persistShowArchived(true)
-    let msg = `Project “${result.productionName}” was imported. It is archived — use “Show archived projects” to see it in the list below.`
+    let msg = `Project “${result.productionName}” was imported. It is archived — use “Show archived productions” to see it in the list below.`
     if (result.warnings.length > 0) {
       msg +=
         ' Some document attachments were missing from the file; those rows were imported without files.'

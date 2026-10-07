@@ -254,7 +254,7 @@ export type ApplyDeliverableTemplateParams = {
 
 /**
  * Apply a deliverable template to a production. Creates deliverables and optional technical_specs.
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md.
  */
 export async function applyDeliverableTemplateToProduction(
   params: ApplyDeliverableTemplateParams

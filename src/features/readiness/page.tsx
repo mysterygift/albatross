@@ -88,6 +88,28 @@ const PRIORITY_LABELS: Record<1 | 2 | 3, string> = {
   3: 'Low',
 }
 
+function countTaskDescendants(taskId: string, tasks: ProductionTask[]): number {
+  const childrenByParent = new Map<string, string[]>()
+  for (const t of tasks) {
+    if (!t.parent_task_id) continue
+    const list = childrenByParent.get(t.parent_task_id) ?? []
+    list.push(t.id)
+    childrenByParent.set(t.parent_task_id, list)
+  }
+  let count = 0
+  const stack = [taskId]
+  const seen = new Set<string>([taskId])
+  while (stack.length > 0) {
+    for (const child of childrenByParent.get(stack.pop()!) ?? []) {
+      if (seen.has(child)) continue
+      seen.add(child)
+      count++
+      stack.push(child)
+    }
+  }
+  return count
+}
+
 function formatDueDate(d: string | null): string {
   if (!d) return '—'
   try {
@@ -139,6 +161,7 @@ function TaskDescriptionLabel({
 export function ReadinessPage() {
   const { currentProductionId } = useCurrentProduction()
   const queryClient = useQueryClient()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [createOpen, setCreateOpen] = useState(false)
   const [addSubtaskParent, setAddSubtaskParent] = useState<ProductionTask | null>(null)
   const [editTask, setEditTask] = useState<ProductionTask | null>(null)
@@ -314,6 +337,22 @@ export function ReadinessPage() {
     mutationFn: deleteTask,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
   })
+
+  async function handleDeleteTask(task: ProductionTask) {
+    const descendants = countTaskDescendants(task.id, allTasks)
+    const name = task.description.length > 60 ? `${task.description.slice(0, 57)}...` : task.description
+    const ok = await confirm({
+      title: `Delete "${name}"?`,
+      description:
+        descendants > 0
+          ? `This task and its ${descendants} subtask${descendants !== 1 ? 's' : ''} will be deleted.`
+          : 'This task will be deleted.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+    deleteMutation.mutate(task.id)
+  }
 
   const createSectionMutation = useMutation({
     mutationFn: (data: CreateTaskSectionData) => createTaskSection(data),
@@ -715,7 +754,9 @@ export function ReadinessPage() {
                           variant="ghost"
                           size="icon"
                           className="size-8 text-destructive hover:text-destructive"
-                          onClick={() => deleteMutation.mutate(task.id)}
+                          title="Delete task"
+                          aria-label="Delete task"
+                          onClick={() => void handleDeleteTask(task)}
                         >
                           <Trash2 className="size-4" />
                         </Button>
@@ -764,6 +805,7 @@ export function ReadinessPage() {
         onApply={(params) => applyTemplateMutation.mutate(params)}
         isPending={applyTemplateMutation.isPending}
       />
+      {confirmDialog}
     </div>
   )
 }

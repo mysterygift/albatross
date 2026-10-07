@@ -7,6 +7,7 @@ import { PostgresDatabaseAdapter } from '@/lib/db/postgresDatabaseAdapter'
 import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
 import { deterministicSchemaName } from '@/test/postgres/schemaAudit'
 import { resolvePostgresPoolConfig } from '@/test/postgres/pgTestEnv'
+import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
 
 async function pgConfigFromEnv(): Promise<PoolConfig> {
   const base = await resolvePostgresPoolConfig()
@@ -50,6 +51,8 @@ export async function createPostgresRepoHarness(prefix: string): Promise<Postgre
     const migrationSql = readFileSync(join(migrationDir, migrationFile), 'utf8')
     await pool.query(migrationSql)
   }
+  // The users table exists in the migrated schema, so repositories treat client PII encryption as active.
+  setTestDataEncryptionKeyForTests(new Uint8Array(32).fill(7))
   const metrics: PostgresRepoHarness['metrics'] = []
   const adapter = new PostgresDatabaseAdapter(pool, schemaName, {
     slowQueryThresholdMs: Number(process.env.PG_SLOW_QUERY_MS ?? '75'),
@@ -64,6 +67,7 @@ export async function createPostgresRepoHarness(prefix: string): Promise<Postgre
     metrics,
     getPoolStats: () => adapter.getPoolStats(),
     close: async () => {
+      setTestDataEncryptionKeyForTests(null)
       await pool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`)
       await pool.end()
     },

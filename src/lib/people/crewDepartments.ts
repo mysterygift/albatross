@@ -32,7 +32,6 @@ export type CrewDepartmentName = (typeof CREW_DEPARTMENT_NAMES)[number]
 
 /**
  * Canonical crew departments with HOD and ordered roles.
- * Mirrors src/lib/people/crew-departments.md exactly.
  */
 export const CREW_DEPARTMENTS: readonly CrewDepartmentDefinition[] = [
   {

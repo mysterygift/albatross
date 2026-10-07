@@ -6,13 +6,18 @@ declare module 'sql.js' {
     free(): void
   }
 
+  export interface QueryExecResult {
+    columns: string[]
+    values: unknown[][]
+  }
+
   export interface SqlJsStatic {
     Database: new (data?: ArrayLike<number> | Buffer | null) => Database
   }
 
   export interface Database {
     run(sql: string, params?: unknown[]): void
-    exec(sql: string): unknown[]
+    exec(sql: string): QueryExecResult[]
     prepare(sql: string): Statement
     export(): Uint8Array
     close(): void

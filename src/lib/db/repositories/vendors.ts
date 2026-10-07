@@ -70,7 +70,7 @@ export async function getVendorById(id: string): Promise<Vendor | null> {
 }
 
 /**
- * Creates a vendor. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * Creates a vendor. Uses runInSerializedTransaction + executeBatch per DOCS/database.md
  * so the INSERT and outbox row are in the same transaction.
  */
 export async function createVendor(data: {
@@ -120,7 +120,7 @@ export async function createVendor(data: {
 }
 
 /**
- * Updates a vendor. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * Updates a vendor. Uses runInSerializedTransaction + executeBatch per DOCS/database.md
  * so the UPDATE and outbox row are in the same transaction.
  */
 export async function updateVendor(
@@ -338,7 +338,7 @@ export async function removeVendorFromProject(
 }
 
 /**
- * Soft-deletes a vendor. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * Soft-deletes a vendor. Uses runInSerializedTransaction + executeBatch per DOCS/database.md
  * so the UPDATE and outbox row are in the same transaction.
  */
 export async function softDeleteVendor(id: string): Promise<void> {

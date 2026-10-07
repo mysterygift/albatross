@@ -7,14 +7,16 @@ import { GlobalShortcutBridge } from '@/app/GlobalShortcutBridge'
 function setup(searchOpen = false) {
   const onToggleSearch = vi.fn()
   const onOpenShortcuts = vi.fn()
+  const onOpenGettingStarted = vi.fn()
   render(
     <GlobalShortcutBridge
       searchOpen={searchOpen}
       onToggleSearch={onToggleSearch}
       onOpenShortcuts={onOpenShortcuts}
+      onOpenGettingStarted={onOpenGettingStarted}
     />,
   )
-  return { onToggleSearch, onOpenShortcuts }
+  return { onToggleSearch, onOpenShortcuts, onOpenGettingStarted }
 }
 
 function addOpenDialog() {
@@ -80,5 +82,31 @@ describe('GlobalShortcutBridge', () => {
     addOpenDialog()
     fireEvent.keyDown(window, { key: '?', shiftKey: true })
     expect(onOpenShortcuts).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the cheat sheet from the native Help > Keyboard Shortcuts event, even while typing', () => {
+    const { onOpenShortcuts, onOpenGettingStarted } = setup()
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+    window.dispatchEvent(new Event('albatross-menu-help-keyboard-shortcuts'))
+    expect(onOpenShortcuts).toHaveBeenCalledTimes(1)
+    expect(onOpenGettingStarted).not.toHaveBeenCalled()
+  })
+
+  it('opens the tutorial home from the native Help > Getting Started event', () => {
+    const { onOpenShortcuts, onOpenGettingStarted } = setup()
+    window.dispatchEvent(new Event('albatross-menu-help-getting-started'))
+    expect(onOpenGettingStarted).toHaveBeenCalledTimes(1)
+    expect(onOpenShortcuts).not.toHaveBeenCalled()
+  })
+
+  it('stops listening after unmount', () => {
+    const { onOpenShortcuts, onOpenGettingStarted } = setup()
+    cleanup()
+    window.dispatchEvent(new Event('albatross-menu-help-keyboard-shortcuts'))
+    window.dispatchEvent(new Event('albatross-menu-help-getting-started'))
+    expect(onOpenShortcuts).not.toHaveBeenCalled()
+    expect(onOpenGettingStarted).not.toHaveBeenCalled()
   })
 })

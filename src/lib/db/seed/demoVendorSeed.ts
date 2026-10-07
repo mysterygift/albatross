@@ -2,7 +2,7 @@
  * Demo production vendor seed. Used only for the singleton demo production (DEMO_SLUG).
  * Seeds 18 UK film/HETV-style vendors with deterministic IDs.
  * Call before seedDemoBudget so expense vendor_id can be set from the returned map.
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md.
  */
 
 import { executeBatch, getDb, runInSerializedTransaction } from '../client'

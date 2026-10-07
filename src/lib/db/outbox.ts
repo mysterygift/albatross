@@ -1,6 +1,11 @@
 /**
- * Outbox for future sync: every create/update/delete writes here.
- * Do not implement sync now; just populate the table.
+ * Local change log: repositories record every create/update/delete as an `outbox` row
+ * (entity, entity_id, operation, payload_json).
+ *
+ * Nothing in the app reads or replays this table today. It is not the sync queue: the legacy linked
+ * runtime queues failed server writes in `server_outbox_pending` (src/lib/server), and sync-v2 keeps its
+ * own durable journal in `sync_mutation_batches` / `sync_mutations` (src/lib/server/syncV2). Writes that sync-v2 captures
+ * (only createShot for collaborative productions so far) skip this table. See DOCS/collaboration.md.
  *
  * For fewer round-trips and less lock pressure: use outboxInsert(db, ...) inside the same
  * transaction as the primary write (same BEGIN/COMMIT). outboxPush() gets its own connection

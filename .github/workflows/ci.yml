@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The three steps below are marked continue-on-error because the repository already had
+      # failures when this workflow was added (so the first run would be red for reasons unrelated to
+      # the change under review). They still run and still show as failed steps in the log.
+      # Remove continue-on-error from a step once it is green on dev; this is the intended end state.
+      #
+      # Lint: `npm run lint:ci` reports 37 errors (react-hooks/set-state-in-effect, rules-of-hooks,
+      # purity, plus a few single-rule errors) and exceeds its 60-warning budget.
+      - name: Lint
+        run: npm run lint:ci
+        continue-on-error: true
+
+      # Test: the PostgreSQL suites (src/test/postgres, *.postgres.test.ts) need a database and run in
+      # the "PostgreSQL Infrastructure" workflow instead, so they are excluded here.
+      # Failing when this workflow was added (about 14 tests in 10 files; the exact set shifts while
+      # script-supervisor work is in flight): ScriptSupervisor.integration, ScriptNotes,
+      # SidesBuilder.integration, ShotListEpisodeContinuity.integration, BudgetVersioning.integration,
+      # scriptSectionReconciliation, scriptSupervisor, slateNumbering, applyFinanceDraftToExpense and
+      # budgetRevisions (repository).
+      - name: Test
+        run: npm test -- --exclude 'src/test/postgres/**' --exclude '**/*.postgres.test.ts' --exclude 'node_modules/**'
+        continue-on-error: true
+
+      # Build: `tsc -b` reports type errors in src/test/apf/productionDeleteCascade.test.ts, so
+      # `vite build` never runs.
+      - name: Build
+        run: npm run build
+        continue-on-error: true

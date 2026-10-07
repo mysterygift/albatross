@@ -117,7 +117,7 @@ function buildAmendPurchaseOrderStatements(
 
 /**
  * Change a PO's current value and record the amendment in ONE transaction
- * (runInSerializedTransaction + executeBatch per DATABASE_LAYER.md).
+ * (runInSerializedTransaction + executeBatch per DOCS/database.md).
  * The PO is read inside the serialized slot so `previous_amount` reflects the committed value.
  */
 export async function amendPurchaseOrderAmount(

@@ -14,7 +14,7 @@
  * and check for lock errors; cascade verification disables its button while running and reports BUSY.
  * **Nested runInSerializedTransaction:** Same serializer as `execute` — nested calls run inline
  * (re-entrant) so we never deadlock waiting on ourselves.
- * See docs/DATABASE_LAYER.md for how to write transaction-safe code and avoid open transactions.
+ * See DOCS/database.md for how to write transaction-safe code and avoid open transactions.
  *
  * Foreign key enforcement: we run PRAGMA foreign_keys = ON on every connection.
  * In DEV, all execute/select are timed and logged to db/perf (including errors and retries).

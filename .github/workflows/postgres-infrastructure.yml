@@ -5,9 +5,14 @@ on:
   push:
     branches:
       - main
+      - dev
+
+permissions:
+  contents: read
 
 jobs:
   postgres-smoke:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     env:
       PGHOST: ${{ vars.PGHOST || '127.0.0.1' }}
@@ -39,3 +44,24 @@ jobs:
       - name: PostgreSQL smoke check
         run: |
           psql "host=${PGHOST} port=${PGPORT} dbname=${PGDATABASE} user=${PGUSER} password=${PGPASSWORD}" -c "SELECT 1 AS postgres_up;"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Schema parity (postgresSchemaParity.test.ts) is a pure file comparison and passes. The suites that
+      # execute postgres/migrations against the service container are still failing, so this step is
+      # continue-on-error until they are fixed (see DOCS/collaboration.md, "Known drift"):
+      #   * 0001_baseline.sql creates tables before the tables they reference, so it cannot run on
+      #     PostgreSQL ("relation shoot_days does not exist"), and 0009 then re-adds a column that 0001
+      #     already has. Every suite that migrates a schema (harness-based tests) fails on this.
+      #   * Repository code still binds 0/1 to BOOLEAN columns and the pg driver returns DATE as Date.
+      # Remove continue-on-error once those are fixed.
+      - name: PostgreSQL test suites
+        run: npm run test:postgres
+        continue-on-error: true

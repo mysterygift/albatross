@@ -2791,14 +2791,6 @@ type GroupTotalRow = {
   percentSpent: number | null
 }
 
-/** Trigger browser print for Cost Report. Kept in code for re-enabling (e.g. via feature flag). */
-export function triggerCostReportPrint(): void {
-  const p = window.print()
-  if (p != null && typeof (p as Promise<void>).catch === 'function') {
-    ;(p as Promise<void>).catch(() => {})
-  }
-}
-
 function CostReportView({
   productionId,
   revisionId,

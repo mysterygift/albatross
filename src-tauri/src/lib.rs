@@ -648,6 +648,12 @@ pub fn run() {
             sql: include_str!("../migrations/0105_script_breakdown.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 106,
+            description: "audit_logs",
+            sql: include_str!("../migrations/0106_audit_logs.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     #[cfg_attr(mobile, allow(unused_mut))]

@@ -267,7 +267,7 @@ export type ApplyTaskTemplateParams = {
 /**
  * Apply a task template to a production. Creates production_tasks from template items,
  * preserves parent/child structure, creates missing sections, assigns due dates from anchorDate + due_offset_days.
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md.
  */
 export async function applyTaskTemplateToProduction(
   params: ApplyTaskTemplateParams

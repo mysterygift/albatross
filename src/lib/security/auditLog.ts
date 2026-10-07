@@ -109,10 +109,12 @@ function sanitizeMetadata(action: string, metadata: AuditMetadata | undefined): 
 export async function appendAuditLog(db: DatabaseAdapter, event: AuditLogEvent): Promise<void> {
   try {
     const metadata = sanitizeMetadata(event.action, event.metadata)
+    // Postgres stores metadata as JSONB; SQLite keeps the JSON text as is.
+    const metadataParam = db.dialect === 'postgres' ? '$5::jsonb' : '$5'
     await db.execute(
       `INSERT INTO audit_logs
        (actor_user_id, target_user_id, project_id, action, metadata_json, ip_address, user_agent, created_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, CURRENT_TIMESTAMP)`,
+       VALUES ($1, $2, $3, $4, ${metadataParam}, $6, $7, CURRENT_TIMESTAMP)`,
       [
         event.actorUserId,
         event.targetUserId ?? null,
@@ -123,7 +125,9 @@ export async function appendAuditLog(db: DatabaseAdapter, event: AuditLogEvent):
         event.userAgent ?? null,
       ]
     )
-  } catch {
-    // Best-effort append-only auditing: callers should not leak internals on write failures.
+  } catch (error) {
+    // Best-effort append-only auditing: callers must not fail or leak internals on a write failure, but a
+    // silent loss of the audit trail should be visible. Log the action and message only, never the event.
+    console.warn(`[audit] failed to record "${event.action}":`, error instanceof Error ? error.message : 'unknown error')
   }
 }
