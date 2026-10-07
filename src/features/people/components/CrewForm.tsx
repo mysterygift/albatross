@@ -28,20 +28,18 @@ import type { CrewHierarchyConfig } from '@/lib/people/crewHierarchyTypes'
 import type { Person } from '@/lib/db/types'
 import { parsePhases } from '@/lib/people/productionPhases'
 import { PhaseTagsInput } from '@/features/people/components/PhaseTagsInput'
-
-const emailRefine = (v: string | undefined) =>
-  !v || v.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
+import {
+  optionalContactEmailField,
+  optionalContactPhoneField,
+} from '@/lib/contacts/contactFieldValidation'
 
 export const crewFormSchema = z
   .object({
     name: z.string().min(1, 'Name is required'),
     department: z.string().min(1, 'Department is required'),
     role_name: z.string().optional(),
-    email: z
-      .string()
-      .optional()
-      .refine(emailRefine, { message: 'Invalid email' }),
-    phone: z.string().optional(),
+    email: optionalContactEmailField,
+    phone: optionalContactPhoneField,
     phases: z.array(z.string()),
     notes: z.string().optional(),
   })
@@ -216,7 +214,17 @@ export function CrewForm({
             </div>
             <div>
               <Label>Phone</Label>
-              <Input {...form.register('phone')} placeholder="Phone number" />
+              <Input
+                {...form.register('phone')}
+                type="tel"
+                inputMode="tel"
+                placeholder="+441234567890"
+              />
+              {form.formState.errors.phone && (
+                <p className="text-destructive text-sm mt-1">
+                  {form.formState.errors.phone.message}
+                </p>
+              )}
             </div>
           </div>
         </div>
