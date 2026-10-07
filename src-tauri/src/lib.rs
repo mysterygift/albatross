@@ -1068,6 +1068,12 @@ pub fn run() {
             sql: include_str!("../migrations/0104_script_breakdown.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 105,
+            description: "crew_availability_cascade",
+            sql: include_str!("../migrations/0105_crew_availability_cascade.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default();
