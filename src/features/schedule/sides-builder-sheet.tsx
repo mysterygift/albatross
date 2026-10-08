@@ -38,6 +38,7 @@ import { getFileUrl, openInSystem } from '@/lib/files'
 import { CoverageIssuesList, CoverageIssuesSummary } from './coverage-issues-list'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
 import { SbRemoteNotice } from './sbRemoteNotice'
+import { SidesScreenplayPreview } from './sides-screenplay-preview'
 
 const FILTER_ALL = '__all__'
 
@@ -554,21 +555,12 @@ function PreviewGroup({ group }: { group: SidesPreviewGroup }) {
       )}
       {group.scenes.map((sceneGroup) => (
         <div key={sceneGroup.scene.id} className="rounded-md border border-border/40 p-2.5">
-          <p className="text-sm font-medium text-foreground">
-            Sc {sceneGroup.scene.scene_number}
-            {(() => {
-              const slug = sceneSlugline(
-                sceneGroup.scene,
-                sceneGroup.entries[0]?.locationName ?? null
-              )
-              return slug ? ` — ${slug}` : ''
-            })()}
-          </p>
-          {sceneGroup.collatedScriptText ? (
-            <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-border/30 bg-muted/20 p-2 font-mono text-[11px] text-foreground">
-              {sceneGroup.collatedScriptText}
-            </pre>
-          ) : (
+          <SidesScreenplayPreview
+            sceneNumber={sceneGroup.scene.scene_number}
+            heading={sceneSlugline(sceneGroup.scene, sceneGroup.entries[0]?.locationName ?? null)}
+            text={sceneGroup.collatedScriptText ?? ''}
+          />
+          {!sceneGroup.collatedScriptText && (
             <p className="mt-2 text-[11px] italic text-muted-foreground">
               No script text available (best-effort).
             </p>

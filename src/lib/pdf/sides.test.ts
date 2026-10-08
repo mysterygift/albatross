@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
 
-import { buildSidesPdfData, generateSidesPdf } from '@/lib/pdf/sides'
+import {
+  SIDES_ESTIMATED_NOTE,
+  SIDES_NO_TEXT_NOTE,
+  buildSidesPdfData,
+  generateSidesPdf,
+  sidesScreenplayBlocks,
+  type SidesPdfData,
+} from '@/lib/pdf/sides'
 import {
   buildSidesDraftModel,
   defaultSidesFilters,
@@ -195,5 +202,45 @@ describe('generateSidesPdf', () => {
     expect(bytes.byteLength).toBeGreaterThan(500)
     const doc = await PDFDocument.load(bytes)
     expect(doc.getPageCount()).toBeGreaterThanOrEqual(1)
+  })
+
+  it('sets scenes as script pages: numbered headings, notes, and several US Letter pages', async () => {
+    const longScene = ['INT. PIER - DAY', '', ...Array.from({ length: 40 }, (_, i) => `Action ${i}.\n`), 'JANE', 'Done.'].join('\n')
+    const data: SidesPdfData = {
+      productionTitle: 'My Film',
+      shootDate: '2026-06-01',
+      unitName: null,
+      scriptVersionLabels: [],
+      generatedAt: 'now',
+      totalEstimatedEighths: 8,
+      warnings: [],
+      groups: [
+        {
+          episodeName: null,
+          scenes: [
+            { sceneNumber: '3', heading: 'INT. PIER - DAY', collatedScriptText: longScene, sections: [] },
+            { sceneNumber: '4', heading: 'EXT. ROAD - NIGHT', collatedScriptText: null, sections: [] },
+          ],
+        },
+      ],
+    }
+    const blocks = sidesScreenplayBlocks(data)
+    const headings = blocks.filter((b) => b.kind === 'scene_heading').map((b) => b.rows[0])
+    expect(headings).toEqual([
+      { type: 'scene_heading', text: 'INT. PIER - DAY', sceneNumber: '3' },
+      { type: 'scene_heading', text: 'EXT. ROAD - NIGHT', sceneNumber: '4' },
+    ])
+    expect(blocks.filter((b) => b.kind === 'note').map((b) => b.rows[0]!.text)).toEqual([SIDES_NO_TEXT_NOTE])
+    expect(blocks.some((b) => b.rows.some((r) => r.text.startsWith('Sc ')))).toBe(false)
+
+    const estimated = sidesScreenplayBlocks({
+      ...data,
+      groups: [{ episodeName: null, scenes: [{ ...data.groups[0]!.scenes[0]!, sections: [{ isEstimated: true } as never] }] }],
+    })
+    expect(estimated.filter((b) => b.kind === 'note').map((b) => b.rows[0]!.text)).toEqual([SIDES_ESTIMATED_NOTE])
+
+    const doc = await PDFDocument.load(await generateSidesPdf(data))
+    expect(doc.getPageCount()).toBeGreaterThan(1)
+    expect(doc.getPage(0).getSize()).toEqual({ width: 612, height: 792 })
   })
 })
