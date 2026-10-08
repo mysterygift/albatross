@@ -207,6 +207,7 @@ async function createHarness(prefix: string): Promise<Harness> {
       production_id UUID NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
       person_id UUID NOT NULL REFERENCES people(id) ON DELETE CASCADE,
       shoot_day_id UUID REFERENCES shoot_days(id) ON DELETE SET NULL,
+      shoot_day_unit_id UUID,
       start_date DATE,
       end_date DATE,
       role TEXT,

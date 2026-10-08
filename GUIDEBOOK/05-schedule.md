@@ -40,6 +40,10 @@ The **Sections** column shows how many script sections a shot covers. Click **Se
 
 > **Note** Changing a shot number does not move the shot on the Stripboard. The Stripboard follows the shot, not its number.
 
+### Export the shot list
+
+Click **Export PDF** in the toolbar and choose **This scene** or **All scenes**. The PDF lists each scene's shots with subject, description, size, movement, lens, support, duration, estimated minutes, cast and notes. A copy is filed under **Documents → Script & sides**, then a save dialog opens.
+
 ## Stripboard
 
 The Stripboard assigns shots to shoot days and puts each day in running order.
@@ -133,6 +137,10 @@ The Boneyard holds strips you do not want on any day but may need later. Drag a 
 
 Above the board, **Smart Scheduling Insights** can be expanded. It looks at scheduled shots and points out when shots that share a support, shot size, location or cast are spread across different days, and suggests grouping them. It is advice only and changes nothing.
 
+### Export the shooting schedule
+
+Click **Export PDF** at the top of the Stripboard and choose **Current day** (every unit of the day on screen) or **Whole schedule**. Each day and unit gets its own section with its strips in running order, laid out like the shooting schedule on a call sheet: call, lunch, move, note and wrap strips print as grey bars, and a line under each unit gives its shots, pages and estimated runtime. A copy is filed under **Documents → Script & sides**, then a save dialog opens.
+
 > **Note** Cast Manager, Day Out of Days and Bookings use the Stripboard. A cast member is on a day when one of their shots is scheduled for it. See [People](07-people.md).
 
 ## Calendar
@@ -204,6 +212,10 @@ If you storyboard in Athena Gallery, export its PDF and bring all the panels in 
 5. Click **Apply import**. **Discard import** throws the panels away.
 
 Panels are matched to shots by the number printed on each one, so number your boards to match your shot numbers.
+
+### Export the storyboard
+
+Click **Export PDF** and choose **This scene** (when one scene is selected) or **All scenes**. Panels print three across in shot order, each labelled with its shot number and size, with the shot description underneath. JPG and PNG images print as they are; other formats print as an empty frame. A copy is filed under **Documents → Script & sides**, then a save dialog opens.
 
 ## Episodic productions
 

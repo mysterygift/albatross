@@ -44,6 +44,18 @@ describe('pruneOrphanedApfRows', () => {
     ])
   })
 
+  it('turns a booking whose unit was not exported into a whole-day booking', () => {
+    const t = emptyApfTables()
+    t.shoot_day_units = [{ id: 'sdu1' }]
+    t.bookings = [
+      { id: 'b1', shoot_day_id: 'd1', shoot_day_unit_id: 'sdu1' },
+      { id: 'b2', shoot_day_id: 'd1', shoot_day_unit_id: 'gone-unit' },
+    ]
+
+    const out = pruneOrphanedApfRows(t)
+    expect(out.bookings.map((r) => r.shoot_day_unit_id)).toEqual(['sdu1', null])
+  })
+
   it('clears self-links to rows that were not exported or were themselves dropped', () => {
     const t = emptyApfTables()
     t.script_versions = [

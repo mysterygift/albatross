@@ -133,7 +133,7 @@ PostgreSQL is not used by the desktop app at runtime. This repo holds the schema
 | Item | Location |
 |---|---|
 | End-state schema snapshot generated from SQLite (UUID/TIMESTAMPTZ/JSONB types, tables in dependency order). The parity test reads this file. | `postgres/schema/baseline.sql` |
-| Numbered migrations a server applies in order: `0001_baseline.sql` (the original 67-table baseline), then `0002_*` to `0027_*` (auth, memberships, audit logs, clients, field encryption, feature changes) and `0028_*` to `0034_*` (server collaboration tables, script sections, sync-v2, risk assessments, script supervisor, crew hours, script breakdown) | `postgres/migrations/` |
+| Numbered migrations a server applies in order: `0001_baseline.sql` (the original 67-table baseline), then `0002_*` to `0027_*` (auth, memberships, audit logs, clients, field encryption, feature changes) and `0028_*` to `0035_*` (server collaboration tables, script sections, sync-v2, risk assessments, script supervisor, crew hours, script breakdown, booking units) | `postgres/migrations/` |
 | Snapshot generator (replays `src-tauri/migrations/*.sql` through sql.js and writes `baseline.sql`; the human-readable audit goes to the git-ignored `scripts/postgres/.generated/`). It never touches `0001_baseline.sql`. | `node scripts/postgres/generatePhase2Artifacts.mjs` |
 | `pg`-backed `DatabaseAdapter` (`dialect = 'postgres'`, `$n` placeholders, slow-query metrics) | `src/lib/db/postgresDatabaseAdapter.ts` |
 | Postgres access control and auth services used by the tests | `src/lib/access`, `src/lib/auth` |

@@ -1,7 +1,10 @@
-import type { CSSProperties } from 'react'
+import { createContext, type CSSProperties } from 'react'
 import type { Person } from '@/lib/db/types'
 import type { BookingSpan } from '@/features/people/lib/bookingSpans'
 import type { BookingColorConfig } from '@/features/people/lib/bookingCalendarColors'
+
+/** Booking id → unit name, for bookings called to one unit of a multi-unit day. */
+export const BookingUnitNamesContext = createContext<ReadonlyMap<string, string>>(new Map())
 
 /** Attribute that marks a day cell/column, so a drag can find the date under the pointer. */
 export const BOOKING_DATE_ATTR = 'data-booking-date'

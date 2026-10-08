@@ -288,3 +288,64 @@ export function formatCallSheetSynopsis(s: CallSheetStrip): string {
   )
   return fallback.length ? fallback.join(' | ') : '—'
 }
+
+const SPECIAL_SCHEDULE_STRIP_TYPES: ReadonlySet<CallSheetStrip['strip_type']> = new Set([
+  'CALL',
+  'LUNCH',
+  'WRAP',
+  'NOTE',
+  'MOVE',
+])
+
+/** Call, lunch, wrap, move and note strips are added by hand and are not shooting rows. */
+export function isSpecialScheduleStrip(type: CallSheetStrip['strip_type']): boolean {
+  return SPECIAL_SCHEDULE_STRIP_TYPES.has(type)
+}
+
+/** The full-width line printed for a special strip, e.g. `LUNCH - 13:00`. */
+export function specialScheduleSetLine(s: CallSheetStrip): string {
+  const body =
+    s.rowNotes?.trim() ||
+    [s.title, s.description].filter((x): x is string => typeof x === 'string' && x.trim().length > 0).join(' - ')
+  return body.trim() ? `${s.strip_type} - ${body.trim()}` : s.strip_type
+}
+
+/** Printed in LOC when a row is at the same location as the row above. */
+export const SCHEDULE_DITTO_MARK = '"'
+
+/** Text for each schedule column of a shooting row (see `buildMainScheduleColumns`). */
+export type ScheduleStripCells = {
+  scsh: string
+  ep: string
+  /** Bold first line(s) of SET / DESCRIPTION. */
+  setHeading: string
+  /** Lighter line under the heading: the shot description of a SHOT row, when it has one. */
+  setDetail: string | null
+  cast: string
+  dn: string
+  pgs: string
+  time: string
+  loc: string
+  notes: string
+}
+
+/** Cell text for a shooting row, shared by the call sheet and the shooting schedule PDF. */
+export function scheduleStripCells(s: CallSheetStrip): ScheduleStripCells {
+  const sn = s.scene_number?.trim()
+  const sh = s.shot_number?.trim()
+  const shotDetail = s.strip_type === 'SHOT' && s.shot_description?.trim() ? s.shot_description : null
+  return {
+    scsh: sn && sh ? `${sn} | ${sh}` : (sn ?? sh ?? ''),
+    ep: (s.episodeLabel ?? '').trim(),
+    setHeading: shotDetail
+      ? s.scene_title?.trim() || s.scene_heading?.trim() || ''
+      : formatCallSheetSynopsis(s),
+    setDetail: shotDetail,
+    cast: s.castCompact ?? '',
+    dn: formatScheduleDnColumn(s.int_ext, s.day_night),
+    pgs: s.page_eighths != null ? `${s.page_eighths}/8` : '',
+    time: s.estTime?.trim() ?? '',
+    loc: s.locDitto ? SCHEDULE_DITTO_MARK : (s.locLabel ?? ''),
+    notes: s.rowNotes ?? '',
+  }
+}

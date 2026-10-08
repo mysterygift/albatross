@@ -85,15 +85,29 @@ function personToCrewRow(
 }
 
 /**
+ * Bookings that call a person to `shootDayUnitId`: those for that unit plus those with no unit
+ * (the whole day). With no unit given, every booking is kept.
+ */
+export function bookingsForShootDayUnit<T extends { shoot_day_unit_id?: string | null }>(
+  bookings: T[],
+  shootDayUnitId: string | null | undefined
+): T[] {
+  if (!shootDayUnitId) return bookings
+  return bookings.filter((b) => !b.shoot_day_unit_id || b.shoot_day_unit_id === shootDayUnitId)
+}
+
+/**
  * Returns booked crew for the shoot day, grouped by crew department from the hierarchy,
- * with HOD first and role order within each department.
+ * with HOD first and role order within each department. Pass `shootDayUnitId` to leave out
+ * crew booked to another unit of the same day.
  */
 export function getCallSheetCrewRequirements(
   hierarchy: CrewHierarchyConfig,
-  bookings: Pick<Booking, 'person_id'>[],
-  crew: Person[]
+  bookings: (Pick<Booking, 'person_id'> & { shoot_day_unit_id?: string | null })[],
+  crew: Person[],
+  shootDayUnitId?: string | null
 ): CallSheetCrewGroup[] {
-  const bookedPersonIds = new Set(bookings.map((b) => b.person_id))
+  const bookedPersonIds = new Set(bookingsForShootDayUnit(bookings, shootDayUnitId).map((b) => b.person_id))
   const bookedCrew = crew.filter((p) => p.is_cast !== 1 && bookedPersonIds.has(p.id))
   if (bookedCrew.length === 0) return []
 

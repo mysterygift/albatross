@@ -2,6 +2,7 @@
  * Day Out of Days PDF export (A4, landscape if many columns).
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { textForPdf } from '@/lib/pdf/layoutKit'
 
 export type DoodCellStatus = 'WORK' | 'HOLD' | 'OFF' | 'CLASH'
 
@@ -44,7 +45,7 @@ export async function generateDoodPdf(data: DoodExportData): Promise<Uint8Array>
     color: rgb(0.2, 0.2, 0.2),
   })
   y -= 8
-  page.drawText(data.productionName, {
+  page.drawText(textForPdf(data.productionName), {
     x: margin,
     y,
     size: 10,
@@ -95,7 +96,7 @@ export async function generateDoodPdf(data: DoodExportData): Promise<Uint8Array>
       y -= rowH
     }
     x = margin
-    currentPage.drawText(row.personName.slice(0, 18), { x, y, size: 8, font })
+    currentPage.drawText(textForPdf(row.personName).slice(0, 18), { x, y, size: 8, font })
     x += nameW
     for (let i = 0; i < row.cells.length; i++) {
       const status = row.cells[i]!
@@ -129,7 +130,7 @@ export async function generateDoodPdf(data: DoodExportData): Promise<Uint8Array>
   }
 
   page.drawText(
-    `Generated: ${new Date().toLocaleString()}`,
+    textForPdf(`Generated: ${new Date().toLocaleString()}`),
     { x: margin, y: 24, size: 8, font, color: rgb(0.5, 0.5, 0.5) }
   )
 

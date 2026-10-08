@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { RequireProduction } from '@/components/require-production'
 import { PageHeader } from '@/components/page-header'
 import { useState, useMemo, useEffect, useRef } from 'react'
@@ -107,6 +108,7 @@ import { exportDistributedCallSheets } from '@/features/call-sheets/exportDistri
 import { isIosPlatform } from '@/lib/platform'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
+import { buildDayRecipients } from '@/lib/call-sheets/recipients'
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -120,8 +122,10 @@ export function CallSheetsPage() {
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
   const canLoadProjectData = !authSession.authSupported || !!authSession.currentUser
-  const [shootDayId, setShootDayId] = useState<string | null>(null)
-  const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
+  // `?day=&unit=` preselects a shoot day and unit (links from Send Day Pack).
+  const [searchParams] = useSearchParams()
+  const [shootDayId, setShootDayId] = useState<string | null>(() => searchParams.get('day'))
+  const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(() => searchParams.get('unit'))
   const [paperSize, setPaperSize] = useState<CallSheetPaperSize>('A4')
   const [weatherSummary, setWeatherSummary] = useState('')
   const [sunriseManual, setSunriseManual] = useState('')
@@ -546,8 +550,8 @@ export function CallSheetsPage() {
   const castCalledNames = useMemo(() => getCastCalledNames(principalCastRows), [principalCastRows])
 
   const crewGroupsForPreview = useMemo(
-    () => getCallSheetCrewRequirements(crewHierarchy, bookingsForDay, crew),
-    [crewHierarchy, bookingsForDay, crew]
+    () => getCallSheetCrewRequirements(crewHierarchy, bookingsForDay, crew, shootDayUnitId),
+    [crewHierarchy, bookingsForDay, crew, shootDayUnitId]
   )
 
   const locationIdsUsed = useMemo(() => {
@@ -755,7 +759,7 @@ export function CallSheetsPage() {
       schedule,
       castCalled: castCalledNames,
       castCalledRows: principalCastRows,
-      crewGroups: getCallSheetCrewRequirements(crewHierarchy, bookingsForDay, crew),
+      crewGroups: getCallSheetCrewRequirements(crewHierarchy, bookingsForDay, crew, shootDayUnitId),
       locations: locationsForDay.map((l) => ({
         name: l.name,
         address: l.address,
@@ -825,27 +829,10 @@ export function CallSheetsPage() {
     }
   }, [buildCallSheetData])
 
-  const distributionRecipients: CallSheetRecipient[] = useMemo(() => {
-    if (!buildCallSheetData) return []
-    const castRecipients: CallSheetRecipient[] = (castResult.castRows ?? []).map((row) => ({
-      id: `cast-${row.person_id}`,
-      fullName: row.name,
-      type: 'cast',
-    }))
-    const crewRecipients: CallSheetRecipient[] = crewGroupsForPreview.flatMap((group) =>
-      group.rows.map((row) => ({
-        id: `crew-${row.person_id}`,
-        fullName: row.name,
-        type: 'crew' as const,
-      })),
-    )
-    // Deduplicate by id in case the same person appears multiple times defensively.
-    const map = new Map<string, CallSheetRecipient>()
-    for (const r of [...castRecipients, ...crewRecipients]) {
-      if (!map.has(r.id)) map.set(r.id, r)
-    }
-    return Array.from(map.values())
-  }, [buildCallSheetData, castResult.castRows, crewGroupsForPreview])
+  const distributionRecipients: CallSheetRecipient[] = useMemo(
+    () => (buildCallSheetData ? buildDayRecipients(castResult.castRows ?? [], crewGroupsForPreview) : []),
+    [buildCallSheetData, castResult.castRows, crewGroupsForPreview]
+  )
 
   const generateMutation = useMutation({
     mutationFn: async (options: {

@@ -11,6 +11,7 @@ function rowToBooking(r: Record<string, unknown>): Booking {
     production_id: r.production_id as string,
     person_id: r.person_id as string,
     shoot_day_id: r.shoot_day_id as string | null,
+    shoot_day_unit_id: (r.shoot_day_unit_id as string | null | undefined) ?? null,
     start_date: r.start_date as string | null,
     end_date: r.end_date as string | null,
     role: r.role as string | null,
@@ -52,6 +53,7 @@ export async function createBooking(data: {
   production_id: string
   person_id: string
   shoot_day_id?: string | null
+  shoot_day_unit_id?: string | null
   start_date?: string | null
   end_date?: string | null
   role?: string | null
@@ -61,13 +63,14 @@ export async function createBooking(data: {
   const id = uuid()
   const ts = now()
   await db.execute(
-    `INSERT INTO ${TABLE} (id, production_id, person_id, shoot_day_id, start_date, end_date, role, notes, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    `INSERT INTO ${TABLE} (id, production_id, person_id, shoot_day_id, shoot_day_unit_id, start_date, end_date, role, notes, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       id,
       data.production_id,
       data.person_id,
       data.shoot_day_id ?? null,
+      data.shoot_day_unit_id ?? null,
       data.start_date ?? null,
       data.end_date ?? null,
       data.role ?? null,
@@ -83,18 +86,26 @@ export async function createBooking(data: {
 
 export async function updateBooking(
   id: string,
-  data: Partial<Pick<Booking, 'person_id' | 'shoot_day_id' | 'start_date' | 'end_date' | 'role' | 'notes'>>
+  data: Partial<
+    Pick<Booking, 'person_id' | 'shoot_day_id' | 'shoot_day_unit_id' | 'start_date' | 'end_date' | 'role' | 'notes'>
+  >
 ): Promise<Booking> {
   const db = await getDb()
   const ts = now()
   const cols: string[] = []
   const vals: unknown[] = []
   let i = 1
-  for (const k of ['person_id', 'shoot_day_id', 'start_date', 'end_date', 'role', 'notes'] as const) {
+  for (const k of ['person_id', 'shoot_day_id', 'shoot_day_unit_id', 'start_date', 'end_date', 'role', 'notes'] as const) {
     if (data[k] !== undefined) {
       cols.push(`${k} = $${i++}`)
       vals.push(data[k])
     }
+  }
+  // A unit belongs to one shoot day: moving the booking to another day without naming a unit
+  // drops the link (the booking then covers the whole new day).
+  if (data.shoot_day_id !== undefined && data.shoot_day_unit_id === undefined) {
+    cols.push(`shoot_day_unit_id = CASE WHEN shoot_day_id = $${i++} THEN shoot_day_unit_id ELSE NULL END`)
+    vals.push(data.shoot_day_id)
   }
   if (cols.length === 0) {
     const rows = await db.select<Record<string, unknown>[]>(`SELECT * FROM ${TABLE} WHERE id = $1 AND deleted_at IS NULL`, [id])

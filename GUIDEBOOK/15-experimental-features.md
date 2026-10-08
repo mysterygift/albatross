@@ -1,6 +1,6 @@
 # 15. Experimental features
 
-Experimental features are on-set tools that are still being tested. They are hidden by default so they don't clutter the app. Switch them on when you want to try them. Currently these are **Script Supervisor**, **Overtime** and **Receipt Capture**.
+Experimental features are on-set tools that are still being tested. They are hidden by default so they don't clutter the app. Switch them on when you want to try them. Currently these are **Script Supervisor**, **Overtime**, **Receipt Capture** and **Send Day Pack**.
 
 ## Turn them on
 
@@ -9,7 +9,7 @@ Experimental features are on-set tools that are still being tested. They are hid
 
 ![Experimental features card in Settings → Developer](images/15-experimental-toggle.png)
 
-**Script Supervisor** now appears under **Script** in the sidebar, **Overtime** under **People** and **Receipt Capture** under **Budget**, each marked with a flask icon and an **Experimental** badge. They also appear in search. Untick the box to hide them again. Nothing you have recorded is deleted.
+**Script Supervisor** now appears under **Script** in the sidebar, **Overtime** under **People**, **Receipt Capture** under **Budget** and **Send Day Pack** under **Deliver**, each marked with a flask icon and an **Experimental** badge. They also appear in search. Untick the box to hide them again. Nothing you have recorded is deleted.
 
 > **Note** Experimental features may change between releases. Script Supervisor and Overtime store their data on this computer only, so they are not available for a production opened from a collaboration server.
 
@@ -145,5 +145,36 @@ Receipt Capture logs a petty-cash purchase from a photographed receipt in one sc
 The photo is saved as the expense's receipt and the spend appears in the budget as a **Purchase**. Large photos are shrunk to a readable size to save space. If the float cannot be matched, the spend is still saved and a message says so; match it from the float in the budget later. **Spend dated today** at the bottom lists today's spend and whether each item has a receipt.
 
 > **Note** Receipt Capture only creates spend. To change it afterwards, open the expense from **Budget**; see [Budget](10-budget.md#review-and-edit-spend).
+
+## Send Day Pack
+
+Send Day Pack emails everyone called to one unit on a shoot day their own copy of the day's paperwork. Each person's name is printed faintly across every page of their copy, so a leaked page shows whose it was. Open **Deliver → Send Day Pack**.
+
+![Send Day Pack with documents, recipients and the email](images/15-day-pack.png)
+
+A pack can hold these documents:
+
+| Document | Where it comes from |
+|---|---|
+| **Call sheet** | The last call sheet saved for this day and unit on **Call Sheets** |
+| **Movement order** | The last movement order saved for this day and unit on **Movement Orders** |
+| **Script sides** | The last sides saved in the Sides Builder for this unit. With none, sides for every scene on the unit are made for you (marked **Generated**) |
+| **Shooting schedule** | Made now from the Stripboard: this unit's strips for the day |
+| **Shot list** | Made now: the shots scheduled on this unit, in running order |
+| **Risk assessments** | Every risk assessment covering this unit, with a warning if one is not signed off |
+| **Storyboard** | Made now: the panels for the shots on this unit |
+
+1. Choose the **Shoot day** and **Unit**. The next shoot day after today is picked for you.
+2. Under **Documents**, tick what to send. Each line says where it comes from and whether it is ready. **Check** means the call sheet, movement order or sides were saved before the day last changed; you can still send them, or save them again first. **Missing** has a button that takes you to the page to make it.
+3. Under **Recipients**, untick anyone who should not get it. The list is the cast and crew the unit's call sheet lists. People with no email address can't be ticked; add one on their person page. On a day with several units, crew marked **All units** are booked for the whole day rather than one unit; set their unit on **Bookings** (see [Book people onto shoot days](07-people.md#book-people-onto-shoot-days)) if they only work with one.
+4. Under **Email**, edit the **Subject** and **Message**. Words in braces are filled in for each person: `{firstName}`, `{name}`, `{production}`, `{date}`, `{day}` and `{unit}`. Your wording is kept for this production; **Reset to default** brings the standard message back. Untick **Copy in cast agents** to leave agents out.
+5. Click **Prepare packs**. Each person's copies are made in their own folder; **Reveal folder** shows them.
+6. Click **Open draft** on a person, or **Open all drafts**. On a Mac whose default mail app is **Apple Mail** or **Microsoft Outlook**, a new message opens with the address, subject, message and files filled in. Check it and click **Send**. Nothing is sent until you do.
+
+> **Note** The first time you use Outlook, macOS asks whether Albatross may control Outlook. Click **OK**. If you clicked **Don't Allow**, turn it on in **System Settings → Privacy & Security → Automation → Albatross**. In Apple Mail, agents are added as recipients rather than CC, because Mail's sharing window has no CC field.
+
+> **Note** With any other mail app, on other computers, or if Apple Mail has no account set up, a draft opens with the address, subject and message but no files, and the person's folder opens beside it: drag the files into the email.
+
+> **Tip** Ticking or unticking a document or a person after preparing means preparing again, so the files always match what you send.
 
 **Next:** [Troubleshooting](16-troubleshooting.md)

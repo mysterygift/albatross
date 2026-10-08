@@ -164,6 +164,11 @@ function mimeTypeForStoryboardStorageKey(storageKey: string): string {
   return 'application/octet-stream'
 }
 
+/** Bytes of a stored storyboard image (`storage_key` is relative to app data). */
+export async function readStoryboardImageBytes(storageKey: string) {
+  return readFile(storageKey, { baseDir: BaseDirectory.AppData })
+}
+
 export async function createStoryboardImageObjectUrl(
   storageKey: string,
   mimeType?: string | null
@@ -171,7 +176,7 @@ export async function createStoryboardImageObjectUrl(
   if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
     return resolveStoryboardImagePath(storageKey)
   }
-  const bytes = await readFile(storageKey, { baseDir: BaseDirectory.AppData })
+  const bytes = await readStoryboardImageBytes(storageKey)
   const blob = new Blob([bytes], { type: mimeType ?? mimeTypeForStoryboardStorageKey(storageKey) })
   return URL.createObjectURL(blob)
 }

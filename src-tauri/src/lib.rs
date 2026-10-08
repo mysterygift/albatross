@@ -2,6 +2,7 @@ mod apf_desktop;
 #[cfg(target_os = "ios")]
 mod apf_ios;
 mod db_encryption;
+mod mail_compose;
 mod open_route_service;
 mod sqlite_load;
 mod sqlite_paths;
@@ -654,6 +655,12 @@ pub fn run() {
             sql: include_str!("../migrations/0106_audit_logs.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 107,
+            description: "bookings_shoot_day_unit",
+            sql: include_str!("../migrations/0107_bookings_shoot_day_unit.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     #[cfg_attr(mobile, allow(unused_mut))]
@@ -675,6 +682,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             apf_desktop::pop_pending_apf_open_paths,
             apf_desktop::grant_read_access_for_apf,
+            mail_compose::compose_mail_draft,
             db_encryption::get_local_db_status,
             db_encryption::get_pre_sqlcipher_backup_status,
             db_encryption::restore_sqlite_from_pre_sqlcipher_backup,

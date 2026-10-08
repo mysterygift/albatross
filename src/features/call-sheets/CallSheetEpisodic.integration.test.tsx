@@ -308,7 +308,11 @@ function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+  return (
+    <MemoryRouter>
+      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+    </MemoryRouter>
+  )
 }
 
 describe('CallSheet episodic PDF output', () => {
@@ -491,9 +495,7 @@ describe('CallSheetsPage RAMS sign-off gate', () => {
 
   async function openDayAndUnit() {
     const user = userEvent.setup()
-    render(
-      <MemoryRouter>{wrap(<CallSheetsPage />)}</MemoryRouter>
-    )
+    render(wrap(<CallSheetsPage />))
     await user.click(screen.getAllByRole('combobox')[0]!)
     await user.click(await screen.findByRole('option', { name: /2025-06-01/ }))
     await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
