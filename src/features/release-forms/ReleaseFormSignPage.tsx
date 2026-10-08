@@ -100,7 +100,7 @@ export function ReleaseFormSignPage() {
           <Skeleton className="h-96 w-full" />
         </div>
       ) : !settings.companyName ? (
-        <div className="mx-auto max-w-xl space-y-6">
+        <div className="mx-auto max-w-xl space-y-6" data-touch-targets>
           <PageHeader title={RELEASE_FORM_TITLES[formType]} />
           <Card>
             <CardContent>
@@ -246,7 +246,7 @@ function ReleaseFormSigner({
     setPadEmpty((p) => (p[key] === empty ? p : { ...p, [key]: empty }))
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 pb-10">
+    <div className="mx-auto max-w-3xl space-y-6 pb-10" data-touch-targets>
       <PageHeader
         title={title}
         description={productionName ? `For ${productionName}` : undefined}

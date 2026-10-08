@@ -201,7 +201,7 @@ Release Forms brings up a contributor or location release for someone to sign on
 
 Albatross saves the signed PDF to **Documents → Releases**, then lets you save or share a copy. On iPad and iPhone this opens the share sheet, so you can AirDrop, email or save it to Files. Cancelling keeps the copy in Documents.
 
-The Release Forms page lists every signed release for the production, with **Open**, **Save or share** and delete buttons.
+The Release Forms page lists every signed release for the production, with **Open**, **Save or share** and delete buttons. On iPad and iPhone, **Share** replaces Open and Save or share.
 
 ### Edit the terms
 

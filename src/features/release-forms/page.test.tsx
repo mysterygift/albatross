@@ -32,10 +32,16 @@ vi.mock('@/features/documents/useEnrichedDocuments', () => ({
 }))
 vi.mock('@/lib/documents/hardDeleteDocument', () => ({ hardDeleteDocument: vi.fn() }))
 vi.mock('@tauri-apps/plugin-opener', () => ({ revealItemInDir: vi.fn() }))
+const platform = vi.hoisted(() => ({ ios: false }))
+vi.mock('@/lib/platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/platform')>()),
+  isIosPlatform: () => platform.ios,
+}))
 
 afterEach(() => {
   cleanup()
   settings.clear()
+  platform.ios = false
 })
 
 function renderPage() {
@@ -71,6 +77,17 @@ describe('ReleaseFormsPage', () => {
     renderPage()
     expect(screen.getByText('contributor-release-jane-smith-2026-10-08-1432.pdf')).toBeTruthy()
     expect(screen.queryByText('uploaded.pdf')).toBeNull()
+  })
+
+  it('offers Open and Save or share on desktop, and a single Share on iOS', () => {
+    renderPage()
+    expect(screen.getByRole('button', { name: /^open$/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /save or share/i })).toBeTruthy()
+    cleanup()
+    platform.ios = true
+    renderPage()
+    expect(screen.getByRole('button', { name: /^share$/i })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /save or share/i })).toBeNull()
   })
 
   it('asks for the production company before the first release, then offers the forms', async () => {
