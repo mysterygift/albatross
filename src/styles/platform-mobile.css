@@ -93,3 +93,19 @@ html[data-platform] [data-slot="button"] {
     min-height: 2.5rem;
   }
 }
+
+/*
+ * Calendar: the "Day N" header is the long-press handle that moves a whole shoot day. Give it a
+ * finger-sized hit area, and keep long-presses on it and on unit cards from selecting text.
+ */
+@media (pointer: coarse) {
+  html[data-platform] [data-slot="calendar-day-handle"] {
+    min-height: 2.5rem;
+  }
+}
+html[data-platform] [data-slot="calendar-day-handle"],
+html[data-platform] [data-calendar-unit] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
