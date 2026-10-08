@@ -17,7 +17,7 @@ Open **Deliver → Documents**. Each card is a category with a file count and th
 | **General files** | Manual uploads and uncategorised attachments |
 | **Script & sides** | Imported scripts, script breakdown exports, shoot-day sides |
 | **Set paperwork** | Call sheets, movement orders, risk assessments, script supervisor paperwork |
-| **People & locations** | Contributor forms, location releases, permits |
+| **Releases** | Releases signed in Release Forms, uploaded contributor forms and location releases, permits |
 | **Deliverables** | Files attached to deliverables |
 | **Music & clearance** | Cue sheets |
 | **Budget & finance** | Budget CSVs, cost reports, vendor invoices, purchase orders, expense receipts |

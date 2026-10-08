@@ -26,9 +26,12 @@ describe('document catalog', () => {
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.continuitySheets)).toBe('set-paperwork')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.editorsLog)).toBe('set-paperwork')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.markedUpScript)).toBe('set-paperwork')
-    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.contributorForm)).toBe('people-locations')
-    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.permit)).toBe('people-locations')
-    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.locationRelease)).toBe('people-locations')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.contributorForm)).toBe('releases')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.permit)).toBe('releases')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.locationRelease)).toBe('releases')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.signedContributorRelease)).toBe('releases')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.signedLocationRelease)).toBe('releases')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.manualUploadPeopleLocations)).toBe('releases')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.deliverable)).toBe('deliverables')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.cueSheet)).toBe('music')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.budgetCsv)).toBe('finance')
@@ -50,6 +53,13 @@ describe('document catalog', () => {
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.permit)).toBe('/locations')
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.locationRelease)).toBe('/locations')
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.contributorForm)).toBe('/people/cast-manager')
+  })
+
+  it('links signed releases and release uploads to the release forms page', () => {
+    expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.signedContributorRelease)).toBe('/release-forms')
+    expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.signedLocationRelease)).toBe('/release-forms')
+    expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.manualUploadPeopleLocations)).toBe('/release-forms')
+    expect(getManualUploadEntityType('releases')).toBe(DOCUMENT_ENTITY_TYPES.manualUploadPeopleLocations)
   })
 
   it('links risk assessment documents back to the risk assessments page', () => {
@@ -89,13 +99,23 @@ describe('document catalog', () => {
       T.riskAssessment,
       T.manualUploadSchedule,
       T.manualUploadDeliverable,
+      T.signedContributorRelease,
+      T.signedLocationRelease,
     ]
     for (const entityType of deletable) expect(isDeletableDocument(entityType)).toBe(true)
   })
 
   it('keeps other generated documents and unknown types non-deletable', () => {
     const T = DOCUMENT_ENTITY_TYPES
-    const kept = [T.script, T.sidesExport, T.deliverable, T.locationRelease, T.permit, T.doodPdf]
+    const kept = [
+      T.script,
+      T.sidesExport,
+      T.deliverable,
+      T.locationRelease,
+      T.contributorForm,
+      T.permit,
+      T.doodPdf,
+    ]
     for (const entityType of kept) expect(isDeletableDocument(entityType)).toBe(false)
     expect(isDeletableDocument('something_new')).toBe(false)
   })

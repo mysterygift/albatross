@@ -14,7 +14,7 @@ New here? Read chapters 1 and 2, then jump to whichever area you need. The chapt
 | 4 | [Script](04-script.md) | Import a script, build sections and sides, break it down by department |
 | 5 | [Schedule](05-schedule.md) | Plan with the Calendar, Stripboard, Shot Lists and Storyboard |
 | 6 | [Locations](06-locations.md) | Keep the location register, permits and release forms |
-| 7 | [People](07-people.md) | Manage cast and crew, bookings and the Day Out of Days |
+| 7 | [People](07-people.md) | Manage cast and crew, bookings, the Day Out of Days and release forms |
 | 8 | [Equipment](08-equipment.md) | Keep a gear registry, build lists and checklists |
 | 9 | [Risk Assessments](09-risk-assessments.md) | Write, approve and export RAMS |
 | 10 | [Budget](10-budget.md) | Set up accounts, log spend, manage vendors and POs, revise budgets |

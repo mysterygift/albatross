@@ -160,6 +160,13 @@ function enrichSingleDocument(doc: Document, maps: LookupMaps): EnrichedDocument
     groupKey = entityType
     groupTitle = getDocumentTypeLabel(entityType)
     groupSortKey = doc.created_at
+  } else if (
+    entityType === DOCUMENT_ENTITY_TYPES.signedContributorRelease ||
+    entityType === DOCUMENT_ENTITY_TYPES.signedLocationRelease
+  ) {
+    groupKey = entityType
+    groupTitle = `${getDocumentTypeLabel(entityType)}s`
+    groupSortKey = entityType
   } else if (entityType === DOCUMENT_ENTITY_TYPES.cueSheet) {
     groupKey = 'cue-sheets'
     groupTitle = 'Cue sheets'

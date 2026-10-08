@@ -8,6 +8,7 @@ The **People** group holds everyone on the production: cast and crew records, wh
 | **Crew Manager** | Keep crew by department and role, with Heads of Department (HODs) |
 | **Bookings** | Book people onto shoot days and see who is still missing |
 | **Day Out of Days** | See which cast work on which shoot days, and spot clashes |
+| **Release Forms** | Have contributors and location owners sign a release on screen |
 
 Everything here belongs to the current production. Pick it in the production switcher first (see [Productions](03-productions.md)).
 
@@ -176,5 +177,40 @@ To fix a clash, move the scene on the Stripboard or edit the person's unavailabl
 ### Export
 
 Click **PDF** or **CSV** to export the rows currently shown (after search and filter). Albatross also files a copy in **Documents** (see [Documents, deliverables and music](12-documents-deliverables-music.md)), then asks where to save a second copy.
+
+## Release Forms
+
+![Release Forms with signed releases listed](images/07-release-forms.png)
+
+Release Forms brings up a contributor or location release for someone to sign on screen: with a finger or Apple Pencil on an iPad or iPhone, or with the mouse on a computer. The signed PDF is filed in **Documents → Releases**.
+
+### Get a release signed
+
+1. Open **People → Release Forms** and click **New Release**.
+2. Choose **Contributor Release Form** or **Location Release Form**.
+
+   ![Choosing a release form](images/07-new-release.png)
+
+3. Fill in the details. For a location release, **Location address** is required, and it and the **Shoot date(s)** are written into the terms as you type. For a contributor under 18, tick **The person signing is under 18**; a parent or guardian then reads the consent and signs as well.
+4. Hand over the device. The person reads the terms, signs in the signature box and types their **Full print name**. On iPad, Apple Pencil users can also handwrite their name into the box. **Undo** removes the last stroke and **Clear** starts again.
+5. On a location release, the producer can add an optional countersignature.
+6. Click **Sign**. The date and time are added at that moment.
+
+![A contributor release ready to sign](images/07-release-sign.png)
+
+Albatross saves the signed PDF to **Documents → Releases**, then lets you save or share a copy. On iPad and iPhone this opens the share sheet, so you can AirDrop, email or save it to Files. Cancelling keeps the copy in Documents.
+
+The Release Forms page lists every signed release for the production, with **Open**, **Save or share** and delete buttons.
+
+### Edit the terms
+
+1. On the Release Forms page, click **Edit terms**.
+2. Enter your **Production company**. It replaces `{{production_company}}` in the terms; the production name comes from the current production.
+3. Edit the **Contributor**, **Parent or guardian** and **Location** terms. Use the **Insert** buttons to add a placeholder, and leave a blank line between paragraphs. **Restore standard terms** puts the original wording back.
+4. Click **Save terms**.
+
+The company and terms are shared by every production on this computer.
+
+> **Note** Changing the terms only affects releases signed afterwards. A signed release keeps the exact terms it was signed under.
 
 **Next:** [Equipment](08-equipment.md)

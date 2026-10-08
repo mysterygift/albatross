@@ -75,7 +75,7 @@ Custom Rust commands (`invoke_handler` in `lib.rs`): database encryption and mig
 
 | Library | Role | Where |
 |---|---|---|
-| `pdf-lib` | Generates every exported PDF in the app (call sheets, movement orders, DOOD, cost report, daily progress report, equipment list, risk assessments, script breakdown, sides, continuity sheets, marked-up script, location release cover) and applies recipient-name watermarks | `src/lib/pdf/*`, shared layout helpers in `layoutKit.ts`; `src/lib/risk-assessments/riskMatrix.ts` |
+| `pdf-lib` | Generates every exported PDF in the app (call sheets, movement orders, DOOD, cost report, daily progress report, equipment list, risk assessments, script breakdown, sides, continuity sheets, marked-up script, signed release forms, location release cover) and applies recipient-name watermarks | `src/lib/pdf/*`, shared layout helpers in `layoutKit.ts`; `src/lib/risk-assessments/riskMatrix.ts` |
 | `react-pdf` (wraps `pdfjs-dist`) | Renders a generated PDF to canvas for the in-app preview, fitted to the container width | `src/components/pdf-preview.tsx`, used by `src/features/call-sheets/page.tsx` and `src/features/movement-orders/page.tsx` |
 | `pdfjs-dist` (direct) | Reads text from an uploaded screenplay PDF; extracts frames from an Athena storyboard PDF | `src/lib/script-parser/pdf-parser.ts`, `src/lib/storyboard/athena-import.ts` |
 | `fflate` | Zips publish packages and `.apf` archives | `src/lib/publish/packageCodec.ts`, `src/lib/importExport/buildApfArchive.ts`, `readApfArchive.ts` |
