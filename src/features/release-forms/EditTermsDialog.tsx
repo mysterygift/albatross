@@ -73,7 +73,10 @@ function EditTermsDialogBody({ open, onOpenChange, settings }: EditTermsDialogPr
     if (ok) setDraft((d) => ({ ...d, [key]: STANDARD_RELEASE_TERMS[key] }))
   }
 
+  const companyMissing = !draft.companyName.trim()
+
   const handleSave = () => {
+    if (companyMissing) return
     save.mutate(draft, {
       onSuccess: () => {
         toast.success('Release terms saved. New release forms will use them.')
@@ -99,15 +102,23 @@ function EditTermsDialogBody({ open, onOpenChange, settings }: EditTermsDialogPr
         </Alert>
 
         <div className="space-y-2">
-          <Label htmlFor="release-company-name">Production company</Label>
+          <Label htmlFor="release-company-name">
+            Production company<span className="text-destructive"> *</span>
+          </Label>
           <Input
             id="release-company-name"
+            required
+            aria-invalid={companyMissing}
+            aria-describedby="release-company-help"
             value={draft.companyName}
             placeholder="e.g. Maverick Live"
             onChange={(e) => setDraft((d) => ({ ...d, companyName: e.target.value }))}
           />
-          <p className="text-muted-foreground text-xs">
-            Fills in <code>{'{{production_company}}'}</code>. The production name comes from the current production.
+          {companyMissing && (
+            <p className="text-destructive text-xs">Enter your production company. Release forms can’t be signed without it.</p>
+          )}
+          <p id="release-company-help" className="text-muted-foreground text-xs">
+            Required. Fills in <code>{'{{production_company}}'}</code>. The production name comes from the current production.
           </p>
         </div>
 
@@ -158,7 +169,7 @@ function EditTermsDialogBody({ open, onOpenChange, settings }: EditTermsDialogPr
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="button" onClick={handleSave} disabled={save.isPending}>
+          <Button type="button" onClick={handleSave} disabled={save.isPending || companyMissing}>
             {save.isPending ? 'Saving…' : 'Save terms'}
           </Button>
         </DialogFooter>

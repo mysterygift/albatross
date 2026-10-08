@@ -32,6 +32,7 @@ export async function signReleaseForm(args: {
   formType: ReleaseFormType
   pdf: ReleaseFormPdfInput
 }): Promise<SignedReleaseExport> {
+  if (!args.pdf.companyName.trim()) throw new Error('Set your production company before signing a release.')
   const bytes = await generateReleaseFormPdf(args.pdf)
   const fileName = releasePdfFileName(args.formType, args.pdf.signer.name, args.pdf.signedAt)
   const { documentId } = await persistProductionDocument({

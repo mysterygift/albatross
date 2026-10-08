@@ -187,6 +187,7 @@ Release Forms brings up a contributor or location release for someone to sign on
 ### Get a release signed
 
 1. Open **People → Release Forms** and click **New Release**.
+   The first time, Albatross asks for your **Production company**. Enter it and click **Save and continue**. It is required, because the releases grant their rights to it.
 2. Choose **Contributor Release Form** or **Location Release Form**.
 
    ![Choosing a release form](images/07-new-release.png)
@@ -205,7 +206,7 @@ The Release Forms page lists every signed release for the production, with **Ope
 ### Edit the terms
 
 1. On the Release Forms page, click **Edit terms**.
-2. Enter your **Production company**. It replaces `{{production_company}}` in the terms; the production name comes from the current production.
+2. Enter your **Production company** (required). It replaces `{{production_company}}` in the terms; the production name comes from the current production.
 3. Edit the **Contributor**, **Parent or guardian** and **Location** terms. Use the **Insert** buttons to add a placeholder, and leave a blank line between paragraphs. **Restore standard terms** puts the original wording back.
 4. Click **Save terms**.
 

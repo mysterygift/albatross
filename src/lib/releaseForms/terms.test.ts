@@ -60,3 +60,29 @@ describe('formatting', () => {
     expect(releasePdfFileName('location', '!!!', at)).toBe('location-release-signed-2026-10-08-0905.pdf')
   })
 })
+
+describe('production company is required', () => {
+  it('is refused when saving settings and when signing', async () => {
+    const { saveReleaseFormSettings, STANDARD_RELEASE_TERMS } = await import('@/lib/releaseForms/settings')
+    await expect(saveReleaseFormSettings({ companyName: '  ', ...STANDARD_RELEASE_TERMS })).rejects.toThrow(
+      /production company/
+    )
+    const { signReleaseForm } = await import('@/lib/releaseForms/signReleaseForm')
+    await expect(
+      signReleaseForm({
+        productionId: 'p',
+        formType: 'contributor',
+        pdf: {
+          title: 'T',
+          companyName: '',
+          productionName: 'P',
+          termsParagraphs: [],
+          details: [],
+          signer: { name: 'N', signaturePng: new Uint8Array() },
+          signedAt: new Date(),
+          signedAtLabel: '',
+        },
+      })
+    ).rejects.toThrow(/production company/)
+  })
+})
