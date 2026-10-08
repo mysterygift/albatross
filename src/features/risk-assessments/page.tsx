@@ -42,7 +42,7 @@ import {
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import type { Unit } from '@/lib/db/types'
 import { documentsQueryKey } from '@/lib/documents/persistDocument'
-import { unitNameToKey } from '@/lib/schedule/unitKey'
+import { sortUnitsForDisplay } from '@/lib/schedule/unitKey'
 import { cn } from '@/lib/utils'
 
 type StatusFilter = 'all' | 'draft' | 'approved'
@@ -160,9 +160,9 @@ export function RiskAssessmentsPage() {
         header: 'Units',
         enableSorting: false,
         cell: ({ row }) => {
-          const names = row.original.units
-            .map((u) => unitName.get(u.unit_id) ?? 'Unit')
-            .sort((a, b) => Number(unitNameToKey(a) !== 'main') - Number(unitNameToKey(b) !== 'main'))
+          const names = sortUnitsForDisplay(
+            row.original.units.map((u) => ({ name: unitName.get(u.unit_id) ?? 'Unit' }))
+          ).map((u) => u.name)
           return (
             <div className="flex flex-wrap gap-1">
               {names.length === 0 ? <span className="text-muted-foreground">—</span> : names.map((n) => <UnitChip key={n} name={n} />)}

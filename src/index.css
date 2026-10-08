@@ -48,6 +48,12 @@
   --color-unit-main-foreground: var(--unit-main-foreground);
   --color-unit-second: var(--unit-second);
   --color-unit-second-foreground: var(--unit-second-foreground);
+  --color-unit-third: var(--unit-third);
+  --color-unit-third-foreground: var(--unit-third-foreground);
+  --color-unit-fourth: var(--unit-fourth);
+  --color-unit-fourth-foreground: var(--unit-fourth-foreground);
+  --color-unit-fifth: var(--unit-fifth);
+  --color-unit-fifth-foreground: var(--unit-fifth-foreground);
 }
 
 /* Graphite + Mint theme: dark charcoal background, mint accent */
@@ -91,6 +97,12 @@
   --unit-main-foreground: oklch(0.18 0.02 165);
   --unit-second: oklch(0.65 0.12 200);
   --unit-second-foreground: oklch(0.95 0.01 200);
+  --unit-third: oklch(0.78 0.14 80);
+  --unit-third-foreground: oklch(0.2 0.03 80);
+  --unit-fourth: oklch(0.55 0.16 300);
+  --unit-fourth-foreground: oklch(0.97 0.01 300);
+  --unit-fifth: oklch(0.58 0.18 25);
+  --unit-fifth-foreground: oklch(0.98 0.01 25);
 }
 
 .dark {
@@ -124,6 +136,12 @@
   --unit-main-foreground: oklch(0.15 0.02 165);
   --unit-second: oklch(0.68 0.11 200);
   --unit-second-foreground: oklch(0.95 0.01 200);
+  --unit-third: oklch(0.8 0.13 80);
+  --unit-third-foreground: oklch(0.18 0.03 80);
+  --unit-fourth: oklch(0.7 0.13 300);
+  --unit-fourth-foreground: oklch(0.16 0.02 300);
+  --unit-fifth: oklch(0.7 0.16 25);
+  --unit-fifth-foreground: oklch(0.16 0.02 25);
 }
 
 @layer base {

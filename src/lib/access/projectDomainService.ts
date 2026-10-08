@@ -3,7 +3,6 @@ import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
 import { requireProjectEditAccess, requireProjectViewAccess } from '@/lib/access/projectAccessService'
 import {
   createShootDayWithDefaultMainUnit,
-  addSecondUnitToShootDays,
   createScene,
   createShot,
   deleteShot,
@@ -74,7 +73,13 @@ import {
   setShootDayUnitLocked,
   setShootDayUnitMovementOrderJson,
 } from '@/lib/db/repositories/shoot-day-units'
-import { ensureMainUnit, ensureSecondUnit, listUnitsByProduction } from '@/lib/db/repositories/units'
+import { ensureMainUnit, listUnitsByProduction } from '@/lib/db/repositories/units'
+import {
+  addUnitToShootDays,
+  moveShootDayUnitToDate,
+  removeUnitFromShootDay,
+  swapShootDayUnitRanks,
+} from '@/lib/db/repositories/shoot-day-unit-ranks'
 import {
   createCrewAvailability,
   deleteCrewAvailability,
@@ -89,7 +94,6 @@ import {
   createStrip,
   deleteShootDayAndDiscardStrips,
   deleteStrip,
-  removeSecondUnitFromShootDay,
   getScheduledSceneIdsByShootDay,
   listBoneyardStrips,
   listStripsByProduction,
@@ -959,14 +963,37 @@ export async function deleteShootDayAndDiscardStripsForActor(args: {
   return deleteShootDayAndDiscardStrips(args.shootDayId)
 }
 
-export async function removeSecondUnitFromShootDayForActor(args: {
+export async function removeUnitFromShootDayForActor(args: {
   db: DatabaseAdapter
   actor: AuthenticatedUser
   shootDayUnitId: string
 }) {
   const productionId = await resolveProductionIdForShootDayUnit(args.db, args.shootDayUnitId)
   await requireProjectEditAccess(args.db, args.actor, productionId)
-  return removeSecondUnitFromShootDay(args.shootDayUnitId)
+  return removeUnitFromShootDay(args.shootDayUnitId)
+}
+
+export async function moveShootDayUnitToDateForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  data: Parameters<typeof moveShootDayUnitToDate>[0]
+}) {
+  const productionId = await resolveProductionIdForShootDayUnit(args.db, args.data.shootDayUnitId)
+  await requireProjectEditAccess(args.db, args.actor, productionId)
+  return moveShootDayUnitToDate(args.data)
+}
+
+export async function swapShootDayUnitRanksForActor(args: {
+  db: DatabaseAdapter
+  actor: AuthenticatedUser
+  shootDayUnitIdA: string
+  shootDayUnitIdB: string
+}) {
+  const productionIdA = await resolveProductionIdForShootDayUnit(args.db, args.shootDayUnitIdA)
+  const productionIdB = await resolveProductionIdForShootDayUnit(args.db, args.shootDayUnitIdB)
+  if (productionIdA !== productionIdB) throw new Error('Units must belong to the same production')
+  await requireProjectEditAccess(args.db, args.actor, productionIdA)
+  return swapShootDayUnitRanks(args.shootDayUnitIdA, args.shootDayUnitIdB)
 }
 
 export async function ensureMainUnitForActor(args: {
@@ -978,23 +1005,14 @@ export async function ensureMainUnitForActor(args: {
   return ensureMainUnit(args.productionId)
 }
 
-export async function ensureSecondUnitForActor(args: {
-  db: DatabaseAdapter
-  actor: AuthenticatedUser
-  productionId: string
-}) {
-  await requireProjectEditAccess(args.db, args.actor, args.productionId)
-  return ensureSecondUnit(args.productionId)
-}
-
-export async function addSecondUnitToShootDaysForActor(args: {
+export async function addUnitToShootDaysForActor(args: {
   db: DatabaseAdapter
   actor: AuthenticatedUser
   productionId: string
   shootDayIds: string[]
 }) {
   await requireProjectEditAccess(args.db, args.actor, args.productionId)
-  return addSecondUnitToShootDays({
+  return addUnitToShootDays({
     productionId: args.productionId,
     shootDayIds: args.shootDayIds,
   })
