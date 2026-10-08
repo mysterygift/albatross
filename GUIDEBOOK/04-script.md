@@ -91,7 +91,7 @@ Sides are the script pages for one shoot day. They are built from the Calendar.
 4. Tick the sections to include. **Validation** lists problems; blocking ones disable export.
 5. Click **Export sides PDF**, then **Open sides PDF**.
 
-Exports are listed under **Sides** in the day summary and saved to Documents. See [Schedule](05-schedule.md) for the Calendar.
+The PDF is laid out like a shooting script, with standard indents and the scene number on both sides of each scene heading. The preview uses the same layout. Exports are listed under **Sides** in the day summary and saved to Documents. See [Schedule](05-schedule.md) for the Calendar.
 
 ## Script Breakdown
 
