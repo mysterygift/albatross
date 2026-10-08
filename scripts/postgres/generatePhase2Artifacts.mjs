@@ -16,6 +16,11 @@ const BOOLEAN_COLUMN_ALLOWLIST = new Set([
   'is_episodic',
   'checked_out',
   'checked_back_in',
+  // Added by postgres migrations 0012/0013/0015 as BOOLEAN.
+  'tax_credits_enabled',
+  'vat_tracking_enabled',
+  'is_vfx',
+  'is_global',
 ])
 
 const NUMERIC_COLUMN_ALLOWLIST = new Set([
@@ -46,8 +51,12 @@ function quoteLiteral(value) {
   return `'${String(value).replaceAll("'", "''")}'`
 }
 
+// JSON-shaped columns that postgres/migrations 0025/0026 deliberately shipped as TEXT; changing the
+// type of a shipped column would need a data migration and a change in every reader.
+const TEXT_JSON_COLUMN_ALLOWLIST = new Set(['movement_order_json', 'movement_pins_json'])
+
 function isJsonColumn(columnName) {
-  return columnName.endsWith('_json')
+  return columnName.endsWith('_json') && !TEXT_JSON_COLUMN_ALLOWLIST.has(columnName)
 }
 
 function isDateColumn(columnName) {
@@ -114,7 +123,11 @@ function convertDefaultValue(defaultValue, pgType, columnName) {
     if (normalized === '1') return 'TRUE'
     if (normalized === '0') return 'FALSE'
   }
-  if (pgType === 'TIMESTAMPTZ' && /CURRENT_TIMESTAMP/i.test(normalized)) return 'CURRENT_TIMESTAMP'
+  if (pgType === 'TIMESTAMPTZ' && /CURRENT_TIMESTAMP|datetime\s*\(|strftime\s*\(/i.test(normalized)) {
+    return 'CURRENT_TIMESTAMP'
+  }
+  // SQLite id backfill idiom: lower(hex(randomblob(16))).
+  if (pgType === 'UUID' && /randomblob\s*\(/i.test(normalized)) return 'gen_random_uuid()'
   if (/^'.*'$/.test(normalized)) return normalized
   if (/^-?\d+(\.\d+)?$/.test(normalized)) return normalized
   if (/^(CURRENT_TIMESTAMP|NULL|TRUE|FALSE)$/i.test(normalized)) return normalized.toUpperCase()
@@ -255,6 +268,27 @@ async function loadAudit() {
   return { tables }
 }
 
+// PostgreSQL cannot reference a table that does not exist yet, so emit tables parents-first
+// (alphabetical among ready tables, which keeps the output stable between runs).
+function orderTablesByDependency(tables) {
+  const byName = new Map(tables.map((t) => [t.table, t]))
+  const ordered = []
+  const done = new Set()
+  const remaining = [...tables].sort((a, b) => a.table.localeCompare(b.table))
+  while (remaining.length > 0) {
+    const index = remaining.findIndex((t) =>
+      t.foreignKeys.every((fk) => fk.table === t.table || !byName.has(fk.table) || done.has(fk.table))
+    )
+    if (index < 0) {
+      throw new Error(`Circular foreign keys between: ${remaining.map((t) => t.table).join(', ')}`)
+    }
+    const [next] = remaining.splice(index, 1)
+    ordered.push(next)
+    done.add(next.table)
+  }
+  return ordered
+}
+
 function renderBaselineSql(audit) {
   const lines = []
   lines.push('-- PostgreSQL baseline schema for Albatross')
@@ -266,7 +300,7 @@ function renderBaselineSql(audit) {
   lines.push('-- PostgreSQL baseline models only final state using UUID defaults + partial live-revision uniqueness.')
   lines.push('')
 
-  for (const table of audit.tables) {
+  for (const table of orderTablesByDependency(audit.tables)) {
     lines.push(`CREATE TABLE ${table.table} (`)
     const columnDefs = table.columns.map((column) => {
       const pgType = mapSqliteTypeToPostgres(column, table.createSql)
@@ -280,20 +314,29 @@ function renderBaselineSql(audit) {
       .filter((c) => Number(c.pk) > 0)
       .sort((a, b) => Number(a.pk) - Number(b.pk))
       .map((c) => c.name)
-    const fkDefs = table.foreignKeys
-      .sort((a, b) => Number(a.id) - Number(b.id) || Number(a.seq) - Number(b.seq))
-      .map((fk, idx) => {
-        const name = `fk_${table.table}_${idx + 1}_${fk.from}`
-        return (
-          `  CONSTRAINT ${name} FOREIGN KEY (${fk.from}) REFERENCES ${fk.table}(${fk.to})` +
-          ` ON UPDATE ${fk.on_update} ON DELETE ${fk.on_delete}`
-        )
-      })
+    // PRAGMA foreign_key_list returns one row per column; group rows sharing an id into one composite FK.
+    const fkGroups = new Map()
+    for (const fk of [...table.foreignKeys].sort((a, b) => Number(a.id) - Number(b.id) || Number(a.seq) - Number(b.seq))) {
+      const group = fkGroups.get(Number(fk.id)) ?? []
+      group.push(fk)
+      fkGroups.set(Number(fk.id), group)
+    }
+    const fkDefs = [...fkGroups.values()].map((group, idx) => {
+      const first = group[0]
+      const name = `fk_${table.table}_${idx + 1}_${first.from}`
+      return (
+        `  CONSTRAINT ${name} FOREIGN KEY (${group.map((g) => g.from).join(', ')})` +
+        ` REFERENCES ${first.table}(${group.map((g) => g.to).join(', ')})` +
+        ` ON UPDATE ${first.on_update} ON DELETE ${first.on_delete}`
+      )
+    })
     const constraints = []
     if (pkColumns.length > 0) {
       constraints.push(`  CONSTRAINT pk_${table.table} PRIMARY KEY (${pkColumns.join(', ')})`)
     }
     const checkExpressions = extractCheckExpressions(table.createSql)
+      // json_valid() has no PostgreSQL equivalent; JSONB columns reject invalid JSON on their own.
+      .filter((expr) => !/\bjson_valid\s*\(/i.test(expr))
       .map((expr) => convertCheckExpression(expr, table))
       .filter(Boolean)
     for (const [idx, expr] of checkExpressions.entries()) {
@@ -381,11 +424,15 @@ const audit = await loadAudit()
 const baselineSql = renderBaselineSql(audit)
 const auditMarkdown = renderAuditMarkdown(audit)
 
+// postgres/migrations/0001_baseline.sql is a shipped, frozen migration: never regenerate it.
+// Schema changes after 0001 are hand-written incremental migrations (0002_*, ...); this script only
+// refreshes the consolidated end-state snapshot, which the parity test compares with SQLite.
+// The human-readable audit goes to a git-ignored folder.
+const generatedDir = join(process.cwd(), 'scripts', 'postgres', '.generated')
 mkdirSync(join(process.cwd(), 'postgres', 'schema'), { recursive: true })
-mkdirSync(join(process.cwd(), 'postgres', 'migrations'), { recursive: true })
+mkdirSync(generatedDir, { recursive: true })
 
 writeFileSync(join(process.cwd(), 'postgres', 'schema', 'baseline.sql'), baselineSql)
-writeFileSync(join(process.cwd(), 'postgres', 'migrations', '0001_baseline.sql'), baselineSql)
-writeFileSync(join(process.cwd(), 'docs', 'POSTGRESQL_SCHEMA_AUDIT.md'), auditMarkdown)
+writeFileSync(join(generatedDir, 'POSTGRESQL_SCHEMA_AUDIT.md'), auditMarkdown)
 
 console.log(`Generated baseline + audit for ${audit.tables.length} tables.`)

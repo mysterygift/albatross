@@ -94,6 +94,27 @@ const PARENT_LINKS: Partial<Record<ApfV1TableKey, ParentLink[]>> = {
     { column: 'from_script_version_id', parent: 'script_versions', onMissing: 'drop' },
     { column: 'to_script_version_id', parent: 'script_versions', onMissing: 'drop' },
   ],
+  breakdown_tags: [
+    { column: 'element_id', parent: 'breakdown_elements', onMissing: 'drop' },
+    { column: 'script_version_id', parent: 'script_versions', onMissing: 'drop' },
+    { column: 'scene_id', parent: 'scenes', onMissing: 'drop' },
+    { column: 'start_page_id', parent: 'script_pages', onMissing: 'drop' },
+    { column: 'end_page_id', parent: 'script_pages', onMissing: 'drop' },
+    { column: 'carried_from_id', parent: 'breakdown_tags', onMissing: 'null' },
+  ],
+  storyboard_imports: [{ column: 'scene_id', parent: 'scenes', onMissing: 'null' }],
+  storyboard_images: [
+    { column: 'scene_id', parent: 'scenes', onMissing: 'drop' },
+    { column: 'shot_id', parent: 'shots', onMissing: 'drop' },
+    { column: 'source_import_id', parent: 'storyboard_imports', onMissing: 'null' },
+  ],
+  // A hidden global vendor that is not part of the package has nothing to hide.
+  vendor_production_exclusions: [{ column: 'vendor_id', parent: 'vendors', onMissing: 'drop' }],
+  crew_hours_person_settings: [{ column: 'person_id', parent: 'people', onMissing: 'drop' }],
+  crew_day_hours: [
+    { column: 'shoot_day_id', parent: 'shoot_days', onMissing: 'drop' },
+    { column: 'person_id', parent: 'people', onMissing: 'drop' },
+  ],
 }
 
 function hasValue(v: unknown): boolean {

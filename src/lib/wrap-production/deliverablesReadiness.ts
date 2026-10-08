@@ -1,6 +1,6 @@
 /**
  * Deliverables readiness for wrap production.
- * Read-only; maps deliverable status to wrap states (signed off / pending / unknown).
+ * Read-only; maps deliverable status to wrap states (signed off = delivered / pending / unknown).
  * Degrades gracefully when deliverables feature is incomplete.
  */
 
@@ -18,13 +18,35 @@ export type DeliverablesReadinessSummary = {
   totalCount: number
 }
 
-/** Map raw deliverable.status string to wrap status. */
+/**
+ * Statuses that count as done. `delivered` is the Deliverables page's final
+ * status; `ready` (packaged, not yet sent) deliberately does not count.
+ * `signed_off`, `complete`, `completed` and `done` are legacy values.
+ */
+const DONE_STATUSES = new Set([
+  'delivered',
+  'signed_off',
+  'signed off',
+  'complete',
+  'completed',
+  'done',
+])
+
+/** Statuses that are known but not done yet (Deliverables page values plus legacy `pending`). */
+const PENDING_STATUSES = new Set([
+  'not_started',
+  'not started',
+  'preparing',
+  'qc',
+  'ready',
+  'pending',
+])
+
+/** Map raw deliverable.status string to wrap status. Unrecognised values are 'unknown'. */
 export function getDeliverableWrapStatus(status: string): DeliverableWrapStatus {
   const s = (status ?? '').trim().toLowerCase()
-  if (s === 'signed_off' || s === 'signed off' || s === 'complete' || s === 'completed') {
-    return 'signed_off'
-  }
-  if (s === 'pending') return 'pending'
+  if (DONE_STATUSES.has(s)) return 'signed_off'
+  if (PENDING_STATUSES.has(s)) return 'pending'
   return 'unknown'
 }
 

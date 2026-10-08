@@ -1,0 +1,68 @@
+# Schedule
+
+Shoot days, units, scenes, shots and the stripboard, surfaced as **Schedule → Calendar** (`/schedule/calendar`), **Stripboard** (`/schedule/stripboard`), **Shot Lists** (`/schedule/shots`) and **Storyboard** (`/schedule/storyboard`). Script pages that share the `/schedule/script-*` routes are in [script.md](script.md).
+
+## Code map
+
+| Area | Location |
+|---|---|
+| Pages/UI | `src/features/schedule/`: `calendar-page.tsx`, `stripboard-page.tsx` (+ `stripboard-day-view.tsx`, `stripboard-table-row.tsx`, `strip-item.tsx`, `strip-actions.tsx`, `unscheduled-scenes-panel.tsx`, `boneyard-panel.tsx`, `stripboard-hooks.ts`, `stripboardUrlState.ts`), `shot-list-page.tsx` (+ `shot-list-validation.ts`), `storyboard-page.tsx` |
+| Pure logic | [`src/lib/schedule/`](../../src/lib/schedule): `stripboardRows`, `stripboardDayTotals`, `orderedLocationStack`, `episodicScheduleDisplay`, `unitKey`, `calendarDrop`, `time`, `sceneDisplay`, `shotNumberDuplicate`, `smartSchedulingInsights` |
+| Repositories | [`schedule.ts`](../../src/lib/db/repositories/schedule.ts) (shoot days, scenes, shots, moves/swaps), [`stripboard-strips.ts`](../../src/lib/db/repositories/stripboard-strips.ts), [`shoot-day-units.ts`](../../src/lib/db/repositories/shoot-day-units.ts), [`shoot-day-unit-ranks.ts`](../../src/lib/db/repositories/shoot-day-unit-ranks.ts) (add/remove/move/swap units), [`units.ts`](../../src/lib/db/repositories/units.ts), [`calendar.ts`](../../src/lib/db/repositories/calendar.ts), [`storyboard.ts`](../../src/lib/db/repositories/storyboard.ts), `shot-cast.ts`, `scene-cast.ts` |
+| Tables | `shoot_days`, `units`, `shoot_day_units`, `scenes`, `shots`, `stripboard_strips`, `scene_cast`, `shot_cast`, `storyboard_images`, `storyboard_imports` (`src-tauri/migrations`: base schema `0001`/`0002`; boneyard `0010`; shot strips `0011`; storyboard `0064`; MOVE locations `0071`; movement pins `0100`/`0101`) |
+| Tests | `*.test.ts(x)` beside the code; `ScheduleEpisodic`, `StripboardDayView`, `storyboard-page`, `ShotListEpisodeContinuity` in `src/features/schedule`; `src/lib/db/shootDayOperations.test.ts`, `addUnitToShootDays.test.ts`, `removeUnitFromShootDay.test.ts`, `shootDayUnitRanks.test.ts` |
+
+## Data model
+
+| Table | Key columns and invariants |
+|---|---|
+| `shoot_days` | `shoot_date` (`YYYY-MM-DD`, one live day per date per production), `day_number` (derived), `call_time`, `wrap_time`, `meal_times_json`, notes, location/hospital fields, `shooting_bloc_id` (system-set, see below) |
+| `units` | Per production: "Main Unit", "Second Unit", "Third Unit", "Fourth Unit", "Fifth Unit". The rank comes from the name (`unitNameToRank`: "second"/"2nd" … "fifth"/"5th", "main"); a name with no rank counts as main for colour and sorts last. `listUnitsByProduction` returns rank order |
+| `shoot_day_units` | One row per (day, unit), at most `MAX_UNITS_PER_DAY` (5) live per day: `is_locked`, `notes`, `movement_order_json`. This is the "column" the stripboard and calendar work on. Its rank on the day is its `unit_id`; the list functions return Main Unit first |
+| `scenes` | `scene_number`, `title`, `description`, `int_ext`, `day_night`, `page_eighths`, `location_id`, `duration_minutes`, `episode_id` (required in the UI when the production is episodic) |
+| `shots` | `scene_id`, `shot_number` (unique per scene among live shots, enforced in `createShot`/`updateShot`), subject, size, support, lens, `estimated_shoot_minutes`, camera movement |
+| `stripboard_strips` | `strip_type` `SHOT` \| `SCENE` \| `MOVE` \| `CALL` \| `LUNCH` \| `WRAP` \| `NOTE`; `strip_status` `SCHEDULED` \| `UNSCHEDULED` \| `BONEYARD`; `shoot_day_id`/`shoot_day_unit_id` (null unless scheduled); `shot_id`; `sort_index`; `estimated_minutes` override; `origin_location_id`/`destination_location_id` (MOVE only) |
+
+A stripboard is shot-based: one `SHOT` strip is one shot. `SCENE` strips are a legacy fallback; the UI no longer creates them.
+
+## How it works
+
+**Strip lifecycle.** `SCHEDULED` (on a day/unit) <-> `UNSCHEDULED` (the Unscheduled panel, derived from shots without a scheduled strip) <-> `BONEYARD`. Transitions are `UPDATE`s (`moveStrip`, `moveStripToUnscheduled`, `moveStripToBoneyard`). `deleteStrip` is a soft delete and is used for permanent deletion from the Boneyard.
+
+**Ordering.** `sort_index` is a float with `SORT_GAP = 1000`. A drop computes a midpoint between neighbours (`getDropSortIndex` in `stripboard-page.tsx`), excluding the dragged strip when reordering in the same unit. Dropping on a strip inserts before or after it depending on whether the dragged row's centre is above or below the hovered row's centre. Same column -> `reorderStrip`; other column or Boneyard -> `moveStrip`; Unscheduled shot -> `createShotStrip` with the computed `sortIndex`. Drop ids: `col:{shootDayId}:{shootDayUnitId}`, `unscheduled-panel`, `boneyard-panel`. Locked units reject drops. Moves to Unscheduled/Boneyard show an Undo toast.
+
+**Stripboard page.** Shows one shoot day at a time, one table per unit (Main above Second). Day chips above the table are drop targets for moving rows to another day. URL params: `day`, `q` (unscheduled search), `loc` (location id or `none`), `bloc` (see `stripboardUrlState.ts`). Per unit: lock toggle, INT/EXT and DAY/NIGHT filters, totals (shots, scene page eighths against a 48-eighth target, INT/EXT/DAY/NIGHT counts, no-location flag) and runtime from `stripboardDayTotals.ts`. Runtime per strip is `estimated_minutes` or else the shot's `estimated_shoot_minutes`; the UI warns above 10 h and again above 10 h 30 min. **New shoot day** (`createShootDayWithDefaultMainUnit`) adds a day with a Main Unit and default CALL and WRAP strips. **Add unit** (`addUnitToShootDays`) gives each chosen day its next free rank (Second … Fifth), creating/reusing that production unit, and skips days with five units; the trash control on any unit table after Main (`removeUnitFromShootDay`, behind a confirm dialog) sends its shot strips to Unscheduled and moves later units up a rank. The trash control in the day header deletes the day via `deleteShootDayAndDiscardStrips` (confirm dialog). Main Unit cannot be removed. **Add strip** creates the non-shot types; MOVE strips can carry origin and destination locations.
+
+**CALL and WRAP strips.** Exactly one scheduled CALL and WRAP per unit (`ensureUniqueCallWrapPerDayUnit`); the title holds the time (`Call 07:00`). The Main Unit's strips are mirrored into `shoot_days.call_time`/`wrap_time` by `syncShootDayCallWrapForMainUnit`, in the same transaction. The last CALL/WRAP of a day cannot be deleted. `ensureCallWrapStripsForProduction` backfills missing strips.
+
+**Shoot days.** `day_number` is recomputed chronologically by `resequenceShootDays` after every create, delete, move or swap. `moveShootDayToDate` refuses an occupied date and reports `existingShootDayId`; the Calendar then offers `swapShootDays`. `deleteShootDayAndDiscardStrips` sends shot strips to the Boneyard and soft-deletes structural strips and day units.
+
+**Unit ranks** (`shoot-day-unit-ranks.ts`). Moving a unit or changing its rank updates its one `shoot_day_units` row (`shoot_day_id`, `unit_id`), so strips, call sheets, movement order times and RAMS links keyed on the shoot day unit follow it. Every operation leaves each touched day with contiguous ranks from Main Unit and re-mirrors the Main Unit's CALL/WRAP into `shoot_days` (`resyncShootDayCallWrapFromMainUnit`). `moveShootDayUnitToDate` appends the unit at the next rank on the target day (throws `TARGET_DAY_FULL` at five), creates a shoot day on an empty date (or moves the whole day when the unit is alone), moves its strips and call sheets, soft-deletes its links to the old day's RAMS, and returns `needs_source_decision` when it would empty its day onto an existing one (`emptiedSourceDay: 'delete' | 'keep'` resolves it). `reorderShootDayUnits` / `swapShootDayUnitRanks` re-rank within a day.
+
+**Calendar.** `listCalendarShootDayEvents` returns one event per (shoot day, unit) with shot count and estimated minutes aggregated in SQL, ordered by date then rank; the primary location comes from the first scheduled SHOT strip. Each day renders as a block: dragging its header moves the whole day (swap on conflict); dragging a unit card to another date moves that unit, and onto another unit of the same day swaps their ranks (`resolveCalendarDrop` in `calendarDrop.ts`; drop/drag ids are its `CALENDAR_*` prefixes). Mouse drags start after 8 px, touch drags after a 200 ms press, so clicks and taps still open the drawer and swipes still scroll. The drawer's **Unit** card offers the same moves without dragging. The Day Summary drawer edits call/wrap/notes, and shows scenes, pages, shots, cast called and crew booked (from `src/lib/call-sheets` requirement helpers), locations and moves (`orderedLocationStack.ts`), travel times, and the overnight turnaround check. It also hosts the shoot-day script sections panel and **Open Sides Builder** (see [script.md](script.md)).
+
+**Episodic productions.** Shoot days get `shooting_bloc_id` from `shootingBlocAssociation.ts` whenever the date or a bloc range changes; it is not user-picked. The Calendar and Stripboard have a bloc filter (all / Outside blocs / one bloc), show bloc labels, and episode badges via `episodicScheduleDisplay.ts`. Episodes and blocs themselves are managed in Settings and described in [productions.md](productions.md).
+
+**Shot Lists.** Pick a scene, then edit its shots in a table (Edit mode toggles inline editing). **New scene** / **Edit scene** require an episode in episodic productions. Scene numbers are unique per production (checked in the UI) and shot numbers per scene (checked in the repository); changing `shot_number` does not affect strip order because strips key on shot id. Each shot can have cast (`shot_cast`, a refinement of `scene_cast`), equipment terms (support, lens... via `equipment-terms.ts`) and links to script sections (`shot-script-section-link-dialog.tsx`; see [script.md](script.md)).
+
+**Storyboard.** Grid or list of images per shot, filterable by scene. Images are files in app data (`storage_key`), not blobs. Images are added manually or by **Import Athena Gallery PDF**, which cuts the PDF into panel candidates ([`athena-import.ts`](../../src/lib/storyboard/athena-import.ts)) matched to shot numbers and applied with `applyAthenaImportToStoryboard`. `storyboard_imports` records each import.
+
+**Smart scheduling insights.** `SmartSchedulingInsightsPanel` on the Stripboard is read-only: `smartSchedulingInsights.ts` groups scheduled shots that share a support, size, day/night or location within one scene or location, and lists them as hints. It writes nothing.
+
+## Connections
+
+- [Day Out of Days / Bookings](people.md): derive work days from `getScheduledSceneIdsByShootDay` and `getScheduledShotIdsByShootDay` plus `scene_cast`/`shot_cast`.
+- Call sheets and Movement Orders read shoot days, units, strips (including MOVE waypoints) and `movement_*_json`.
+- Dashboard "Next Shoot Day" ([`nextShootDay.ts`](../../src/lib/dashboard/nextShootDay.ts)) and its **Open stripboard** link; Wrap Production readiness checks future days.
+- Script Sections status uses scheduled strips to mark sections Scheduled; Sides are built per shoot day ([script.md](script.md)).
+- Duplicate production copies units, days (meal times, weather, hospital/police details and movement pins included), day units, scenes, shots, strips (MOVE origin/destination locations remapped), scene/shot cast and episodic rows with ID maps (`duplicateProduction.ts`); `.apf` export/import covers the same tables ([import-export.md](../import-export.md)). Adding a column to these tables means updating both.
+- Writes go through `runInSerializedTransaction` + outbox rows ([database.md](../database.md)); `*ForActor` variants in `src/lib/access/projectDomainService.ts` serve server-backed productions.
+
+## Gotchas
+
+- Stripboard Board view (columns for every day) was removed; the day view is the only one. `stripboard-page.tsx` still deletes the old `albatross.stripboard.viewMode` localStorage key.
+- Unit identity is by name (`unitNameToRank`); `syncShootDayCallWrapForMainUnit` matches names containing "main". Renaming units can break call/wrap mirroring.
+- `UNIQUE(shoot_day_id, unit_id)` covers soft-deleted rows and is checked row by row. Rank changes therefore park rows on throwaway `units` rows created and deleted inside the same transaction, and purge soft-deleted rows holding a target slot (`getOrCreateShootDayUnit` purges too).
+- Unit colours are theme variables `--unit-main` … `--unit-fifth` (plus `-foreground`) in `src/index.css` and every `src/styles/themes/*.css`; read them through `unitColorVars`.
+- A strip has `shoot_day_id`/`shoot_day_unit_id` only while `SCHEDULED`; always filter by `strip_status` and `deleted_at`.
+- `day_number` is derived; never write it without calling `resequenceShootDays`.

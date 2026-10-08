@@ -163,7 +163,6 @@ export function WrapProductionPage() {
     budget: false,
     schedule: false,
     deliverables: false,
-    archive: false,
   })
   const toggleSection = (key: keyof typeof expandedSections) =>
     setExpandedSections((s) => ({ ...s, [key]: !s[key] }))
@@ -771,7 +770,7 @@ export function WrapProductionPage() {
         <CollapsibleSection
           id="deliverables"
           title="Deliverables"
-          description="Review whether post-production deliverables have been signed off before wrapping."
+          description="Review whether post-production deliverables have been delivered (status Delivered) before wrapping."
           badge={
             deliverablesReadiness.status === 'ready' ? (
               <Badge
@@ -863,19 +862,6 @@ export function WrapProductionPage() {
               </p>
             )}
           </div>
-        </CollapsibleSection>
-
-        <CollapsibleSection
-          id="archive"
-          title="Archive Readiness"
-          description="Final completion and archive"
-          badge={<span className="text-muted-foreground text-sm">—</span>}
-          expanded={expandedSections.archive}
-          onToggle={() => toggleSection('archive')}
-        >
-          <p className="text-muted-foreground text-sm">
-            Final completion and archive actions will appear here.
-          </p>
         </CollapsibleSection>
       </section>
 
@@ -1015,7 +1001,7 @@ export function WrapProductionPage() {
             </div>
             {hasAnyIssues ? (
               <p className="text-amber-800 dark:text-amber-200 text-sm">
-                There are outstanding items above. You can still complete and archive; resolve issues later in archived production views if needed.
+                There are outstanding items above. These warnings do not block you: you can still complete and archive this production.
               </p>
             ) : (
               <p className="text-green-800 dark:text-green-200 text-sm">

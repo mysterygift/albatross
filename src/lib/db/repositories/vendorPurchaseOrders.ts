@@ -160,7 +160,7 @@ export function buildCreateVendorPurchaseOrderStatements(
 }
 
 /**
- * Creates a vendor purchase order. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * Creates a vendor purchase order. Uses runInSerializedTransaction + executeBatch per DOCS/database.md
  * so the INSERT and outbox row are in the same transaction.
  * production_id, vendor_id, and po_number are required. status defaults to 'draft'; `approval` is derived from status.
  */
@@ -238,7 +238,7 @@ export function buildUpdateVendorPurchaseOrderStatements(
 }
 
 /**
- * Updates a vendor purchase order. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * Updates a vendor purchase order. Uses runInSerializedTransaction + executeBatch per DOCS/database.md
  * so the UPDATE and outbox row are in the same transaction.
  * To change `amount` with an audit trail use `amendPurchaseOrderAmount` instead.
  */
@@ -273,7 +273,7 @@ export async function updateVendorPurchaseOrder(
 }
 
 /**
- * Soft-deletes a vendor purchase order. Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md
+ * Soft-deletes a vendor purchase order. Uses runInSerializedTransaction + executeBatch per DOCS/database.md
  * so the UPDATE and outbox row are in the same transaction.
  */
 export async function softDeleteVendorPurchaseOrder(poId: string): Promise<void> {

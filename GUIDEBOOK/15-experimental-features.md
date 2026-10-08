@@ -1,0 +1,135 @@
+# 15. Experimental features
+
+Experimental features are on-set tools that are still being tested. They are hidden by default so they don't clutter the app. Switch them on when you want to try them. Currently these are **Script Supervisor** and **Overtime**.
+
+## Turn them on
+
+1. Open **Settings → Developer**.
+2. Tick **Show experimental features**. The card lists everything it reveals.
+
+![Experimental features card in Settings → Developer](images/15-experimental-toggle.png)
+
+**Script Supervisor** now appears under **Script** in the sidebar and **Overtime** under **People**, each marked with a flask icon and an **Experimental** badge. They also appear in search. Untick the box to hide them again. Nothing you have recorded is deleted.
+
+> **Note** Experimental features may change between releases. They store their data on this computer only, so they are not available for a production opened from a collaboration server.
+
+## Script Supervisor
+
+Script Supervisor logs the shoot as it happens: slates and takes against the stripboard's shoot days, scene progress, the daily progress report, and tramlines drawn on the script. Open **Script → Script Supervisor**.
+
+![Script Supervisor in Line & log mode with scene list, slates and the slate panel](images/15-script-supervisor-log.png)
+
+Before you start you need shoot days on the stripboard ([Schedule](05-schedule.md)). For lining, you also need an imported script ([Script](04-script.md)).
+
+### Choose the slating system
+
+Do this once, before the first slate.
+
+1. Open **Settings → Script supervisor**.
+2. Under **Slating system**, choose **UK (consecutive)** (217, 218...) or **US (scene + letter)** (23, 23A, 23B...).
+
+The choice locks as soon as any slate exists, so a shoot never mixes systems.
+
+### The screen
+
+The header has the **Shoot day** picker, a **Line & log / Review** mode switch, a **Tablet layout** button (bigger touch targets, remembered on this device) and **New slate**. In **Line & log**:
+
+- Left: the day's scenes from the stripboard, each with a status marker. Use **Another scene...** for a scene that isn't scheduled that day.
+- Middle: switch between **Slates** (the day's slates) and **Script** (the marked-up scene).
+- Right: the slate panel with takes, and notes and photos.
+
+### Slate and take
+
+1. Pick the scene, then click **New slate** (or press N). The next number is shown on the button. Camera, lens, stop, filter, sound mode and rolls carry over from the previous slate. With US slating, choose a scene first.
+2. Click **Show setup** to fill in **Shot type**, **Shot**, **Camera**, **Lens**, **Stop**, **Filter**, **Camera roll**, **Sound roll**, **Description** and **Sound** (**Sync**, **Mute**, **Wild track**). Fields save when you leave them.
+3. Click **Roll take** (or press Space). A stopwatch runs. Click **Cut take** (Space again) to log the take with its duration.
+4. Mark the take with **Print** (P), **Hold** (H) or **NG** (G). The mark applies to the selected take, otherwise the latest. For an NG, pick a reason: Performance, Focus, Sound, Camera, Continuity or Other.
+5. Type per-take notes in the **Remarks** box on its row.
+
+To delete a slate, hover over it in the list and click the bin (or swipe on a touch screen).
+
+> **Tip** Shortcuts are ignored while you're typing in a field.
+
+### Mark scenes complete
+
+Click **Mark scene complete** under the scene list when a scene is finished. It is credited to the current shoot day.
+
+### Line the script (tramlines)
+
+Tramlines are the vertical lines on a marked-up script showing what each shot covers.
+
+1. Create and select a slate, then switch the middle view to **Script**.
+2. In the right-hand lane labelled **Draw 217** (your slate's number), click the first line the shot covers, then the last line. Dragging down the lane does the same.
+3. Click a line segment on the tramline to cycle it between on camera, off camera (dashed) and not covered. Right-click a segment for the menu: set a state, **Off camera for** a character **to the end of this line**, or **Delete tramline**.
+4. Click **Undo** (or Ctrl+Z / ⌘Z) to reverse the last 20 lining actions.
+
+![Marked-up script scene with tramlines, labels and a note chip](images/15-script-tramlines.png)
+
+Tramlines are labelled with slate and shot type, coloured by shot type. A strip beside the script flags blocks covered by fewer than two tramlines.
+
+When a new script draft is imported, existing tramlines and notes are carried onto it automatically the next time you open the scene. Anything that can't be placed is listed in a **Script revision** box above the script: click **Select slate** to line it again, **Checked** to confirm a moved tramline, or **Dismiss** to drop one that couldn't be placed.
+
+### Script notes and continuity photos
+
+1. In the Script view, click the add-note button on a line. The **Add a note to this line** dialog opens.
+2. Choose a **Type**: Line change, Ad-lib, Cut, Note, VFX, SFX or Continuity. Enter the text. Tick **Applies to slate** to tie it to the current slate and choose the takes it applies to. Click **Add note**.
+3. In the slate panel, the notes appear under the slate. Click one to edit it.
+4. Under **Continuity photos**, toggle tags (Wardrobe, Props, Make-up, Hair, Set, Other) and click **Add photos** to attach images to the selected take.
+
+### Review progress and paperwork
+
+Switch the header mode to **Review**.
+
+![Script Supervisor Review mode with progress tiles and the exports card](images/15-script-supervisor-review.png)
+
+- Tiles show **Pages shot**, **Scenes** and **Setups | takes**, then a chart of pages completed each day against the stripboard.
+- The **Scenes** table lists status, slates, takes, prints, last shot day and a **Mark** control (**Not marked**, **Complete**, **Omitted**). Filter it by All, Part shot, Not shot or Complete, and enter timed screen time or a part-shot page credit inline.
+- **Daily progress report** holds the day's actual times (**Unit call**, **First shot**, **Lunch**, **Back from lunch**, **First shot after lunch**, **Camera wrap**, **Unit wrap**) and remarks. Click **Export PDF**.
+- **Exports** produce, for the selected day:
+
+| Button | Output |
+|---|---|
+| **Continuity sheets (PDF)** | One sheet per slate: setup, takes, printed takes, notes, photo tags |
+| **Editor's log (CSV)** | One row per take, for the edit |
+| **Marked-up script (PDF)** | The day's scenes with tramlines and notes |
+
+Each export is filed under **Documents → Set paperwork** and then opens a save dialog.
+
+- **Two-tramline check** lists every scene slated that day as covered, under-covered, not lined yet or not in an imported script. Click a scene to open its script.
+
+The Script view also has its own **Export PDF** for the single scene on screen.
+
+## Overtime
+
+Overtime estimates what running late will cost, so you can decide on set. Open **People → Overtime**.
+
+![Overtime page with summary tiles and the crew table](images/15-overtime.png)
+
+It lists crew booked on the chosen shoot day. Everyone wraps with the unit unless you record their own times, and overtime is priced from each person's day rate on the budget's labour lines.
+
+1. Pick the **Shoot day**.
+2. Enter **Unit call** and **Unit wrap** once the day is under way. These are shared with the Script Supervisor daily progress report. Until a wrap is entered, the page uses the planned wrap and says the figures are projected.
+3. For anyone with different hours, type their own **call** and **wrap** in the table. The reset button on the row returns them to the unit times.
+4. Tick **Buyout** for crew on a buyout. No overtime is costed for them.
+5. Read the tiles: **Crew on the day**, **Unit overtime**, **Overtime cost** and **Short rest before next day**. Crew with overtime but no day rate are counted separately as "No day rate", never costed at zero. Filter the table with **All**, **Own times**, **No rate** or **Short rest**.
+
+A wrap earlier than the call counts as after midnight, so night shoots need no extra date.
+
+### Set the overtime rule
+
+Click **Overtime rule** to set the rule for this production.
+
+| Field | Meaning |
+|---|---|
+| **Overtime starts** | At the shoot day's planned wrap, or a standard day after each person's call |
+| **Standard day (hours, with lunch)** | Length of the standard day |
+| **Hourly rate = day rate ÷** | Divisor used to turn a day rate into an hourly rate |
+| **Overtime hour = hourly rate ×** | Overtime multiplier |
+| **Bill per started (minutes)** | Overtime is billed in blocks of this length (0 bills exact minutes) |
+| **Minimum rest (hours)** | Anyone with less rest than this before the next shoot day is flagged |
+
+Click **Save rule**.
+
+> **Note** Overtime is an estimate only. It covers crew, not cast, and does not create expenses in the budget.
+
+**Next:** [Troubleshooting](16-troubleshooting.md)

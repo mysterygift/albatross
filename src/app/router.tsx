@@ -9,6 +9,7 @@ import { ShotListPage } from '@/features/schedule/shot-list-page'
 import { StoryboardPage } from '@/features/schedule/storyboard-page'
 import { ScriptImportPage } from '@/features/schedule/script-import-page'
 import { ScriptSectionsPage } from '@/features/schedule/script-sections-page'
+import { ScriptBreakdownPage } from '@/features/schedule/script-breakdown-page'
 import { ScriptSupervisorPage } from '@/features/script-supervisor/script-supervisor-page'
 import { BookingsPage } from '@/features/people/pages/BookingsPage'
 import { DayOutOfDaysPage } from '@/features/people/pages/DayOutOfDaysPage'
@@ -21,6 +22,8 @@ import { EquipmentPage } from '@/features/equipment/page'
 import { RiskAssessmentsPage } from '@/features/risk-assessments/page'
 import { RiskAssessmentEditorPage } from '@/features/risk-assessments/editor-page'
 import { DocumentsPage, DocumentsCategoryPage } from '@/features/documents/page'
+import { ReleaseFormsPage } from '@/features/release-forms/page'
+import { ReleaseFormSignPage } from '@/features/release-forms/ReleaseFormSignPage'
 import { CallSheetsPage } from '@/features/call-sheets/page'
 import { MovementOrdersPage } from '@/features/movement-orders/page'
 import { ReadinessPage } from '@/features/readiness/page'
@@ -31,7 +34,13 @@ import { AdminOnlyUserManagementRoute } from '@/features/admin/UserManagementPag
 import { ProjectAccessRoute } from '@/features/admin/ProjectAccessPage'
 import { WrapProductionPage } from '@/features/wrap-production/page'
 import { VendorsIndexPage } from '@/features/budget/vendors/VendorsIndexPage'
+import { OvertimePage } from '@/features/people/overtime/OvertimePage'
 import { VendorDetailPage } from '@/features/budget/vendors/VendorDetailPage'
+
+/** The guidebook bundles all its markdown, so it loads on demand. */
+const loadGuidebookPage = async () => ({
+  Component: (await import('@/features/guidebook/GuidebookPage')).GuidebookPage,
+})
 
 export const router = createBrowserRouter([
   {
@@ -51,12 +60,14 @@ export const router = createBrowserRouter([
       { path: 'schedule/storyboard', element: <StoryboardPage /> },
       { path: 'schedule/script-import', element: <ScriptImportPage /> },
       { path: 'schedule/script-sections', element: <ScriptSectionsPage /> },
+      { path: 'schedule/script-breakdown', element: <ScriptBreakdownPage /> },
       { path: 'schedule/script-supervisor', element: <ScriptSupervisorPage /> },
       { path: 'people', element: <Navigate to="/people/cast-manager" replace /> },
       { path: 'people/bookings', element: <BookingsPage /> },
       { path: 'people/day-out-of-days', element: <DayOutOfDaysPage /> },
       { path: 'people/cast-manager', element: <CastManagerPage /> },
       { path: 'people/crew-manager', element: <CrewManagerPage /> },
+      { path: 'people/overtime', element: <OvertimePage /> },
       { path: 'people/crew/:personId', element: <CrewDetailPage /> },
       { path: 'people/cast', element: <Navigate to="/people/cast-manager" replace /> },
       { path: 'people/:personId', element: <CastDetailPage /> },
@@ -65,7 +76,11 @@ export const router = createBrowserRouter([
       { path: 'risk-assessments', element: <RiskAssessmentsPage /> },
       { path: 'risk-assessments/:id', element: <RiskAssessmentEditorPage /> },
       { path: 'documents', element: <DocumentsPage /> },
+      // "People & locations" became "Releases"; keep old links working.
+      { path: 'documents/people-locations', element: <Navigate to="/documents/releases" replace /> },
       { path: 'documents/:category', element: <DocumentsCategoryPage /> },
+      { path: 'release-forms', element: <ReleaseFormsPage /> },
+      { path: 'release-forms/new/:formType', element: <ReleaseFormSignPage /> },
       { path: 'call-sheets', element: <CallSheetsPage /> },
       { path: 'movement-orders', element: <MovementOrdersPage /> },
       { path: 'tasks', element: <ReadinessPage /> },
@@ -75,6 +90,8 @@ export const router = createBrowserRouter([
       { path: 'settings', element: <SettingsPage /> },
       { path: 'settings/users', element: <AdminOnlyUserManagementRoute /> },
       { path: 'settings/project-access', element: <ProjectAccessRoute /> },
+      { path: 'guidebook', lazy: loadGuidebookPage },
+      { path: 'guidebook/:chapter', lazy: loadGuidebookPage },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },

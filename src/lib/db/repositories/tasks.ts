@@ -301,7 +301,7 @@ const UPDATE_KEYS = [
 /**
  * Update a task's section and all its descendant tasks to the same section.
  * When a parent task is moved to a section, all subtasks move with it.
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md.
  */
 export async function updateTaskSectionWithDescendants(
   taskId: string,
@@ -385,7 +385,7 @@ export async function updateTask(id: string, patch: UpdateTaskPatch): Promise<Pr
 
 /**
  * Soft-delete a task. When deleting a parent, also soft-deletes all subtasks (recursive).
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md.
  */
 /**
  * Returns statements to update a task for use in executeBatch.

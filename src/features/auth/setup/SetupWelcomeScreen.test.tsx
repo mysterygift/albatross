@@ -45,7 +45,7 @@ describe('SetupWelcomeScreen', () => {
     render(<SetupWelcomeScreen busy={false} onBeginSetup={vi.fn()} />)
 
     const docLink = screen.getByRole('link', { name: /Learn about local encryption and recovery/i })
-    expect(docLink.getAttribute('href')).toBe('/docs/DATA_ENCRYPTION.md')
+    expect(docLink.getAttribute('href')).toBe('https://github.com/mysterygift/albatross/blob/main/GUIDEBOOK/16-troubleshooting.md#passwords-and-the-recovery-key')
     expect(screen.getByText(/no cloud recovery/i)).toBeTruthy()
     expect(screen.getByText(/cannot be restored without your credentials or recovery key/i)).toBeTruthy()
   })

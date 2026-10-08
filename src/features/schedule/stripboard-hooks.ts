@@ -11,7 +11,7 @@ import {
   createShotStripForActor,
   createStripForActor,
   deleteShootDayAndDiscardStripsForActor,
-  removeSecondUnitFromShootDayForActor,
+  removeUnitFromShootDayForActor,
   deleteStripForActor,
   getCastIdsByShotIdsForActor,
   getEstimatedShootMinutesByShotIdsForActor,
@@ -51,7 +51,6 @@ import {
   listBoneyardStrips,
   deleteShootDayAndDiscardStrips,
   deleteStrip,
-  removeSecondUnitFromShootDay,
   reorderStrip,
   updateStripEstimatedMinutes,
   updateCallWrapStripTime,
@@ -63,6 +62,7 @@ import {
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import { listShootDayUnitsByProduction, setShootDayUnitLocked } from '@/lib/db/repositories/shoot-day-units'
 import { ensureMainUnit } from '@/lib/db/repositories/units'
+import { removeUnitFromShootDay } from '@/lib/db/repositories/shoot-day-unit-ranks'
 import { sortShootDayUnitsForDisplay } from '@/lib/schedule/unitKey'
 import { getCastIdsByShotIds } from '@/lib/db/repositories/shot-cast'
 import { getEffectiveDataSourceForProduction, tanstackDataSourceKey } from '@/lib/db/projectDataSource'
@@ -107,6 +107,14 @@ export async function invalidateStripboardCaches(
   await queryClient.invalidateQueries({ queryKey: [...prefix, ...unscheduledShotsQueryKeys.all] })
   await queryClient.invalidateQueries({ queryKey: [...prefix, ...boneyardStripsQueryKeys.all] })
   await queryClient.invalidateQueries({ queryKey: [...prefix, 'shots'] })
+  // Units can change day or rank (Calendar moves, Add unit, Remove unit); refresh pages keyed on them.
+  await queryClient.invalidateQueries({ queryKey: ['stripboard'] })
+  await queryClient.invalidateQueries({ queryKey: ['units'] })
+  await queryClient.invalidateQueries({ queryKey: ['shoot-day-units'] })
+  await queryClient.invalidateQueries({ queryKey: ['shoot-day-units-production'] })
+  await queryClient.invalidateQueries({ queryKey: ['strips'] })
+  await queryClient.invalidateQueries({ queryKey: ['strips-production-callsheet'] })
+  await queryClient.invalidateQueries({ queryKey: ['risk-assessments'] })
 }
 
 /** Full stripboard data for a production: days, units, day-units, strips grouped by day/unit, scenes, estimated minutes. */
@@ -413,17 +421,17 @@ export function useStripboard(productionId: string | null) {
     onSuccess: () => invalidate(),
   })
 
-  const removeSecondUnitMutation = useMutation({
+  const removeUnitMutation = useMutation({
     mutationFn: (shootDayUnitId: string) =>
       authSession.authSupported && authSession.currentUser
         ? getDb().then((db) =>
-            removeSecondUnitFromShootDayForActor({
+            removeUnitFromShootDayForActor({
               db,
               actor: authSession.currentUser!,
               shootDayUnitId,
             })
           )
-        : removeSecondUnitFromShootDay(shootDayUnitId),
+        : removeUnitFromShootDay(shootDayUnitId),
     onSuccess: () => invalidate(),
   })
 
@@ -485,7 +493,7 @@ export function useStripboard(productionId: string | null) {
     moveToBoneyardMutation,
     deleteStripMutation,
     deleteShootDayMutation,
-    removeSecondUnitMutation,
+    removeUnitMutation,
     moveStripMutation,
     reorderStripMutation,
     createStripMutation,

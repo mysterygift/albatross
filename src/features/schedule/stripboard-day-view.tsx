@@ -5,7 +5,7 @@
  */
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ChevronLeft, ChevronRight, Lock, Unlock, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Lock, Unlock, AlertTriangle, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -39,6 +39,7 @@ import {
   formatRuntime,
   runtimeWarningLevel,
 } from '@/lib/schedule/stripboardDayTotals'
+import { unitColorVars, unitNameToKey } from '@/lib/schedule/unitKey'
 import { shootingBlocLabelFromAssociation } from '@/lib/schedule/episodicScheduleDisplay'
 import { StripTableRow } from './stripboard-table-row'
 
@@ -73,6 +74,10 @@ export type StripboardDayViewProps = {
   onUpdateMoveStrip: (stripId: string, data: UpdateStripData) => void
   onSendToBoneyard: (strip: StripboardStrip) => void
   onDeleteStrip: (strip: StripboardStrip) => void
+  /** Shows a "Delete shoot day" button in the day header when provided. */
+  onRequestDeleteDay?: (day: ShootDay) => void
+  /** Shows a "Remove unit" button on every unit table after Main Unit when provided. */
+  onRequestRemoveUnit?: (shootDayUnit: ShootDayUnit, unitName: string, day: ShootDay) => void
 }
 
 const TABLE_HEADERS = ['', 'Sc', 'Shot', 'Description', 'INT/EXT', 'D/N', 'Location', 'Pages', 'Cast', 'Est. min']
@@ -130,11 +135,23 @@ export function StripboardDayView(props: StripboardDayViewProps) {
           {dayTotals.dayCount > 0 && <Badge variant="outline" className="text-[11px]">DAY {dayTotals.dayCount}</Badge>}
           {dayTotals.nightCount > 0 && <Badge variant="outline" className="text-[11px]">NIGHT {dayTotals.nightCount}</Badge>}
           <RuntimeLabel minutes={dayTotals.runtimeMinutes} level={dayWarning} prefix="Day runtime" />
+          {props.onRequestDeleteDay && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-destructive hover:text-destructive"
+              title="Delete shoot day"
+              aria-label={`Delete shoot day ${day.shoot_date}`}
+              onClick={() => props.onRequestDeleteDay?.(day)}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          )}
         </div>
       </div>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pb-4">
-        {dayUnits.map((shootDayUnit) => {
+        {dayUnits.map((shootDayUnit, unitIndex) => {
           const unit = unitById.get(shootDayUnit.unit_id)
           if (!unit) return null
           const colId = props.columnId(day.id, shootDayUnit.id)
@@ -165,12 +182,17 @@ export function StripboardDayView(props: StripboardDayViewProps) {
               onUpdateMoveStrip={props.onUpdateMoveStrip}
               onSendToBoneyard={props.onSendToBoneyard}
               onDeleteStrip={props.onDeleteStrip}
+              onRemoveUnit={
+                props.onRequestRemoveUnit && unitIndex > 0
+                  ? () => props.onRequestRemoveUnit?.(shootDayUnit, unit.name, day)
+                  : undefined
+              }
             />
           )
         })}
         {dayUnits.length === 0 && (
           <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            This day has no units. Add a unit to this day from the board view.
+            This day has no units. Use Add unit above to add one.
           </div>
         )}
       </div>
@@ -328,6 +350,7 @@ function UnitTable({
   onUpdateMoveStrip,
   onSendToBoneyard,
   onDeleteStrip,
+  onRemoveUnit,
 }: {
   unitName: string
   shootDayUnit: ShootDayUnit
@@ -352,6 +375,7 @@ function UnitTable({
   onUpdateMoveStrip: (stripId: string, data: UpdateStripData) => void
   onSendToBoneyard: (strip: StripboardStrip) => void
   onDeleteStrip: (strip: StripboardStrip) => void
+  onRemoveUnit?: () => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: colId })
   const isLocked = shootDayUnit.is_locked !== 0
@@ -365,6 +389,11 @@ function UnitTable({
     <section className="space-y-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+          <span
+            aria-hidden
+            className="size-2.5 shrink-0 rounded-full"
+            style={{ background: unitColorVars(unitNameToKey(unitName)).background }}
+          />
           {unitName}
           {isLocked && <Lock className="size-3.5 text-muted-foreground" aria-label="Locked" />}
         </h3>
@@ -378,6 +407,18 @@ function UnitTable({
         >
           {isLocked ? <Unlock className="size-3.5" /> : <Lock className="size-3.5" />}
         </Button>
+        {onRemoveUnit && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive hover:text-destructive"
+            title={`Remove ${unitName} from this day`}
+            aria-label={`Remove ${unitName} from this day`}
+            onClick={onRemoveUnit}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        )}
         <div className="flex flex-wrap gap-1">
           {(COLUMN_FILTER_KEYS).map((key) => (
             <Button

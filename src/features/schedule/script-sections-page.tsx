@@ -2,8 +2,9 @@ import { RequireProduction } from '@/components/require-production'
 import { EmptyState } from '@/components/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/page-header'
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Pencil } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
@@ -18,29 +19,28 @@ import {
 } from '@/lib/db/scriptSectionReconciliationService'
 import { listScriptPagesByScriptVersion } from '@/lib/db/repositories/scriptPages'
 import {
-  createSectionWithRangesAndCharacters,
+  applyScriptSectionLayout,
   getLinkedSectionCountsByShotIds,
-  getLinkedShotCountsBySectionIds,
-  listCharactersBySection,
-  listRangesBySection,
+  listCharactersByScriptVersion,
+  listRangesByScriptVersion,
   listSectionsByScriptVersion,
-  listShotsBySection,
-  replaceSectionCharacters,
-  replaceSectionRanges,
+  setScriptSectionCut,
   softDeleteSectionWithChildren,
-  updateScriptSection,
 } from '@/lib/db/repositories/scriptSections'
-import type {
-  Scene,
-  ScriptSection,
-  ScriptSectionCharacter,
-  ScriptSectionRange,
-} from '@/lib/db/types'
+import { loadScriptVersionSectionProgress } from '@/lib/db/scriptSectionStatusService'
+import {
+  formatShootDay,
+  sectionStatusSteps,
+  type DerivedSectionStatus,
+  type SectionShotProgress,
+} from '@/lib/db/scriptSectionStatus'
+import { buildSceneLayouts, type SceneLayout } from '@/lib/db/scriptSectionLayout'
+import { conflictingSectionIds, findOverlappingSectionPairs } from '@/lib/db/scriptSectionMatching'
+import type { Scene, ScriptSection, ScriptSectionRange } from '@/lib/db/types'
 import { sceneDisplayLabel } from '@/lib/schedule/sceneDisplay'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
+import { toast } from '@/components/ui/sonner'
 import {
   Select,
   SelectContent,
@@ -56,73 +56,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
 import {
-  EMPTY_SECTION_VALUES,
   ScriptSectionEditDialog,
-  formatSectionStatus,
-  type SceneOption,
-  type SectionEditorValues,
+  type SectionEditorSave,
+  type SectionSceneOption,
 } from './script-section-edit-dialog'
-import { CoverageIssuesList, CoverageIssuesSummary } from './coverage-issues-list'
+import { ScriptLines, SectionStatusBadge, SectionStatusSteps, SectionSummary } from './script-section-ui'
+import { buildSectionViews, ownerByLine, type SectionView } from './script-section-views'
+import { STATUS_FILL_CLASS } from './script-section-status-styles'
 import { SbRemoteNotice } from './sbRemoteNotice'
-import { loadSceneCoverage } from '@/lib/db/coverageAnalysisService'
-import type { ScriptSectionRangeInput } from '@/lib/db/repositories/scriptSections'
-import { enrichRangeWithPageOffsets } from '@/lib/db/scriptEighthSplitService'
-import {
-  conflictingSectionIds,
-  findOverlappingSectionPairs,
-} from '@/lib/db/scriptSectionMatching'
-import { parseLeadingPageNumber } from '@/lib/db/sidesBuilderService'
-import {
-  formatScriptSectionRange,
-  ScriptSectionScriptPanel,
-} from './script-section-script-panel'
 
 const SELECT_NONE = '__none__'
 const ALL_SCENES = '__all_scenes__'
 /** Match the schedule dialog exit-animation delay used elsewhere. */
 const SCHEDULE_DIALOG_EXIT_MS = 200
 
-type SectionDetail = { ranges: ScriptSectionRange[]; characters: ScriptSectionCharacter[] }
-type DetailMap = Record<string, SectionDetail>
+type StatusFilter = 'all' | DerivedSectionStatus
 
-function sceneLabel(scene: Scene, locationName?: string | null): string {
-  return `Scene ${scene.scene_number} — ${sceneDisplayLabel(scene, locationName ?? null)}`
-}
+const STATUS_FILTERS: Array<{ key: StatusFilter; label: string; dot: string }> = [
+  { key: 'all', label: 'All', dot: 'bg-muted-foreground' },
+  { key: 'no_coverage', label: 'No coverage', dot: STATUS_FILL_CLASS.no_coverage },
+  { key: 'covered', label: 'Covered', dot: STATUS_FILL_CLASS.covered },
+  { key: 'scheduled', label: 'Scheduled', dot: STATUS_FILL_CLASS.scheduled },
+  { key: 'shot', label: 'Shot', dot: STATUS_FILL_CLASS.shot },
+  { key: 'cut', label: 'Cut', dot: STATUS_FILL_CLASS.cut },
+]
 
-function buildRangeInput(values: SectionEditorValues): ScriptSectionRangeInput | null {
-  const hasAny =
-    values.start_page.trim() || values.end_page.trim() || values.start_eighth.trim() || values.end_eighth.trim()
-  if (!hasAny) return null
-  return {
-    start_page: values.start_page.trim() || null,
-    start_eighth: values.start_eighth.trim() ? Number(values.start_eighth) : null,
-    end_page: values.end_page.trim() || null,
-    end_eighth: values.end_eighth.trim() ? Number(values.end_eighth) : null,
-  }
-}
-
-function sectionToValues(section: ScriptSection, detail: SectionDetail | undefined): SectionEditorValues {
-  const range = detail?.ranges[0]
-  return {
-    scene_id: section.scene_id,
-    label: section.label ?? '',
-    status: section.status,
-    notes: section.notes ?? '',
-    start_page: range?.start_page ?? '',
-    start_eighth: range?.start_eighth != null ? String(range.start_eighth) : '',
-    end_page: range?.end_page ?? '',
-    end_eighth: range?.end_eighth != null ? String(range.end_eighth) : '',
-    characterNames: (detail?.characters ?? []).map((c) => c.character_name ?? '').filter(Boolean),
-  }
-}
-
-function enrichRangeForSave(
-  range: ScriptSectionRangeInput | null,
-  pages: Array<{ page_number: string | null; page_index: number; content: string | null }>
-): ScriptSectionRangeInput | null {
-  if (!range) return null
-  return enrichRangeWithPageOffsets(range, pages, parseLeadingPageNumber) as ScriptSectionRangeInput
+function compareSceneNumbers(a: Scene, b: Scene): number {
+  return a.scene_number.localeCompare(b.scene_number, undefined, { numeric: true })
 }
 
 function versionPickerLabel(v: {
@@ -181,15 +143,16 @@ export function ScriptSectionsPage() {
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
   const [selectedSceneFilterId, setSelectedSceneFilterId] = useState(ALL_SCENES)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create')
   const [editingSection, setEditingSection] = useState<ScriptSection | null>(null)
-  const [dialogInitialValues, setDialogInitialValues] = useState<SectionEditorValues>(EMPTY_SECTION_VALUES)
   const [mutationError, setMutationError] = useState<string | null>(null)
   const [reconcileOpen, setReconcileOpen] = useState(false)
   const [reconcileReport, setReconcileReport] = useState<ScriptSectionReconciliationReport | null>(null)
   const [reconcileMessage, setReconcileMessage] = useState<string | null>(null)
+  const scriptScrollRef = useRef<HTMLDivElement>(null)
 
   const { dataSourceKey } = useEffectiveDataSourceForProduction(currentProductionId)
   const isRemoteProduction = dataSourceKey === 'remote_server'
@@ -212,19 +175,6 @@ export function ScriptSectionsPage() {
     enabled: !!currentProductionId,
   })
 
-  const locationNameById = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const loc of locations) {
-      map.set(loc.id, loc.name)
-    }
-    return map
-  }, [locations])
-
-  const getLocationName = useCallback(
-    (locationId: string | null) => (locationId ? locationNameById.get(locationId) ?? null : null),
-    [locationNameById]
-  )
-
   const { data: sections = [] } = useQuery({
     queryKey: ['script-sections', selectedVersionId],
     queryFn: () => listSectionsByScriptVersion(selectedVersionId!),
@@ -237,75 +187,211 @@ export function ScriptSectionsPage() {
     enabled: !!selectedVersionId,
   })
 
-  const sectionIdsKey = sections.map((s) => s.id).join(',')
-  const { data: details = {} } = useQuery<DetailMap>({
-    queryKey: ['script-section-details', selectedVersionId, sectionIdsKey],
-    queryFn: async () => {
-      const map: DetailMap = {}
-      for (const s of sections) {
-        map[s.id] = {
-          ranges: await listRangesBySection(s.id),
-          characters: await listCharactersBySection(s.id),
-        }
-      }
-      return map
-    },
-    enabled: !!selectedVersionId && sections.length > 0,
+  const { data: rangesBySectionId = new Map<string, ScriptSectionRange[]>() } = useQuery({
+    queryKey: ['script-section-ranges', selectedVersionId],
+    queryFn: () => listRangesByScriptVersion(selectedVersionId!),
+    enabled: !!selectedVersionId,
   })
 
-  const { data: sectionShotCounts = new Map<string, number>() } = useQuery({
-    queryKey: ['section-shot-counts', selectedVersionId, sectionIdsKey],
-    queryFn: () => getLinkedShotCountsBySectionIds(sections.map((s) => s.id)),
-    enabled: !!selectedVersionId && sections.length > 0,
+  const { data: charactersBySectionId = new Map() } = useQuery({
+    queryKey: ['script-section-characters', selectedVersionId],
+    queryFn: () => listCharactersByScriptVersion(selectedVersionId!),
+    enabled: !!selectedVersionId,
   })
+
+  const { data: progress } = useQuery({
+    queryKey: ['script-section-progress', currentProductionId, selectedVersionId],
+    queryFn: () => loadScriptVersionSectionProgress(currentProductionId!, selectedVersionId!),
+    enabled: !!currentProductionId && !!selectedVersionId && !isRemoteProduction,
+  })
+  const shotsBySectionId = useMemo(
+    () => progress?.shotsBySectionId ?? new Map<string, SectionShotProgress[]>(),
+    [progress]
+  )
+  const omittedSceneIds = useMemo(() => progress?.omittedSceneIds ?? new Set<string>(), [progress])
 
   // Default to the most recent version once versions load.
   useEffect(() => {
     if (!selectedVersionId && versions.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional default selection once versions load
       setSelectedVersionId(versions[0]!.id)
     }
   }, [versions, selectedVersionId])
 
-  const sceneOptions: SceneOption[] = useMemo(
-    () => scenes.map((s) => ({ id: s.id, label: sceneLabel(s, getLocationName(s.location_id)) })),
-    [scenes, getLocationName]
-  )
+  const locationNameById = useMemo(() => new Map(locations.map((l) => [l.id, l.name])), [locations])
   const sceneById = useMemo(() => new Map(scenes.map((s) => [s.id, s])), [scenes])
+  const sceneHeading = useCallback(
+    (scene: Scene) => sceneDisplayLabel(scene, scene.location_id ? locationNameById.get(scene.location_id) ?? null : null),
+    [locationNameById]
+  )
 
-  const sceneFilterOptions = useMemo(() => {
-    const sceneIds = [...new Set(sections.map((s) => s.scene_id))]
-    return sceneIds
-      .map((id) => sceneById.get(id))
-      .filter((s): s is Scene => s != null)
-      .sort((a, b) => a.scene_number.localeCompare(b.scene_number, undefined, { numeric: true }))
-  }, [sections, sceneById])
+  // ─── Script layout per scene ──────────────────────────────────────────────
+  const layoutBySceneId = useMemo(
+    () => buildSceneLayouts(pages, sections, rangesBySectionId),
+    [pages, sections, rangesBySectionId]
+  )
 
-  const filteredSections = useMemo(() => {
-    if (selectedSceneFilterId === ALL_SCENES) return sections
-    return sections.filter((s) => s.scene_id === selectedSceneFilterId)
-  }, [sections, selectedSceneFilterId])
+  const views = useMemo(
+    () =>
+      buildSectionViews({
+        sections,
+        rangesBySectionId,
+        charactersBySectionId,
+        layoutBySceneId,
+        shotsBySectionId,
+        omittedSceneIds,
+        sceneNumberById: new Map(scenes.map((s) => [s.id, s.scene_number])),
+      }),
+    [sections, rangesBySectionId, charactersBySectionId, layoutBySceneId, shotsBySectionId, omittedSceneIds, scenes]
+  )
+  const sectionCodes = useMemo(() => new Map([...views].map(([id, v]) => [id, v.code])), [views])
 
-  const sectionsCountLabel = useMemo(() => {
-    if (sections.length === 0) return ''
-    if (selectedSceneFilterId === ALL_SCENES) return ` (${sections.length})`
-    return ` (${filteredSections.length} of ${sections.length})`
-  }, [sections.length, selectedSceneFilterId, filteredSections.length])
+  const conflictSectionIds = useMemo(() => {
+    const firstRange = new Map(sections.map((s) => [s.id, rangesBySectionId.get(s.id)?.[0]]))
+    return conflictingSectionIds(findOverlappingSectionPairs(sections, firstRange))
+  }, [sections, rangesBySectionId])
 
-  // Reset scene filter when the selected scene no longer has sections in this version.
+  // ─── Filtering & grouping ─────────────────────────────────────────────────
+  const versionSceneIds = useMemo(
+    () => new Set([...sections.map((s) => s.scene_id), ...layoutBySceneId.keys()]),
+    [sections, layoutBySceneId]
+  )
+  const versionScenes = useMemo(
+    () =>
+      [...versionSceneIds]
+        .map((id) => sceneById.get(id))
+        .filter((s): s is Scene => s != null)
+        .sort(compareSceneNumbers),
+    [versionSceneIds, sceneById]
+  )
+
+  // Reset the scene filter when the scene is not in this version.
   useEffect(() => {
-    if (selectedSceneFilterId === ALL_SCENES) return
-    const stillValid = sections.some((s) => s.scene_id === selectedSceneFilterId)
-    if (!stillValid) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset stale filter when version data changes
+    if (selectedSceneFilterId !== ALL_SCENES && !versionSceneIds.has(selectedSceneFilterId) && sections.length > 0) {
       setSelectedSceneFilterId(ALL_SCENES)
     }
-  }, [sections, selectedSceneFilterId])
+  }, [versionSceneIds, selectedSceneFilterId, sections.length])
+
+  const inSceneScope = useCallback(
+    (sceneId: string) => selectedSceneFilterId === ALL_SCENES || sceneId === selectedSceneFilterId,
+    [selectedSceneFilterId]
+  )
+
+  const statusCounts = useMemo(() => {
+    const counts = new Map<StatusFilter, number>()
+    for (const view of views.values()) {
+      if (!inSceneScope(view.section.scene_id)) continue
+      counts.set('all', (counts.get('all') ?? 0) + 1)
+      counts.set(view.status, (counts.get(view.status) ?? 0) + 1)
+    }
+    return counts
+  }, [views, inSceneScope])
+
+  const groups = useMemo(() => {
+    return versionScenes
+      .filter((scene) => inSceneScope(scene.id))
+      .map((scene) => {
+        const sceneViews = [...views.values()]
+          .filter((v) => v.section.scene_id === scene.id)
+          .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+        const visible = sceneViews.filter((v) => statusFilter === 'all' || v.status === statusFilter)
+        const layout = layoutBySceneId.get(scene.id)
+        return { scene, sceneViews, visible, layout }
+      })
+      .filter((g) => g.visible.length > 0 || (statusFilter === 'all' && g.layout))
+  }, [versionScenes, inSceneScope, views, statusFilter, layoutBySceneId])
+
+  const selectedView = selectedSectionId ? views.get(selectedSectionId) ?? null : null
+
+  // Drop the selection when it is filtered out or deleted.
+  useEffect(() => {
+    if (!selectedSectionId) return
+    const view = views.get(selectedSectionId)
+    if (sections.length > 0 && (!view || !inSceneScope(view.section.scene_id))) {
+      setSelectedSectionId(null)
+    }
+  }, [selectedSectionId, views, inSceneScope, sections.length])
 
   const selectedVersion = versions.find((v) => v.id === selectedVersionId) ?? null
   const latestVersionId = versions[0]?.id ?? null
   const isViewingOlderRevision =
     !!selectedVersionId && !!latestVersionId && selectedVersionId !== latestVersionId
+
+  // ─── Shots in the selected scene that no section covers ─────────────────
+  const selectedSceneId = selectedView?.section.scene_id ?? null
+  const { data: sceneShots = [] } = useQuery({
+    queryKey: ['scene-shots', selectedSceneId],
+    queryFn: () => listShotsByScene(selectedSceneId!),
+    enabled: !!selectedSceneId,
+  })
+  const sceneShotIdsKey = sceneShots.map((s) => s.id).join(',')
+  const { data: sceneShotSectionCounts = new Map<string, number>() } = useQuery({
+    queryKey: ['scene-shot-section-counts', sceneShotIdsKey],
+    queryFn: () => getLinkedSectionCountsByShotIds(sceneShots.map((s) => s.id)),
+    enabled: sceneShots.length > 0,
+  })
+  const unlinkedSceneShots = useMemo(
+    () => sceneShots.filter((s) => (sceneShotSectionCounts.get(s.id) ?? 0) === 0),
+    [sceneShots, sceneShotSectionCounts]
+  )
+
+  // ─── Mutations ────────────────────────────────────────────────────────────
+  const invalidateSections = () => {
+    queryClient.invalidateQueries({ queryKey: ['script-sections', selectedVersionId] })
+    queryClient.invalidateQueries({ queryKey: ['script-section-ranges', selectedVersionId] })
+    queryClient.invalidateQueries({ queryKey: ['script-section-characters', selectedVersionId] })
+    queryClient.invalidateQueries({ queryKey: ['script-section-progress'] })
+    queryClient.invalidateQueries({ queryKey: ['section-shot-counts'] })
+    queryClient.invalidateQueries({ queryKey: ['shot-section-counts'] })
+    queryClient.invalidateQueries({ queryKey: ['scene-shot-section-counts'] })
+  }
+
+  const closeDialogDeferred = () => {
+    setDialogOpen(false)
+    window.setTimeout(() => setEditingSection(null), SCHEDULE_DIALOG_EXIT_MS)
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: async (save: SectionEditorSave): Promise<string> => {
+      if (save.kind === 'cut') {
+        await setScriptSectionCut(save.sectionId, save.cut)
+        return save.sectionId
+      }
+      if (!currentProductionId || !selectedVersionId) throw new Error('No production or script version selected.')
+      return applyScriptSectionLayout({
+        production_id: currentProductionId,
+        script_version_id: selectedVersionId,
+        scene_id: save.sceneId,
+        episode_id: sceneById.get(save.sceneId)?.episode_id ?? null,
+        current: save.current,
+        updates: save.updates,
+        removals: save.removals,
+        splits: save.splits,
+      })
+    },
+    onSuccess: (sectionId, save) => {
+      invalidateSections()
+      setSelectedSectionId(sectionId)
+      closeDialogDeferred()
+      if (save.kind === 'layout') {
+        const others = save.updates.length + save.removals.length + save.splits.length
+        toast.success(others ? `Section saved. ${others} other section${others === 1 ? '' : 's'} adjusted.` : 'Section saved.')
+      } else {
+        toast.success(save.cut ? 'Section marked as cut.' : 'Section restored.')
+      }
+    },
+    onError: (e) => setMutationError(e instanceof Error ? e.message : 'Could not save section.'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (sectionId: string) => softDeleteSectionWithChildren(sectionId),
+    onSuccess: (_data, sectionId) => {
+      if (selectedSectionId === sectionId) setSelectedSectionId(null)
+      invalidateSections()
+      closeDialogDeferred()
+      toast.success('Section deleted.')
+    },
+    onError: (e) => setMutationError(e instanceof Error ? e.message : 'Could not delete section.'),
+  })
 
   const reconcileMutation = useMutation({
     mutationFn: async () => {
@@ -326,118 +412,15 @@ export function ScriptSectionsPage() {
     mutationFn: async (report: ScriptSectionReconciliationReport) => applySafeShotLinkRemaps(report),
     onSuccess: (result) => {
       setReconcileMessage(`Remapped ${result.remappedCount} shot link(s); skipped ${result.skippedCount}.`)
-      queryClient.invalidateQueries({ queryKey: ['section-shot-counts'] })
-      queryClient.invalidateQueries({ queryKey: ['shot-section-counts'] })
+      invalidateSections()
     },
     onError: (e) => setReconcileMessage(e instanceof Error ? e.message : 'Could not apply remaps.'),
   })
-
-  const invalidateSections = () => {
-    queryClient.invalidateQueries({ queryKey: ['script-sections', selectedVersionId] })
-    queryClient.invalidateQueries({ queryKey: ['script-section-details', selectedVersionId] })
-  }
-
-  const createMutation = useMutation({
-    mutationFn: async (values: SectionEditorValues) => {
-      if (!currentProductionId || !selectedVersionId) throw new Error('No production or script version selected.')
-      const range = enrichRangeForSave(buildRangeInput(values), pages)
-      const characters = values.characterNames
-        .map((n) => n.trim())
-        .filter(Boolean)
-        .map((name) => ({ character_name: name }))
-      await createSectionWithRangesAndCharacters({
-        production_id: currentProductionId,
-        script_version_id: selectedVersionId,
-        scene_id: values.scene_id,
-        section_type: 'custom',
-        status: values.status,
-        label: values.label.trim() || null,
-        notes: values.notes.trim() || null,
-        is_manual: true,
-        ranges: range ? [range] : [],
-        characters,
-      })
-    },
-    onSuccess: () => {
-      invalidateSections()
-      closeDialogDeferred()
-    },
-    onError: (e) => setMutationError(e instanceof Error ? e.message : 'Could not create section.'),
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: async (values: SectionEditorValues) => {
-      const section = editingSection
-      if (!section) throw new Error('No section selected.')
-      const isGenerated = section.is_manual === 0
-      if (isGenerated) {
-        await updateScriptSection(section.id, { status: values.status, notes: values.notes.trim() || null })
-        const range = enrichRangeForSave(buildRangeInput(values), pages)
-        if (range) {
-          await replaceSectionRanges(section.id, [range], { markUserEdited: true })
-        }
-        return
-      }
-      await updateScriptSection(section.id, {
-        label: values.label.trim() || null,
-        status: values.status,
-        notes: values.notes.trim() || null,
-      })
-      const range = enrichRangeForSave(buildRangeInput(values), pages)
-      await replaceSectionRanges(section.id, range ? [range] : [])
-      await replaceSectionCharacters(
-        section.id,
-        values.characterNames
-          .map((n) => n.trim())
-          .filter(Boolean)
-          .map((name) => ({ character_name: name }))
-      )
-    },
-    onSuccess: () => {
-      invalidateSections()
-      closeDialogDeferred()
-    },
-    onError: (e) => setMutationError(e instanceof Error ? e.message : 'Could not save section.'),
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (sectionId: string) => softDeleteSectionWithChildren(sectionId),
-    onSuccess: (_data, sectionId) => {
-      if (selectedSectionId === sectionId) setSelectedSectionId(null)
-      invalidateSections()
-      queryClient.invalidateQueries({ queryKey: ['section-shot-counts'] })
-      queryClient.invalidateQueries({ queryKey: ['shot-section-counts'] })
-    },
-    onError: (e) => setMutationError(e instanceof Error ? e.message : 'Could not delete section.'),
-  })
-
-  const closeDialogDeferred = () => {
-    setDialogOpen(false)
-    window.setTimeout(() => {
-      setEditingSection(null)
-      setDialogInitialValues(EMPTY_SECTION_VALUES)
-    }, SCHEDULE_DIALOG_EXIT_MS)
-  }
-
-  const handleSceneFilterChange = (value: string) => {
-    setSelectedSceneFilterId(value)
-    if (value !== ALL_SCENES && selectedSectionId) {
-      const section = sections.find((s) => s.id === selectedSectionId)
-      if (section && section.scene_id !== value) {
-        setSelectedSectionId(null)
-      }
-    }
-  }
 
   const openCreate = () => {
     setMutationError(null)
     setDialogMode('create')
     setEditingSection(null)
-    setDialogInitialValues(
-      selectedSceneFilterId !== ALL_SCENES
-        ? { ...EMPTY_SECTION_VALUES, scene_id: selectedSceneFilterId }
-        : EMPTY_SECTION_VALUES
-    )
     setDialogOpen(true)
   }
 
@@ -445,403 +428,343 @@ export function ScriptSectionsPage() {
     setMutationError(null)
     setDialogMode('edit')
     setEditingSection(section)
-    setDialogInitialValues(sectionToValues(section, details[section.id]))
     setDialogOpen(true)
   }
 
-  const selectedSection = sections.find((s) => s.id === selectedSectionId) ?? null
-  const selectedRange = details[selectedSection?.id ?? '']?.ranges[0]
-
-  const rangeBySectionId = useMemo(() => {
-    const map = new Map<string, ScriptSectionRange | undefined>()
-    for (const section of sections) {
-      map.set(section.id, details[section.id]?.ranges[0])
-    }
-    return map
-  }, [sections, details])
-
-  const conflictPairs = useMemo(
-    () => findOverlappingSectionPairs(sections, rangeBySectionId),
-    [sections, rangeBySectionId]
-  )
-  const conflictSectionIds = useMemo(() => conflictingSectionIds(conflictPairs), [conflictPairs])
-
-  const conflictRangesForSelected = useMemo(() => {
-    if (!selectedSectionId) return [] as ScriptSectionRange[]
-    const partnerIds = new Set<string>()
-    for (const pair of conflictPairs) {
-      if (pair.sectionAId === selectedSectionId) partnerIds.add(pair.sectionBId)
-      else if (pair.sectionBId === selectedSectionId) partnerIds.add(pair.sectionAId)
-    }
-    return [...partnerIds]
-      .map((id) => details[id]?.ranges[0])
-      .filter((r): r is ScriptSectionRange => r != null)
-  }, [selectedSectionId, conflictPairs, details])
-
-  const selectedHasConflict = selectedSectionId != null && conflictSectionIds.has(selectedSectionId)
-
-  const { data: linkedShotsForSection = [] } = useQuery({
-    queryKey: ['section-linked-shots', selectedSectionId],
-    queryFn: () => listShotsBySection(selectedSectionId!),
-    enabled: !!selectedSectionId,
-  })
-
-  const selectedSceneId = selectedSection?.scene_id ?? null
-  const { data: sceneShots = [] } = useQuery({
-    queryKey: ['scene-shots', selectedSceneId],
-    queryFn: () => listShotsByScene(selectedSceneId!),
-    enabled: !!selectedSceneId,
-  })
-
-  const sceneShotIdsKey = sceneShots.map((s) => s.id).join(',')
-  const { data: sceneShotSectionCounts = new Map<string, number>() } = useQuery({
-    queryKey: ['scene-shot-section-counts', sceneShotIdsKey],
-    queryFn: () => getLinkedSectionCountsByShotIds(sceneShots.map((s) => s.id)),
-    enabled: sceneShots.length > 0,
-  })
-  const uncoveredSceneShots = useMemo(
-    () => sceneShots.filter((s) => (sceneShotSectionCounts.get(s.id) ?? 0) === 0),
-    [sceneShots, sceneShotSectionCounts]
+  const sceneOptions: SectionSceneOption[] = useMemo(
+    () =>
+      (versionScenes.length ? versionScenes : [...scenes].sort(compareSceneNumbers)).map((s) => ({
+        id: s.id,
+        number: s.scene_number,
+        label: `Scene ${s.scene_number} — ${sceneHeading(s)}`,
+      })),
+    [versionScenes, scenes, sceneHeading]
   )
 
-  const { data: sceneCoverage } = useQuery({
-    queryKey: ['scene-coverage', selectedSceneId],
-    queryFn: () => loadSceneCoverage(selectedSceneId!),
-    enabled: !!selectedSceneId,
-  })
+  // ─── Script panel ─────────────────────────────────────────────────────────
+  const panelScenes = useMemo(() => {
+    if (selectedView) return versionScenes.filter((s) => s.id === selectedView.section.scene_id)
+    return versionScenes
+      .filter((s) => inSceneScope(s.id) && layoutBySceneId.has(s.id))
+      .sort((a, b) => (layoutBySceneId.get(a.id)!.pages[0]?.page_index ?? 0) - (layoutBySceneId.get(b.id)!.pages[0]?.page_index ?? 0))
+  }, [selectedView, versionScenes, inSceneScope, layoutBySceneId])
 
-  const editingGenerated = dialogMode === 'edit' && editingSection?.is_manual === 0
+  useEffect(() => {
+    if (!selectedView || selectedView.runs.length === 0) return
+    const box = scriptScrollRef.current
+    const el = box?.querySelector<HTMLElement>(
+      `[data-scene="${selectedView.section.scene_id}"] [data-line="${selectedView.runs[0]!.from}"]`
+    )
+    if (box && el) box.scrollTop = Math.max(0, el.offsetTop - 60)
+  }, [selectedView])
+
+  const ownerStatus = (sceneId: string, lineIndex: number): DerivedSectionStatus | null => {
+    const layout = layoutBySceneId.get(sceneId)
+    if (!layout) return null
+    for (const [id, set] of layout.owners) if (set.has(lineIndex)) return views.get(id)?.status ?? null
+    return null
+  }
+  const ownerOf = (sceneId: string, lineIndex: number): string | null => {
+    const layout = layoutBySceneId.get(sceneId)
+    if (!layout) return null
+    for (const [id, set] of layout.owners) if (set.has(lineIndex)) return id
+    return null
+  }
 
   return (
     <>
       {!currentProductionId ? (
         <RequireProduction title="Script Sections">{null}</RequireProduction>
       ) : (
-    <div className="space-y-4">
-      <PageHeader title="Script Sections" />
+        <div className="space-y-4">
+          <PageHeader title="Script Sections" />
 
-      {isRemoteProduction && <SbRemoteNotice />}
+          {isRemoteProduction && <SbRemoteNotice />}
 
-      {versionsLoading && (
-        <div role="status" aria-label="Loading script versions" className="space-y-2">
-          <Skeleton className="h-10 w-full" />
-        </div>
-      )}
-      {versionsError && !versionsLoading && (
-        <p role="alert" className="text-sm text-muted-foreground">
-          Unable to load script versions.
-        </p>
-      )}
-
-      {mutationError && (
-        <p className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive" role="alert">
-          {mutationError}
-        </p>
-      )}
-
-      {conflictPairs.length > 0 && (
-        <p className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
-          {conflictPairs.length} overlapping section range
-          {conflictPairs.length === 1 ? '' : 's'} in this script version. Sections within the same
-          scene cannot share page/eighth spans — adjust ranges or merge sections. Conflicting
-          sections are outlined in red below.
-        </p>
-      )}
-
-      <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-6">
-          <div className="min-w-0 flex-1">
-            <Label className="mb-2 block text-sm text-muted-foreground">Script version</Label>
-            <Select
-              value={selectedVersionId ?? SELECT_NONE}
-              onValueChange={(v) => {
-                setSelectedVersionId(v === SELECT_NONE ? null : v)
-                setSelectedSceneFilterId(ALL_SCENES)
-                setSelectedSectionId(null)
-              }}
-            >
-              <SelectTrigger className="bg-input border-border" aria-label="Script version">
-                <SelectValue placeholder="Select a script version…" />
-              </SelectTrigger>
-              <SelectContent>
-                {versions.length === 0 && <SelectItem value={SELECT_NONE}>No script versions</SelectItem>}
-                {versions.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    {versionPickerLabel(v)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="min-w-0 flex-1">
-            <Label className="mb-2 block text-sm text-muted-foreground">Scene</Label>
-            <Select
-              value={selectedSceneFilterId}
-              onValueChange={handleSceneFilterChange}
-              disabled={!selectedVersionId}
-            >
-              <SelectTrigger className="bg-input border-border" aria-label="Scene">
-                <SelectValue placeholder="All scenes" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_SCENES}>All scenes</SelectItem>
-                {sceneFilterOptions.map((scene) => (
-                  <SelectItem key={scene.id} value={scene.id}>
-                    {sceneLabel(scene, getLocationName(scene.location_id))}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-end gap-2 md:justify-end">
-          {selectedVersion?.previous_script_version_id && (
-            <Button
-              variant="outline"
-              onClick={() => reconcileMutation.mutate()}
-              disabled={reconcileMutation.isPending}
-            >
-              Compare with previous revision
-            </Button>
+          {versionsLoading && (
+            <div role="status" aria-label="Loading script versions" className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+            </div>
           )}
-          <Button onClick={openCreate} disabled={!selectedVersionId || scenes.length === 0}>
-            New section
-          </Button>
-        </div>
-      </div>
+          {versionsError && !versionsLoading && (
+            <p role="alert" className="text-sm text-muted-foreground">
+              Unable to load script versions.
+            </p>
+          )}
 
-      {isViewingOlderRevision && selectedVersion && (
-        <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-          Viewing an older revision ({formatScriptVersionLabel(selectedVersion)}). Latest:{' '}
-          {versions[0] ? formatScriptVersionLabel(versions[0]) : '—'}.
-        </p>
-      )}
+          {mutationError && !dialogOpen && (
+            <p className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive" role="alert">
+              {mutationError}
+            </p>
+          )}
 
-      {versions.length === 0 && !versionsLoading && (
-        isRemoteProduction ? (
-          <p className="text-sm text-muted-foreground">
-            Script sections are not available for remote-server productions.
-          </p>
-        ) : (
-          <EmptyState
-            title="No script versions yet"
-            description="Import a script to generate sections."
-            action={
-              <Button asChild>
-                <Link to="/schedule/script-import">Import a script</Link>
+          {conflictSectionIds.size > 0 && (
+            <p className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+              {conflictSectionIds.size} sections overlap another section in the same scene. Open one and save its
+              range to give the shared lines to it.
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+            <div className="min-w-[200px] flex-1 sm:flex-none">
+              <Label className="mb-2 block text-sm text-muted-foreground">Script version</Label>
+              <Select
+                value={selectedVersionId ?? SELECT_NONE}
+                onValueChange={(v) => {
+                  setSelectedVersionId(v === SELECT_NONE ? null : v)
+                  setSelectedSceneFilterId(ALL_SCENES)
+                  setSelectedSectionId(null)
+                }}
+              >
+                <SelectTrigger className="bg-input border-border sm:w-64" aria-label="Script version">
+                  <SelectValue placeholder="Select a script version…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {versions.length === 0 && <SelectItem value={SELECT_NONE}>No script versions</SelectItem>}
+                  {versions.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {versionPickerLabel(v)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="min-w-[200px] flex-1">
+              <Label className="mb-2 block text-sm text-muted-foreground">Scene</Label>
+              <Select
+                value={selectedSceneFilterId}
+                onValueChange={setSelectedSceneFilterId}
+                disabled={!selectedVersionId}
+              >
+                <SelectTrigger className="bg-input border-border sm:max-w-md" aria-label="Scene">
+                  <SelectValue placeholder="All scenes" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_SCENES}>All scenes</SelectItem>
+                  {versionScenes.map((scene) => (
+                    <SelectItem key={scene.id} value={scene.id}>
+                      Scene {scene.scene_number} — {sceneHeading(scene)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {selectedVersion?.previous_script_version_id && (
+                <Button
+                  variant="outline"
+                  onClick={() => reconcileMutation.mutate()}
+                  disabled={reconcileMutation.isPending}
+                >
+                  Compare with previous revision
+                </Button>
+              )}
+              <Button onClick={openCreate} disabled={!selectedVersionId || scenes.length === 0}>
+                New section
               </Button>
-            }
-          />
-        )
-      )}
-
-      {selectedVersionId && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {/* Sections list */}
-          <Card className="border-border bg-card">
-            <CardHeader className="border-b border-border py-2">
-              <CardTitle className="text-base">
-                Sections{sectionsCountLabel}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <div className="max-h-[60vh] space-y-2 overflow-y-auto">
-              {sections.length === 0 && <p className="text-sm text-muted-foreground">No sections in this version.</p>}
-              {sections.length > 0 && filteredSections.length === 0 && (
-                <p className="text-sm text-muted-foreground">No sections for this scene in this version.</p>
-              )}
-              {filteredSections.map((section) => {
-                const detail = details[section.id]
-                const isGenerated = section.is_manual === 0
-                const scene = sceneById.get(section.scene_id)
-                const isSelected = selectedSectionId === section.id
-                const hasConflict = conflictSectionIds.has(section.id)
-                return (
-                  <div
-                    key={section.id}
-                    className={`rounded-md border p-3 ${
-                      hasConflict
-                        ? isSelected
-                          ? 'border-destructive bg-destructive/10 outline outline-2 outline-destructive/60'
-                          : 'border-destructive bg-destructive/5 outline outline-2 outline-destructive/40'
-                        : isSelected
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <button
-                        type="button"
-                        className="min-w-0 flex-1 text-left"
-                        onClick={() => setSelectedSectionId(isSelected ? null : section.id)}
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium">{section.label ?? 'Untitled section'}</span>
-                          <Badge
-                            variant={section.status === 'omitted' ? 'destructive' : 'secondary'}
-                          >
-                            {formatSectionStatus(section.status)}
-                          </Badge>
-                          <Badge variant={isGenerated ? 'outline' : 'default'}>
-                            {isGenerated ? 'Generated' : 'Manual'}
-                          </Badge>
-                          {hasConflict && (
-                            <Badge variant="destructive" className="outline outline-1 outline-destructive">
-                              Overlap
-                            </Badge>
-                          )}
-                          {(sectionShotCounts.get(section.id) ?? 0) > 0 ? (
-                            <Badge variant="secondary">
-                              {sectionShotCounts.get(section.id)} shot
-                              {sectionShotCounts.get(section.id) === 1 ? '' : 's'}
-                            </Badge>
-                          ) : (
-                            <Badge
-                              variant="outline"
-                              className="border-amber-500/50 text-amber-500"
-                              title="No shots are linked to this section yet"
-                            >
-                              No shots
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="mt-1 text-sm text-muted-foreground">
-                          {scene ? sceneLabel(scene, getLocationName(scene.location_id)) : 'Unknown scene'} · {formatScriptSectionRange(detail?.ranges[0])}
-                        </div>
-                        {detail && detail.characters.length > 0 && (
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            Characters: {detail.characters.map((c) => c.character_name).filter(Boolean).join(', ')}
-                          </div>
-                        )}
-                        {section.notes && (
-                          <div className="mt-1 text-xs text-muted-foreground italic">{section.notes}</div>
-                        )}
-                      </button>
-                      <div className="flex shrink-0 flex-col gap-1">
-                        <Button variant="outline" size="sm" onClick={() => openEdit(section)}>
-                          Edit
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          disabled={deleteMutation.isPending}
-                          title={
-                            isGenerated
-                              ? 'Remove this generated section and any shot links to it.'
-                              : undefined
-                          }
-                          onClick={() => deleteMutation.mutate(section.id)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Script text panel */}
-          <ScriptSectionScriptPanel
-            pages={pages}
-            previewSection={selectedSection}
-            previewRange={selectedRange}
-            conflictRanges={conflictRangesForSelected}
-            subtitle={
-              selectedSection
-                ? `showing pages for “${selectedSection.label ?? 'section'}”${selectedHasConflict ? ' — overlap conflict' : ''}`
-                : null
-            }
-          />
-        </div>
-      )}
-
-      {selectedSection && sceneCoverage && (
-        <Card className="border-border bg-card">
-          <CardHeader className="border-b border-border py-2">
-            <CardTitle className="text-base">
-              Scene coverage — {sceneById.get(selectedSection.scene_id)?.scene_number ?? 'scene'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-4">
-            <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
-              <CoverageStat label="Sections covered" value={`${sceneCoverage.coveredSections}/${sceneCoverage.totalSections}`} />
-              <CoverageStat label="Coverage" value={`${sceneCoverage.coveragePercent}%`} />
-              <CoverageStat label="Linked shots" value={`${sceneCoverage.linkedShots}/${sceneCoverage.linkedShots + sceneCoverage.unlinkedShots}`} />
-              <CoverageStat label="Uncovered sections" value={sceneCoverage.uncoveredSections} />
-              <CoverageStat label="Unlinked shots" value={sceneCoverage.unlinkedShots} />
-              {sceneCoverage.isPartialScene && (
-                <CoverageStat label="Scene length" value="Partial" />
-              )}
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full bg-primary transition-all"
-                style={{ width: `${sceneCoverage.coveragePercent}%` }}
+          </div>
+
+          {isViewingOlderRevision && selectedVersion && (
+            <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+              Viewing an older revision ({formatScriptVersionLabel(selectedVersion)}). Latest:{' '}
+              {versions[0] ? formatScriptVersionLabel(versions[0]) : '—'}.
+            </p>
+          )}
+
+          {versions.length === 0 && !versionsLoading && (
+            isRemoteProduction ? (
+              <p className="text-sm text-muted-foreground">
+                Script sections are not available for remote-server productions.
+              </p>
+            ) : (
+              <EmptyState
+                title="No script versions yet"
+                description="Import a script to generate sections."
+                action={
+                  <Button asChild>
+                    <Link to="/schedule/script-import">Import a script</Link>
+                  </Button>
+                }
               />
-            </div>
-            <CoverageIssuesSummary issues={sceneCoverage.issues} />
-            {sceneCoverage.issues.length > 0 && (
-              <CoverageIssuesList issues={sceneCoverage.issues} />
-            )}
-          </CardContent>
-        </Card>
-      )}
+            )
+          )}
 
-      {selectedSection && (
-        <Card className="border-border bg-card">
-          <CardHeader className="border-b border-border py-2">
-            <CardTitle className="text-base">
-              Coverage for “{selectedSection.label ?? 'section'}”
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 pt-4 md:grid-cols-2">
-            <div>
-              <Label className="mb-2 block text-sm text-muted-foreground">
-                Shots linked to this section
-              </Label>
-              {linkedShotsForSection.length === 0 ? (
-                <p className="text-sm text-amber-500">No shots cover this section yet.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {linkedShotsForSection.map((shot) => (
-                    <Badge key={shot.id} variant="secondary">
-                      Shot {shot.shot_number}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div>
-              <Label className="mb-2 block text-sm text-muted-foreground">
-                Shots in this scene with no linked section
-              </Label>
-              {uncoveredSceneShots.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Every shot in this scene is linked to at least one section.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {uncoveredSceneShots.map((shot) => (
-                    <Badge
-                      key={shot.id}
-                      variant="outline"
-                      className="border-amber-500/50 text-amber-500"
-                    >
-                      Shot {shot.shot_number}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+          {selectedVersionId && (
+            <>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by status">
+                {STATUS_FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    aria-pressed={statusFilter === f.key}
+                    onClick={() => setStatusFilter(f.key)}
+                    className={cn(
+                      'inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-sm transition-colors hover:bg-secondary',
+                      statusFilter === f.key && 'border-foreground/35 bg-secondary'
+                    )}
+                  >
+                    <span aria-hidden className={cn('size-2 rounded-full', f.dot)} />
+                    {f.label}
+                    <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                      {statusCounts.get(f.key) ?? 0}
+                    </span>
+                  </button>
+                ))}
+              </div>
 
-    </div>
+              <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+                {/* Sections, grouped by scene */}
+                <div className="max-h-[72vh] overflow-y-auto rounded-lg border border-border bg-card" aria-label="Sections">
+                  {sections.length === 0 && groups.length === 0 && (
+                    <p className="p-4 text-sm text-muted-foreground">No sections in this version.</p>
+                  )}
+                  {(sections.length > 0 || groups.length > 0) && groups.length === 0 && (
+                    <p className="p-4 text-sm text-muted-foreground">No sections match this filter.</p>
+                  )}
+                  {groups.map(({ scene, visible, layout }) => {
+                    const ownedLines = new Set<number>()
+                    for (const set of layout?.owners.values() ?? []) for (const i of set) ownedLines.add(i)
+                    const unsectioned = layout
+                      ? layout.lines.filter((l) => l.text.trim() && !ownedLines.has(l.index)).length
+                      : 0
+                    return (
+                      <section key={scene.id} className="border-b border-border last:border-b-0" aria-label={`Scene ${scene.scene_number}`}>
+                        <div className="sticky top-0 z-[1] grid gap-2 bg-card px-4 pb-2.5 pt-3.5">
+                          <div className="flex flex-wrap items-baseline gap-2.5">
+                            <span className="rounded border border-border bg-secondary px-1.5 py-0.5 font-mono text-[13px] font-semibold">
+                              {scene.scene_number}
+                            </span>
+                            <span className="font-semibold">{sceneHeading(scene)}</span>
+                          </div>
+                          {unsectioned > 0 && (
+                            <p className="text-xs text-amber-500">
+                              {unsectioned} line{unsectioned === 1 ? '' : 's'} not in any section
+                            </p>
+                          )}
+                          {layout && layout.lines.length > 0 && (
+                            <SceneMeter layout={layout} statusOf={(id) => views.get(id)?.status ?? null} codeOf={(id) => views.get(id)?.code ?? ''} />
+                          )}
+                        </div>
+                        <div className="grid px-2 pb-2.5" role="listbox" aria-label={`Sections in scene ${scene.scene_number}`}>
+                          {visible.length === 0 && (
+                            <p className="px-2 py-1.5 text-sm text-muted-foreground">No sections yet.</p>
+                          )}
+                          {visible.map((view) => {
+                            const isSelected = view.section.id === selectedSectionId
+                            const hasConflict = conflictSectionIds.has(view.section.id)
+                            return (
+                              <div
+                                key={view.section.id}
+                                role="option"
+                                tabIndex={0}
+                                aria-selected={isSelected}
+                                onClick={() => setSelectedSectionId(isSelected ? null : view.section.id)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    setSelectedSectionId(isSelected ? null : view.section.id)
+                                  }
+                                }}
+                                className={cn(
+                                  'grid cursor-pointer grid-cols-[3.25rem_minmax(0,1fr)_auto_auto] items-center gap-2.5 rounded-md border border-transparent p-2 hover:bg-secondary',
+                                  isSelected && 'border-primary/45 bg-primary/10 hover:bg-primary/10',
+                                  hasConflict && 'border-destructive/60'
+                                )}
+                              >
+                                <span className={cn('font-mono text-[13px] text-muted-foreground', isSelected && 'text-primary')}>
+                                  {view.code}
+                                </span>
+                                <SectionSummary
+                                  rangeText={view.rangeText}
+                                  lengthText={view.lengthText}
+                                  estimated={view.estimated}
+                                  characters={view.characters}
+                                  cut={view.status === 'cut'}
+                                  extra={
+                                    hasConflict && (
+                                      <span className="ml-1.5 text-xs text-destructive">Overlaps another section</span>
+                                    )
+                                  }
+                                />
+                                <SectionStatusBadge status={view.status} label={view.statusLabel} />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="size-8 p-0 text-muted-foreground"
+                                  aria-label={`Edit section ${view.code}`}
+                                  title="Edit section"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    openEdit(view.section)
+                                  }}
+                                >
+                                  <Pencil className="size-4" />
+                                </Button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </section>
+                    )
+                  })}
+                </div>
+
+                {/* Selected section + script */}
+                <div className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+                  {selectedView ? (
+                    <SectionDetail
+                      view={selectedView}
+                      sceneNumber={sceneById.get(selectedView.section.scene_id)?.scene_number ?? ''}
+                      unlinkedShots={unlinkedSceneShots.map((s) => s.shot_number)}
+                      onEdit={() => openEdit(selectedView.section)}
+                    />
+                  ) : (
+                    <p className="border-b border-border px-4 py-3.5 text-sm text-muted-foreground">
+                      Select a section to highlight it in the script and see its shots.
+                    </p>
+                  )}
+                  <div ref={scriptScrollRef} className="relative max-h-[58vh] overflow-y-auto bg-background/40 pb-4">
+                    {panelScenes.length === 0 && (
+                      <p className="p-4 text-sm text-muted-foreground">No page text available for this version.</p>
+                    )}
+                    {panelScenes.map((scene) => {
+                      const layout = layoutBySceneId.get(scene.id)
+                      if (!layout) return null
+                      const selectedLines = selectedView?.section.scene_id === scene.id
+                        ? new Set(selectedView.runs.flatMap((r) => Array.from({ length: r.to - r.from + 1 }, (_, k) => r.from + k)))
+                        : null
+                      return (
+                        <div key={scene.id} data-scene={scene.id}>
+                          {panelScenes.length > 1 && (
+                            <p className="px-4 pt-3 text-xs font-semibold text-muted-foreground">
+                              Scene {scene.scene_number} — {sceneHeading(scene)}
+                            </p>
+                          )}
+                          <ScriptLines
+                            lines={layout.lines}
+                            decorate={(line) => {
+                              const status = ownerStatus(scene.id, line.index)
+                              return {
+                                bandClassName: status ? STATUS_FILL_CLASS[status] : undefined,
+                                textClassName: selectedLines?.has(line.index) ? 'bg-primary/20' : undefined,
+                              }
+                            }}
+                            onLineClick={(line) => {
+                              const owner = ownerOf(scene.id, line.index)
+                              if (owner) setSelectedSectionId(owner)
+                            }}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       <ScriptSectionEditDialog
@@ -851,15 +774,27 @@ export function ScriptSectionsPage() {
           else setDialogOpen(true)
         }}
         mode={dialogMode}
-        editingGenerated={editingGenerated}
+        section={editingSection}
+        initialSceneId={
+          selectedSceneFilterId !== ALL_SCENES ? selectedSceneFilterId : selectedView?.section.scene_id ?? null
+        }
         scenes={sceneOptions}
-        initialValues={dialogInitialValues}
-        pending={createMutation.isPending || updateMutation.isPending}
-        error={mutationError}
-        onSubmit={(values) => {
+        sections={sections}
+        sectionCodes={sectionCodes}
+        rangesBySectionId={rangesBySectionId}
+        charactersBySectionId={charactersBySectionId}
+        pages={pages}
+        shotsBySectionId={shotsBySectionId}
+        omittedSceneIds={omittedSceneIds}
+        pending={saveMutation.isPending || deleteMutation.isPending}
+        error={dialogOpen ? mutationError : null}
+        onSave={(save) => {
           setMutationError(null)
-          if (dialogMode === 'create') createMutation.mutate(values)
-          else updateMutation.mutate(values)
+          saveMutation.mutate(save)
+        }}
+        onDelete={(sectionId) => {
+          setMutationError(null)
+          deleteMutation.mutate(sectionId)
         }}
       />
 
@@ -899,11 +834,113 @@ export function ScriptSectionsPage() {
   )
 }
 
-function CoverageStat({ label, value }: { label: string; value: number | string }) {
+/** Segmented bar of the scene's lines, one segment per section in script order. */
+function SceneMeter({
+  layout,
+  statusOf,
+  codeOf,
+}: {
+  layout: SceneLayout
+  statusOf: (sectionId: string) => DerivedSectionStatus | null
+  codeOf: (sectionId: string) => string
+}) {
+  const owners = ownerByLine(layout)
+  const segments: Array<{ key: string; owner: string | null; count: number }> = []
+  for (const line of layout.lines) {
+    const owner = owners.get(line.index) ?? null
+    // Blank lines between sections are not gaps in coverage.
+    if (!owner && !line.text.trim()) continue
+    const last = segments[segments.length - 1]
+    if (last && last.owner === owner) last.count++
+    else segments.push({ key: `${line.index}`, owner, count: 1 })
+  }
   return (
-    <div className="rounded-md border border-border/40 px-2 py-1.5">
-      <p className="text-muted-foreground">{label}</p>
-      <p className="text-foreground mt-0.5 text-sm font-medium">{value}</p>
+    <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
+      {segments.map((seg) => {
+        const status = seg.owner ? statusOf(seg.owner) : null
+        return (
+          <i
+            key={seg.key}
+            title={seg.owner ? codeOf(seg.owner) : 'Not in any section'}
+            className={cn('block min-w-[3px]', status ? STATUS_FILL_CLASS[status] : 'bg-[repeating-linear-gradient(135deg,oklch(0.77_0.16_70)_0_2px,transparent_2px_5px)]')}
+            style={{ flexGrow: seg.count }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function SectionDetail({
+  view,
+  sceneNumber,
+  unlinkedShots,
+  onEdit,
+}: {
+  view: SectionView
+  sceneNumber: string
+  unlinkedShots: string[]
+  onEdit: () => void
+}) {
+  return (
+    <div className="grid gap-3 border-b border-border px-4 py-3.5">
+      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
+        <span className="font-mono text-lg font-semibold text-primary">{view.code}</span>
+        <span className="tabular-nums">
+          {view.rangeText}
+          {view.lengthText && <span className="ml-1.5 text-sm text-muted-foreground">{view.lengthText}</span>}
+        </span>
+        <SectionStatusBadge status={view.status} label={view.statusLabel} />
+        <span className="flex-1" />
+        <Button size="sm" variant="outline" onClick={onEdit}>
+          Edit
+        </Button>
+      </div>
+      {view.status === 'cut' ? (
+        <p className="text-sm text-muted-foreground">
+          This section is cut. It stays here for reference and is left out of coverage, scheduling and sides.
+        </p>
+      ) : (
+        <SectionStatusSteps steps={sectionStatusSteps(view.shots)} />
+      )}
+      {view.shots.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm tabular-nums">
+            <thead>
+              <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <th className="py-1 pr-2 font-medium">Shot</th>
+                <th className="py-1 pr-2 font-medium">Shoot day</th>
+                <th className="py-1 font-medium">Script supervisor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.shots.map((shot) => (
+                <tr key={shot.shotId} className="border-b border-border/50 last:border-b-0">
+                  <td className="py-1 pr-2">{shot.shotNumber}</td>
+                  <td className={cn('py-1 pr-2', shot.shootDays.length === 0 && 'text-muted-foreground')}>
+                    {shot.shootDays.length
+                      ? shot.shootDays.map((d) => `${formatShootDay(d)} · ${d.shootDate}`).join(', ')
+                      : 'Not scheduled'}
+                  </td>
+                  <td className={cn('py-1', !shot.printedTakes.length && !shot.sceneComplete && 'text-muted-foreground')}>
+                    {shot.printedTakes.length
+                      ? `Printed · ${shot.printedTakes.join(', ')}`
+                      : shot.sceneComplete
+                        ? 'Scene marked complete'
+                        : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {unlinkedShots.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Shots in scene {sceneNumber} not linked to any section:{' '}
+          <span className="text-amber-500">{unlinkedShots.join(', ')}</span>
+        </p>
+      )}
     </div>
   )
 }

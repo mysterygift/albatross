@@ -1,6 +1,6 @@
 /**
  * Delete a budget line item after relocating matched expenses and petty-cash floats.
- * All writes run in one executeBatch transaction per DATABASE_LAYER.md.
+ * All writes run in one executeBatch transaction per DOCS/database.md.
  */
 
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'

@@ -209,10 +209,27 @@ export interface CueSheetRow {
   title: string
   artist: string | null
   publisher: string | null
-  use?: string
 }
 
-/** Generate a simple music cue sheet PDF (no timecodes). */
+/** Shorten text with an ellipsis so it fits within maxWidth points. */
+function fitText(
+  text: string,
+  font: { widthOfTextAtSize: (t: string, size: number) => number },
+  size: number,
+  maxWidth: number
+): string {
+  if (font.widthOfTextAtSize(text, size) <= maxWidth) return text
+  let end = text.length
+  while (end > 0 && font.widthOfTextAtSize(`${text.slice(0, end).trimEnd()}…`, size) > maxWidth) {
+    end -= 1
+  }
+  return end > 0 ? `${text.slice(0, end).trimEnd()}…` : ''
+}
+
+/**
+ * Generate a simple music cue sheet PDF (no timecodes).
+ * Long track lists continue onto further pages, each repeating the column header.
+ */
 export async function generateCueSheet(
   productionName: string,
   rows: CueSheetRow[]
@@ -220,35 +237,70 @@ export async function generateCueSheet(
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
-  const page = doc.addPage([612, 792])
-  const { height } = page.getSize()
+  const pageWidth = 612
+  const pageHeight = 792
   const margin = 72
-  let y = height - margin
+  const bottomLimit = 72
+  const rowHeight = 14
+  const cols = {
+    title: { x: margin, width: 170 },
+    artist: { x: 252, width: 150 },
+    publisher: { x: 412, width: 128 },
+  }
+  const generated = `Generated: ${new Date().toLocaleString()}`
+
+  let page = doc.addPage([pageWidth, pageHeight])
+  let y = pageHeight - margin
+
+  const drawColumnHeader = () => {
+    page.drawText('Title', { x: cols.title.x, y, size: 10, font: bold })
+    page.drawText('Artist', { x: cols.artist.x, y, size: 10, font: bold })
+    page.drawText('Publisher/Label', { x: cols.publisher.x, y, size: 10, font: bold })
+    y -= 16
+  }
 
   page.drawText('MUSIC CUE SHEET', { x: margin, y, size: 18, font: bold })
   y -= 12
   page.drawText(productionName, { x: margin, y, size: 12, font })
   y -= 24
-
-  page.drawText('Title', { x: margin, y, size: 10, font: bold })
-  page.drawText('Artist', { x: 220, y, size: 10, font: bold })
-  page.drawText('Publisher/Label', { x: 350, y, size: 10, font: bold })
-  page.drawText('Use', { x: 480, y, size: 10, font: bold })
-  y -= 16
+  drawColumnHeader()
 
   for (const row of rows) {
-    if (y < 100) break
-    page.drawText(row.title.slice(0, 30), { x: margin, y, size: 9, font })
-    page.drawText((row.artist ?? '—').slice(0, 25), { x: 220, y, size: 9, font })
-    page.drawText((row.publisher ?? '—').slice(0, 25), { x: 350, y, size: 9, font })
-    page.drawText((row.use ?? '—').slice(0, 20), { x: 480, y, size: 9, font })
-    y -= 14
+    if (y < bottomLimit) {
+      page = doc.addPage([pageWidth, pageHeight])
+      y = pageHeight - margin
+      drawColumnHeader()
+    }
+    page.drawText(fitText(row.title, font, 9, cols.title.width), { x: cols.title.x, y, size: 9, font })
+    page.drawText(fitText(row.artist ?? '—', font, 9, cols.artist.width), {
+      x: cols.artist.x,
+      y,
+      size: 9,
+      font,
+    })
+    page.drawText(fitText(row.publisher ?? '—', font, 9, cols.publisher.width), {
+      x: cols.publisher.x,
+      y,
+      size: 9,
+      font,
+    })
+    y -= rowHeight
   }
 
-  page.drawText(
-    `Generated: ${new Date().toLocaleString()}`,
-    { x: margin, y: 48, size: 9, font, color: rgb(0.4, 0.4, 0.4) }
-  )
+  const pages = doc.getPages()
+  pages.forEach((p, i) => {
+    p.drawText(generated, { x: margin, y: 48, size: 9, font, color: rgb(0.4, 0.4, 0.4) })
+    if (pages.length > 1) {
+      const label = `Page ${i + 1} of ${pages.length}`
+      p.drawText(label, {
+        x: pageWidth - margin - font.widthOfTextAtSize(label, 9),
+        y: 48,
+        size: 9,
+        font,
+        color: rgb(0.4, 0.4, 0.4),
+      })
+    }
+  })
 
   return doc.save()
 }

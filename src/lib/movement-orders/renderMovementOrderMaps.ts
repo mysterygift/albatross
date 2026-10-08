@@ -32,7 +32,7 @@ export async function renderMovementOrderMaps(
   tileConfig: MapTileConfig
 ): Promise<RenderedMovementOrderMaps> {
   if (isMapTileConfigIncomplete(tileConfig)) {
-    return { maps: null, warning: 'Maps were left out: add a map tile API key under Settings → Integrations.' }
+    return { maps: null, warning: 'Maps were left out: add a map tile API key under Settings → APIs & publishing.' }
   }
   const overviewScene = buildOverviewScene(data)
   const locationScenes = data.locations.map((_, i) => buildLocationScene(data, i))

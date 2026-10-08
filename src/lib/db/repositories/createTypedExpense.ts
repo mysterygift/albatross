@@ -284,7 +284,7 @@ export async function prepareTypedExpense(params: CreateTypedExpenseParams): Pro
 
 /**
  * Create a new expense with typed transaction details in one atomic transaction.
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md.
  * Validates that accountId is a postable account.
  */
 export async function createTypedExpense(params: CreateTypedExpenseParams): Promise<Expense> {

@@ -127,6 +127,23 @@ describe('StripboardDayView', () => {
     expect(screen.getByRole('button', { name: 'Lock Main Unit' }))
   })
 
+  it('requests day deletion and unit removal only when handlers are provided', () => {
+    renderView(makeProps())
+    expect(screen.queryByRole('button', { name: /Delete shoot day/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Remove .* from this day$/ })).toBeNull()
+    cleanup()
+
+    const onRequestDeleteDay = vi.fn()
+    const onRequestRemoveUnit = vi.fn()
+    renderView(makeProps({ onRequestDeleteDay, onRequestRemoveUnit }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete shoot day 2026-10-05' }))
+    expect(onRequestDeleteDay).toHaveBeenCalledWith(days[0])
+    // Main Unit has no remove control.
+    expect(screen.queryByRole('button', { name: 'Remove Main Unit from this day' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Second Unit from this day' }))
+    expect(onRequestRemoveUnit).toHaveBeenCalledWith(dayUnits[1], 'Second Unit', days[0])
+  })
+
   it('navigates days with the arrows and the day chips', () => {
     const onSelectDay = vi.fn()
     renderView(makeProps({ onSelectDay, day: days[0] }))

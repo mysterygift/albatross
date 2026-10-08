@@ -32,7 +32,7 @@ export const DEMO_LINKS: { expenseIdx: number; budgetItemIndex: number; matchedA
  * - partially matched (line item or expense partially allocated)
  * - unallocated expenses left intentionally (indices 1,2,4,6,11,12,13,14,17,18,19)
  *
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md.
  */
 export async function seedDemoReconciliation(
   pid: string,

@@ -32,6 +32,7 @@ type ProductionRow = {
   currency_code: string
   client_id: string | null
   delivery_date: string | null
+  production_code: string | null
   is_episodic: boolean
   wrapped_at: string | null
   archived_at: string | null
@@ -50,6 +51,7 @@ function productionRowToProduction(r: ProductionRow): Production {
     notes: r.notes,
     client_id: r.client_id ?? null,
     delivery_date: r.delivery_date ?? null,
+    production_code: r.production_code ?? null,
     is_episodic: coerceBoolean(r.is_episodic, false),
     wrapped_at: r.wrapped_at,
     archived_at: r.archived_at,
@@ -277,6 +279,7 @@ export async function updateProjectMetadataForActor(args: {
   clientId?: string | null
   newClient?: { name: string; email?: string | null; phone?: string | null }
   deliveryDate?: string | null
+  productionCode?: string | null
 }): Promise<void> {
   await assertCanEditProject(args.db, args.actor, args.productionId)
   const { updateProduction } = await import('@/lib/db/repositories/production')
@@ -286,6 +289,7 @@ export async function updateProjectMetadataForActor(args: {
     clientId: args.clientId,
     newClient: args.newClient,
     deliveryDate: args.deliveryDate,
+    productionCode: args.productionCode,
   })
 }
 

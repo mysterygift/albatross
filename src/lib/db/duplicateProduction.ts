@@ -16,10 +16,105 @@
  * Does not push to outbox (duplication is local-only).
  */
 import { BaseDirectory, mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs'
+import { getCurrentSessionUserId } from '@/lib/auth/currentSessionUser'
 import { executeBatch, getDb, now, uuid } from './client'
 import { coerceBoolean } from './sqlValueCoercion'
 import { seedDefaultBudgetAccounts } from './repositories/budgetAccounts'
+import { projectMembershipInsertStatement } from './repositories/projectMemberships'
 import { ensureUniqueSlug, slugify, withSlugLock } from './repositories/production'
+
+/**
+ * Production-scoped tables (or tables hanging off one) that duplication deliberately does NOT copy, with the
+ * reason. `duplicateProduction.coverage.test.ts` fails when a new production-scoped table is neither copied by an
+ * `INSERT` below nor listed here, so adding a table forces a decision.
+ */
+const EXCLUDED_REASON = {
+  SS: 'Script Supervisor on-set record or setting (slates, takes, progress, lining, annotations, continuity media): it records what was shot, so a what-if copy starts without it',
+  SYNC: 'Server sync, sharing and publish state belongs to the original project and is never duplicated',
+  BUDGET: 'Budget reconciliation, derived rules, cost reports, floats and tax-credit setup are not copied (known gap): rebuild them on the copy',
+  PAYABLES: 'Vendor invoices and purchase orders are financial records of the original and are not copied (known gap)',
+  OTHER: 'Not copied (known gap): bookings, call sheets, overtime hours, cue sheets, equipment, storyboard and legacy stripboard items',
+}
+
+export const DUPLICATE_EXCLUDED_TABLES: Record<string, string> = {
+  script_annotation_takes: EXCLUDED_REASON.SS,
+  script_annotations: EXCLUDED_REASON.SS,
+  script_documents: EXCLUDED_REASON.SS,
+  script_elements: EXCLUDED_REASON.SS,
+  script_revision_items: EXCLUDED_REASON.SS,
+  script_supervisor_day_logs: EXCLUDED_REASON.SS,
+  script_supervisor_scene_progress: EXCLUDED_REASON.SS,
+  slates: EXCLUDED_REASON.SS,
+  takes: EXCLUDED_REASON.SS,
+  tramline_segments: EXCLUDED_REASON.SS,
+  tramlines: EXCLUDED_REASON.SS,
+  continuity_media: EXCLUDED_REASON.SS,
+  production_script_supervisor_settings: EXCLUDED_REASON.SS,
+  server_outbox_pending: EXCLUDED_REASON.SYNC,
+  sync_apply_guard: EXCLUDED_REASON.SYNC,
+  sync_conflicts: EXCLUDED_REASON.SYNC,
+  sync_mutation_batches: EXCLUDED_REASON.SYNC,
+  sync_mutations: EXCLUDED_REASON.SYNC,
+  sync_project_state: EXCLUDED_REASON.SYNC,
+  sync_row_state: EXCLUDED_REASON.SYNC,
+  project_memberships: EXCLUDED_REASON.SYNC,
+  publish_jobs: EXCLUDED_REASON.SYNC,
+  linked_projects: EXCLUDED_REASON.SYNC,
+  budget_item_expense_links: EXCLUDED_REASON.BUDGET,
+  contingency_rule_scopes: EXCLUDED_REASON.BUDGET,
+  contingency_rules: EXCLUDED_REASON.BUDGET,
+  cost_report_group_accounts: EXCLUDED_REASON.BUDGET,
+  cost_report_groups: EXCLUDED_REASON.BUDGET,
+  float_expense_links: EXCLUDED_REASON.BUDGET,
+  floats: EXCLUDED_REASON.BUDGET,
+  fringe_rule_scopes: EXCLUDED_REASON.BUDGET,
+  fringe_rules: EXCLUDED_REASON.BUDGET,
+  production_budget_features: EXCLUDED_REASON.BUDGET,
+  production_total_accounts: EXCLUDED_REASON.BUDGET,
+  production_totals: EXCLUDED_REASON.BUDGET,
+  tax_credit_schemes: EXCLUDED_REASON.BUDGET,
+  vat_reclaim_rates: EXCLUDED_REASON.BUDGET,
+  expense_receipts: EXCLUDED_REASON.BUDGET,
+  expense_tax_credit_allocations: EXCLUDED_REASON.BUDGET,
+  vendor_invoice_expenses: EXCLUDED_REASON.PAYABLES,
+  vendor_invoices: EXCLUDED_REASON.PAYABLES,
+  vendor_production_exclusions: EXCLUDED_REASON.PAYABLES,
+  vendor_purchase_order_amendments: EXCLUDED_REASON.PAYABLES,
+  vendor_purchase_order_expenses: EXCLUDED_REASON.PAYABLES,
+  vendor_purchase_orders: EXCLUDED_REASON.PAYABLES,
+  bookings: EXCLUDED_REASON.OTHER,
+  call_sheets: EXCLUDED_REASON.OTHER,
+  crew_day_hours: EXCLUDED_REASON.OTHER,
+  crew_hours_person_settings: EXCLUDED_REASON.OTHER,
+  production_crew_hours_settings: EXCLUDED_REASON.OTHER,
+  cue_sheets: EXCLUDED_REASON.OTHER,
+  equipment: EXCLUDED_REASON.OTHER,
+  equipment_list_items: EXCLUDED_REASON.OTHER,
+  equipment_lists: EXCLUDED_REASON.OTHER,
+  storyboard_images: EXCLUDED_REASON.OTHER,
+  storyboard_imports: EXCLUDED_REASON.OTHER,
+  stripboard_items: EXCLUDED_REASON.OTHER,
+}
+
+/**
+ * Columns of copied tables that are deliberately left at their defaults in the copy (table -> column -> reason).
+ * The same test fails when a column is added to a copied table without being inserted or listed here.
+ */
+export const DUPLICATE_EXCLUDED_COLUMNS: Record<string, Record<string, string>> = {
+  productions: {
+    archived_at: 'the copy starts active',
+    wrapped_at: 'the copy starts un-wrapped',
+    created_from_template: 'the copy is not created from a template',
+    deleted_at: 'the copy starts live',
+  },
+  production_tasks: {
+    vendor_invoice_id: 'vendor invoices are not copied, so the task link would dangle',
+    equipment_id: 'equipment is not copied, so the task link would dangle',
+  },
+  breakdown_tags: {
+    carried_from_id: 'carried-from history stays with the original tags',
+  },
+}
 
 const ATTACHMENTS = 'attachments'
 const TABLE_PRODUCTIONS = 'productions'
@@ -63,9 +158,10 @@ export async function duplicateProduction(
   const isEpisodic = coerceBoolean(prodRows[0]!.is_episodic, false)
   const clientId = (prodRows[0]!.client_id as string | null) ?? null
   const deliveryDate = (prodRows[0]!.delivery_date as string | null) ?? null
+  const productionCode = (prodRows[0]!.production_code as string | null) ?? null
 
   // Load all source data first (reads only).
-  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, crewAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs, episodes, shootingBlocs, scriptVersions, scriptPages, scriptSections, scriptSectionRanges, scriptSectionCharacters, shotScriptSections, shootDaySidesExports, hazardTemplateRows, riskAssessmentRows, riskAssessmentUnitRows, riskAssessmentHazardRows] = await Promise.all([
+  const [units, people, locations, scenes, shootDays, sduRows, locScenes, shots, sceneCast, shotCast, strips, castAvail, crewAvail, categories, budgetItems, vendors, expRows, expenseTransactionDetails, keyContacts, taskSections, tasks, deliverables, techSpecs, musicTracks, clearances, equipmentTerms, docs, crewHierarchyConfigs, episodes, shootingBlocs, scriptVersions, scriptPages, scriptSections, scriptSectionRanges, scriptSectionCharacters, shotScriptSections, shootDaySidesExports, hazardTemplateRows, riskAssessmentRows, riskAssessmentUnitRows, riskAssessmentHazardRows, breakdownElements, breakdownTags, budgetAccounts, budgetRevisions, budgetItemDetails] = await Promise.all([
     db.select<Record<string, unknown>[]>(`SELECT * FROM units WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM people WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
     db.select<Record<string, unknown>[]>(`SELECT * FROM locations WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
@@ -138,6 +234,14 @@ export async function duplicateProduction(
        WHERE h.deleted_at IS NULL`,
       [sourceProductionId]
     ),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM breakdown_elements WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM breakdown_tags WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM budget_accounts WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM budget_revisions WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(
+      `SELECT d.* FROM budget_item_details d INNER JOIN budget_items bi ON bi.id = d.budget_item_id WHERE bi.production_id = $1 AND bi.deleted_at IS NULL`,
+      [sourceProductionId]
+    ),
   ])
 
   const taskIdMap: IdMap = new Map()
@@ -152,6 +256,9 @@ export async function duplicateProduction(
   const categoryIdMap: IdMap = new Map()
   const vendorIdMap: IdMap = new Map()
   const expenseIdMap: IdMap = new Map()
+  const accountIdMap: IdMap = new Map()
+  const budgetRevisionIdMap: IdMap = new Map()
+  const budgetItemIdMap: IdMap = new Map()
   const deliverableIdMap: IdMap = new Map()
   const musicTrackIdMap: IdMap = new Map()
   const documentIdMap: IdMap = new Map()
@@ -170,10 +277,18 @@ export async function duplicateProduction(
   const statements: Stmt[] = [
     { sql: 'BEGIN TRANSACTION', bindValues: [] },
     {
-      sql: `INSERT INTO ${TABLE_PRODUCTIONS} (id, name, slug, currency_code, notes, client_id, delivery_date, is_episodic, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      bindValues: [newProdId, newName, slug, currencyCode, notes, clientId, deliveryDate, isEpisodic ? 1 : 0, ts, ts],
+      sql: `INSERT INTO ${TABLE_PRODUCTIONS} (id, name, slug, currency_code, notes, client_id, delivery_date, is_episodic, created_at, updated_at, production_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      bindValues: [newProdId, newName, slug, currencyCode, notes, clientId, deliveryDate, isEpisodic ? 1 : 0, ts, ts, productionCode],
     },
   ]
+
+  // Whoever duplicates owns the copy; otherwise a non-admin could not see it. Memberships are not copied.
+  const duplicatorId = await getCurrentSessionUserId()
+  if (duplicatorId) {
+    statements.push(
+      projectMembershipInsertStatement({ id: newId(), productionId: newProdId, userId: duplicatorId, accessLevel: 'administrator', ts })
+    )
+  }
 
   for (const r of episodes) {
     const id = newId()
@@ -262,7 +377,8 @@ export async function duplicateProduction(
     shootDayIdMap.set(r.id as string, id)
     const shootingBlocId = mapId(shootingBlocIdMap, (r.shooting_bloc_id as string | null) ?? null)
     statements.push({
-      sql: `INSERT INTO shoot_days (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, wrap_time, shooting_bloc_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      sql: `INSERT INTO shoot_days (id, production_id, shoot_date, day_number, call_time, notes, weather_manual, wrap_time, meal_times_json, weather_json, parking_base_address, special_notes, hospital_name, hospital_address, police_station_name, police_station_address, shooting_bloc_id, movement_pins_json, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
       bindValues: [
         id,
         newProdId,
@@ -272,7 +388,16 @@ export async function duplicateProduction(
         r.notes,
         r.weather_manual,
         r.wrap_time ?? null,
+        r.meal_times_json ?? null,
+        r.weather_json ?? null,
+        r.parking_base_address ?? null,
+        r.special_notes ?? null,
+        r.hospital_name ?? null,
+        r.hospital_address ?? null,
+        r.police_station_name ?? null,
+        r.police_station_address ?? null,
         shootingBlocId,
+        r.movement_pins_json ?? null,
         ts,
         ts,
       ],
@@ -286,7 +411,7 @@ export async function duplicateProduction(
       shootDayUnitIdMap.set(r.id as string, id)
       statements.push({
         sql: `INSERT INTO shoot_day_units (id, shoot_day_id, unit_id, notes, is_locked, movement_order_json, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        bindValues: [id, dayId, unitId, r.notes, coerceBoolean(r.is_locked, false), r.movement_order_json ?? null, ts, ts],
+        bindValues: [id, dayId, unitId, r.notes, coerceBoolean(r.is_locked, false), remapMovementOrderJson((r.movement_order_json as string | null) ?? null, locationIdMap), ts, ts],
       })
     }
   }
@@ -339,9 +464,11 @@ export async function duplicateProduction(
     const sceneId = mapId(sceneIdMap, r.scene_id as string | null)
     const shotId = mapId(shotIdMap, r.shot_id as string | null)
     const stripStatus = (r.strip_status as string) ?? 'SCHEDULED'
+    const originLocationId = locationIdMap.get((r.origin_location_id as string | null) ?? '') ?? null
+    const destinationLocationId = locationIdMap.get((r.destination_location_id as string | null) ?? '') ?? null
     statements.push({
-      sql: `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-      bindValues: [newId(), newProdId, dayId, sduId, r.strip_type ?? 'SHOT', sceneId, shotId, r.title, r.description, r.estimated_minutes ?? null, r.sort_index ?? 0, r.color_tag, stripStatus, ts, ts],
+      sql: `INSERT INTO stripboard_strips (id, production_id, shoot_day_id, shoot_day_unit_id, strip_type, scene_id, shot_id, title, description, estimated_minutes, sort_index, color_tag, strip_status, origin_location_id, destination_location_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+      bindValues: [newId(), newProdId, dayId, sduId, r.strip_type ?? 'SHOT', sceneId, shotId, r.title, r.description, r.estimated_minutes ?? null, r.sort_index ?? 0, r.color_tag, stripStatus, originLocationId, destinationLocationId, ts, ts],
     })
   }
   for (const r of castAvail) {
@@ -378,32 +505,76 @@ export async function duplicateProduction(
       bindValues: [id, newProdId, r.is_global ?? 0, r.company_name, r.company_name_sort_key ?? null, r.primary_contact_full_name ?? null, r.primary_contact_email ?? null, ts, ts],
     })
   }
-  for (const r of budgetItems) {
-    const catId = r.category_id != null ? categoryIdMap.get(r.category_id as string) ?? null : null
+  // Chart of accounts: copy the source's accounts (parents first) so budget and expense coding survives;
+  // a source with none gets the default chart seeded after the transaction, as for a new production.
+  for (const r of orderParentsFirst(budgetAccounts, 'parent_account_id')) {
+    const id = newId()
+    accountIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO budget_items (id, production_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      bindValues: [newId(), newProdId, catId, null, r.description, r.estimated_cost ?? 0, r.actual_cost ?? 0, r.vendor, r.status ?? 'draft', null, ts, ts],
+      sql: `INSERT INTO budget_accounts (id, production_id, code, name, parent_account_id, sort_order, is_postable, archived_at, color_hex, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      bindValues: [id, newProdId, r.code, r.name, mapId(accountIdMap, (r.parent_account_id as string | null) ?? null), r.sort_order ?? 0, r.is_postable ?? 1, r.archived_at ?? null, r.color_hex ?? null, ts, ts],
+    })
+  }
+  // Budget revisions (a revision's baseline is copied before the revisions made from it).
+  for (const r of orderParentsFirst(budgetRevisions, 'created_from_revision_id')) {
+    const id = newId()
+    budgetRevisionIdMap.set(r.id as string, id)
+    statements.push({
+      sql: `INSERT INTO budget_revisions (id, production_id, name, created_from_revision_id, is_live, approval, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      bindValues: [id, newProdId, r.name, budgetRevisionIdMap.get((r.created_from_revision_id as string | null) ?? '') ?? null, r.is_live ?? 0, r.approval ?? 'unapproved', ts, ts],
+    })
+  }
+  for (const r of budgetItems) {
+    const itemId = newId()
+    budgetItemIdMap.set(r.id as string, itemId)
+    statements.push({
+      sql: `INSERT INTO budget_items (id, production_id, budget_revision_id, category_id, account_id, description, estimated_cost, actual_cost, vendor, status, line_item_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      bindValues: [
+        itemId,
+        newProdId,
+        budgetRevisionIdMap.get((r.budget_revision_id as string | null) ?? '') ?? null,
+        categoryIdMap.get((r.category_id as string | null) ?? '') ?? null,
+        accountIdMap.get((r.account_id as string | null) ?? '') ?? null,
+        r.description,
+        r.estimated_cost ?? 0,
+        r.actual_cost ?? 0,
+        r.vendor,
+        r.status ?? 'draft',
+        r.line_item_type ?? null,
+        ts,
+        ts,
+      ],
+    })
+  }
+  for (const r of budgetItemDetails) {
+    const itemId = budgetItemIdMap.get(r.budget_item_id as string)
+    if (!itemId) continue
+    statements.push({
+      sql: `INSERT INTO budget_item_details (id, budget_item_id, line_item_type, details_json, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      bindValues: [newId(), itemId, r.line_item_type, r.details_json, ts, ts],
     })
   }
   for (const r of expRows) {
     const expId = newId()
     expenseIdMap.set(r.id as string, expId)
-    const catId = mapId(categoryIdMap, r.category_id as string | null)
-    const vendorId = mapId(vendorIdMap, r.vendor_id as string | null)
     statements.push({
-      sql: `INSERT INTO expenses (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      sql: `INSERT INTO expenses (id, production_id, category_id, account_id, transaction_type, vendor_id, amount, date, vendor, notes, expense_type, vat_rate_percent, vat_reclaimed_amount, vat_reclaim_date, vat_reclaim_reference, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
       bindValues: [
         expId,
         newProdId,
-        catId,
-        null,
+        mapId(categoryIdMap, r.category_id as string | null),
+        accountIdMap.get((r.account_id as string | null) ?? '') ?? null,
         r.transaction_type ?? null,
-        vendorId,
+        mapId(vendorIdMap, r.vendor_id as string | null),
         r.amount,
         r.date,
         r.vendor,
         r.notes,
         r.expense_type ?? 'other',
+        r.vat_rate_percent ?? null,
+        r.vat_reclaimed_amount ?? null,
+        r.vat_reclaim_date ?? null,
+        r.vat_reclaim_reference ?? null,
         ts,
         ts,
       ],
@@ -487,16 +658,16 @@ export async function duplicateProduction(
     deliverableIdMap.set(r.id as string, id)
     const newEpisodeId = mapEpisodeIdForDuplicate(episodeIdMap, r.episode_id as string | null)
     statements.push({
-      sql: `INSERT INTO deliverables (id, production_id, episode_id, name, due_date, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      bindValues: [id, newProdId, newEpisodeId, r.name, r.due_date, r.status ?? 'pending', ts, ts],
+      sql: `INSERT INTO deliverables (id, production_id, episode_id, name, due_date, status, recipient, delivery_method, delivered_by, delivered_at, approval_status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      bindValues: [id, newProdId, newEpisodeId, r.name, r.due_date, r.status ?? 'pending', r.recipient ?? null, r.delivery_method ?? null, r.delivered_by ?? null, r.delivered_at ?? null, r.approval_status ?? null, ts, ts],
     })
   }
   for (const r of techSpecs) {
     const delId = deliverableIdMap.get(r.deliverable_id as string)
     if (delId) {
       statements.push({
-        sql: `INSERT INTO technical_specs (id, deliverable_id, resolution, codec, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        bindValues: [newId(), delId, r.resolution, r.codec, r.notes, ts, ts],
+        sql: `INSERT INTO technical_specs (id, deliverable_id, resolution, codec, audio, captions, aspect_ratio, platform, bitrate, subtitles, graphics, language, audio_mix, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        bindValues: [newId(), delId, r.resolution, r.codec, r.audio ?? null, r.captions ?? null, r.aspect_ratio ?? null, r.platform ?? null, r.bitrate ?? null, r.subtitles ?? null, r.graphics ?? null, r.language ?? null, r.audio_mix ?? null, r.notes, ts, ts],
       })
     }
   }
@@ -505,15 +676,15 @@ export async function duplicateProduction(
     musicTrackIdMap.set(r.id as string, id)
     const episodeId = mapEpisodeIdForDuplicate(episodeIdMap, r.episode_id as string | null)
     statements.push({
-      sql: `INSERT INTO music_tracks (id, production_id, episode_id, title, artist, publisher_label, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      bindValues: [id, newProdId, episodeId, r.title, r.artist, r.publisher_label, ts, ts],
+      sql: `INSERT INTO music_tracks (id, production_id, episode_id, title, artist, publisher_label, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      bindValues: [id, newProdId, episodeId, r.title, r.artist, r.publisher_label, r.notes ?? null, ts, ts],
     })
   }
   for (const r of clearances) {
     const itemId = musicTrackIdMap.get(r.item_id as string) ?? r.item_id
     statements.push({
-      sql: `INSERT INTO clearances (id, production_id, type, item_id, status, requested_at, granted_at, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      bindValues: [newId(), newProdId, r.type, itemId, r.status, r.requested_at, r.granted_at, ts, ts],
+      sql: `INSERT INTO clearances (id, production_id, type, item_id, status, requested_at, granted_at, expiry, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      bindValues: [newId(), newProdId, r.type, itemId, r.status, r.requested_at, r.granted_at, r.expiry ?? null, ts, ts],
     })
   }
   for (const r of equipmentTerms) {
@@ -755,6 +926,36 @@ export async function duplicateProduction(
     })
   }
 
+  // Script breakdown: elements keep their status and notes; links follow the copied location / cast / music
+  // track (equipment is not copied, so equipment links are dropped). Tags follow the copied script pages;
+  // carried-from history stays with the original.
+  const breakdownElementIdMap: IdMap = new Map()
+  for (const r of breakdownElements) {
+    const id = newId()
+    breakdownElementIdMap.set(r.id as string, id)
+    const linkedType = (r.linked_entity_type as string | null) ?? null
+    const linkedOld = (r.linked_entity_id as string | null) ?? null
+    const linkMap =
+      linkedType === 'location' ? locationIdMap : linkedType === 'person' ? personIdMap : linkedType === 'music_track' ? musicTrackIdMap : null
+    const linkedId = linkMap ? mapId(linkMap, linkedOld) : null
+    statements.push({
+      sql: `INSERT INTO breakdown_elements (id, production_id, category, name, notes, manual_status, linked_entity_type, linked_entity_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      bindValues: [id, newProdId, r.category, r.name, r.notes ?? null, r.manual_status ?? 'needed', linkedId ? linkedType : null, linkedId, ts, ts],
+    })
+  }
+  for (const r of breakdownTags) {
+    const elementId = breakdownElementIdMap.get(r.element_id as string)
+    const versionId = scriptVersionIdMap.get(r.script_version_id as string)
+    const sceneId = sceneIdMap.get(r.scene_id as string)
+    const startPageId = scriptPageIdMap.get(r.start_page_id as string)
+    const endPageId = scriptPageIdMap.get(r.end_page_id as string)
+    if (!elementId || !versionId || !sceneId || !startPageId || !endPageId) continue
+    statements.push({
+      sql: `INSERT INTO breakdown_tags (id, production_id, element_id, script_version_id, scene_id, start_page_id, start_offset, end_page_id, end_offset, tagged_text, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      bindValues: [newId(), newProdId, elementId, versionId, sceneId, startPageId, r.start_offset, endPageId, r.end_offset, r.tagged_text, ts, ts],
+    })
+  }
+
   // Crew hierarchy is production-specific setup; Crew Manager, task mapping, and call-sheet
   // ordering depend on it. Duplicate any stored config so the new production keeps the same
   // operational structure. If source has no config row, none is created—resolver falls back to default.
@@ -778,9 +979,55 @@ export async function duplicateProduction(
     }
   }
 
-  await seedDefaultBudgetAccounts(newProdId)
+  if (budgetAccounts.length === 0) await seedDefaultBudgetAccounts(newProdId)
 
   return { id: newProdId, name: newName, slug }
+}
+
+/** Rows ordered so every row follows the row its `parentKey` points at (rows whose parent is absent come first). */
+function orderParentsFirst(rows: Record<string, unknown>[], parentKey: string): Record<string, unknown>[] {
+  const ids = new Set(rows.map((r) => r.id as string))
+  const placed = new Set<string>()
+  const ordered: Record<string, unknown>[] = []
+  let remaining = rows
+  while (remaining.length > 0) {
+    const next: Record<string, unknown>[] = []
+    for (const r of remaining) {
+      const parent = (r[parentKey] as string | null) ?? null
+      if (parent == null || !ids.has(parent) || placed.has(parent)) {
+        ordered.push(r)
+        placed.add(r.id as string)
+      } else {
+        next.push(r)
+      }
+    }
+    if (next.length === remaining.length) {
+      ordered.push(...next) // cycle: keep input order; mapId leaves the unplaced parent unmapped
+      break
+    }
+    remaining = next
+  }
+  return ordered
+}
+
+/**
+ * `shoot_day_units.movement_order_json` keys per-leg times by `fromLocationId>toLocationId[#n]`; point the keys at
+ * the copied locations. Malformed JSON is copied untouched.
+ */
+function remapMovementOrderJson(json: string | null, locationIdMap: IdMap): string | null {
+  if (!json) return json
+  try {
+    const parsed = JSON.parse(json) as { legs?: Record<string, unknown> }
+    if (!parsed || typeof parsed !== 'object' || !parsed.legs || typeof parsed.legs !== 'object') return json
+    const legs: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(parsed.legs)) {
+      const m = /^([^>]+)>([^>#]+)(#\d+)?$/.exec(key)
+      legs[m ? `${locationIdMap.get(m[1]!) ?? m[1]}>${locationIdMap.get(m[2]!) ?? m[2]}${m[3] ?? ''}` : key] = value
+    }
+    return JSON.stringify({ ...parsed, legs })
+  } catch {
+    return json
+  }
 }
 
 function mapEntityId(

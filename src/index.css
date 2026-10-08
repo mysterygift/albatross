@@ -48,6 +48,12 @@
   --color-unit-main-foreground: var(--unit-main-foreground);
   --color-unit-second: var(--unit-second);
   --color-unit-second-foreground: var(--unit-second-foreground);
+  --color-unit-third: var(--unit-third);
+  --color-unit-third-foreground: var(--unit-third-foreground);
+  --color-unit-fourth: var(--unit-fourth);
+  --color-unit-fourth-foreground: var(--unit-fourth-foreground);
+  --color-unit-fifth: var(--unit-fifth);
+  --color-unit-fifth-foreground: var(--unit-fifth-foreground);
 }
 
 /* Graphite + Mint theme: dark charcoal background, mint accent */
@@ -91,6 +97,12 @@
   --unit-main-foreground: oklch(0.18 0.02 165);
   --unit-second: oklch(0.65 0.12 200);
   --unit-second-foreground: oklch(0.95 0.01 200);
+  --unit-third: oklch(0.78 0.14 80);
+  --unit-third-foreground: oklch(0.2 0.03 80);
+  --unit-fourth: oklch(0.55 0.16 300);
+  --unit-fourth-foreground: oklch(0.97 0.01 300);
+  --unit-fifth: oklch(0.58 0.18 25);
+  --unit-fifth-foreground: oklch(0.98 0.01 25);
 }
 
 .dark {
@@ -124,6 +136,12 @@
   --unit-main-foreground: oklch(0.15 0.02 165);
   --unit-second: oklch(0.68 0.11 200);
   --unit-second-foreground: oklch(0.95 0.01 200);
+  --unit-third: oklch(0.8 0.13 80);
+  --unit-third-foreground: oklch(0.18 0.03 80);
+  --unit-fourth: oklch(0.7 0.13 300);
+  --unit-fourth-foreground: oklch(0.16 0.02 300);
+  --unit-fifth: oklch(0.7 0.16 25);
+  --unit-fifth-foreground: oklch(0.16 0.02 25);
 }
 
 @layer base {
@@ -155,79 +173,6 @@
 }
 [data-dragging-over] {
   @apply bg-primary/10 border-primary/50;
-}
-
-/* Cost Report: when exporting to PDF (html2pdf), hide no-print and use print-like styling.
-   Use only hex/rgb colors so html2canvas can parse (it does not support oklch).
-   Override all theme variables to hex so getComputedStyle never returns oklch. */
-.cost-report-print.cost-report-exporting-pdf .no-print {
-  display: none !important;
-}
-.cost-report-print.cost-report-exporting-pdf {
-  --background: #ffffff;
-  --foreground: #1a1a1a;
-  --card: #ffffff;
-  --card-foreground: #1a1a1a;
-  --popover: #ffffff;
-  --popover-foreground: #1a1a1a;
-  --primary: #2d9d78;
-  --primary-foreground: #1a1a1a;
-  --secondary: #3f3f46;
-  --secondary-foreground: #fafafa;
-  --muted: #3f3f46;
-  --muted-foreground: #525252;
-  --accent: #2d9d78;
-  --accent-foreground: #1a1a1a;
-  --destructive: #b91c1c;
-  --border: #e5e7eb;
-  --input: #3f3f46;
-  --ring: #2d9d78;
-  --chart-1: #2d9d78;
-  --chart-2: #0d9488;
-  --chart-3: #7c3aed;
-  --chart-4: #65a30d;
-  --chart-5: #ea580c;
-  --sidebar: #27272a;
-  --sidebar-foreground: #fafafa;
-  --sidebar-primary: #2d9d78;
-  --sidebar-primary-foreground: #1a1a1a;
-  --sidebar-accent: #3f3f46;
-  --sidebar-accent-foreground: #fafafa;
-  --sidebar-border: #e5e7eb;
-  --sidebar-ring: #2d9d78;
-  --unit-main: #2d9d78;
-  --unit-main-foreground: #1a1a1a;
-  --unit-second: #0d9488;
-  --unit-second-foreground: #fafafa;
-  background: #ffffff !important;
-  color: #1a1a1a !important;
-  border-color: #e5e7eb !important;
-}
-.cost-report-print.cost-report-exporting-pdf *,
-.cost-report-print.cost-report-exporting-pdf *::before,
-.cost-report-print.cost-report-exporting-pdf *::after {
-  background: transparent !important;
-  background-color: transparent !important;
-  color: #1a1a1a !important;
-  border-color: #e5e7eb !important;
-  outline-color: #1a1a1a !important;
-  fill: #1a1a1a !important;
-  stroke: #1a1a1a !important;
-  box-shadow: none !important;
-  text-shadow: none !important;
-}
-.cost-report-print.cost-report-exporting-pdf .text-muted-foreground {
-  color: #525252 !important;
-}
-.cost-report-print.cost-report-exporting-pdf .text-destructive {
-  color: #b91c1c !important;
-}
-.cost-report-print.cost-report-exporting-pdf th,
-.cost-report-print.cost-report-exporting-pdf td {
-  border-color: #e5e7eb !important;
-}
-.cost-report-print.cost-report-exporting-pdf button {
-  color: #1a1a1a !important;
 }
 
 /* Cost Report: ledger ladder — code column + divider, rollup alignment, account indent */
@@ -430,4 +375,41 @@
 
 .animate-task-strike-draw {
   animation: task-strike-draw 0.4s ease-out forwards;
+}
+/* Guidebook contents: the open chapter's sections unfold, then fade in one after another. */
+@keyframes guidebook-sections-expand {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+@keyframes guidebook-section-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-guidebook-sections {
+  animation: guidebook-sections-expand 0.28s ease-out backwards;
+}
+
+.animate-guidebook-section {
+  animation: guidebook-section-in 0.3s ease-out backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-guidebook-sections,
+  .animate-guidebook-section {
+    animation: none;
+  }
 }

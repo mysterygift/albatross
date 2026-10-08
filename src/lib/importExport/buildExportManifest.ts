@@ -9,6 +9,12 @@ export type BuildApfExportManifestParams = {
   tableRowCounts: Record<string, number>
   bundledDocumentIds: string[]
   missingDocumentFileIds: string[]
+  bundledStoryboardImageIds?: string[]
+  missingStoryboardImageIds?: string[]
+}
+
+function sortedOrUndefined(ids: string[] | undefined): string[] | undefined {
+  return ids && ids.length > 0 ? [...ids].sort() : undefined
 }
 
 export function buildApfExportManifest(params: BuildApfExportManifestParams): ApfManifestV1 {
@@ -33,6 +39,8 @@ export function buildApfExportManifest(params: BuildApfExportManifestParams): Ap
         params.missingDocumentFileIds.length > 0
           ? [...params.missingDocumentFileIds].sort()
           : undefined,
+      bundledStoryboardImageIds: sortedOrUndefined(params.bundledStoryboardImageIds),
+      missingStoryboardImageIds: sortedOrUndefined(params.missingStoryboardImageIds),
     },
   }
 

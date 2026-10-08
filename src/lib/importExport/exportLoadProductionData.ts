@@ -1,6 +1,6 @@
 /**
  * Load all v1 INCLUDE tables for a production with Phase 1 tombstone / parent-join rules.
- * @see docs/project-import-export-audit.md
+ * @see DOCS/import-export.md
  */
 import { getDb } from '@/lib/db/client'
 import type { ApfTableRow, ApfV1Tables } from '@/lib/importExport/payload'
@@ -112,6 +112,14 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     scriptAnnotationTakes,
     continuityMedia,
     scriptRevisionItems,
+    breakdownElements,
+    breakdownTags,
+    storyboardImports,
+    storyboardImages,
+    vendorProductionExclusions,
+    productionCrewHoursSettings,
+    crewHoursPersonSettings,
+    crewDayHours,
   ] = await Promise.all([
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM productions WHERE id = $1 AND deleted_at IS NULL`,
@@ -532,6 +540,40 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
       `SELECT * FROM script_revision_items WHERE production_id = $1 AND deleted_at IS NULL`,
       [$1]
     ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM breakdown_elements WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM breakdown_tags WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM storyboard_imports WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM storyboard_images WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    // No `deleted_at`: an exclusion row is removed outright when undone.
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM vendor_production_exclusions WHERE production_id = $1`,
+      [$1]
+    ),
+    // Overtime settings rows are keyed by production (and person) with no `id` or `deleted_at`.
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM production_crew_hours_settings WHERE production_id = $1`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM crew_hours_person_settings WHERE production_id = $1`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM crew_day_hours WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
   ])
 
   const exportedDocumentIds = new Set(documents.map((d) => d.id as string))
@@ -635,6 +677,14 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     script_annotation_takes: asRows(scriptAnnotationTakes),
     continuity_media: asRows(continuityMedia),
     script_revision_items: asRows(scriptRevisionItems),
+    breakdown_elements: asRows(breakdownElements),
+    breakdown_tags: asRows(breakdownTags),
+    storyboard_imports: asRows(storyboardImports),
+    storyboard_images: asRows(storyboardImages),
+    vendor_production_exclusions: asRows(vendorProductionExclusions),
+    production_crew_hours_settings: asRows(productionCrewHoursSettings),
+    crew_hours_person_settings: asRows(crewHoursPersonSettings),
+    crew_day_hours: asRows(crewDayHours),
   }
 
   for (const key of APF_V1_TABLE_KEYS) {

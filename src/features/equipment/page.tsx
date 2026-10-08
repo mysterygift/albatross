@@ -1,6 +1,7 @@
 import { RequireProduction } from '@/components/require-production'
 import { PageHeader } from '@/components/page-header'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useHighlightParam } from '@/features/search/useHighlightParam'
@@ -85,6 +86,7 @@ import { VendorPicker } from '@/components/vendors/VendorPicker'
 import { cn } from '@/lib/utils'
 import { formatEquipmentLabel, formatEquipmentCategoryLabel } from '@/features/equipment/formatEquipmentLabel'
 import { generateEquipmentListPdf } from '@/lib/pdf/equipmentListPdf'
+import { DEFAULT_PAPER_SIZE, PAPER_SIZES, isPaperSize, type PaperSize } from '@/lib/pdf/layoutKit'
 import { saveFileWithDialog } from '@/lib/files'
 import { persistProductionDocument, documentsQueryKey } from '@/lib/documents/persistDocument'
 import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
@@ -170,6 +172,7 @@ type EquipmentTab = 'registry' | 'lists'
 
 export function EquipmentPage() {
   const { currentProductionId, currentProduction } = useCurrentProduction()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<EquipmentTab>('registry')
@@ -344,6 +347,20 @@ export function EquipmentPage() {
     },
   })
 
+  const handleDeleteEquipment = useCallback(
+    async (item: Equipment) => {
+      const ok = await confirm({
+        title: `Delete "${item.name}"?`,
+        description: 'This item will be removed from the registry, along with its return reminder task if it has one.',
+        confirmLabel: 'Delete',
+        destructive: true,
+      })
+      if (!ok) return
+      deleteMutation.mutate(item.id)
+    },
+    [confirm, deleteMutation]
+  )
+
   const columns: ColumnDef<Equipment>[] = useMemo(
     () => [
       {
@@ -430,7 +447,7 @@ export function EquipmentPage() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => deleteMutation.mutate(row.original.id)}
+              onClick={() => void handleDeleteEquipment(row.original)}
               aria-label="Delete"
               className="text-destructive hover:text-destructive"
             >
@@ -440,7 +457,7 @@ export function EquipmentPage() {
         ),
       },
     ],
-    [vendors, invoiceById, equipmentIdsWithReminder, deleteMutation.mutate]
+    [vendors, invoiceById, equipmentIdsWithReminder, handleDeleteEquipment]
   )
 
   const table = useReactTable({
@@ -672,7 +689,7 @@ export function EquipmentPage() {
           )}
         </TabsContent>
       </Tabs>
-
+      {confirmDialog}
     </div>
   )
 }
@@ -873,6 +890,7 @@ function EquipmentListsIndex({
   onSelectList: (listId: string) => void
 }) {
   const queryClient = useQueryClient()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [createOpen, setCreateOpen] = useState(false)
   const { data: lists = [] } = useQuery({
     queryKey: ['equipmentLists', productionId],
@@ -997,7 +1015,15 @@ function EquipmentListsIndex({
                       size="icon"
                       className="text-destructive hover:text-destructive"
                       aria-label="Delete list"
-                      onClick={() => deleteMutation.mutate(list.id)}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: `Delete "${list.name}"?`,
+                          description: 'The list will be deleted. Equipment in the registry is not affected.',
+                          confirmLabel: 'Delete',
+                          destructive: true,
+                        })
+                        if (ok) deleteMutation.mutate(list.id)
+                      }}
                     >
                       <Trash2 className="size-4" />
                     </Button>
@@ -1008,6 +1034,7 @@ function EquipmentListsIndex({
           </TableBody>
         </Table>
       </div>
+      {confirmDialog}
     </div>
   )
 }
@@ -1302,6 +1329,7 @@ function EquipmentListDetail({
   const queryClient = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
   const [editingList, setEditingList] = useState(false)
+  const [paperSize, setPaperSize] = useState<PaperSize>(DEFAULT_PAPER_SIZE)
   const { data: list } = useQuery({
     queryKey: ['equipmentList', listId],
     queryFn: () => getEquipmentListById(listId),
@@ -1364,13 +1392,20 @@ function EquipmentListDetail({
     mutationFn: async () => {
       if (!list) return
       const equipmentById = new Map(equipment.map((e) => [e.id, e]))
-      const shootDayLabel = list.shoot_day_id ? shootDayById.get(list.shoot_day_id)?.shoot_date ?? null : null
+      const shootDay = list.shoot_day_id ? shootDayById.get(list.shoot_day_id) : undefined
       const pdfBytes = await generateEquipmentListPdf({
         productionName,
         list,
         listItems: items,
         equipmentById,
-        shootDayLabel,
+        shootDay: shootDay
+          ? {
+              shootDate: shootDay.shoot_date,
+              dayNumber: shootDay.day_number,
+              totalShootDays: shootDays.length > 0 ? shootDays.length : null,
+            }
+          : null,
+        paperSize,
       })
       const fileName = `equipment-checklist-${list.name.replace(/[^a-zA-Z0-9-_]/g, '-').slice(0, 40)}-${new Date().toISOString().slice(0, 10)}.pdf`
       const bytes = new Uint8Array(pdfBytes)
@@ -1561,6 +1596,23 @@ function EquipmentListDetail({
         }}
       />
       <div className="flex gap-2">
+        <Select
+          value={paperSize}
+          onValueChange={(value) => {
+            if (isPaperSize(value)) setPaperSize(value)
+          }}
+        >
+          <SelectTrigger size="sm" className="w-[110px]" aria-label="PDF paper size">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(PAPER_SIZES) as PaperSize[]).map((size) => (
+              <SelectItem key={size} value={size}>
+                {PAPER_SIZES[size].label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button
           variant="outline"
           size="sm"

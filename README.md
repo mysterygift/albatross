@@ -1,282 +1,101 @@
 # Albatross
 
-Offline-first desktop production management for film, TV, commercial, and documentary workflows. All data stays on your machine — encrypted SQLite database and local attachments. No cloud account required.
+Offline-first production management for film, TV, commercials and documentaries. Script, schedule, people, budget, paperwork and wrap — in one desktop app. Your data stays on your machine in an encrypted database. No cloud account required.
 
+> **Disclaimer:** Albatross was built with heavy assistance from AI coding tools. Sensitive personal data is encrypted at rest, but no software is bulletproof. Use at your own risk, and keep backups (see [Back up your work](#back-up-your-work)).
 
+## Highlights
 
-DISCLAIMER: Albatross has been developed with heavy assistance from AI coding tools. While we've made efforts to secure PII through salting and encryption, it isn't bulletproof. Use at your own risk.
+| Area | What you get |
+|---|---|
+| **Script** | Import text or text-layer PDF scripts, split them into sections and sides, tag elements for breakdown by department and track what has been sourced. |
+| **Schedule** | Calendar, drag-and-drop stripboard with multiple units, shot lists and storyboards. |
+| **People** | Cast and crew managers, bookings, and a Day Out of Days inferred from your stripboard and availability. |
+| **Budget** | Chart of accounts, line items, typed expenses, floats, vendors, purchase orders, receipts, budget revisions and cost reports. |
+| **Deliver** | Industry-standard A4 call sheets, movement orders with route maps, risk assessments (RAMS), documents, deliverables, music clearances and cue sheets. |
+| **Control** | Dashboard, tasks, a wrap checklist, ⌘K command palette and global search. |
+| **Safe by design** | Encrypted local database, local accounts, per-production import/export as `.apf` files. Episodic productions supported. |
 
----
+## Quick start
 
-## Features
+1. **Download** the latest installer for your platform from the [Releases page](https://github.com/mysterygift/albatross/releases):
+   - macOS: the `.dmg`
+   - Windows: the Windows installer
+2. **Install and open it.** Release builds are not code-signed yet, so your OS will warn you the first time — see [Opening an unsigned app](#opening-an-unsigned-app).
+3. **Run the setup wizard.** Choose a password, create the admin account and **save your recovery key somewhere safe**. There is no cloud reset: without your password or recovery key the data cannot be recovered.
+4. **Take the tutorial** when offered. It creates a sample production with a starter budget that you can explore and delete later. A full demo production is also available from **Settings → Demo & tutorial**.
+5. **Create your own production** from **Productions → Add**, or use **Import project** to open a `.apf` file.
 
-### Dashboard
+Then follow the [Guidebook](GUIDEBOOK/README.md), a chapter-by-chapter walkthrough of every part of the app.
 
-- Production overview at a glance
-- Task completion, budget health, and next shoot day
-- Stripboard snapshot and risk indicators
+## Opening an unsigned app
 
-### Productions
+### macOS
 
-- Create, edit, and switch between projects
-- Import and export `.apf` project files
-- Duplicate a production for backups or what-if copies
+macOS blocks apps it cannot verify ("Albatross is damaged and can't be opened", or "cannot be opened because the developer cannot be verified").
 
-### Budget
+1. Drag **Albatross** into **Applications** and try to open it once.
+2. Open **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to Albatross. Confirm with your password.
 
-- Chart of accounts, line items, and expenses
-- Vendors, purchase orders, floats, and budget revisions
-- Default currency GBP; display currency configurable in Settings
-
-### Schedule
-
-- **Calendar** — shoot days and bloc filters (episodic)
-- **Stripboard** — drag-and-drop strips (scenes, moves, calls, lunch, wrap, notes), multiple units per day
-- **Shot lists**, **storyboard**, and **script import** (text/`.txt` and text-layer `.pdf` with best-effort scene detection)
-
-### People
-
-- Cast and crew **bookings**
-- **Day Out of Days** — WORK/HOLD/OFF/CLASH inferred from stripboard and cast availability; export to PDF
-- **Cast Manager** and **Crew Manager**
-
-### Locations
-
-- Add and manage locations; link scenes to locations
-
-### Equipment
-
-- Equipment registry, lists, and rental windows
-- Checklists and PDF/CSV export
-
-### Documents
-
-- Attach PDFs, images, and other files; open in your system viewer
-
-### Call Sheets
-
-- Generate call sheet PDFs per shoot day and unit
-
-### Movement Orders
-
-- Create and distribute travel/movement orders
-
-### Tasks
-
-- Production tasks with required vs optional items; track completion readiness
-
-### Deliverables
-
-- Track deliverables; optional episode links on episodic shows
-
-### Music & Archive
-
-- Music tracks and clearance tracking; generate cue sheets
-
-### Settings
-
-- Display currency, chart of accounts, cost report groups
-- Episodes and shooting blocs (episodic productions)
-- User admin and per-project access control
-- Optional server publish (requires separate `albatross-server`)
-
-**Also:** first-run **local auth** and **encrypted database** (save your **recovery key** — no cloud reset); optional **first-launch tutorial**; **offline-first** after install.
-
----
-
-## User setup
-
-For installing a pre-built release (`.dmg` on macOS, installer on Windows). Node.js and Rust are not required.
-
-### Install
-
-1. Download and install the platform bundle from your release channel.
-2. Launch **Albatross** — a native desktop window, not a browser tab.
-
-### First launch
-
-1. Complete the **setup wizard**: encrypt the local database, create an **admin account**, and **save your recovery key**.
-2. Sign in on later launches to unlock the database.
-3. Go to **Productions** → **Add** to create a project, or import a `.apf` file.
-4. Use the **current production** selector in the top bar to switch projects. Most of the app shows data for the selected production only.
-5. Optional: accept the **first-launch tutorial**, or use **Duplicate** on a production to make a full backup copy.
-
-Double-click a `.apf` file to import on installed builds (see [Troubleshooting](#troubleshooting) if it does not open in Albatross).
-
-### Where data is stored
-
-
-| Platform | Path                                           |
-| -------- | ---------------------------------------------- |
-| macOS    | `~/Library/Application Support/Albatross/`     |
-| Windows  | `%APPDATA%\Albatross\`                         |
-| Linux    | `~/.config/Albatross/`                         |
-
-
-Contents: `albatross.db` (SQLCipher), `attachments/`, and encryption sidecars. See [docs/DATA_ENCRYPTION.md](docs/DATA_ENCRYPTION.md) for recovery-key details.
-
----
-
-## Development environment
-
-For contributors cloning the repo.
-
-### Requirements
-
-- **Node.js** 18+
-- **Rust** 1.77.2+ ([src-tauri/Cargo.toml](src-tauri/Cargo.toml))
-- [Tauri OS prerequisites](https://v2.tauri.app/start/prerequisites/) (macOS: Xcode CLT; Windows: Visual Studio build tools; Linux: webkit2gtk)
-- Windows: SQLCipher native build may need OpenSSL/vcpkg — see [docs/SQLCIPHER_SPIKE.md](docs/SQLCIPHER_SPIKE.md)
-
-No `.env` file is required for normal development.
-
-### Setup and run
+If macOS still reports the app as damaged, remove the download quarantine flag and open it again:
 
 ```bash
-git clone <repo-url>
+xattr -cr /Applications/Albatross.app
+```
+
+### Windows
+
+1. Run the installer. If **"Windows protected your PC"** appears, click **More info → Run anyway**.
+2. If the installer will not start at all, right-click the file → **Properties** → tick **Unblock** → **OK**, then run it again.
+3. If antivirus quarantines it, restore it only if you downloaded it from the official Releases page.
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| Forgot your password | On the sign-in screen click **Forgot password?** and enter your recovery key. Without the recovery key, data is not recoverable. |
+| Double-clicking a `.apf` file does not open Albatross | Right-click → **Open With → Albatross** (macOS) or choose Albatross in **Open with** (Windows). Or use **Productions → Import project**. |
+| App closes immediately on Windows | Reinstall, and launch it from the Start menu. |
+| A feature seems missing | Some features are experimental and hidden by default — see [Experimental features](GUIDEBOOK/15-experimental-features.md). |
+| Want a completely fresh start | Quit Albatross, then delete the data folder below. **This permanently deletes everything in it.** |
+
+More: [Guidebook → Troubleshooting](GUIDEBOOK/16-troubleshooting.md).
+
+## Where your data lives
+
+| Platform | Folder |
+|---|---|
+| macOS | `~/Library/Application Support/Albatross/` |
+| Windows | `%APPDATA%\Albatross\` |
+| Linux | `~/.config/Albatross/` |
+
+It holds the encrypted database (`albatross.db` and its key sidecar files) and your attachments.
+
+### Back up your work
+
+- Per production: **Productions → Export project** to save a `.apf` file, or duplicate the production.
+- Whole app: quit Albatross and copy the entire folder above. Keep your recovery key with the backup.
+
+## Contributing
+
+Developer documentation lives in [`DOCS/`](DOCS/README.md): architecture, database, security, and a reference for every feature. To run from source you need Node.js (current LTS), Rust 1.77.2+ and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/):
+
+```bash
+git clone https://github.com/mysterygift/albatross.git
 cd albatross
 npm install
 npm run tauri:dev
 ```
 
-- Starts Vite on **[http://localhost:5174](http://localhost:5174)** and opens the Tauri window (`strictPort: true`).
-- Dev and an installed build on the same machine share the **same local database**.
-- **Developer tools** (demo seed, cascade verify, etc.) appear in Settings only when running `tauri:dev` — see [docs/SETTINGS_AND_DEVTOOLS.md](docs/SETTINGS_AND_DEVTOOLS.md).
+See [DOCS/contributing.md](DOCS/contributing.md) for the full workflow.
 
-Optional Rust check:
+## Links
 
-```bash
-rustc --version   # should be >= 1.77.2
-cargo --version
-```
-
-Use [rustup](https://rustup.rs/) if you need a specific version (match `src-tauri/Cargo.toml`).
-
-### Build
-
-```bash
-npm run tauri:build
-```
-
-Outputs under `src-tauri/target/release/` (e.g. `.dmg` on macOS).
-
-### Quality checks
-
-
-| Command                 | Purpose                                      |
-| ----------------------- | -------------------------------------------- |
-| `npm run lint`          | ESLint on `src/`                             |
-| `npm run test`          | Vitest unit/integration (`src/**/*.test.ts`) |
-| `npm run test:postgres` | Postgres adapter tests (needs PG env)        |
-
-
-Also run the app manually and use **Settings → Developer tools** for demo data and cascade verification.
-
-### Making a first change
-
-**Path alias:** `@/`* → `./src/*` ([tsconfig.app.json](tsconfig.app.json), [vite.config.ts](vite.config.ts)).
-
-**Add a page:** create under `src/features/`, register in [src/app/router.tsx](src/app/router.tsx), add a nav link in [src/app/layout.tsx](src/app/layout.tsx).
-
-**Change data:**
-
-- Read/write via repositories in `src/lib/db/repositories/`; types in `src/lib/db/types.ts`.
-- Multi-statement transactions: use `executeBatch` inside `runInSerializedTransaction` — see [docs/DATABASE_LAYER.md](docs/DATABASE_LAYER.md).
-- Schema change: add `src-tauri/migrations/NNNN_name.sql`, register in [src-tauri/src/lib.rs](src-tauri/src/lib.rs), restart the app.
-
-### Developer gotchas
-
-- **Port 5174 in use:** Vite uses `strictPort: true`. Free the port or update [vite.config.ts](vite.config.ts) and [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) `build.devUrl` together.
-- **Shared DB in dev:** same database as an installed build on this machine. Remove `albatross.db` (and optionally `attachments/`) from the app config directory while the app is closed for a clean start.
-- **Rust/Tauri changes:** restart `npm run tauri:dev` — Vite ignores `src-tauri/` for hot reload.
-- **Migrations:** applied by the Tauri SQL plugin on DB load; require both `.sql` file and `Migration` entry in `lib.rs`.
-- **Demo production:** keyed only by slug `demo-production-albatross`; reset never touches other productions.
-- **Developer tools:** Settings card visible only when `import.meta.env.DEV` is true.
-- **Episodic productions:** irreversible at creation; manage episodes and shooting blocs in Settings.
-- **Strict TypeScript:** build is `tsc -b && vite build` — fix type and lint errors before committing.
-
-### Quick reference
-
-
-| Task             | Command / location                                    |
-| ---------------- | ----------------------------------------------------- |
-| Install deps     | `npm install`                                         |
-| Run app (dev)    | `npm run tauri:dev`                                   |
-| Build            | `npm run tauri:build`                                 |
-| Lint             | `npm run lint`                                        |
-| Path alias       | `@/`* → `./src/*`                                     |
-| DB (macOS)       | `~/Library/Application Support/Albatross/`            |
-| Migrations       | `src-tauri/migrations/*.sql` + `src-tauri/src/lib.rs` |
-| Repositories     | `src/lib/db/repositories/`                            |
-| Features / pages | `src/features/<name>/`                                |
-
-
----
-
-## Limitations
-
-- **Script import — PDF parsing:** supports text-layer PDFs via layout-aware parsing (no OCR). Scanned PDFs require paste text or a `.txt` file. See [docs/script-sections-and-sides.md](docs/script-sections-and-sides.md) for the full SB workflow.
-- **Cloud sync:** writes go to an internal outbox for future sync; sync is not implemented. The app is local-only.
-- **Currency conversion API:** experimental, off by default, dev-only in Settings → Developer tools.
-
----
-
-## Troubleshooting
-
-### macOS
-
-
-| Issue                                          | Fix                                                                                                                                                                                             |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **"App is damaged" / won't open (Gatekeeper)** | Remove quarantine: `xattr -cr /Applications/Albatross.app` (adjust path). Or right-click → **Open** once, or **System Settings → Privacy & Security → Open Anyway**.                            |
-| **Downloaded build blocked**                   | Same as above — browsers apply a quarantine attribute to downloaded files.                                                                                                                      |
-| `**.apf` doesn't open in Albatross**           | Right-click → **Open With → Albatross** the first time. Fallback: **Productions → Import project**. See [docs/project-import-export-format-v1.md](docs/project-import-export-format-v1.md) §15. |
-| **Forgot password / lost recovery key**        | No cloud reset. With recovery key: **Forgot password?** on sign-in. Without it, data is not recoverable. See [docs/DATA_ENCRYPTION.md](docs/DATA_ENCRYPTION.md).                                |
-
-
-### Windows
-
-
-| Issue                                        | Fix                                                                                                                                       |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **SmartScreen: "Windows protected your PC"** | Click **More info → Run anyway** for unsigned builds. For downloaded installers: **Properties → General → Unblock** (if shown), then run. |
-| **Installer blocked by antivirus**           | Allow the app if you trust the source. Re-download if the file may be corrupt.                                                            |
-| **App closes immediately**                   | Reinstall. Launch from the Start Menu — do not open `localhost` in a browser. Data lives in `%APPDATA%\Albatross\`.                   |
-| **Dev build fails (SQLCipher/OpenSSL)**      | Install VS build tools and OpenSSL per [docs/SQLCIPHER_SPIKE.md](docs/SQLCIPHER_SPIKE.md).                                                |
-
-
-### Shared
-
-
-| Issue                                       | Fix                                                                                  |
-| ------------------------------------------- | ------------------------------------------------------------------------------------ |
-| **Blank page at localhost:5174 in browser** | Expected without Tauri. Run `npm run tauri:dev` or use the installed app.            |
-| **Port 5174 already in use** (dev)          | Stop the other process or change the port in `vite.config.ts` and `tauri.conf.json`. |
-| **Want a clean database**                   | Quit the app, then remove the app data directory (paths above) while closed.         |
-| **Rust/Tauri changes not applying** (dev)   | Restart `npm run tauri:dev`. Vite ignores `src-tauri/` for hot reload.               |
-
-
----
-
-## Further reading
-
-- [docs/DATA_ENCRYPTION.md](docs/DATA_ENCRYPTION.md) — encryption and recovery
-- [docs/DATABASE_LAYER.md](docs/DATABASE_LAYER.md) — database client, transactions, migrations
-- [docs/SETTINGS_AND_DEVTOOLS.md](docs/SETTINGS_AND_DEVTOOLS.md) — settings and developer tools
-- [docs/project-import-export-format-v1.md](docs/project-import-export-format-v1.md) — `.apf` import/export
-- Feature docs: [schedule](docs/schedule.md), [budget](docs/budget.md), [call sheets](docs/call-sheets.md), [deliverables](docs/deliverables.md), [equipment](docs/equipment.md), [vendors](docs/vendors.md), [crew manager](docs/crew-manager.md)
-
-## Tech stack
-
-- **Shell:** Tauri 2
-- **UI:** Vite, React 19, TypeScript, Tailwind CSS, shadcn/ui
-- **Data:** TanStack Query, TanStack Table, React Hook Form, Zod
-- **Database:** SQLite via Tauri SQL plugin, SQLCipher encryption, migrations in Rust
-- **Files:** Tauri fs, dialog, shell, opener — attachments in app data directory
-- **PDF:** pdf-lib (generate), react-pdf (preview)
+- [Guidebook](GUIDEBOOK/README.md) — how to use Albatross
+- [Release notes](RELEASE_NOTES.md)
+- [Developer docs](DOCS/README.md)
+- Feedback and bug reports: [GitHub issues](https://github.com/mysterygift/albatross/issues) or [aran@noholdsbarred.pictures](mailto:aran@noholdsbarred.pictures)
 
 ## License
 
-COPYRIGHT 2026 ARAN DAVIES. ALL RIGHTS RESERVED.
-
-Feedback: [aran@noholdsbarred.pictures](mailto:aran@noholdsbarred.pictures)
+Copyright 2026 Aran Davies. All rights reserved.

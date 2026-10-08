@@ -16,6 +16,7 @@ const PREVIEW: Record<UiThemeId, { ground: string; block: string; band: string; 
   signal: { ground: '#0b0c09', block: '#ffd400', band: '#14160f', chip: '#2e3324', ink: '#f1f1e6', radius: '2px' },
   ledger: { ground: '#f4efe6', block: '#1a1a18', band: '#fffdf8', chip: '#8e1b14', ink: '#1a1a18', radius: '0px' },
   clay: { ground: '#f6f2ee', block: '#5b4bd6', band: '#fff0b3', chip: '#ffd8c2', ink: '#2a2540', radius: '16px' },
+  night: { ground: '#070302', block: '#d9533b', band: '#130806', chip: '#c78a2e', ink: '#e8806b', radius: '4px' },
 }
 
 export function AppearanceSettingsSection() {

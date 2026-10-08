@@ -1,6 +1,7 @@
 import type { ScriptSectionRange } from './types'
 import type { ScriptSectionRangeInput } from './repositories/scriptSections'
 import { parseLeadingPageNumber } from './sidesBuilderService'
+import { segmentByCoverage, type CoverageSlice } from '@/lib/text/segments'
 
 const EIGHTHS_PER_PAGE = 8
 
@@ -78,6 +79,29 @@ export function sectionSignature(sceneId: string, sectionType: string, label: st
   return `${sceneId}|${sectionType}|${label ?? ''}`
 }
 
+/**
+ * Overlap test for two ranges of the same script version. When both ranges carry text offsets
+ * they are compared exactly (page, then offset), so neighbours that merely share an eighth do
+ * not count as overlapping; otherwise falls back to the page/eighth comparison.
+ */
+export function sameVersionRangesOverlap(
+  a: ScriptSectionRange | undefined,
+  b: ScriptSectionRange | undefined
+): boolean {
+  if (!a || !b) return false
+  const offsets = [a.start_offset, a.end_offset, b.start_offset, b.end_offset]
+  const pages = [a.start_page, a.end_page ?? a.start_page, b.start_page, b.end_page ?? b.start_page].map((p) =>
+    parseLeadingPageNumber(p ?? null)
+  )
+  if (offsets.some((o) => o == null) || pages.some((p) => p == null)) return rangesOverlap(a, b)
+  const before = (p1: number, o1: number, p2: number, o2: number) => p1 < p2 || (p1 === p2 && o1 < o2)
+  const [aStartPage, aEndPage, bStartPage, bEndPage] = pages as number[]
+  return (
+    before(aStartPage!, a.start_offset!, bEndPage!, b.end_offset!) &&
+    before(bStartPage!, b.start_offset!, aEndPage!, a.end_offset!)
+  )
+}
+
 export type SectionRangeConflictPair = {
   sectionAId: string
   sectionBId: string
@@ -100,7 +124,7 @@ export function findOverlappingSectionPairs(
       const b = sections[j]!
       if (a.scene_id !== b.scene_id) continue
       const rangeB = rangeBySectionId.get(b.id)
-      if (rangesOverlap(rangeA, rangeB)) {
+      if (sameVersionRangesOverlap(rangeA, rangeB)) {
         pairs.push({ sectionAId: a.id, sectionBId: b.id, sceneId: a.scene_id })
       }
     }
@@ -166,32 +190,17 @@ export function buildPageHighlightSegments(
   selectedSlice: TextOffsetSlice | null,
   conflictSlices: TextOffsetSlice[]
 ): PageHighlightSegment[] {
-  const boundaries = new Set<number>([0, contentLength])
-  if (selectedSlice) {
-    boundaries.add(selectedSlice.start)
-    boundaries.add(selectedSlice.end)
-  }
-  for (const slice of conflictSlices) {
-    boundaries.add(slice.start)
-    boundaries.add(slice.end)
-  }
-
-  const points = [...boundaries].sort((a, b) => a - b)
-  const segments: PageHighlightSegment[] = []
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const start = points[i]!
-    const end = points[i + 1]!
-    if (start >= end) continue
-    const mid = start + (end - start) / 2
-    const inSelected = selectedSlice != null && mid >= selectedSlice.start && mid < selectedSlice.end
-    const inConflict = conflictSlices.some((s) => mid >= s.start && mid < s.end)
-    if (!inSelected && !inConflict) continue
-    let kind: PageHighlightSegment['kind'] = 'selected'
-    if (inSelected && inConflict) kind = 'overlap'
-    else if (inConflict) kind = 'conflict'
-    segments.push({ start, end, kind })
-  }
-
-  return segments
+  const clamp = (slice: TextOffsetSlice) => ({
+    start: Math.max(0, slice.start),
+    end: Math.min(contentLength, slice.end),
+  })
+  const slices: CoverageSlice<'selected' | 'conflict'>[] = [
+    ...(selectedSlice ? [{ ...clamp(selectedSlice), id: 'selected' as const }] : []),
+    ...conflictSlices.map((slice) => ({ ...clamp(slice), id: 'conflict' as const })),
+  ]
+  return segmentByCoverage(slices).map(({ start, end, ids }) => ({
+    start,
+    end,
+    kind: ids.length > 1 ? 'overlap' : ids[0]!,
+  }))
 }

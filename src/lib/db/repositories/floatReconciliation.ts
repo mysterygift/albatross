@@ -2,7 +2,7 @@
  * float_expense_links: petty cash float ↔ expense reconciliation.
  * Does not touch budget_item_expense_links or budget actuals.
  *
- * Multi-row inserts: runInSerializedTransaction + executeBatch(BEGIN, INSERT…, COMMIT) per DATABASE_LAYER.md.
+ * Multi-row inserts: runInSerializedTransaction + executeBatch(BEGIN, INSERT…, COMMIT) per DOCS/database.md.
  */
 
 import { executeBatch, getDb, now, runInSerializedTransaction, uuid } from '../client'

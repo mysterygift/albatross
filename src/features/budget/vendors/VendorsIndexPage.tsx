@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { optionalContactEmailField } from '@/lib/contacts/contactFieldValidation'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useCurrency } from '@/hooks/useCurrency'
 import { listVendors, createVendor } from '@/lib/db/repositories/vendors'
@@ -28,7 +29,7 @@ import { GlobalVendorBadge } from '@/features/budget/vendors/GlobalVendorBadge'
 const createVendorSchema = z.object({
   company_name: z.string().min(1, 'Company name is required'),
   primary_contact_full_name: z.string().optional(),
-  primary_contact_email: z.string().email('Invalid email').optional().or(z.literal('')),
+  primary_contact_email: optionalContactEmailField,
 })
 
 /** Total spend per vendor_id from expenses. */

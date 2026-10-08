@@ -111,6 +111,9 @@ import { saveFileWithDialog } from '@/lib/files'
 import { persistProductionDocument, documentsQueryKey } from '@/lib/documents/persistDocument'
 import { DOCUMENT_ENTITY_TYPES } from '@/lib/documents/catalog'
 import { getAccountBandColor } from '@/lib/budget/accountBandColor'
+import { buildCostReportPdfData } from '@/lib/budget/costReportPdfData'
+import { generateCostReportPDF } from '@/lib/pdf/costReport'
+import { DEFAULT_PAPER_SIZE, PAPER_SIZES, isPaperSize, type PaperSize } from '@/lib/pdf/layoutKit'
 import type { BudgetItem, BudgetAccount } from '@/lib/db/types'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { getExpenseWithDetails, listAllowExpenseDetailsByProduction } from '@/lib/db/repositories/expenseTransactions'
@@ -1998,6 +2001,11 @@ export function BudgetPage() {
               }
             }}
             productionName={currentProduction?.name ?? ''}
+            revisionLabel={
+              workingBudgetRevision
+                ? `${workingBudgetRevision.name} | ${workingBudgetRevision.is_live ? 'Live' : 'Draft'}`
+                : null
+            }
             openAllowCount={openAllowCountGlobal}
             accountTree={accountTree}
             accountTotals={accountTotals}
@@ -2627,237 +2635,6 @@ function hexWithAlpha(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
-/** Hex-only PDF stylesheet for Cost Report export (Albatross theme). Injected in onclone so html2canvas never sees oklch. */
-function buildCostReportPdfCss(): string {
-  return `
-/* 1) Reset / normalization for cloned document */
-*, *::before, *::after {
-  box-sizing: border-box;
-  color: #1a1a1a !important;
-  background: transparent !important;
-  background-color: transparent !important;
-  border-color: #e5e5e7 !important;
-  outline-color: #1a1a1a !important;
-  fill: #1a1a1a !important;
-  stroke: #1a1a1a !important;
-  box-shadow: none !important;
-  text-shadow: none !important;
-}
-html, body {
-  background: #ffffff !important;
-  color: #1a1a1a !important;
-  margin: 0;
-  padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  font-size: 12px;
-  line-height: 1.4;
-}
-.no-print { display: none !important; }
-.text-muted-foreground { color: #525252 !important; }
-.text-destructive { color: #b91c1c !important; }
-
-/* 2) Albatross PDF theme – typography and spacing */
-.cost-report-print {
-  background: #ffffff !important;
-  color: #1a1a1a !important;
-  padding: 0;
-}
-.cost-report-print .report-header {
-  border-bottom: 1px solid #e5e5e7;
-  padding-bottom: 12px;
-  margin-bottom: 4px;
-}
-.cost-report-print .report-header h2 {
-  font-size: 19px;
-  font-weight: 600;
-  color: #1a1a1a;
-  margin: 0 0 2px 0;
-}
-.cost-report-print .report-header p {
-  font-size: 11px;
-  font-weight: 500;
-  color: #525252;
-  margin: 0;
-}
-.cost-report-print .report-section-header {
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #525252;
-  margin: 0 0 8px 0;
-}
-.cost-report-print .cost-report-table {
-  table-layout: fixed;
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 11px;
-}
-.cost-report-print .cost-report-table th,
-.cost-report-print .cost-report-table td {
-  border: 1px solid #e5e5e7;
-  padding: 6px 10px;
-  vertical-align: top;
-}
-.cost-report-print .cost-report-table thead th {
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: #525252;
-  border-bottom: 2px solid #d4d4d8;
-  padding: 8px 10px;
-}
-.cost-report-print .cost-report-col-code { width: 90px; }
-.cost-report-print .cost-report-col-account { width: auto; }
-.cost-report-print .cost-report-col-budget,
-.cost-report-print .cost-report-col-actual,
-.cost-report-print .cost-report-col-variance {
-  width: 120px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.cost-report-print .cost-report-col-pct {
-  width: 80px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.cost-report-print .cost-report-col-code,
-.cost-report-print .cost-report-code-cell {
-  width: 90px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  border-right: 1px solid rgba(0,0,0,0.12);
-}
-.cost-report-print .cost-report-code-cell {
-  text-align: right;
-}
-.cost-report-print .cost-report-account-cell {
-  padding-left: 10px;
-  padding-right: 8px;
-}
-.cost-report-print tr[data-is-rollup="true"] .cost-report-code-cell,
-.cost-report-print tr[data-is-rollup="true"] .cost-report-account-cell {
-  text-align: left;
-  padding-left: 10px;
-  padding-right: 8px;
-}
-.cost-report-print .cost-report-table tbody tr[data-band-hex] {
-  box-shadow: inset 1px 0 0 0 rgba(255,255,255,0.4) !important;
-}
-.cost-report-print .cost-report-table tbody tr[data-is-rollup="true"] {
-  background: var(--row-tint, transparent) !important;
-}
-.cost-report-print .cost-report-table tbody tr:nth-child(even):not([data-is-rollup="true"]) {
-  background: rgba(0,0,0,0.02) !important;
-}
-.cost-report-print .cost-report-group-total {
-  border-top: 1px solid #d4d4d8 !important;
-  font-weight: 600 !important;
-  background: rgba(0,0,0,0.02) !important;
-}
-.cost-report-print .cost-report-subtotals table {
-  font-size: 11px;
-}
-.cost-report-print .cost-report-subtotals th,
-.cost-report-print .cost-report-subtotals td {
-  padding: 6px 10px;
-  border: 1px solid #e5e5e7;
-}
-.cost-report-print .cost-report-subtotals .report-section-header {
-  border-top: 1px solid #d4d4d8;
-  padding-top: 12px;
-  margin-top: 8px;
-}
-.cost-report-print .cost-report-subtotals tr:last-child td {
-  font-weight: 600;
-  border-top: 1px solid #d4d4d8;
-}
-.cost-report-print .derived-overlays {
-  border: 1px solid #e5e5e7;
-  background: rgba(67, 56, 202, 0.04) !important;
-  padding: 12px 16px;
-}
-.cost-report-print .derived-overlays .text-muted-foreground {
-  font-style: italic;
-  color: #525252 !important;
-}
-.cost-report-print .final-totals {
-  border: 1px solid #e5e5e7;
-  border-top: 3px solid #3f3f46;
-  padding: 12px 16px;
-  font-size: 12px;
-}
-.cost-report-print .final-totals .report-section-header {
-  margin-bottom: 4px;
-}
-.cost-report-print .final-totals p {
-  font-weight: 600;
-  margin: 0 0 4px 0;
-}
-.cost-report-print .final-totals .text-xl {
-  font-size: 18px;
-}
-.cost-report-print .cost-report-table-wrap {
-  border: 1px solid #e5e5e7;
-  border-radius: 0;
-}
-.cost-report-print .report-section.rounded-md {
-  border: 1px solid #e5e5e7;
-}
-.cost-report-print .grid > div {
-  border: 1px solid #e5e5e7;
-  padding: 12px 16px;
-  background: #ffffff !important;
-}
-.cost-report-print .grid > div p:first-child {
-  font-size: 11px;
-  color: #525252;
-  margin: 0 0 4px 0;
-}
-.cost-report-print .grid > div .text-2xl {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0;
-}
-
-/* 3) Safety fallbacks */
-.cost-report-print,
-.cost-report-print *,
-.cost-report-print *::before,
-.cost-report-print *::after {
-  box-shadow: none !important;
-  text-shadow: none !important;
-}
-`
-}
-
-function hexToRgba(hex: string, alpha: number): string {
-  const m = hex.match(/^#?([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/)
-  if (!m) return `rgba(0,0,0,${alpha})`
-  const r = parseInt(m[1], 16)
-  const g = parseInt(m[2], 16)
-  const b = parseInt(m[3], 16)
-  return `rgba(${r},${g},${b},${alpha})`
-}
-
-/** In cloned document, apply band colours to rows with data-band-hex (left border + optional rollup tint). Archived rows get reduced opacity. */
-function applyBandColorsInClone(clonedDoc: Document): void {
-  const rows = clonedDoc.querySelectorAll<HTMLElement>('tr[data-band-hex]')
-  rows.forEach((row) => {
-    const hex = row.getAttribute('data-band-hex')
-    if (!hex) return
-    const isArchived = row.getAttribute('data-archived') === 'true'
-    const borderAlpha = isArchived ? 0.35 : 0.62
-    const tintAlpha = isArchived ? 0.02 : 0.04
-    const borderColor = hexToRgba(hex, borderAlpha)
-    row.style.borderLeft = `4px solid ${borderColor}`
-    if (row.getAttribute('data-is-rollup') === 'true') {
-      row.style.setProperty('--row-tint', hexToRgba(hex, tintAlpha))
-    }
-  })
-}
-
 type ProductionTotalAmount = {
   id: string
   name: string
@@ -3014,19 +2791,12 @@ type GroupTotalRow = {
   percentSpent: number | null
 }
 
-/** Trigger browser print for Cost Report. Kept in code for re-enabling (e.g. via feature flag). */
-export function triggerCostReportPrint(): void {
-  const p = window.print()
-  if (p != null && typeof (p as Promise<void>).catch === 'function') {
-    ;(p as Promise<void>).catch(() => {})
-  }
-}
-
 function CostReportView({
   productionId,
   revisionId,
   onDocumentPersisted,
   productionName,
+  revisionLabel,
   openAllowCount,
   accountTree,
   accountTotals,
@@ -3060,11 +2830,13 @@ function CostReportView({
   revisionId: string | null
   onDocumentPersisted?: () => void
   productionName: string
+  /** e.g. `Revision 2 | Live`; null while the revision is loading. */
+  revisionLabel: string | null
   openAllowCount: number
   accountTree: AccountTreeNode[]
   accountTotals: Map<string, { budgetTotal: number; actualTotal: number; variance: number; percentSpent: number | null }>
   items: BudgetItem[]
-  format: (n: number, currency: string) => { formatted: string }
+  format: (n: number, currency: string) => { formatted: string; currency: string }
   productionCurrency: string
   totalEstimated: number
   totalActual: number
@@ -3105,62 +2877,46 @@ function CostReportView({
   }
 
   const generatedDate = new Date().toISOString().slice(0, 10)
-  const reportRef = useRef<HTMLDivElement>(null)
   const [isSavingPdf, setIsSavingPdf] = useState(false)
+  const [paperSize, setPaperSize] = useState<PaperSize>(DEFAULT_PAPER_SIZE)
+  const [pdfError, setPdfError] = useState<string | null>(null)
 
   const handleSaveAsPdf = useCallback(async () => {
-    const el = reportRef.current
-    if (!el) return
     setIsSavingPdf(true)
-    el.classList.add('cost-report-exporting-pdf')
-    function setHexStyles(node: Element) {
-      if (node instanceof HTMLElement) {
-        const isMuted = node.classList.contains('text-muted-foreground')
-        const isDestructive = node.classList.contains('text-destructive')
-        node.style.setProperty('color', isMuted ? '#525252' : isDestructive ? '#b91c1c' : '#1a1a1a')
-        node.style.setProperty('background-color', 'transparent')
-        node.style.setProperty('border-color', '#e5e7eb')
-      }
-      node.childNodes.forEach((child) => {
-        if (child instanceof Element) setHexStyles(child)
-      })
-    }
-    function clearHexStyles(node: Element) {
-      if (node instanceof HTMLElement) {
-        node.style.removeProperty('color')
-        node.style.removeProperty('background-color')
-        node.style.removeProperty('border-color')
-      }
-      node.childNodes.forEach((child) => {
-        if (child instanceof Element) clearHexStyles(child)
-      })
-    }
-    setHexStyles(el)
-      /* Force reflow so computed styles (and CSS variable overrides) are applied before capture */
-      void el.offsetHeight
+    setPdfError(null)
     try {
-      const html2pdf = (await import('html2pdf.js')).default
-      const pdfCss = buildCostReportPdfCss()
-      const opt = {
-        margin: 10,
-        filename: 'cost-report.pdf',
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          letterRendering: true,
-          onclone: (clonedDoc: Document) => {
-            const style = clonedDoc.createElement('style')
-            style.textContent = pdfCss
-            clonedDoc.head.appendChild(style)
-            applyBandColorsInClone(clonedDoc)
-            void clonedDoc.body.offsetHeight
-          },
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
-      }
-      const arraybuffer = await html2pdf().set(opt).from(el).toPdf().output('arraybuffer')
-      const pdfBytes = new Uint8Array(arraybuffer as ArrayBuffer)
+      const reportData = buildCostReportPdfData({
+        productionName,
+        revisionLabel,
+        generatedAt: new Date(),
+        layout: layoutMode,
+        currency: format(0, productionCurrency).currency,
+        openAllowCount,
+        accountTree,
+        accountTotals,
+        items,
+        expandedLeafId,
+        groupTotals,
+        visibleIdsByGroupId,
+        totalEstimated,
+        totalActual,
+        variance,
+        uncodedTotal,
+        productionTotalAmounts,
+        productionSubtotalBeforeDerived,
+        fringesTotal: fringeTotals.totalFringesAmount,
+        contingencyTotal: contingencyTotals.totalContingencyAmount,
+        totalDerived,
+        taxCreditsEnabled,
+        taxCreditTotals,
+        vatTrackingEnabled,
+        totalVat,
+        vatReclaimTotals,
+      })
+      const pdfBytes = await generateCostReportPDF(reportData, {
+        paperSize,
+        formatAmount: (amount) => format(amount, productionCurrency).formatted,
+      })
       const fileName = `cost-report-${generatedDate}.pdf`
       if (productionId) {
         await persistProductionDocument({
@@ -3181,15 +2937,47 @@ function CostReportView({
         },
         pdfBytes
       )
+    } catch (error) {
+      setPdfError(error instanceof Error ? error.message : 'Could not create the cost report PDF.')
     } finally {
-      clearHexStyles(el)
-      el.classList.remove('cost-report-exporting-pdf')
       setIsSavingPdf(false)
     }
-  }, [generatedDate, productionId, revisionId, onDocumentPersisted])
+  }, [
+    accountTotals,
+    accountTree,
+    contingencyTotals.totalContingencyAmount,
+    expandedLeafId,
+    format,
+    fringeTotals.totalFringesAmount,
+    generatedDate,
+    groupTotals,
+    items,
+    layoutMode,
+    onDocumentPersisted,
+    openAllowCount,
+    paperSize,
+    productionCurrency,
+    productionId,
+    productionName,
+    productionSubtotalBeforeDerived,
+    productionTotalAmounts,
+    revisionId,
+    revisionLabel,
+    taxCreditTotals,
+    taxCreditsEnabled,
+    totalActual,
+    totalDerived,
+    totalEstimated,
+    totalVat,
+    uncodedTotal,
+    variance,
+    vatReclaimTotals,
+    vatTrackingEnabled,
+    visibleIdsByGroupId,
+  ])
 
   return (
-    <div ref={reportRef} className="cost-report-print space-y-6">
+    <div className="cost-report-print space-y-6">
       <div className="flex flex-wrap items-center justify-end gap-2 no-print">
         {costReportGroupsWithAccounts.length > 0 && (
           <Tabs
@@ -3208,11 +2996,33 @@ function CostReportView({
           </Tabs>
         )}
         {configureButton}
+        <Select
+          value={paperSize}
+          onValueChange={(value) => {
+            if (isPaperSize(value)) setPaperSize(value)
+          }}
+        >
+          <SelectTrigger className="h-9 w-[130px] bg-input border-border" aria-label="PDF paper size">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(PAPER_SIZES) as PaperSize[]).map((size) => (
+              <SelectItem key={size} value={size}>
+                {PAPER_SIZES[size].label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button variant="outline" size="sm" onClick={handleSaveAsPdf} disabled={isSavingPdf}>
           <Download className="mr-2 size-4" />
           {isSavingPdf ? 'Saving…' : 'Save as PDF'}
         </Button>
       </div>
+      {pdfError && (
+        <p className="text-destructive text-sm no-print" role="alert">
+          {pdfError}
+        </p>
+      )}
 
       <header className="report-header border-b border-border pb-3">
         <h2 className="text-xl font-bold print:text-2xl">{productionName ? productionName : 'Cost Report'}</h2>

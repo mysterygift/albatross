@@ -13,12 +13,13 @@ const createDel = vi.hoisted(() => vi.fn())
 const listEpActive = vi.hoisted(() => vi.fn())
 const listEpManage = vi.hoisted(() => vi.fn())
 const getSpecs = vi.hoisted(() => vi.fn())
+const deleteDel = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/db/repositories/deliverable', () => ({
   listDeliverablesByProduction: listDel,
   createDeliverable: createDel,
   updateDeliverable: vi.fn(),
-  deleteDeliverable: vi.fn(),
+  deleteDeliverable: deleteDel,
   getTechnicalSpecByDeliverable: vi.fn(),
   getTechnicalSpecsByDeliverableIds: getSpecs,
   upsertTechnicalSpec: vi.fn(),
@@ -106,10 +107,31 @@ describe('DeliverablesPage episodic scope', () => {
     listEpActive.mockResolvedValue([])
     listEpManage.mockResolvedValue([])
     createDel.mockResolvedValue(del({ id: 'new' }))
+    deleteDel.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
     cleanup()
+  })
+
+  it('asks for confirmation before deleting a deliverable', async () => {
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={client}>
+        <DeliverablesPage />
+      </QueryClientProvider>
+    )
+    await waitFor(() => expect(screen.getByText('Master')).toBeTruthy())
+    await user.click(screen.getByTitle('Delete deliverable'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Delete "Master"?')).toBeTruthy()
+    expect(deleteDel).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(deleteDel).not.toHaveBeenCalled()
+
+    await user.click(screen.getByTitle('Delete deliverable'))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(deleteDel).toHaveBeenCalledWith('d1'))
   })
 
   it('non-episodic: no Show / Scope column', async () => {

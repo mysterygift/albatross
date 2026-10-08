@@ -1,82 +1,42 @@
 /**
- * Equipment list PDF: printable checklist for on-set use.
- * Uses pdf-lib (same as call sheet, DooD). Read-only; does not modify list or registry.
+ * Equipment list PDF: printable out/in checklist for prep, on-set use and returns.
+ * Read-only: renders a saved list; does not modify the list or the registry.
  */
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import { formatEquipmentCategoryLabel } from '@/features/equipment/formatEquipmentLabel'
-import { textForPdf } from '@/lib/pdf/callSheet'
+import {
+  COLOR_MUTED,
+  DEFAULT_PAPER_SIZE,
+  PdfLayout,
+  formatIssuedStamp,
+  formatLongDate,
+  type PaperSize,
+  type StatCell,
+  type TableCell,
+  type TableColumn,
+} from '@/lib/pdf/layoutKit'
 import type { Equipment, EquipmentList, EquipmentListItem } from '@/lib/db/types'
 
-const MARGIN = 54
-const PAGE_WIDTH = 612
-const PAGE_HEIGHT = 792
-const Y_MIN = MARGIN + 40
-const FONT_TITLE = 16
-const FONT_HEADER = 11
-const FONT_BODY = 9
-const FONT_TABLE = 7
-const FONT_FOOTER = 8
-const TABLE_LINE_STEP = 7.5
-const ROW_HEIGHT_MIN = 14
-const TABLE_HEADER_ROW = 14
-const NAME_MAX_LINES = 2
-const GRAY = rgb(0.45, 0.45, 0.45)
+const SEP = ' | '
+/** Shown in table cells with nothing to say, so a gap reads as a gap rather than a layout error. */
+const EMPTY_CELL = '-'
+const TABLE_FONT = 8
 
-type PdfFont = Awaited<ReturnType<PDFDocument['embedFont']>>
+const COLUMNS: TableColumn[] = [
+  { header: 'Out', weight: 27, align: 'center' },
+  { header: 'In', weight: 27, align: 'center' },
+  { header: 'Qty', weight: 27, align: 'center' },
+  { header: 'Item', weight: 142 },
+  { header: 'Category', weight: 94 },
+  { header: 'Serial', weight: 72 },
+  { header: 'ID', weight: 48 },
+  { header: 'Notes', weight: 125 },
+]
 
-/** Short UUID for display (last 8 chars so demo IDs with shared prefix look unique). */
-function shortUuid(itemUuid: string): string {
-  return itemUuid.length >= 8 ? itemUuid.slice(-8) : itemUuid
-}
-
-/** Placeholder for null/empty values in PDF. */
-function orDash(value: string | null | undefined): string {
-  return value?.trim() ? value : '—'
-}
-
-export function wrapEquipmentListPdfLines(
-  text: string,
-  maxWidth: number,
-  font: PdfFont,
-  size: number
-): string[] {
-  const paragraphs = textForPdf(text).trim().split(/\n+/)
-  const lines: string[] = []
-  for (const paragraph of paragraphs) {
-    const words = paragraph.trim().split(/\s+/).filter(Boolean)
-    if (words.length === 0) continue
-    let line = ''
-    for (const w of words) {
-      const next = line ? `${line} ${w}` : w
-      if (font.widthOfTextAtSize(next, size) <= maxWidth) line = next
-      else {
-        if (line) lines.push(line)
-        line = w
-      }
-    }
-    if (line) lines.push(line)
-  }
-  return lines
-}
-
-export function wrapEquipmentListPdfLinesLimited(
-  text: string,
-  maxWidth: number,
-  font: PdfFont,
-  size: number,
-  maxLines: number
-): string[] {
-  const all = wrapEquipmentListPdfLines(text.trim(), maxWidth, font, size)
-  if (all.length <= maxLines) return all.length ? all : ['']
-  const out = all.slice(0, maxLines)
-  let last = out[maxLines - 1]!
-  if (all.length > maxLines) {
-    while (last.length > 1 && font.widthOfTextAtSize(`${last}…`, size) > maxWidth) {
-      last = last.slice(0, -1)
-    }
-    out[maxLines - 1] = `${last}…`
-  }
-  return out
+export interface EquipmentListPdfShootDay {
+  /** ISO date, e.g. `2026-10-14`. */
+  shootDate: string
+  dayNumber: number | null
+  totalShootDays: number | null
 }
 
 export interface EquipmentListPdfParams {
@@ -85,8 +45,60 @@ export interface EquipmentListPdfParams {
   listItems: EquipmentListItem[]
   /** Map equipment_id -> Equipment for each list item. */
   equipmentById: Map<string, Equipment>
-  /** Optional: shoot day label (e.g. "2025-03-15" or "Day 4") for header. */
-  shootDayLabel?: string | null
+  /** The shoot day the list is for, when it has one. */
+  shootDay?: EquipmentListPdfShootDay | null
+  paperSize?: PaperSize
+  /** Issue stamp; defaults to now. */
+  issuedAt?: Date
+}
+
+function present(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
+/** Short ID for display (last 8 chars, matching the equipment list table in the app). */
+export function shortItemId(itemUuid: string): string {
+  return itemUuid.length >= 8 ? itemUuid.slice(-8) : itemUuid
+}
+
+function dayLabel(day: EquipmentListPdfShootDay): string | null {
+  if (day.dayNumber == null) return null
+  return day.totalShootDays != null && day.totalShootDays >= day.dayNumber
+    ? `Day ${day.dayNumber} of ${day.totalShootDays}`
+    : `Day ${day.dayNumber}`
+}
+
+function muted(text: string): TableCell {
+  return { text, color: COLOR_MUTED }
+}
+
+/** One checklist row. List-item notes win over the registry item's notes. */
+export function equipmentListRow(item: EquipmentListItem, eq: Equipment | undefined): TableCell[] {
+  const notes = present(item.notes) ?? present(eq?.notes) ?? ''
+  if (!eq) {
+    return [
+      { checkbox: true },
+      { checkbox: true },
+      { text: String(item.quantity), bold: true },
+      muted('Item no longer in the registry'),
+      muted(EMPTY_CELL),
+      muted(EMPTY_CELL),
+      muted(EMPTY_CELL),
+      notes,
+    ]
+  }
+  const serial = present(eq.serial_number)
+  return [
+    { checkbox: true },
+    { checkbox: true },
+    { text: String(item.quantity), bold: true },
+    { text: eq.name, bold: true },
+    present(eq.category) ? formatEquipmentCategoryLabel(eq.category) : muted(EMPTY_CELL),
+    serial ?? muted(EMPTY_CELL),
+    muted(shortItemId(eq.item_uuid)),
+    notes,
+  ]
 }
 
 /**
@@ -94,185 +106,83 @@ export interface EquipmentListPdfParams {
  * Rows follow list sort_order. Export is read-only; does not mutate any data.
  */
 export async function generateEquipmentListPdf(params: EquipmentListPdfParams): Promise<Uint8Array> {
-  const { productionName, list, listItems, equipmentById, shootDayLabel } = params
-  const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const { productionName, list, listItems, equipmentById, shootDay } = params
+  const layout = await PdfLayout.create({ paper: params.paperSize ?? DEFAULT_PAPER_SIZE })
+  const day = shootDay ? dayLabel(shootDay) : null
+  const department = present(list.department)
 
-  const checkboxSize = 15
-  const colOut = checkboxSize + 14
-  const colIn = checkboxSize + 14
-  const colQty = 22
-  const colName = 100
-  const colCategory = 58
-  const colSerial = 58
-  const colUuid = 48
-  const colNotes = PAGE_WIDTH - MARGIN * 2 - colOut - colIn - colQty - colName - colCategory - colSerial - colUuid
+  layout.onNewPage = (l) => {
+    l.runningHeader(['EQUIPMENT LIST', list.name, day].filter(Boolean).join(SEP), productionName)
+  }
 
-  const columns = [
-    { label: 'OUT', width: colOut },
-    { label: 'IN', width: colIn },
-    { label: 'Qty', width: colQty },
-    { label: 'Name', width: colName },
-    { label: 'Category', width: colCategory },
-    { label: 'Serial', width: colSerial },
-    { label: 'UUID', width: colUuid },
-    { label: 'Notes', width: colNotes },
+  layout.masthead({
+    title: productionName,
+    right: 'EQUIPMENT LIST',
+    subRight: `Issued ${formatIssuedStamp(params.issuedAt ?? new Date())}`,
+  })
+
+  // Header strip: which list, which day, how much to count.
+  const units = listItems.reduce((sum, item) => sum + item.quantity, 0)
+  const strip: StatCell[] = [
+    {
+      label: 'List',
+      weight: 1.5,
+      lines: [
+        { text: list.name, bold: true, size: 13 },
+        ...(department ? [{ text: `Department: ${department}` }] : []),
+      ],
+    },
   ]
-  const tableWidth = columns.reduce((s, c) => s + c.width, 0)
-  const xStart = MARGIN
-
-  let page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  let y = PAGE_HEIGHT - MARGIN
-
-  // ---------- Header ----------
-  page.drawText('EQUIPMENT CHECKLIST', {
-    x: MARGIN,
-    y,
-    size: FONT_TITLE,
-    font: bold,
-    color: rgb(0.15, 0.15, 0.15),
-  })
-  y -= 10
-
-  page.drawText(productionName, {
-    x: MARGIN,
-    y,
-    size: FONT_HEADER,
-    font,
-    color: GRAY,
-  })
-  y -= 12
-
-  page.drawText(list.name, {
-    x: MARGIN,
-    y,
-    size: FONT_HEADER,
-    font: bold,
-    color: rgb(0.2, 0.2, 0.2),
-  })
-  y -= 10
-
-  const metaLines: string[] = []
-  if (list.department) metaLines.push(`Department: ${list.department}`)
-  if (shootDayLabel) metaLines.push(`Shoot day: ${shootDayLabel}`)
-  if (metaLines.length > 0) {
-    page.drawText(metaLines.join('  ·  '), {
-      x: MARGIN,
-      y,
-      size: FONT_BODY,
-      font,
-      color: GRAY,
+  if (shootDay) {
+    strip.push({
+      label: 'Shoot date',
+      weight: 1.2,
+      lines: [
+        { text: formatLongDate(shootDay.shootDate), bold: true, size: 11 },
+        ...(day ? [{ text: day, bold: true, size: 14 }] : []),
+      ],
     })
-    y -= 10
+  }
+  strip.push({
+    label: 'Items',
+    weight: 0.8,
+    lines: [
+      { text: String(listItems.length), bold: true, size: 20 },
+      { text: `${units} ${units === 1 ? 'unit' : 'units'} in total` },
+    ],
+  })
+  layout.statStrip(strip)
+
+  const listNotes = present(list.notes)
+  if (listNotes) {
+    layout.sectionBar('Notes', 30)
+    layout.gap(4)
+    layout.blockGrid([[{ text: listNotes }]], 1)
   }
 
-  y -= 6
-  page.drawText(`Generated: ${new Date().toLocaleString()}`, {
-    x: MARGIN,
-    y,
-    size: FONT_FOOTER,
-    font,
-    color: GRAY,
-  })
-  y -= 16
-
-  const drawRule = (yVal: number): void => {
-    page.drawRectangle({
-      x: xStart,
-      y: yVal,
-      width: tableWidth,
-      height: 0.5,
-      color: GRAY,
+  layout.sectionBar('Equipment', 50)
+  layout.gap(4)
+  if (listItems.length === 0) {
+    layout.text('No equipment on this list.', layout.xLeft, layout.y - 9, { color: COLOR_MUTED })
+    layout.gap(18)
+  } else {
+    layout.table({
+      columns: COLUMNS,
+      rows: listItems.map((item) => equipmentListRow(item, equipmentById.get(item.equipment_id))),
+      fontSize: TABLE_FONT,
     })
   }
 
-  const drawCheckbox = (x: number, rowTop: number, rowH: number): void => {
-    const boxY = rowTop - (rowH - checkboxSize) / 2 - 1
-    page.drawRectangle({
-      x,
-      y: boxY,
-      width: checkboxSize,
-      height: checkboxSize,
-      borderColor: rgb(0.3, 0.3, 0.3),
-      borderWidth: 0.75,
-    })
-  }
-
-  const drawTableHeader = (): void => {
-    drawRule(y - 5)
-    y -= TABLE_HEADER_ROW
-    let x = xStart
-    for (const col of columns) {
-      page.drawText(col.label, {
-        x,
-        y,
-        size: FONT_TABLE,
-        font: bold,
-        color: rgb(0.2, 0.2, 0.2),
-      })
-      x += col.width + 5
-    }
-    y -= 10
-    drawRule(y + 4)
-    y -= 20
-  }
-
-  const maxChars = (w: number) => Math.max(2, Math.floor(w / 5))
-
-  drawTableHeader()
-
-  for (const item of listItems) {
-    const eq = equipmentById.get(item.equipment_id)
-    const nameLines = wrapEquipmentListPdfLinesLimited(
-      orDash(eq?.name),
-      colName,
-      font,
-      FONT_TABLE,
-      NAME_MAX_LINES
-    )
-    const rowH = Math.max(ROW_HEIGHT_MIN, 2 + nameLines.length * TABLE_LINE_STEP)
-
-    if (y - rowH < Y_MIN) {
-      page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-      y = PAGE_HEIGHT - MARGIN
-      drawTableHeader()
-    }
-
-    const category = orDash(eq ? formatEquipmentCategoryLabel(eq.category) : null).slice(0, maxChars(colCategory))
-    const serial = orDash(eq?.serial_number ?? null).slice(0, maxChars(colSerial))
-    const uuidShort = eq ? shortUuid(eq.item_uuid) : '—'
-    const notes = orDash(item.notes ?? eq?.notes ?? null).slice(0, maxChars(colNotes))
-
-    let x = xStart
-    drawCheckbox(x, y, rowH)
-    x += colOut
-    drawCheckbox(x, y, rowH)
-    x += colIn
-    page.drawText(String(item.quantity), { x, y, size: FONT_TABLE, font })
-    x += colQty
-    const nameX = x
-    let nameY = y
-    for (const line of nameLines) {
-      page.drawText(line, { x: nameX, y: nameY, size: FONT_TABLE, font })
-      nameY -= TABLE_LINE_STEP
-    }
-    x += colName
-    page.drawText(category, { x, y, size: FONT_TABLE, font })
-    x += colCategory
-    page.drawText(serial, { x, y, size: FONT_TABLE, font })
-    x += colSerial
-    page.drawText(uuidShort, { x, y, size: FONT_TABLE, font })
-    x += colUuid
-    page.drawText(notes, { x, y, size: FONT_TABLE, font })
-
-    y -= rowH + 10
-  }
-
-  page.drawText(
-    `Generated: ${new Date().toLocaleString()}`,
-    { x: MARGIN, y: 24, size: FONT_FOOTER, font, color: GRAY }
+  // Hand-written sign-off for the kit leaving and coming back.
+  layout.sectionBar('Sign-off', 80)
+  layout.gap(4)
+  layout.writeInGrid(
+    ['Checked out by', 'Date / time', 'Signature', 'Returned by', 'Date / time', 'Signature'],
+    3
   )
 
-  return doc.save()
+  layout.applyFooters({
+    left: [productionName, list.name, day].filter(Boolean).join(SEP),
+  })
+  return layout.doc.save()
 }

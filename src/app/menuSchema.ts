@@ -33,6 +33,8 @@ export const globalMenuCommands: MenuCommandSpec[] = [
   { id: 'view_go_equipment', accelerator: 'CmdOrCtrl+Alt+3' },
   { id: 'view_go_music_clearance', accelerator: 'CmdOrCtrl+Alt+4' },
   { id: 'view_toggle_sidebar', accelerator: 'CmdOrCtrl+B' },
+  { id: 'help_getting_started' },
+  { id: 'help_keyboard_shortcuts' },
 ]
 
 export const sectionMenuSpecs: MenuSectionSpec[] = [
@@ -174,8 +176,8 @@ export function formatAccelerator(accelerator: string, isMac: boolean): string {
 /** Human-readable label for every menu command id (palette and cheat sheet). */
 export const commandLabels: Record<string, string> = {
   new_project: 'New production',
-  import_project: 'Import project',
-  export_project: 'Export project',
+  import_project: 'Import production',
+  export_project: 'Export production',
   publish_to_server: 'Publish to server',
   file_logout: 'Log out',
   app_settings: 'Settings',
@@ -193,6 +195,8 @@ export const commandLabels: Record<string, string> = {
   view_go_equipment: 'Go to Equipment',
   view_go_music_clearance: 'Go to Music & Archive',
   view_toggle_sidebar: 'Toggle sidebar',
+  help_getting_started: 'Getting started',
+  help_keyboard_shortcuts: 'Keyboard shortcuts',
   people_add_cast: 'Add cast member',
   people_add_crew: 'Add crew member',
   people_add_booking: 'Add booking',
@@ -265,7 +269,7 @@ export const menuCommandTargets: Record<string, MenuCommandTarget> = Object.from
   nav('view_go_productions', '/productions'),
   nav('view_go_budget', '/budget'),
   nav('view_go_schedule', '/schedule/calendar'),
-  nav('view_go_people', '/people/bookings'),
+  nav('view_go_people', '/people/cast-manager'),
   nav('view_go_locations', '/locations'),
   nav('view_go_documents', '/documents'),
   nav('view_go_deliverables', '/deliverables'),
@@ -274,6 +278,8 @@ export const menuCommandTargets: Record<string, MenuCommandTarget> = Object.from
   nav('view_go_movement_orders', '/movement-orders'),
   nav('view_go_equipment', '/equipment'),
   nav('view_go_music_clearance', '/music-clearance'),
+  dispatch('help_getting_started'),
+  dispatch('help_keyboard_shortcuts'),
   dispatch('people_add_cast', '/people/cast-manager'),
   dispatch('people_add_crew', '/people/crew-manager'),
   dispatch('people_add_booking', '/people/bookings'),

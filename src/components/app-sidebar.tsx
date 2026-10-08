@@ -16,11 +16,22 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from '@/components/ui/sidebar'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, FlaskConical } from 'lucide-react'
 import { AlbatrossLogo } from '@/components/AlbatrossLogo'
 import { cn } from '@/lib/utils'
-import { navGroups, isNavGroup, findNavTrail } from '@/app/navigation'
+import { visibleNavGroups, isNavGroup, findNavTrail } from '@/app/navigation'
 import { getCommandAccelerator, labelWithShortcut, navCommandIdByPath } from '@/app/menuSchema'
+import { useShowExperimental } from '@/hooks/useShowExperimental'
+
+/** Marks a nav entry as experimental (shown only while experimental features are on). */
+function ExperimentalMark() {
+  return (
+    <span className="ml-auto inline-flex shrink-0 items-center" title="Experimental">
+      <FlaskConical className="size-3 opacity-70" aria-hidden />
+      <span className="sr-only">(experimental)</span>
+    </span>
+  )
+}
 
 function navTooltip(label: string, path: string): string {
   const id = navCommandIdByPath[path]
@@ -55,6 +66,8 @@ export function AppSidebar() {
   const location = useLocation()
   const pathname = location.pathname
   const [expanded, setExpanded] = useState<Record<string, boolean>>(loadExpanded)
+  const { showExperimental } = useShowExperimental()
+  const groups = visibleNavGroups(showExperimental)
 
   const activeItemTo = findNavTrail(pathname)?.item.to
 
@@ -87,7 +100,7 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
       <SidebarContent>
-        {navGroups.map((group) => (
+        {groups.map((group) => (
           <SidebarGroup key={group.id}>
             {group.label ? <SidebarGroupLabel>{group.label}</SidebarGroupLabel> : null}
             <SidebarGroupContent>
@@ -137,7 +150,8 @@ export function AppSidebar() {
                                     isActive={isParentActive && findNavTrail(pathname)?.sub?.to === subItem.to}
                                   >
                                     <NavLink to={subItem.to} end className="flex items-center gap-2">
-                                      <span>{subItem.label}</span>
+                                      <span className="min-w-0 truncate">{subItem.label}</span>
+                                      {subItem.experimental ? <ExperimentalMark /> : null}
                                     </NavLink>
                                   </SidebarMenuSubButton>
                                 </SidebarMenuSubItem>
@@ -158,6 +172,7 @@ export function AppSidebar() {
                         <NavLink to={item.to} end={item.to === '/'} className="flex items-center gap-2">
                           <item.icon className="size-4" />
                           <span>{item.label}</span>
+                          {item.experimental ? <ExperimentalMark /> : null}
                         </NavLink>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

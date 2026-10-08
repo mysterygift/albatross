@@ -25,6 +25,8 @@ export type Production = {
   client_id: string | null
   /** Target delivery date (ISO YYYY-MM-DD). */
   delivery_date: string | null
+  /** Optional production code / number (free text, e.g. "WR-2026/01"). */
+  production_code: string | null
   /** When true, production uses episodic mode. Irreversible once enabled (app-enforced). */
   is_episodic: boolean
   /** When set, production was completed/wrapped (e.g. via Wrap Production workflow). */
@@ -1069,6 +1071,58 @@ export type ShootDaySidesExport = {
   metadata_json: string | null
 } & SoftDeletable
 
+// ─── Script Breakdown ───────────────────────────────────────────────────────
+
+/** Breakdown categories, in sheet order. Labels and colours live in src/lib/breakdown/categories.ts. */
+export const BREAKDOWN_CATEGORY_VALUES = [
+  'cast',
+  'props',
+  'extras',
+  'costume',
+  'locations',
+  'lighting',
+  'foley_music',
+  'special_fx',
+  'stunts',
+  'animals_children',
+  'vehicles',
+] as const
+export type BreakdownCategory = (typeof BREAKDOWN_CATEGORY_VALUES)[number]
+
+export type BreakdownManualStatus = 'needed' | 'sourced'
+
+/** Kinds of production row a breakdown element can be linked to. */
+export type BreakdownLinkedEntityType = 'location' | 'person' | 'equipment' | 'music_track'
+
+/** Something to source, tagged in one or more scenes (e.g. PROPS › "Red umbrella"). Local SQLite only. */
+export type BreakdownElement = {
+  id: string
+  production_id: string
+  category: BreakdownCategory
+  name: string
+  notes: string | null
+  /** Sourced state set by hand; used where no linked or matched row decides it. */
+  manual_status: BreakdownManualStatus
+  linked_entity_type: BreakdownLinkedEntityType | null
+  linked_entity_id: string | null
+} & SoftDeletable
+
+/** One highlight in the script: per-page character offsets into script_pages.content. Local SQLite only. */
+export type BreakdownTag = {
+  id: string
+  production_id: string
+  element_id: string
+  script_version_id: string
+  scene_id: string
+  start_page_id: string
+  start_offset: number
+  end_page_id: string
+  /** Exclusive offset into the end page's content. */
+  end_offset: number
+  tagged_text: string
+  carried_from_id: string | null
+} & SoftDeletable
+
 // ─── Script Supervisor (SS1) ────────────────────────────────────────────────
 
 /**
@@ -1144,7 +1198,7 @@ export type Take = {
 // ─── Calendar (Schedule view) ───────────────────────────────────────────────
 
 /** Unit key for calendar display; derived from unit name. */
-export type CalendarUnitKey = 'main' | 'second'
+export type CalendarUnitKey = 'main' | 'second' | 'third' | 'fourth' | 'fifth'
 
 export type CalendarShootDayEvent = {
   shootDayId: string
@@ -1156,6 +1210,8 @@ export type CalendarShootDayEvent = {
   unitId: string
   unitName: string
   unitKey: CalendarUnitKey
+  /** 1 = Main Unit … 5 = Fifth Unit; 6 for a unit whose name has no rank. */
+  unitRank: number
   callTime: string | null
   lunchTime: string | null
   wrapTime: string | null

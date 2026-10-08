@@ -249,6 +249,66 @@ export async function listSectionsForShootDay(shootDayId: string): Promise<Scrip
   return rows.map(rowToScriptSection)
 }
 
+/** Active ranges for every active section of a script version, keyed by section id. */
+export async function listRangesByScriptVersion(
+  scriptVersionId: string
+): Promise<Map<string, ScriptSectionRange[]>> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT r.* FROM ${RANGES_TABLE} r
+     INNER JOIN ${TABLE} s ON s.id = r.section_id AND s.deleted_at IS NULL
+     WHERE s.script_version_id = $1 AND r.deleted_at IS NULL
+     ORDER BY r.created_at`,
+    [scriptVersionId]
+  )
+  const result = new Map<string, ScriptSectionRange[]>()
+  for (const r of rows) {
+    const range = rowToRange(r)
+    const list = result.get(range.section_id) ?? []
+    list.push(range)
+    result.set(range.section_id, list)
+  }
+  return result
+}
+
+/** Active characters for every active section of a script version, keyed by section id. */
+export async function listCharactersByScriptVersion(
+  scriptVersionId: string
+): Promise<Map<string, ScriptSectionCharacter[]>> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT c.* FROM ${CHARACTERS_TABLE} c
+     INNER JOIN ${TABLE} s ON s.id = c.section_id AND s.deleted_at IS NULL
+     WHERE s.script_version_id = $1 AND c.deleted_at IS NULL
+     ORDER BY c.created_at`,
+    [scriptVersionId]
+  )
+  const result = new Map<string, ScriptSectionCharacter[]>()
+  for (const r of rows) {
+    const character = rowToCharacter(r)
+    const list = result.get(character.section_id) ?? []
+    list.push(character)
+    result.set(character.section_id, list)
+  }
+  return result
+}
+
+/** Active shot links (with the shot) for every active section of a script version. */
+export async function listShotLinksByScriptVersion(
+  scriptVersionId: string
+): Promise<Array<{ sectionId: string; shot: Shot }>> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT l.script_section_id AS link_section_id, sh.* FROM ${LINK_TABLE} l
+     INNER JOIN ${TABLE} s ON s.id = l.script_section_id AND s.deleted_at IS NULL
+     INNER JOIN ${SHOT_TABLE} sh ON sh.id = l.shot_id AND sh.deleted_at IS NULL
+     WHERE s.script_version_id = $1 AND l.deleted_at IS NULL
+     ORDER BY l.sort_index, sh.shot_number`,
+    [scriptVersionId]
+  )
+  return rows.map((r) => ({ sectionId: r.link_section_id as string, shot: rowToShot(r) }))
+}
+
 export async function listRangesBySection(sectionId: string): Promise<ScriptSectionRange[]> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
@@ -387,7 +447,7 @@ export function buildSoftDeleteNonManualSectionsStatements(
 
 /**
  * Creates a section together with its ranges and characters in a single transaction.
- * Uses runInSerializedTransaction + executeBatch per DATABASE_LAYER.md; no per-row async loops.
+ * Uses runInSerializedTransaction + executeBatch per DOCS/database.md; no per-row async loops.
  */
 export async function createSectionWithRangesAndCharacters(
   data: CreateSectionWithDetailsData
@@ -1002,4 +1062,192 @@ export async function listSectionsByShotIds(
     result.set(shotId, list)
   }
   return result
+}
+
+// ─── Layout edits (highlight-to-select editor) ──────────────────────────────
+
+export type SectionLayoutPart = {
+  range: ScriptSectionRangeInput
+  characters: ScriptSectionCharacterInput[]
+}
+
+export type ApplyScriptSectionLayoutInput = {
+  production_id: string
+  script_version_id: string
+  scene_id: string
+  episode_id: string | null
+  /** The section being edited, or a new one when `id` is null. */
+  current: SectionLayoutPart & {
+    id: string | null
+    /** Stored on create only (shown by sides and shoot-day summaries). */
+    label: string | null
+    cut: boolean
+  }
+  /** Neighbours whose range changes (trimmed, kept part of a split, or grown). */
+  updates: Array<SectionLayoutPart & { sectionId: string }>
+  /** Neighbours swallowed by the selection; their shot links move to the current section. */
+  removals: string[]
+  /** New sections carved off a split neighbour; they inherit its type, status and shot links. */
+  splits: Array<SectionLayoutPart & { sourceSectionId: string; label: string | null }>
+}
+
+/**
+ * Applies a highlight-to-select edit in one transaction: writes the current section's range,
+ * reshapes or removes overlapping neighbours, creates split-off sections and moves shot links.
+ * Every touched section is marked `ranges_user_edited` so regeneration keeps the new layout.
+ * Returns the current section's id.
+ */
+export async function applyScriptSectionLayout(input: ApplyScriptSectionLayoutInput): Promise<string> {
+  const db = await getDb()
+  const ts = now()
+  const currentId = input.current.id ?? uuid()
+  const isCreate = input.current.id == null
+  const status: ScriptSectionStatus = input.current.cut ? 'omitted' : 'unplanned'
+
+  const linkSourceIds = [...new Set([...input.removals, ...input.splits.map((s) => s.sourceSectionId)])]
+  const sources = await listSectionsByIds(linkSourceIds)
+  const sourceById = new Map(sources.map((s) => [s.id, s]))
+  const linkRows = linkSourceIds.length
+    ? await db.select<Array<{ id: string; shot_id: string; script_section_id: string; sort_index: number }>>(
+        `SELECT id, shot_id, script_section_id, sort_index FROM ${LINK_TABLE}
+         WHERE deleted_at IS NULL AND script_section_id IN (${inPlaceholders(linkSourceIds.length)})`,
+        linkSourceIds
+      )
+    : []
+  const existingCurrentLinks = isCreate
+    ? new Map<string, { id: string; deleted_at: string | null }>()
+    : new Map(
+        (
+          await db.select<Array<{ id: string; shot_id: string; deleted_at: string | null }>>(
+            `SELECT id, shot_id, deleted_at FROM ${LINK_TABLE} WHERE script_section_id = $1`,
+            [currentId]
+          )
+        ).map((r) => [r.shot_id, { id: r.id, deleted_at: r.deleted_at ?? null }])
+      )
+
+  const statements: Stmt[] = [{ sql: 'BEGIN', bindValues: [] }]
+  const outboxRows: OutboxRow[] = []
+  const markEdited = (sectionId: string, extra: { status?: ScriptSectionStatus } = {}) => {
+    const sets = ['ranges_user_edited = 1', 'updated_at = $1']
+    const vals: unknown[] = [ts]
+    if (extra.status) {
+      sets.push(`status = $${vals.length + 1}`)
+      vals.push(extra.status)
+    }
+    vals.push(sectionId)
+    statements.push({
+      sql: `UPDATE ${TABLE} SET ${sets.join(', ')} WHERE id = $${vals.length} AND deleted_at IS NULL`,
+      bindValues: vals,
+    })
+    outboxRows.push({
+      entity: TABLE,
+      entityId: sectionId,
+      operation: 'update',
+      payloadJson: JSON.stringify({ ranges_user_edited: 1, ...extra }),
+    })
+  }
+  const reshape = (sectionId: string, part: SectionLayoutPart, extra: { status?: ScriptSectionStatus } = {}) => {
+    statements.push(...buildReplaceSectionRangesStatements(sectionId, ts, [part.range]))
+    statements.push(...buildReplaceSectionCharactersStatements(sectionId, ts, part.characters))
+    markEdited(sectionId, extra)
+  }
+  const linkCurrent = (shotId: string, sortIndex: number) => {
+    const existing = existingCurrentLinks.get(shotId)
+    if (existing && existing.deleted_at == null) return
+    const id = existing?.id ?? uuid()
+    existingCurrentLinks.set(shotId, { id, deleted_at: null })
+    statements.push(buildLinkUpsert(id, shotId, currentId, null, sortIndex, ts))
+    outboxRows.push({
+      entity: LINK_TABLE,
+      entityId: id,
+      operation: 'create',
+      payloadJson: JSON.stringify({ shot_id: shotId, script_section_id: currentId, coverage_notes: null, sort_index: sortIndex }),
+    })
+  }
+
+  if (isCreate) {
+    statements.push(
+      ...buildCreateSectionWithDetailsStatements(currentId, ts, {
+        production_id: input.production_id,
+        script_version_id: input.script_version_id,
+        scene_id: input.scene_id,
+        episode_id: input.episode_id,
+        label: input.current.label,
+        section_type: 'custom',
+        status,
+        is_manual: true,
+        ranges: [input.current.range],
+        characters: input.current.characters,
+      })
+    )
+  } else {
+    reshape(currentId, input.current, { status })
+  }
+
+  for (const update of input.updates) reshape(update.sectionId, update)
+
+  for (const split of input.splits) {
+    const source = sourceById.get(split.sourceSectionId)
+    const splitId = uuid()
+    statements.push(
+      ...buildCreateSectionWithDetailsStatements(splitId, ts, {
+        production_id: input.production_id,
+        script_version_id: input.script_version_id,
+        scene_id: input.scene_id,
+        episode_id: input.episode_id,
+        label: split.label,
+        section_type: source?.section_type ?? 'custom',
+        status: source?.status === 'omitted' ? 'omitted' : 'unplanned',
+        is_manual: true,
+        ranges: [split.range],
+        characters: split.characters,
+      })
+    )
+    for (const link of linkRows.filter((l) => l.script_section_id === split.sourceSectionId)) {
+      const id = uuid()
+      statements.push(buildLinkUpsert(id, link.shot_id, splitId, null, coerceNumber(link.sort_index, 0), ts))
+      outboxRows.push({
+        entity: LINK_TABLE,
+        entityId: id,
+        operation: 'create',
+        payloadJson: JSON.stringify({ shot_id: link.shot_id, script_section_id: splitId, coverage_notes: null, sort_index: link.sort_index }),
+      })
+    }
+  }
+
+  for (const removedId of input.removals) {
+    for (const link of linkRows.filter((l) => l.script_section_id === removedId)) {
+      linkCurrent(link.shot_id, coerceNumber(link.sort_index, 0))
+      statements.push({
+        sql: `UPDATE ${LINK_TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
+        bindValues: [ts, ts, link.id],
+      })
+      outboxRows.push({ entity: LINK_TABLE, entityId: link.id, operation: 'delete', payloadJson: null })
+    }
+    for (const table of [RANGES_TABLE, CHARACTERS_TABLE]) {
+      statements.push({
+        sql: `UPDATE ${table} SET deleted_at = $1, updated_at = $2 WHERE section_id = $3 AND deleted_at IS NULL`,
+        bindValues: [ts, ts, removedId],
+      })
+    }
+    statements.push({
+      sql: `UPDATE ${TABLE} SET deleted_at = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
+      bindValues: [ts, ts, removedId],
+    })
+    outboxRows.push({ entity: TABLE, entityId: removedId, operation: 'delete', payloadJson: null })
+  }
+
+  for (const row of outboxRows) statements.push(outboxStatementForRow(row))
+  statements.push({ sql: 'COMMIT', bindValues: [] })
+
+  await runInSerializedTransaction(async () => {
+    const tx = await getDb()
+    await executeBatch(tx, statements)
+  })
+  return currentId
+}
+
+/** Marks a section cut (stored as status 'omitted') or restores it. */
+export async function setScriptSectionCut(sectionId: string, cut: boolean): Promise<ScriptSection> {
+  return updateScriptSection(sectionId, { status: cut ? 'omitted' : 'unplanned' })
 }

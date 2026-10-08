@@ -3,7 +3,7 @@ import { ApfInvalidDataError, ApfMigrationError } from '@/lib/importExport/error
 import type { ApfManifestV1 } from '@/lib/importExport/manifest'
 import type { ApfV1DataFile, ApfV1Tables } from '@/lib/importExport/payload'
 import { assertApfManifestDataFormatVersionAligned } from '@/lib/importExport/payload'
-import { APF_V9_TABLE_KEYS } from '@/lib/importExport/tableKeys'
+import { APF_V10_TABLE_KEYS, APF_V11_TABLE_KEYS, APF_V9_TABLE_KEYS } from '@/lib/importExport/tableKeys'
 
 export type ApfMigrationContext = {
   manifest: ApfManifestV1
@@ -244,6 +244,39 @@ const migrateV8ToV9: ApfFileMigrator = {
   },
 }
 
+/** v10 adds the script breakdown tables (`breakdown_elements`, `breakdown_tags`). Older payloads get empty tables. */
+const migrateV9ToV10: ApfFileMigrator = {
+  fromVersion: 9,
+  toVersion: 10,
+  migrate: (ctx) => {
+    const next = cloneCtx(ctx)
+    next.manifest.formatVersion = 10
+    next.data.formatVersion = 10
+    for (const key of APF_V10_TABLE_KEYS) {
+      if (!Array.isArray(next.data.tables[key])) next.data.tables[key] = []
+    }
+    return next
+  },
+}
+
+/**
+ * v11 adds storyboard imports and images, vendor production exclusions and the overtime tables
+ * (`production_crew_hours_settings`, `crew_hours_person_settings`, `crew_day_hours`). Older payloads get empty tables.
+ */
+const migrateV10ToV11: ApfFileMigrator = {
+  fromVersion: 10,
+  toVersion: 11,
+  migrate: (ctx) => {
+    const next = cloneCtx(ctx)
+    next.manifest.formatVersion = 11
+    next.data.formatVersion = 11
+    for (const key of APF_V11_TABLE_KEYS) {
+      if (!Array.isArray(next.data.tables[key])) next.data.tables[key] = []
+    }
+    return next
+  },
+}
+
 /** Registered migrators for older `.apf` payloads (sequential v → v+1). */
 export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [
   migrateV1ToV2,
@@ -254,6 +287,8 @@ export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [
   migrateV6ToV7,
   migrateV7ToV8,
   migrateV8ToV9,
+  migrateV9ToV10,
+  migrateV10ToV11,
 ]
 
 /**

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 /**
  * Ensures every `src-tauri/migrations/*.sql` file is registered in `lib.rs`.
- * Unregistered migrations never run at app startup (see docs/ADDING_A_PROPERTY.md).
+ * Unregistered migrations never run at app startup (see DOCS/database.md).
  */
 describe('Tauri SQLite migration registration (lib.rs)', () => {
   it('registers every migration file with sequential version numbers', () => {
