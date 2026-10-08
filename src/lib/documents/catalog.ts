@@ -3,6 +3,7 @@ import {
   Calendar,
   ClipboardList,
   DollarSign,
+  FileSignature,
   FileText,
   FolderOpen,
   Megaphone,
@@ -10,7 +11,6 @@ import {
   Package,
   Route,
   ShieldAlert,
-  Users,
 } from 'lucide-react'
 
 /** Canonical entity_type values stored on documents rows. */
@@ -35,6 +35,10 @@ export const DOCUMENT_ENTITY_TYPES = {
   /** Location permit (entity_id = location id). */
   permit: 'permit',
   contributorForm: 'contributor_form',
+  /** Contributor release signed in the app on the Release Forms page (no linked entity). */
+  signedContributorRelease: 'signed_contributor_release',
+  /** Location release signed in the app on the Release Forms page (no linked entity). */
+  signedLocationRelease: 'signed_location_release',
   cueSheet: 'cue_sheet',
   budgetCsv: 'budget_csv',
   costReportPdf: 'cost_report_pdf',
@@ -66,7 +70,7 @@ export type DocumentCategoryId =
   | 'general'
   | 'schedule'
   | 'set-paperwork'
-  | 'people-locations'
+  | 'releases'
   | 'deliverables'
   | 'music'
   | 'finance'
@@ -130,13 +134,15 @@ export const DOCUMENT_CATEGORIES: DocumentCategoryConfig[] = [
     ],
   },
   {
-    id: 'people-locations',
-    label: 'People & locations',
-    description: 'Contributor forms, location releases and permits',
-    icon: Users,
-    sourceRoute: '/people/cast-manager',
-    emptyMessage: 'No people or location documents yet.',
+    id: 'releases',
+    label: 'Releases',
+    description: 'Signed release forms, contributor forms, location releases and permits',
+    icon: FileSignature,
+    sourceRoute: '/release-forms',
+    emptyMessage: 'No releases yet. Sign one from Release Forms or upload a file.',
     entityTypes: [
+      DOCUMENT_ENTITY_TYPES.signedContributorRelease,
+      DOCUMENT_ENTITY_TYPES.signedLocationRelease,
       DOCUMENT_ENTITY_TYPES.contributorForm,
       DOCUMENT_ENTITY_TYPES.locationRelease,
       DOCUMENT_ENTITY_TYPES.permit,
@@ -227,6 +233,8 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   [DOCUMENT_ENTITY_TYPES.locationRelease]: 'Location release',
   [DOCUMENT_ENTITY_TYPES.permit]: 'Permit',
   [DOCUMENT_ENTITY_TYPES.contributorForm]: 'Contributor form',
+  [DOCUMENT_ENTITY_TYPES.signedContributorRelease]: 'Signed contributor release',
+  [DOCUMENT_ENTITY_TYPES.signedLocationRelease]: 'Signed location release',
   [DOCUMENT_ENTITY_TYPES.cueSheet]: 'Cue sheet',
   [DOCUMENT_ENTITY_TYPES.budgetCsv]: 'Budget CSV',
   [DOCUMENT_ENTITY_TYPES.costReportPdf]: 'Cost report PDF',
@@ -257,6 +265,7 @@ export function getDocumentSourceRoute(entityType: string | null): string {
     return '/locations'
   }
   if (entityType === DOCUMENT_ENTITY_TYPES.riskAssessment) return '/risk-assessments'
+  if (entityType === DOCUMENT_ENTITY_TYPES.contributorForm) return '/people/cast-manager'
   const categoryId = getDocumentCategoryId(entityType)
   return getDocumentCategory(categoryId).sourceRoute
 }
@@ -290,7 +299,7 @@ export const MANUAL_UPLOAD_ENTITY_TYPE_BY_CATEGORY: Record<DocumentCategoryId, s
   general: null,
   schedule: DOCUMENT_ENTITY_TYPES.manualUploadSchedule,
   'set-paperwork': DOCUMENT_ENTITY_TYPES.manualUploadSetPaperwork,
-  'people-locations': DOCUMENT_ENTITY_TYPES.manualUploadPeopleLocations,
+  releases: DOCUMENT_ENTITY_TYPES.manualUploadPeopleLocations,
   deliverables: DOCUMENT_ENTITY_TYPES.manualUploadDeliverable,
   music: DOCUMENT_ENTITY_TYPES.manualUploadMusic,
   finance: DOCUMENT_ENTITY_TYPES.manualUploadFinance,
@@ -309,13 +318,20 @@ const FULLY_DELETABLE_CATEGORY_IDS: readonly DocumentCategoryId[] = [
   'set-paperwork',
 ]
 
+/** Generated document types that can be removed even though their category is not fully deletable. */
+const DELETABLE_ENTITY_TYPES: readonly string[] = [
+  DOCUMENT_ENTITY_TYPES.signedContributorRelease,
+  DOCUMENT_ENTITY_TYPES.signedLocationRelease,
+]
+
 /**
  * Whether a document can be permanently deleted from Documents: general uploads (null), manual
- * uploads in any category, and every document type in the categories above.
+ * uploads in any category, signed releases, and every document type in the categories above.
  */
 export function isDeletableDocument(entityType: string | null): boolean {
   if (entityType == null) return true
   if (entityType.startsWith('manual_upload_')) return true
+  if (DELETABLE_ENTITY_TYPES.includes(entityType)) return true
   return FULLY_DELETABLE_CATEGORY_IDS.some((id) =>
     getDocumentCategory(id).entityTypes.includes(entityType)
   )
