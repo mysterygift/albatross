@@ -14,8 +14,7 @@ function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/settings" element={<div>Settings home</div>} />
-        <Route path="/settings/guidebook/:chapter?" element={<GuidebookPage />} />
+        <Route path="/guidebook/:chapter?" element={<GuidebookPage />} />
       </Routes>
     </MemoryRouter>
   )
@@ -30,7 +29,7 @@ describe('GuidebookPage', () => {
   })
 
   it('renders the contents page with every chapter in the sidebar', () => {
-    renderAt('/settings/guidebook')
+    renderAt('/guidebook')
     const nav = screen.getByRole('navigation', { name: 'Guidebook contents' })
     for (const chapter of guidebookChapters) {
       expect(within(nav).getAllByText(chapter.title).length).toBeGreaterThan(0)
@@ -39,7 +38,7 @@ describe('GuidebookPage', () => {
   })
 
   it('renders markdown tables and opens a chapter from the sidebar, showing its sections', async () => {
-    renderAt('/settings/guidebook')
+    renderAt('/guidebook')
     expect(document.querySelector('table')).not.toBeNull()
     const schedule = guidebookChapters.find((c) => c.slug === '05-schedule')!
     const nav = screen.getByRole('navigation', { name: 'Guidebook contents' })
@@ -51,15 +50,35 @@ describe('GuidebookPage', () => {
   })
 
   it('follows links between chapters and opens external links in the system', async () => {
-    renderAt('/settings/guidebook/01-getting-started')
+    renderAt('/guidebook/01-getting-started')
     const readmeLink = screen.getAllByRole('link').find((a) => a.textContent === 'README')
     expect(readmeLink).toBeTruthy()
     await userEvent.click(readmeLink!)
     expect(openInSystem).toHaveBeenCalledWith(expect.stringContaining('github.com/mysterygift/albatross/blob/main/README.md'))
   })
 
+  it('opens every chapter at the very top, whatever the previous scroll position', async () => {
+    const { container } = render(
+      <div data-testid="scroller" style={{ overflowY: 'auto' }}>
+        <MemoryRouter initialEntries={['/guidebook/05-schedule']}>
+          <Routes>
+            <Route path="/guidebook/:chapter?" element={<GuidebookPage />} />
+          </Routes>
+        </MemoryRouter>
+      </div>
+    )
+    const scroller = container.querySelector<HTMLElement>('[data-testid="scroller"]')!
+    Object.defineProperty(scroller, 'scrollHeight', { value: 9000, configurable: true })
+    Object.defineProperty(scroller, 'clientHeight', { value: 600, configurable: true })
+    scroller.scrollTop = 1800
+    const nav = screen.getByRole('navigation', { name: 'Guidebook contents' })
+    const budget = guidebookChapters.find((c) => c.slug === '10-budget')!
+    await userEvent.click(within(nav).getByRole('button', { name: budget.title }))
+    expect(scroller.scrollTop).toBe(0)
+  })
+
   it('redirects an unknown chapter to the contents page', () => {
-    renderAt('/settings/guidebook/not-a-chapter')
+    renderAt('/guidebook/not-a-chapter')
     expect(screen.getByRole('heading', { level: 1, name: /Albatross Guidebook/ })).toBeTruthy()
   })
 })

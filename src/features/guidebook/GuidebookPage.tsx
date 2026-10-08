@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 import { PageHeader } from '@/components/page-header'
@@ -21,7 +21,16 @@ function scrollToId(id: string): boolean {
   return true
 }
 
-/** Settings → Guidebook: the `GUIDEBOOK/` markdown rendered in the app, with a contents sidebar. */
+/** Nearest ancestor that scrolls vertically (the app's `<main>`), if any. */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node)
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node
+  }
+  return null
+}
+
+/** Guidebook: the `GUIDEBOOK/` markdown rendered in the app, with a contents sidebar. */
 export function GuidebookPage() {
   const { chapter: chapterParam } = useParams<{ chapter?: string }>()
   const { hash } = useLocation()
@@ -32,12 +41,18 @@ export function GuidebookPage() {
   const chapter = findChapter(chapterParam)
   const slug = chapter?.slug
 
-  // Scroll to the hash (or the top) whenever the chapter or hash changes.
+  // A newly opened chapter always starts at the very top of the page (before paint, so there is no flash
+  // of the previous chapter's scroll position). Jumping to a section within it is handled below.
+  useLayoutEffect(() => {
+    const scroller = scrollParent(articleRef.current)
+    if (scroller) scroller.scrollTop = 0
+    window.scrollTo(0, 0)
+  }, [slug])
+
+  // Scroll to a section whenever the hash changes.
   useEffect(() => {
-    if (!slug) return
     const id = hash ? decodeURIComponent(hash.slice(1)) : ''
-    if (id && scrollToId(id)) return
-    articleRef.current?.scrollIntoView({ block: 'start' })
+    if (id) scrollToId(id)
   }, [slug, hash])
 
   // Highlight the section currently at the top of the page.
@@ -92,11 +107,6 @@ export function GuidebookPage() {
       <PageHeader
         title="Guidebook"
         description="How to use Albatross, chapter by chapter."
-        actions={
-          <Button asChild variant="outline" size="sm">
-            <Link to="/settings">Back to Settings</Link>
-          </Button>
-        }
       />
       <div className="flex flex-col gap-5 md:flex-row md:items-start">
         <GuidebookContents

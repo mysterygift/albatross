@@ -52,8 +52,8 @@ describe('resolveGuidebookLink', () => {
     expect(resolveGuidebookLink('99-missing.md')).toEqual({ kind: 'none' })
   })
   it('builds in-app paths', () => {
-    expect(guidebookPath('index')).toBe('/settings/guidebook')
-    expect(guidebookPath('05-schedule', '#x')).toBe('/settings/guidebook/05-schedule#x')
+    expect(guidebookPath('index')).toBe('/guidebook')
+    expect(guidebookPath('05-schedule', '#x')).toBe('/guidebook/05-schedule#x')
   })
 })
 

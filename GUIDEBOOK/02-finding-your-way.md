@@ -27,7 +27,7 @@ The sidebar is grouped by stage of work:
 | **Money** | **Budget**, **Vendors** |
 | **Deliver** | **Call Sheets**, **Movement Orders**, **Documents**, **Deliverables**, **Music & Archive** |
 | **Tasks** | **Tasks** |
-| **Settings** | **Settings** |
+| **Settings** | **Settings**, **Guidebook** |
 
 - Select a page to open it. Select the arrow beside **Schedule**, **Script**, **People** or **Budget** to expand or collapse its sub-pages. Albatross remembers which groups you left open.
 - Hide or show the whole sidebar with the button at the left of the top bar, or with ⌘B (Ctrl+B).
@@ -42,7 +42,7 @@ The sidebar is grouped by stage of work:
 - **Keyboard shortcuts** (the keyboard icon, or `?`) opens the shortcut list.
 - **Tutorial** (the graduation cap) opens the tutorial menu; see [Getting started](01-getting-started.md).
 
-This guide is also available inside the app: open **Settings → Guidebook**, and use the contents list on the left to move between chapters and sections.
+This guide is also available inside the app: open **Guidebook** in the sidebar, just below Settings, and use the contents list on the left to move between chapters and sections.
 
 ### Switch production
 

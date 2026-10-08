@@ -8,10 +8,9 @@ export type SettingsSectionId =
   | 'project-access'
   | 'integrations'
   | 'demo-tutorial'
-  | 'guidebook'
   | 'developer'
 
-export type SettingsGroupId = 'production' | 'appearance' | 'team' | 'integrations' | 'help' | 'advanced'
+export type SettingsGroupId = 'production' | 'appearance' | 'team' | 'integrations' | 'advanced'
 
 export interface SettingsSectionDef {
   id: SettingsSectionId
@@ -28,7 +27,6 @@ export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'team', label: 'Team & Access' },
   { id: 'integrations', label: 'Integrations' },
-  { id: 'help', label: 'Help' },
   { id: 'advanced', label: 'Advanced' },
 ]
 
@@ -41,8 +39,6 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
   { id: 'users', label: 'User management', group: 'team' },
   { id: 'project-access', label: 'Project access', group: 'team' },
   { id: 'integrations', label: 'APIs & publishing', group: 'integrations' },
-  // Opens the full-page guidebook at /settings/guidebook rather than rendering inline.
-  { id: 'guidebook', label: 'Guidebook', group: 'help' },
   { id: 'demo-tutorial', label: 'Demo & tutorial', group: 'advanced' },
   // Always listed: it holds the experimental-features toggle, which must be reachable in every build.
   // Its diagnostics stay behind developer mode (see the Developer section of the Settings page).

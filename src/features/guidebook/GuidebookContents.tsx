@@ -61,26 +61,32 @@ export function GuidebookContents({
                 {chapter.title}
               </button>
               {active && chapter.headings.length > 0 ? (
-                <ul className="my-1 ml-3 space-y-0.5 border-l border-border pl-2">
-                  {chapter.headings.map((h) => (
-                    <li key={h.id}>
-                      <button
-                        type="button"
-                        aria-current={h.id === activeHeadingId ? 'location' : undefined}
-                        onClick={() => onSelectHeading(chapter.slug, h.id)}
-                        className={cn(
-                          'block w-full rounded px-2 py-1 text-left text-xs transition-colors',
-                          h.level === 3 && 'pl-5',
-                          h.id === activeHeadingId
-                            ? 'font-medium text-foreground'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
+                <div className="animate-guidebook-sections grid grid-rows-[1fr]">
+                  <ul className="my-1 ml-3 min-h-0 space-y-0.5 overflow-hidden border-l border-border pl-2">
+                    {chapter.headings.map((h, i) => (
+                      <li
+                        key={h.id}
+                        className="animate-guidebook-section"
+                        style={{ animationDelay: `${Math.min(i, 12) * 30 + 60}ms` }}
                       >
-                        {h.text}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                        <button
+                          type="button"
+                          aria-current={h.id === activeHeadingId ? 'location' : undefined}
+                          onClick={() => onSelectHeading(chapter.slug, h.id)}
+                          className={cn(
+                            'block w-full rounded px-2 py-1 text-left text-xs transition-colors',
+                            h.level === 3 && 'pl-5',
+                            h.id === activeHeadingId
+                              ? 'font-medium text-foreground'
+                              : 'text-muted-foreground hover:text-foreground'
+                          )}
+                        >
+                          {h.text}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
             </div>
           )

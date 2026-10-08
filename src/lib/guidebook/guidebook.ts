@@ -138,5 +138,5 @@ export function resolveGuidebookImage(src: string | undefined): string | undefin
 }
 
 export function guidebookPath(slug: string, hash = ''): string {
-  return slug === GUIDEBOOK_INDEX_SLUG ? `/settings/guidebook${hash}` : `/settings/guidebook/${slug}${hash}`
+  return slug === GUIDEBOOK_INDEX_SLUG ? `/guidebook${hash}` : `/guidebook/${slug}${hash}`
 }

@@ -35,6 +35,11 @@ import { VendorsIndexPage } from '@/features/budget/vendors/VendorsIndexPage'
 import { OvertimePage } from '@/features/people/overtime/OvertimePage'
 import { VendorDetailPage } from '@/features/budget/vendors/VendorDetailPage'
 
+/** The guidebook bundles all its markdown, so it loads on demand. */
+const loadGuidebookPage = async () => ({
+  Component: (await import('@/features/guidebook/GuidebookPage')).GuidebookPage,
+})
+
 export const router = createBrowserRouter([
   {
     path: '/',
@@ -79,10 +84,8 @@ export const router = createBrowserRouter([
       { path: 'settings', element: <SettingsPage /> },
       { path: 'settings/users', element: <AdminOnlyUserManagementRoute /> },
       { path: 'settings/project-access', element: <ProjectAccessRoute /> },
-      {
-        path: 'settings/guidebook/:chapter?',
-        lazy: async () => ({ Component: (await import('@/features/guidebook/GuidebookPage')).GuidebookPage }),
-      },
+      { path: 'guidebook', lazy: loadGuidebookPage },
+      { path: 'guidebook/:chapter', lazy: loadGuidebookPage },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },

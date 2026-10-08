@@ -27,7 +27,6 @@ The active section is the `?section=<id>` URL param (`sectionFromSearchParams`).
 | Team & Access | `people` (Crew structure) | Departments, roles, HODs |
 | | `users`, `project-access` | Entry points to `/settings/users` (instance admins) and `/settings/project-access` (see [../security.md](../security.md)) |
 | Integrations | `integrations` (APIs & publishing) | OpenRouteService key, map tile source, server publishing / collaboration |
-| Help | `guidebook` (Guidebook) | Not a panel: selecting it (or `?section=guidebook`) navigates to `/settings/guidebook` ([guidebook.md](guidebook.md)) |
 | Advanced | `demo-tutorial` (Demo & tutorial) | Open/reset tutorial, create/reset/open demo productions |
 | | `developer` (Developer) | Experimental toggle (every build), Developer mode toggle, dev tools |
 
