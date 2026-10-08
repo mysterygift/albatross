@@ -5,33 +5,50 @@
  * conventions as the call sheet / equipment list). Read-only: this module derives nothing from the
  * DB and never mutates script sections. Where exact page/eighth ranges are unavailable, the section
  * is rendered with its best-available script text and range metadata and flagged as estimated.
+ *
+ * Script text is set in standard screenplay format (Courier 12pt, US Letter, standard element
+ * indents, scene numbers in both margins) via `@/lib/script/screenplayFormat`. Sides information
+ * sits in a small running header and a compact block at the top of page one.
  */
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import { textForPdf } from '@/lib/pdf/callSheet'
+import { wrapLines } from '@/lib/pdf/layoutKit'
 import { sceneSlugline } from '@/lib/schedule/sceneDisplay'
+import {
+  SCREENPLAY_LAYOUT as L,
+  formatSceneForScreenplay,
+  paginateScreenplay,
+  type ScreenplayBlock,
+  type ScreenplayRow,
+} from '@/lib/script/screenplayFormat'
 import type {
   SidesDraftModel,
   SidesPreviewGroup,
   SidesSectionEntry,
 } from '@/lib/db/sidesBuilderService'
 
-const MARGIN = 54
-const PAGE_WIDTH = 612
-const PAGE_HEIGHT = 792
-const Y_MIN = MARGIN + 28
-const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2
-const FONT_TITLE = 16
-const FONT_HEADER = 11
-const FONT_SECTION = 10
-const FONT_BODY = 9
-const FONT_META = 8
-const FONT_SCRIPT = 8
-const FONT_FOOTER = 8
-const LINE_STEP = 11
-const SCRIPT_LINE_STEP = 9.5
+const FONT_HEADER = 8
+const FONT_INFO_TITLE = 9
+const FONT_INFO = 8
+const FONT_NOTE = 8
+const FONT_FOOTER = 7
+const INFO_STEP = 11
+/** Baseline of the running header and page number, 0.5" from the top edge. */
+const HEADER_Y = L.pageHeight - 36 - 9
+const FOOTER_Y = 30
+/** Baseline of the first script line, 1" from the top edge. */
+const BODY_TOP_Y = L.pageHeight - L.marginTop - 9
+/** Fewest script lines left on page one, however long the warnings list is. */
+const MIN_FIRST_PAGE_LINES = 20
+const MAX_WARNING_LINES = 16
 const GRAY = rgb(0.45, 0.45, 0.45)
 const DARK = rgb(0.15, 0.15, 0.15)
 const AMBER = rgb(0.72, 0.45, 0.05)
+const RULE = rgb(0.75, 0.75, 0.75)
+const BLACK = rgb(0, 0, 0)
+
+export const SIDES_ESTIMATED_NOTE = 'Best-effort text; exact range unavailable.'
+export const SIDES_NO_TEXT_NOTE = 'No script text available (best-effort).'
 
 type PdfFont = Awaited<ReturnType<PDFDocument['embedFont']>>
 
@@ -157,35 +174,37 @@ export function buildSidesPdfData(params: {
 
 // ─── Rendering ──────────────────────────────────────────────────────────────
 
-function wrapLines(text: string, maxWidth: number, font: PdfFont, size: number): string[] {
-  const lines: string[] = []
-  for (const paragraph of textForPdf(text).split(/\n/)) {
-    const words = paragraph.split(/\s+/).filter(Boolean)
-    if (words.length === 0) {
-      lines.push('')
-      continue
+/** Script blocks for every selected scene, in order, with per-scene notes. */
+export function sidesScreenplayBlocks(data: SidesPdfData): ScreenplayBlock[] {
+  const blocks: ScreenplayBlock[] = []
+  for (const group of data.groups) {
+    for (const scene of group.scenes) {
+      const text = scene.collatedScriptText?.trim() ? scene.collatedScriptText : null
+      const notes: string[] = []
+      if (!text) notes.push(SIDES_NO_TEXT_NOTE)
+      else if (scene.sections.some((s) => s.isEstimated)) notes.push(SIDES_ESTIMATED_NOTE)
+      blocks.push(
+        ...formatSceneForScreenplay({
+          sceneNumber: scene.sceneNumber,
+          heading: scene.heading,
+          text,
+          notes,
+          group: group.episodeName,
+        })
+      )
     }
-    let line = ''
-    for (const w of words) {
-      const next = line ? `${line} ${w}` : w
-      if (font.widthOfTextAtSize(next, size) <= maxWidth) {
-        line = next
-      } else {
-        if (line) lines.push(line)
-        // Hard-break words wider than the column so nothing overflows.
-        let chunk = w
-        while (font.widthOfTextAtSize(chunk, size) > maxWidth && chunk.length > 1) {
-          let cut = chunk.length
-          while (cut > 1 && font.widthOfTextAtSize(chunk.slice(0, cut), size) > maxWidth) cut -= 1
-          lines.push(chunk.slice(0, cut))
-          chunk = chunk.slice(cut)
-        }
-        line = chunk
-      }
-    }
-    if (line) lines.push(line)
   }
-  return lines
+  return blocks
+}
+
+type InfoLine = { text: string; size: number; bold?: boolean; color: ReturnType<typeof rgb> }
+
+function fitText(text: string, maxWidth: number, font: PdfFont, size: number): string {
+  const clean = textForPdf(text)
+  if (font.widthOfTextAtSize(clean, size) <= maxWidth) return clean
+  let cut = clean.length
+  while (cut > 0 && font.widthOfTextAtSize(`${clean.slice(0, cut)}...`, size) > maxWidth) cut -= 1
+  return `${clean.slice(0, cut).trimEnd()}...`
 }
 
 /**
@@ -193,136 +212,109 @@ function wrapLines(text: string, maxWidth: number, font: PdfFont, size: number):
  */
 export async function generateSidesPdf(data: SidesPdfData): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
-  const mono = await doc.embedFont(StandardFonts.Courier)
-
-  let page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  let y = PAGE_HEIGHT - MARGIN
-
-  const newPage = (): void => {
-    page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-    y = PAGE_HEIGHT - MARGIN
+  const fonts = {
+    mono: await doc.embedFont(StandardFonts.Courier),
+    sans: await doc.embedFont(StandardFonts.Helvetica),
+    bold: await doc.embedFont(StandardFonts.HelveticaBold),
+    italic: await doc.embedFont(StandardFonts.HelveticaOblique),
   }
+  const bodyWidth = L.bodyRight - L.bodyLeft
 
-  const ensure = (needed: number): void => {
-    if (y - needed < Y_MIN) newPage()
-  }
-
-  const drawText = (
-    text: string,
-    options: { x?: number; size?: number; font?: PdfFont; color?: ReturnType<typeof rgb> } = {}
-  ): void => {
-    page.drawText(textForPdf(text), {
-      x: options.x ?? MARGIN,
-      y,
-      size: options.size ?? FONT_BODY,
-      font: options.font ?? font,
-      color: options.color ?? rgb(0, 0, 0),
-    })
-  }
-
-  const drawWrapped = (
-    text: string,
-    options: {
-      x?: number
-      width?: number
-      size?: number
-      font?: PdfFont
-      color?: ReturnType<typeof rgb>
-      step?: number
-    } = {}
-  ): void => {
-    const x = options.x ?? MARGIN
-    const width = options.width ?? CONTENT_WIDTH - (x - MARGIN)
-    const size = options.size ?? FONT_BODY
-    const f = options.font ?? font
-    const step = options.step ?? LINE_STEP
-    for (const line of wrapLines(text, width, f, size)) {
-      ensure(step)
-      if (line !== '') page.drawText(textForPdf(line), { x, y, size, font: f, color: options.color ?? rgb(0, 0, 0) })
-      y -= step
-    }
-  }
-
-  // ---------- Header ----------
-  drawText('SIDES', { size: FONT_TITLE, font: bold, color: DARK })
-  y -= 18
-  drawText(data.productionTitle, { size: FONT_HEADER, font: bold, color: DARK })
-  y -= 14
-
+  // ---------- Page-one information block ----------
+  const info: InfoLine[] = [
+    { text: `${data.productionTitle} - Sides`, size: FONT_INFO_TITLE, bold: true, color: DARK },
+  ]
   const metaParts: string[] = []
   if (data.shootDate) metaParts.push(data.shootDate)
   if (data.unitName) metaParts.push(`Unit: ${data.unitName}`)
-  if (data.scriptVersionLabels.length > 0) {
-    metaParts.push(`Script: ${data.scriptVersionLabels.join(', ')}`)
-  }
+  if (data.scriptVersionLabels.length > 0) metaParts.push(`Script: ${data.scriptVersionLabels.join(', ')}`)
   metaParts.push(`Est. eighths: ~${data.totalEstimatedEighths}/8`)
-  if (metaParts.length > 0) {
-    drawText(metaParts.join('  ·  '), { size: FONT_META, font, color: GRAY })
-    y -= 12
+  for (const line of wrapLines(metaParts.join('  |  '), bodyWidth, fonts.sans, FONT_INFO)) {
+    info.push({ text: line, size: FONT_INFO, color: GRAY })
   }
-  drawText(`Generated: ${data.generatedAt}`, { size: FONT_FOOTER, font, color: GRAY })
-  y -= 14
-
-  // ---------- Warnings summary ----------
-  if (data.warnings.length > 0) {
-    drawText('Warnings', { size: FONT_SECTION, font: bold, color: AMBER })
-    y -= 13
-    for (const warning of data.warnings) {
-      drawWrapped(`• ${warning.message}`, { x: MARGIN + 6, size: FONT_META, color: AMBER, step: 10 })
-    }
-    y -= 6
+  const warningLines = data.warnings.flatMap((w) => wrapLines(`• ${w.message}`, bodyWidth, fonts.sans, FONT_INFO))
+  if (warningLines.length > MAX_WARNING_LINES) {
+    warningLines.length = MAX_WARNING_LINES - 1
+    warningLines.push('• More warnings in the Sides Builder.')
   }
-
-  // ---------- Sections by episode / scene ----------
+  for (const line of warningLines) info.push({ text: line, size: FONT_INFO, color: AMBER })
   if (data.groups.length === 0) {
-    ensure(LINE_STEP)
-    drawText('No sections selected for this sides export.', { size: FONT_BODY, font, color: GRAY })
-    y -= LINE_STEP
+    info.push({ text: 'No sections selected for this sides export.', size: FONT_INFO, color: GRAY })
+  }
+  const infoHeight = info.length * INFO_STEP + 16
+  const firstPageLines = Math.max(MIN_FIRST_PAGE_LINES, L.linesPerPage - Math.ceil(infoHeight / L.lineHeight))
+  const firstPageOffset = L.linesPerPage - firstPageLines
+
+  const pages = paginateScreenplay(sidesScreenplayBlocks(data), { firstPageLines })
+
+  const drawRow = (page: ReturnType<PDFDocument['addPage']>, row: ScreenplayRow, y: number): void => {
+    if (row.type === 'blank') return
+    if (row.type === 'note') {
+      page.drawText(textForPdf(row.text), { x: L.bodyLeft, y, size: FONT_NOTE, font: fonts.italic, color: AMBER })
+      return
+    }
+    const text = textForPdf(row.text)
+    const size = L.fontSize
+    const x =
+      row.type === 'transition'
+        ? L.bodyRight - fonts.mono.widthOfTextAtSize(text, size)
+        : L.columns[row.type].left
+    page.drawText(text, { x, y, size, font: fonts.mono, color: BLACK })
+    if (row.type === 'scene_heading' && row.sceneNumber) {
+      const num = textForPdf(row.sceneNumber)
+      page.drawText(num, { x: L.sceneNumberLeft, y, size, font: fonts.mono, color: BLACK })
+      page.drawText(num, { x: L.sceneNumberRight, y, size, font: fonts.mono, color: BLACK })
+    }
   }
 
-  for (const group of data.groups) {
-    if (group.episodeName) {
-      ensure(16)
-      drawText(group.episodeName, { size: FONT_HEADER, font: bold, color: DARK })
-      y -= 15
-    }
+  pages.forEach((screenplayPage, pageIndex) => {
+    const page = doc.addPage([L.pageWidth, L.pageHeight])
 
-    for (const scene of group.scenes) {
-      ensure(16)
-      const heading = scene.heading ? ` — ${scene.heading}` : ''
-      drawText(`Sc ${scene.sceneNumber}${heading}`, { size: FONT_SECTION, font: bold, color: DARK })
-      y -= 14
+    // Running header: production / sides / date / unit / episode, and the page number top right.
+    const pageNumber = `${pageIndex + 1}.`
+    const pageNumberX = L.bodyRight - fonts.mono.widthOfTextAtSize(pageNumber, L.fontSize)
+    page.drawText(pageNumber, { x: pageNumberX, y: HEADER_Y, size: L.fontSize, font: fonts.mono, color: BLACK })
+    const headerParts = [data.productionTitle.toUpperCase(), 'SIDES', data.shootDate, data.unitName, screenplayPage.group]
+      .filter((p): p is string => !!p && p.trim() !== '')
+    page.drawText(fitText(headerParts.join('  |  '), pageNumberX - L.bodyLeft - 18, fonts.sans, FONT_HEADER), {
+      x: L.bodyLeft,
+      y: HEADER_Y + 2,
+      size: FONT_HEADER,
+      font: fonts.sans,
+      color: GRAY,
+    })
+    page.drawText(textForPdf(`Generated ${data.generatedAt}`), {
+      x: L.bodyLeft,
+      y: FOOTER_Y,
+      size: FONT_FOOTER,
+      font: fonts.sans,
+      color: GRAY,
+    })
 
-      if (scene.collatedScriptText && scene.collatedScriptText.trim() !== '') {
-        y -= 2
-        drawWrapped(scene.collatedScriptText, {
-          x: MARGIN + 6,
-          width: CONTENT_WIDTH - 6,
-          size: FONT_SCRIPT,
-          font: mono,
-          step: SCRIPT_LINE_STEP,
+    let firstRowY = BODY_TOP_Y
+    if (pageIndex === 0) {
+      let y = BODY_TOP_Y
+      for (const line of info) {
+        page.drawText(fitText(line.text, bodyWidth, line.bold ? fonts.bold : fonts.sans, line.size), {
+          x: L.bodyLeft,
+          y,
+          size: line.size,
+          font: line.bold ? fonts.bold : fonts.sans,
+          color: line.color,
         })
-        if (scene.sections.some((s) => s.isEstimated)) {
-          drawWrapped('Best-effort text; exact range unavailable.', {
-            x: MARGIN + 6,
-            size: FONT_META,
-            color: AMBER,
-            step: 10,
-          })
-        }
-      } else {
-        drawWrapped('No script text available (best-effort).', {
-          x: MARGIN + 6,
-          size: FONT_META,
-          color: GRAY,
-          step: 10,
-        })
+        y -= INFO_STEP
       }
-      y -= 4
+      page.drawLine({
+        start: { x: L.bodyLeft, y: y + 4 },
+        end: { x: L.bodyRight, y: y + 4 },
+        thickness: 0.5,
+        color: RULE,
+      })
+      firstRowY = BODY_TOP_Y - firstPageOffset * L.lineHeight
     }
-  }
+
+    screenplayPage.rows.forEach((row, i) => drawRow(page, row, firstRowY - i * L.lineHeight))
+  })
 
   return doc.save()
 }
