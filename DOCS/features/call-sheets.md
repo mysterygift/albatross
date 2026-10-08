@@ -5,8 +5,8 @@ Builds the daily call sheet PDF for one shoot day and unit from the schedule, ca
 ## Code map
 | Area | Location |
 |---|---|
-| Page (data assembly, preview, save) | `src/features/call-sheets/page.tsx` (`CallSheetsPage`, `buildCallSheetData` memo) |
-| Distribution | `src/features/call-sheets/CallSheetDistributionDialog.tsx`, `exportDistributedCallSheets.ts`, `src/lib/pdf/applyRecipientNameWatermarkToPDF.ts` |
+| Page (data assembly, preview, save) | `src/features/call-sheets/page.tsx` (`CallSheetsPage`, `buildCallSheetData` memo). `?day=&unit=` preselects a shoot day and unit |
+| Distribution | `src/features/call-sheets/CallSheetDistributionDialog.tsx`, `exportDistributedCallSheets.ts`, `src/lib/pdf/applyRecipientNameWatermarkToPDF.ts`, recipients from `src/lib/call-sheets/recipients.ts` (`buildDayRecipients`, shared with Movement Orders and [Send Day Pack](day-pack.md)) |
 | PDF engine | `src/lib/pdf/callSheet.ts` (`generateCallSheetPdf`, `CallSheetData`), `callSheetScheduleColumns.ts` |
 | Data helpers | `src/lib/call-sheets/` (`castRequirements`, `crewRequirements`, `scheduleStripRow`, `advancedSchedule`, `primaryContacts`, `bookingCallTimes`, `callSheetEpisodic`) |
 | Weather | `src/lib/weather/openMeteo.ts` (`getWeatherForCallSheet`); see [integrations.md](../integrations.md) |
@@ -24,7 +24,7 @@ Builds the daily call sheet PDF for one shoot day and unit from the schedule, ca
 - **Header**: production, `dayNumber` and `totalDays`, unit name and notes, call and wrap, bloc label for episodic productions, paper size (A4 default, or Letter, chosen on the page).
 - **Schedule**: the unit's stripboard strips in `sort_index` order, turned into rows by `buildCallSheetStripFromStripboard` (location, scene/shot, synopsis, D/N, pages, compact cast, notes). IF TIME PERMITS strips are grouped after the main block. An EP column appears only for episodic productions with the include-episodes setting on; TIME only when a strip has an estimated time.
 - **Cast**: `getCallSheetCastRequirements` works out who is required (shot-level casting for scheduled shots, else scene-level) and prints **required and booked**. Required-but-not-booked and booked-but-not-required people are returned for warnings in the UI. The character column is booking role, else the person's `role_name`; the set-call column comes from the booking's `start_date`/`end_date` only when they are ISO datetimes (`bookingCallTimes.ts`).
-- **Crew**: `getCallSheetCrewRequirements` groups crew booked on the day by department, HOD first ([crew-manager.md](crew-manager.md)). Bookings are per shoot day, not per unit.
+- **Crew**: `getCallSheetCrewRequirements` groups crew booked on the day by department, HOD first ([crew-manager.md](crew-manager.md)). A booking with a unit (`bookings.shoot_day_unit_id`) only puts the person on that unit's sheet; a booking without one puts them on every unit's sheet.
 - **Contacts**: key contacts feed the departmental and Health, Safety & Stunts blocks; `selectPrimaryCallSheetContacts` picks the AD, coordinator and office rows for the top of page 1 (email only where `primaryContactShowsEmail`).
 - **Advanced schedule**: `buildAdvancedScheduleForCallSheet` adds up to two following shoot days, same unit where possible.
 - **Locations**: only those used by scenes scheduled on the unit.
@@ -58,7 +58,7 @@ Meals come only from `meal_times_json`; no default lunch is added. Characters th
 ## Changing the layout
 1. Add the field to `CallSheetData` and fill it in `buildCallSheetData` (or in `src/lib/call-sheets/` if it needs logic).
 2. Draw it in a `draw*` function in `callSheet.ts`, and call it from `generateCallSheetPdf` in the right position. Use `ensure` before blocks and the `drawTable` / `drawBoxes` helpers so pagination and wrapping keep working.
-3. Schedule columns live in `callSheetScheduleColumns.ts`; `MAIN_SCHEDULE_TABLE_WIDTH` assumes A4 and the builder takes the real content width.
+3. Schedule columns live in `callSheetScheduleColumns.ts`; `MAIN_SCHEDULE_TABLE_WIDTH` assumes A4 and the builder takes the real content width. Row cell text comes from `scheduleStripCells` (`scheduleStripRow.ts`), which the shooting schedule PDF also uses, so a change there shows in both.
 4. Add a case to `src/lib/pdf/callSheet*.test.ts`.
 
 ## Connections

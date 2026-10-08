@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   BookOpen,
   FileSignature,
+  Send,
 } from 'lucide-react'
 
 /**
@@ -124,6 +125,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { to: '/call-sheets', label: 'Call Sheets', icon: Megaphone },
       { to: '/movement-orders', label: 'Movement Orders', icon: Route },
+      { to: '/day-pack', label: 'Send Day Pack', icon: Send, experimental: true },
       { to: '/documents', label: 'Documents', icon: FileText },
       { to: '/deliverables', label: 'Deliverables', icon: PackageCheck },
       { to: '/music-clearance', label: 'Music & Archive', icon: Music },

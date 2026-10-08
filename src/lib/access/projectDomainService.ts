@@ -316,6 +316,7 @@ export async function createBookingForActor(args: {
   productionId: string
   personId: string
   shootDayId?: string | null
+  shootDayUnitId?: string | null
   role?: string | null
   notes?: string | null
 }) {
@@ -324,6 +325,7 @@ export async function createBookingForActor(args: {
     production_id: args.productionId,
     person_id: args.personId,
     shoot_day_id: args.shootDayId ?? null,
+    shoot_day_unit_id: args.shootDayUnitId ?? null,
     role: args.role ?? null,
     notes: args.notes ?? null,
   })

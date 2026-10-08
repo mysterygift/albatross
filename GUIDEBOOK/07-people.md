@@ -114,7 +114,8 @@ A booking assigns one person to one shoot day. Bookings for consecutive shoot da
 1. Open **People → Bookings**.
 2. Click **Add booking**.
 3. In **Assign person to shoot day**, choose the **Person** (shown as name, cast or crew, department, role) and the **Shoot day**. Add a **Role (optional)** and **Notes (optional)**.
-4. Click **Add booking**. To book a run of days, repeat for each day, or add one day and drag its bar longer (see below).
+4. If the shoot day runs more than one unit, a **Unit** box appears. Leave it on **All units**, or choose the unit the person works with. Call sheets and day packs for the other units then leave them out.
+5. Click **Add booking**. To book a run of days, repeat for each day, or add one day and drag its bar longer (see below).
 
 > **Note** A booking must have a shoot day to appear on the calendar. Create shoot days first in **Schedule** (see [Schedule](05-schedule.md)).
 
@@ -127,14 +128,15 @@ Switch with the **Calendar View** / **Timeline View** control. Use the arrows to
 
 ![Bookings page in Timeline View](images/07-bookings-timeline.png)
 
-The filters above the grid are **Unit**, **Department** and **Cast/Crew**.
+The filters above the grid are **Unit**, **Department** and **Cast/Crew**. With a unit chosen, people booked to another unit of the same day are hidden; people booked for all units still show.
 
 ### Change a booking
 
 - Click a bar to open **Edit booking**, change the person, day, role or notes, and click **Save changes**.
 - Drag a bar sideways to move the whole run to other dates. The move is refused if a day has no shoot day or the person is already booked there.
 - Drag the left or right edge of a bar to lengthen or shorten the run. Lengthening books every shoot day in the new range; shortening removes the bookings outside it.
-- Hover a bar to see the person, dates, number of days, role and notes.
+- Hover a bar to see the person, dates, number of days, any unit, role and notes.
+- Dragging a booking to another day sets it back to **All units**, because units belong to one day. Moving or removing a unit on the Stripboard or Calendar does the same for the people booked to it.
 
 ### Who is missing
 

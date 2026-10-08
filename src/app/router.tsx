@@ -26,6 +26,7 @@ import { ReleaseFormsPage } from '@/features/release-forms/page'
 import { ReleaseFormSignPage } from '@/features/release-forms/ReleaseFormSignPage'
 import { CallSheetsPage } from '@/features/call-sheets/page'
 import { MovementOrdersPage } from '@/features/movement-orders/page'
+import { DayPackPage } from '@/features/day-pack/DayPackPage'
 import { ReadinessPage } from '@/features/readiness/page'
 import { DeliverablesPage } from '@/features/deliverables/page'
 import { MusicClearancePage } from '@/features/music-clearance/page'
@@ -83,6 +84,7 @@ export const router = createBrowserRouter([
       { path: 'release-forms/new/:formType', element: <ReleaseFormSignPage /> },
       { path: 'call-sheets', element: <CallSheetsPage /> },
       { path: 'movement-orders', element: <MovementOrdersPage /> },
+      { path: 'day-pack', element: <DayPackPage /> },
       { path: 'tasks', element: <ReadinessPage /> },
       { path: 'readiness', element: <Navigate to="/tasks" replace /> },
       { path: 'deliverables', element: <DeliverablesPage /> },

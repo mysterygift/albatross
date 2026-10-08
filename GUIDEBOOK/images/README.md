@@ -167,3 +167,4 @@ Demo data present (Settings → Demo & tutorial → Create Demo Production creat
 | 15-script-tramlines.png | Script → Script Supervisor, Script tab | Same slate selected; middle view switched to Script for the scene; draw a tramline over a few lines; add one Ad-lib note via the add-note button | region: middle script panel |
 | 15-script-supervisor-review.png | Script → Script Supervisor, Review | Same day; mode switched to Review; scroll to show progress tiles, Daily progress report and Exports cards | window |
 | 15-overtime.png | People → Overtime | Experimental features on; Mint Heist; a shoot day with booked crew selected; Unit wrap entered 2 hours later than planned so tiles show overtime | window |
+| 15-day-pack.png | Deliver → Send Day Pack | Experimental features on; Mint Heist; a shoot day with a saved call sheet and booked crew with email addresses; Prepare packs clicked so the recipients show Open draft | window |

@@ -16,7 +16,11 @@ import { textForPdf, wrapLines } from '@/lib/pdf/layoutKit'
 import type { CallSheetCastRow } from '@/lib/call-sheets/castRequirements'
 import type { CallSheetCrewGroup, CallSheetCrewRow } from '@/lib/call-sheets/crewRequirements'
 import { primaryContactShowsEmail } from '@/lib/call-sheets/primaryContacts'
-import { formatCallSheetSynopsis, formatScheduleDnColumn } from '@/lib/call-sheets/scheduleStripRow'
+import {
+  isSpecialScheduleStrip,
+  scheduleStripCells,
+  specialScheduleSetLine,
+} from '@/lib/call-sheets/scheduleStripRow'
 import {
   buildMainScheduleColumns,
   buildAdvancedScheduleColumns,
@@ -200,7 +204,6 @@ const BOX_PAD = 4
 const BAR_H = 13
 const SECTION_GAP = 8
 /** ASCII ditto: Unicode U+3003 is not encodable in pdf-lib StandardFonts (WinAnsi). */
-const DITTO_MARK = '"'
 const GRAY = rgb(0.45, 0.45, 0.45)
 const BLACK = rgb(0, 0, 0)
 const RULE_LIGHT = rgb(0.8, 0.8, 0.8)
@@ -645,24 +648,6 @@ function drawTable(
 // ---------- Strip tables (main + advanced schedule) ----------
 type StripCol = MainScheduleColDef | AdvancedScheduleColDef
 
-const SPECIAL_TYPES: ReadonlySet<CallSheetStrip['strip_type']> = new Set([
-  'CALL',
-  'LUNCH',
-  'WRAP',
-  'NOTE',
-  'MOVE',
-])
-
-// Special strips are added manually (call, lunch, wrap, move, note) and are not shooting rows.
-const isSpecialStrip = (t: CallSheetStrip['strip_type']): boolean => SPECIAL_TYPES.has(t)
-
-function specialScheduleSetLine(s: CallSheetStrip): string {
-  const body =
-    s.rowNotes?.trim() ||
-    [s.title, s.description].filter((x): x is string => typeof x === 'string' && x.trim().length > 0).join(' - ')
-  return body.trim() ? `${s.strip_type} - ${body.trim()}` : s.strip_type
-}
-
 function drawStripTable(
   ctx: Ctx,
   strips: CallSheetStrip[],
@@ -700,7 +685,7 @@ function drawStripTable(
   }
 
   const drawRow = (s: CallSheetStrip): void => {
-    const special = isSpecialStrip(s.strip_type)
+    const special = isSpecialScheduleStrip(s.strip_type)
     const cell: Record<string, string[]> = {}
     let synopsis: Array<{ text: string; bold: boolean; size: number }> = []
 
@@ -712,28 +697,20 @@ function drawStripTable(
       }))
     } else {
       const setW = widthOf('synopsis') - 4
-      const sn = s.scene_number?.trim()
-      const sh = s.shot_number?.trim()
-      cell.scsh = [sn && sh ? `${sn} | ${sh}` : (sn ?? sh ?? '')]
-      cell.loc = [s.locDitto ? DITTO_MARK : (s.locLabel ?? '')]
-      cell.ep = [(s.episodeLabel ?? '').trim()]
-      cell.dn = [formatScheduleDnColumn(s.int_ext, s.day_night)]
-      cell.pgs = [s.page_eighths != null ? `${s.page_eighths}/8` : '']
-      cell.time = [s.estTime?.trim() ?? '']
-      cell.cast = wrapLines(s.castCompact ?? '', widthOf('cast') - 4, ctx.font, fs)
-      cell.notes = wrapLines(s.rowNotes ?? '', widthOf('notes') - 4, ctx.font, fs)
-      if (s.strip_type === 'SHOT' && s.shot_description?.trim()) {
-        const sceneLine = s.scene_title?.trim() || s.scene_heading?.trim() || ''
-        for (const text of wrapLines(sceneLine, setW, ctx.bold, fs)) synopsis.push({ text, bold: true, size: fs })
-        for (const text of wrapLines(s.shot_description, setW, ctx.font, fs - 0.5)) {
+      const c = scheduleStripCells(s)
+      cell.scsh = [c.scsh]
+      cell.loc = [c.loc]
+      cell.ep = [c.ep]
+      cell.dn = [c.dn]
+      cell.pgs = [c.pgs]
+      cell.time = [c.time]
+      cell.cast = wrapLines(c.cast, widthOf('cast') - 4, ctx.font, fs)
+      cell.notes = wrapLines(c.notes, widthOf('notes') - 4, ctx.font, fs)
+      for (const text of wrapLines(c.setHeading, setW, ctx.bold, fs)) synopsis.push({ text, bold: true, size: fs })
+      if (c.setDetail) {
+        for (const text of wrapLines(c.setDetail, setW, ctx.font, fs - 0.5)) {
           synopsis.push({ text, bold: false, size: fs - 0.5 })
         }
-      } else {
-        synopsis = wrapLines(formatCallSheetSynopsis(s), setW, ctx.bold, fs).map((text) => ({
-          text,
-          bold: true,
-          size: fs,
-        }))
       }
     }
 

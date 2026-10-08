@@ -110,6 +110,8 @@ const PARENT_LINKS: Partial<Record<ApfV1TableKey, ParentLink[]>> = {
   ],
   // A hidden global vendor that is not part of the package has nothing to hide.
   vendor_production_exclusions: [{ column: 'vendor_id', parent: 'vendors', onMissing: 'drop' }],
+  // A booking whose unit is not in the package covers the whole day instead.
+  bookings: [{ column: 'shoot_day_unit_id', parent: 'shoot_day_units', onMissing: 'null' }],
   crew_hours_person_settings: [{ column: 'person_id', parent: 'people', onMissing: 'drop' }],
   crew_day_hours: [
     { column: 'shoot_day_id', parent: 'shoot_days', onMissing: 'drop' },

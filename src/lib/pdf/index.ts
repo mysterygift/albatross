@@ -9,6 +9,7 @@ import type { Location } from '@/lib/db/types'
 import type { Person } from '@/lib/db/types'
 import type { Booking } from '@/lib/db/types'
 import { sceneSlugline } from '@/lib/schedule/sceneDisplay'
+import { drawPdfText, textForPdf } from '@/lib/pdf/layoutKit'
 export interface LocationReleaseCoverData {
   productionName: string
   locationName: string
@@ -27,7 +28,7 @@ export async function generateLocationReleaseCover(
   const { height } = page.getSize()
   let y = height - 72
 
-  page.drawText('LOCATION RELEASE - COVER SHEET', {
+  drawPdfText(page, 'LOCATION RELEASE - COVER SHEET', {
     x: 72,
     y,
     size: 18,
@@ -36,25 +37,25 @@ export async function generateLocationReleaseCover(
   })
   y -= 36
 
-  page.drawText('Production:', { x: 72, y, size: 12, font: bold })
-  page.drawText(data.productionName, { x: 160, y, size: 12, font })
+  drawPdfText(page, 'Production:', { x: 72, y, size: 12, font: bold })
+  drawPdfText(page, data.productionName, { x: 160, y, size: 12, font })
   y -= 24
 
-  page.drawText('Location:', { x: 72, y, size: 12, font: bold })
-  page.drawText(data.locationName, { x: 160, y, size: 12, font })
+  drawPdfText(page, 'Location:', { x: 72, y, size: 12, font: bold })
+  drawPdfText(page, data.locationName, { x: 160, y, size: 12, font })
   y -= 24
 
-  page.drawText('Address:', { x: 72, y, size: 12, font: bold })
-  page.drawText(data.address || '—', { x: 160, y, size: 12, font })
+  drawPdfText(page, 'Address:', { x: 72, y, size: 12, font: bold })
+  drawPdfText(page, data.address || '—', { x: 160, y, size: 12, font })
   y -= 24
 
   if (data.notes) {
-    page.drawText('Notes:', { x: 72, y, size: 12, font: bold })
-    page.drawText(data.notes, { x: 160, y, size: 12, font })
+    drawPdfText(page, 'Notes:', { x: 72, y, size: 12, font: bold })
+    drawPdfText(page, data.notes, { x: 160, y, size: 12, font })
     y -= 24
   }
 
-  page.drawText(
+  drawPdfText(page, 
     `Generated: ${new Date().toLocaleString()}`,
     { x: 72, y: 72, size: 9, font, color: rgb(0.4, 0.4, 0.4) }
   )
@@ -78,20 +79,20 @@ export async function generateContributorFormCover(
   const page = doc.addPage([612, 792])
   const { height } = page.getSize()
   let y = height - 72
-  page.drawText('CONTRIBUTOR AGREEMENT', { x: 72, y, size: 18, font: bold })
+  drawPdfText(page, 'CONTRIBUTOR AGREEMENT', { x: 72, y, size: 18, font: bold })
   y -= 36
-  page.drawText('Production:', { x: 72, y, size: 12, font: bold })
-  page.drawText(data.productionName, { x: 160, y, size: 12, font })
+  drawPdfText(page, 'Production:', { x: 72, y, size: 12, font: bold })
+  drawPdfText(page, data.productionName, { x: 160, y, size: 12, font })
   y -= 24
-  page.drawText('Contributor:', { x: 72, y, size: 12, font: bold })
-  page.drawText(data.contributorName, { x: 160, y, size: 12, font })
+  drawPdfText(page, 'Contributor:', { x: 72, y, size: 12, font: bold })
+  drawPdfText(page, data.contributorName, { x: 160, y, size: 12, font })
   y -= 24
   if (data.role) {
-    page.drawText('Role:', { x: 72, y, size: 12, font: bold })
-    page.drawText(data.role, { x: 160, y, size: 12, font })
+    drawPdfText(page, 'Role:', { x: 72, y, size: 12, font: bold })
+    drawPdfText(page, data.role, { x: 160, y, size: 12, font })
     y -= 24
   }
-  page.drawText(`Generated: ${new Date().toLocaleString()}`, {
+  drawPdfText(page, `Generated: ${new Date().toLocaleString()}`, {
     x: 72,
     y: 72,
     size: 9,
@@ -121,7 +122,7 @@ export async function generateCallSheet(data: CallSheetData): Promise<Uint8Array
   const margin = 72
   let y = height - margin
 
-  page.drawText('CALL SHEET', {
+  drawPdfText(page, 'CALL SHEET', {
     x: margin,
     y,
     size: 22,
@@ -130,7 +131,7 @@ export async function generateCallSheet(data: CallSheetData): Promise<Uint8Array
   })
   y -= 12
 
-  page.drawText(data.productionName, {
+  drawPdfText(page, data.productionName, {
     x: margin,
     y,
     size: 14,
@@ -145,20 +146,20 @@ export async function generateCallSheet(data: CallSheetData): Promise<Uint8Array
     month: 'long',
     day: 'numeric',
   })
-  page.drawText(`Shoot Date: ${shootDate}`, { x: margin, y, size: 12, font: bold })
+  drawPdfText(page, `Shoot Date: ${shootDate}`, { x: margin, y, size: 12, font: bold })
   y -= 20
 
   if (data.shootDay.call_time) {
-    page.drawText(`Call Time: ${data.shootDay.call_time}`, { x: margin, y, size: 11, font })
+    drawPdfText(page, `Call Time: ${data.shootDay.call_time}`, { x: margin, y, size: 11, font })
     y -= 18
   }
   if (data.weather) {
-    page.drawText(`Weather: ${data.weather}`, { x: margin, y, size: 11, font })
+    drawPdfText(page, `Weather: ${data.weather}`, { x: margin, y, size: 11, font })
     y -= 18
   }
   y -= 12
 
-  page.drawText('SCHEDULE', { x: margin, y, size: 12, font: bold })
+  drawPdfText(page, 'SCHEDULE', { x: margin, y, size: 12, font: bold })
   y -= 18
 
   for (const scene of data.scenes) {
@@ -166,7 +167,7 @@ export async function generateCallSheet(data: CallSheetData): Promise<Uint8Array
       ? data.locations.find((l) => l.id === scene.location_id)?.name ?? null
       : null
     const slug = sceneSlugline(scene, locName)
-    page.drawText(
+    drawPdfText(page, 
       `Scene ${scene.scene_number}${slug ? ` — ${slug}` : ''}`,
       { x: margin, y, size: 10, font }
     )
@@ -174,10 +175,10 @@ export async function generateCallSheet(data: CallSheetData): Promise<Uint8Array
   }
   y -= 12
 
-  page.drawText('LOCATIONS', { x: margin, y, size: 12, font: bold })
+  drawPdfText(page, 'LOCATIONS', { x: margin, y, size: 12, font: bold })
   y -= 18
   for (const loc of data.locations) {
-    page.drawText(`${loc.name}${loc.address ? ` — ${loc.address}` : ''}`, {
+    drawPdfText(page, `${loc.name}${loc.address ? ` — ${loc.address}` : ''}`, {
       x: margin,
       y,
       size: 10,
@@ -187,17 +188,17 @@ export async function generateCallSheet(data: CallSheetData): Promise<Uint8Array
   }
   y -= 12
 
-  page.drawText('CAST & CREW', { x: margin, y, size: 12, font: bold })
+  drawPdfText(page, 'CAST & CREW', { x: margin, y, size: 12, font: bold })
   y -= 18
   for (const b of data.bookings) {
     const person = data.people.find((p) => p.id === b.person_id)
     const name = person?.name ?? '—'
     const dept = person?.department ?? b.role ?? ''
-    page.drawText(`${name}${dept ? ` (${dept})` : ''}`, { x: margin, y, size: 10, font })
+    drawPdfText(page, `${name}${dept ? ` (${dept})` : ''}`, { x: margin, y, size: 10, font })
     y -= 14
   }
 
-  page.drawText(
+  drawPdfText(page, 
     `Generated: ${new Date().toLocaleString()}`,
     { x: margin, y: 48, size: 9, font, color: rgb(0.4, 0.4, 0.4) }
   )
@@ -218,12 +219,14 @@ function fitText(
   size: number,
   maxWidth: number
 ): string {
+  // Measure the WinAnsi-safe text: widthOfTextAtSize throws on characters Helvetica cannot encode.
+  text = textForPdf(text)
   if (font.widthOfTextAtSize(text, size) <= maxWidth) return text
   let end = text.length
-  while (end > 0 && font.widthOfTextAtSize(`${text.slice(0, end).trimEnd()}…`, size) > maxWidth) {
+  while (end > 0 && font.widthOfTextAtSize(`${text.slice(0, end).trimEnd()}...`, size) > maxWidth) {
     end -= 1
   }
-  return end > 0 ? `${text.slice(0, end).trimEnd()}…` : ''
+  return end > 0 ? `${text.slice(0, end).trimEnd()}...` : ''
 }
 
 /**
@@ -247,21 +250,21 @@ export async function generateCueSheet(
     artist: { x: 252, width: 150 },
     publisher: { x: 412, width: 128 },
   }
-  const generated = `Generated: ${new Date().toLocaleString()}`
+  const generated = textForPdf(`Generated: ${new Date().toLocaleString()}`)
 
   let page = doc.addPage([pageWidth, pageHeight])
   let y = pageHeight - margin
 
   const drawColumnHeader = () => {
-    page.drawText('Title', { x: cols.title.x, y, size: 10, font: bold })
-    page.drawText('Artist', { x: cols.artist.x, y, size: 10, font: bold })
-    page.drawText('Publisher/Label', { x: cols.publisher.x, y, size: 10, font: bold })
+    drawPdfText(page, 'Title', { x: cols.title.x, y, size: 10, font: bold })
+    drawPdfText(page, 'Artist', { x: cols.artist.x, y, size: 10, font: bold })
+    drawPdfText(page, 'Publisher/Label', { x: cols.publisher.x, y, size: 10, font: bold })
     y -= 16
   }
 
-  page.drawText('MUSIC CUE SHEET', { x: margin, y, size: 18, font: bold })
+  drawPdfText(page, 'MUSIC CUE SHEET', { x: margin, y, size: 18, font: bold })
   y -= 12
-  page.drawText(productionName, { x: margin, y, size: 12, font })
+  drawPdfText(page, productionName, { x: margin, y, size: 12, font })
   y -= 24
   drawColumnHeader()
 
@@ -271,14 +274,14 @@ export async function generateCueSheet(
       y = pageHeight - margin
       drawColumnHeader()
     }
-    page.drawText(fitText(row.title, font, 9, cols.title.width), { x: cols.title.x, y, size: 9, font })
-    page.drawText(fitText(row.artist ?? '—', font, 9, cols.artist.width), {
+    drawPdfText(page, fitText(row.title, font, 9, cols.title.width), { x: cols.title.x, y, size: 9, font })
+    drawPdfText(page, fitText(row.artist ?? '—', font, 9, cols.artist.width), {
       x: cols.artist.x,
       y,
       size: 9,
       font,
     })
-    page.drawText(fitText(row.publisher ?? '—', font, 9, cols.publisher.width), {
+    drawPdfText(page, fitText(row.publisher ?? '—', font, 9, cols.publisher.width), {
       x: cols.publisher.x,
       y,
       size: 9,

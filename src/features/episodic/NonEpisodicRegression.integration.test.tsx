@@ -466,9 +466,11 @@ describe('Non-episodic regression shield', () => {
     const { userEvent } = await import('@testing-library/user-event')
     const user = userEvent.setup()
     render(
-      <QueryClientProvider client={qc()}>
-        <CallSheetsPage />
-      </QueryClientProvider>
+      <MemoryRouter>
+        <QueryClientProvider client={qc()}>
+          <CallSheetsPage />
+        </QueryClientProvider>
+      </MemoryRouter>
     )
     await user.click(screen.getAllByRole('combobox')[0]!)
     await user.click(await screen.findByRole('option', { name: /2025-06-01/ }))
