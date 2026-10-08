@@ -17,6 +17,7 @@ import {
   Route,
   ShieldAlert,
   BookOpen,
+  FileSignature,
 } from 'lucide-react'
 
 /**
@@ -98,6 +99,7 @@ export const navGroups: NavGroup[] = [
           { to: '/people/overtime', label: 'Overtime', experimental: true },
         ],
       },
+      { to: '/release-forms', label: 'Release Forms', icon: FileSignature },
     ],
   },
   {

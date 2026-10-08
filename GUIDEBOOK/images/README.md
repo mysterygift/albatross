@@ -88,6 +88,9 @@ Demo data present (Settings → Demo & tutorial → Create Demo Production creat
 | 07-bookings-calendar.png | People → Bookings | "Mint Heist" selected. **Calendar View** selected (default). Use the month arrows to reach a month that contains shoot days with bookings. No dialog open, filters all "All". | window |
 | 07-bookings-timeline.png | People → Bookings | Same month as the calendar shot. Click **Timeline View** in the switch at the top right. No dialog open, groups expanded. | window |
 | 07-day-out-of-days.png | People → Day Out of Days | "Mint Heist" selected. Search empty, **Only with clashes** unticked. Scroll to top-left so names and the first columns show. | window |
+| 07-release-forms.png | People → Release Forms | "Mint Heist" selected, with one contributor and one location release signed (use made-up names). No dialog open. | window |
+| 07-new-release.png | People → Release Forms | Click **New Release**; the dialog with the two form cards is open. | dialog |
+| 07-release-sign.png | People → Release Forms → New Release → Contributor Release Form | Production company set in **Edit terms**. Made-up details filled in, a signature drawn, **Full print name** typed. Scroll so the end of the terms and the Signature card show. | window |
 
 ## 8. Equipment
 
