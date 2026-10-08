@@ -21,6 +21,7 @@ import type { EnrichedDocument } from '@/lib/documents/enrichDocuments'
 import { hardDeleteDocument } from '@/lib/documents/hardDeleteDocument'
 import { documentsQueryKey } from '@/lib/documents/persistDocument'
 import { getFileUrl, openInSystem, resolveAppDataPath } from '@/lib/files'
+import { isIosPlatform } from '@/lib/platform'
 import { formatSignedAt } from '@/lib/releaseForms/terms'
 
 const SIGNED_TYPES: readonly string[] = [
@@ -48,10 +49,18 @@ export function ReleaseFormsPage() {
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Could not delete the release'),
   })
 
+  // On iOS, opening a file already shows the share sheet (Quick Look, Save to Files, AirDrop…).
+  const ios = isIosPlatform()
+
   const handleOpen = async (doc: EnrichedDocument) => {
     try {
       await openInSystem(await getFileUrl(doc.file_path))
     } catch {
+      // No Finder/Explorer to reveal the file in on iOS.
+      if (ios) {
+        toast.error('Could not open this file.')
+        return
+      }
       await revealItemInDir(await resolveAppDataPath(doc.file_path))
     }
   }
@@ -76,7 +85,7 @@ export function ReleaseFormsPage() {
 
   return (
     <RequireProduction title="Release Forms">
-      <div className="space-y-6">
+      <div className="space-y-6" data-touch-targets>
         <PageHeader
           title="Release Forms"
           description="Bring up a contributor or location release, have it signed on screen, and file the PDF in Documents."
@@ -129,14 +138,23 @@ export function ReleaseFormsPage() {
                   </div>
                   <Badge variant="secondary">{isLocation ? 'Location' : 'Contributor'}</Badge>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => void handleOpen(doc)}>
-                      <FileText />
-                      Open
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => void handleShare(doc)}>
-                      <Share />
-                      Save or share
-                    </Button>
+                    {ios ? (
+                      <Button variant="ghost" size="sm" onClick={() => void handleOpen(doc)}>
+                        <Share />
+                        Share
+                      </Button>
+                    ) : (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => void handleOpen(doc)}>
+                          <FileText />
+                          Open
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => void handleShare(doc)}>
+                          <Share />
+                          Save or share
+                        </Button>
+                      </>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon-sm"
