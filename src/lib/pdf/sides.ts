@@ -229,7 +229,7 @@ export async function generateSidesPdf(data: SidesPdfData): Promise<Uint8Array> 
   if (data.unitName) metaParts.push(`Unit: ${data.unitName}`)
   if (data.scriptVersionLabels.length > 0) metaParts.push(`Script: ${data.scriptVersionLabels.join(', ')}`)
   metaParts.push(`Est. eighths: ~${data.totalEstimatedEighths}/8`)
-  for (const line of wrapLines(metaParts.join('  ·  '), bodyWidth, fonts.sans, FONT_INFO)) {
+  for (const line of wrapLines(metaParts.join('  |  '), bodyWidth, fonts.sans, FONT_INFO)) {
     info.push({ text: line, size: FONT_INFO, color: GRAY })
   }
   const warningLines = data.warnings.flatMap((w) => wrapLines(`• ${w.message}`, bodyWidth, fonts.sans, FONT_INFO))
@@ -276,7 +276,7 @@ export async function generateSidesPdf(data: SidesPdfData): Promise<Uint8Array> 
     page.drawText(pageNumber, { x: pageNumberX, y: HEADER_Y, size: L.fontSize, font: fonts.mono, color: BLACK })
     const headerParts = [data.productionTitle.toUpperCase(), 'SIDES', data.shootDate, data.unitName, screenplayPage.group]
       .filter((p): p is string => !!p && p.trim() !== '')
-    page.drawText(fitText(headerParts.join('  ·  '), pageNumberX - L.bodyLeft - 18, fonts.sans, FONT_HEADER), {
+    page.drawText(fitText(headerParts.join('  |  '), pageNumberX - L.bodyLeft - 18, fonts.sans, FONT_HEADER), {
       x: L.bodyLeft,
       y: HEADER_Y + 2,
       size: FONT_HEADER,
