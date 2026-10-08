@@ -4,6 +4,7 @@ Offline-first. Your data stays on your machine. Here's what's new.
 
 ## ✨ New
 
+- ✍️ **Release Forms** – new under People. Bring up a contributor or location release, have it signed on screen with a finger, Apple Pencil or mouse, and the signed PDF is filed in Documents → Releases and ready to save or share. Edit your company name and terms; signed releases keep the terms they were signed under.
 - 🎬 **Script Supervisor** – slates and takes, UK/US slating, scene status, Daily Progress Report, tramlines and lined script view, script notes with continuity photos, continuity sheets, editor's log and marked-up script exports. Tramlines and notes carry over to new drafts.
 - 🦺 **Risk Assessments (RAMS)** – new under Plan, with built-in hazard templates (Masterclass, Red Wall, drone flying).
 - 🗺️ **Movement orders** – reworked layout, plus route maps with pins that export to PDF. Map tile settings now live in Settings.

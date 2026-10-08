@@ -22,6 +22,8 @@ import { EquipmentPage } from '@/features/equipment/page'
 import { RiskAssessmentsPage } from '@/features/risk-assessments/page'
 import { RiskAssessmentEditorPage } from '@/features/risk-assessments/editor-page'
 import { DocumentsPage, DocumentsCategoryPage } from '@/features/documents/page'
+import { ReleaseFormsPage } from '@/features/release-forms/page'
+import { ReleaseFormSignPage } from '@/features/release-forms/ReleaseFormSignPage'
 import { CallSheetsPage } from '@/features/call-sheets/page'
 import { MovementOrdersPage } from '@/features/movement-orders/page'
 import { ReadinessPage } from '@/features/readiness/page'
@@ -74,7 +76,11 @@ export const router = createBrowserRouter([
       { path: 'risk-assessments', element: <RiskAssessmentsPage /> },
       { path: 'risk-assessments/:id', element: <RiskAssessmentEditorPage /> },
       { path: 'documents', element: <DocumentsPage /> },
+      // "People & locations" became "Releases"; keep old links working.
+      { path: 'documents/people-locations', element: <Navigate to="/documents/releases" replace /> },
       { path: 'documents/:category', element: <DocumentsCategoryPage /> },
+      { path: 'release-forms', element: <ReleaseFormsPage /> },
+      { path: 'release-forms/new/:formType', element: <ReleaseFormSignPage /> },
       { path: 'call-sheets', element: <CallSheetsPage /> },
       { path: 'movement-orders', element: <MovementOrdersPage /> },
       { path: 'tasks', element: <ReadinessPage /> },
