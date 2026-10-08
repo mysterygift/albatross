@@ -32,6 +32,7 @@ import { loadDayPackRecipients } from '@/lib/day-pack/loadDayPackRecipients'
 import { isSendable, loadDayPackSources, type DayPackDocKind } from '@/lib/day-pack/loadDayPackSources'
 import { resolveAppDataPath } from '@/lib/files'
 import { localIsoDate } from '@/lib/dates/localIsoDate'
+import { isIosPlatform } from '@/lib/platform'
 import { loadScheduleExportSources } from '@/lib/schedule/scheduleExportSources'
 import { sortShootDayUnitsForDisplay } from '@/lib/schedule/unitKey'
 import { DayPackDocumentsCard, DayPackEmailCard, DayPackRecipientsCard } from './day-pack-cards'
@@ -56,6 +57,17 @@ function formatShootDay(day: { day_number: number | null; shoot_date: string }):
   return day.day_number != null ? `Day ${day.day_number} · ${date}` : date
 }
 
+type DraftStatus = 'opened' | 'sent' | 'saved' | 'shared'
+
+/** What to show on a person's row after their draft; null leaves it as it was (e.g. cancelled). */
+function draftStatusFor(result: OpenMailDraftResult | null): DraftStatus | null {
+  if (!result) return null
+  if (result.route === 'share') return result.completed ? 'shared' : null
+  if (result.route === 'mailto') return 'opened'
+  if (result.outcome === 'sent' || result.outcome === 'saved' || result.outcome === 'opened') return result.outcome
+  return null
+}
+
 function DayPackWorkspace() {
   const { currentProductionId } = useCurrentProduction()
   const productionId = currentProductionId!
@@ -63,6 +75,7 @@ function DayPackWorkspace() {
   const queryClient = useQueryClient()
   const { data: dataSource } = useEffectiveDataSourceForProduction(productionId)
   const isRemote = dataSource === 'remote_server'
+  const ios = isIosPlatform()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const getActor = async () =>
@@ -115,13 +128,14 @@ function DayPackWorkspace() {
   const [selectedDocs, setSelectedDocs] = useState<Set<DayPackDocKind>>(new Set())
   const [selectedPeople, setSelectedPeople] = useState<Set<string>>(new Set())
   const [built, setBuilt] = useState<DayPackBuildResult | null>(null)
-  const [opened, setOpened] = useState<Set<string>>(new Set())
+  /** How each person's draft went this session (cleared when the pack changes). */
+  const [drafted, setDrafted] = useState<Map<string, DraftStatus>>(new Map())
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset selections to the newly loaded pack
     setSelectedDocs(new Set(pack?.sources.filter(isSendable).map((s) => s.kind) ?? []))
     setSelectedPeople(new Set(pack?.recipients.filter((r) => r.email).map((r) => r.id) ?? []))
     setBuilt(null)
-    setOpened(new Set())
+    setDrafted(new Map())
   }, [pack])
 
   // Email subject and body: saved per production when edited.
@@ -173,7 +187,7 @@ function DayPackWorkspace() {
       }),
     onSuccess: (result) => {
       setBuilt(result)
-      setOpened(new Set())
+      setDrafted(new Map())
       toast.success(`Prepared ${result.people.length} ${result.people.length === 1 ? 'pack' : 'packs'}`)
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
@@ -188,20 +202,28 @@ function DayPackWorkspace() {
       attachmentPaths: await Promise.all(person.files.map((f) => resolveAppDataPath(f.path))),
       folderPath: await resolveAppDataPath(person.folder),
     })
-    setOpened((prev) => new Set(prev).add(recipient.id))
+    const status = draftStatusFor(result)
+    if (status) setDrafted((prev) => new Map(prev).set(recipient.id, status))
     return result
   }
 
   /** Explains a draft that opened without its files. */
-  const fallbackMessage = (reason: string | null) =>
-    reason
-      ? `${reason}. Opened a draft without attachments instead: drag the files in from the folder that just opened.`
-      : 'Your mail app opened without attachments (only Apple Mail and Outlook get them). Drag the files in from the folder that just opened.'
+  const fallbackMessage = (reason: string | null) => {
+    // iPad never gets here: it always uses the mail composer or the share sheet.
+    const attach = 'Drag the files in from the folder that just opened.'
+    return reason
+      ? `${reason}. Opened a draft without attachments instead. ${attach}`
+      : `Your mail app opened without attachments (only Apple Mail and Outlook get them). ${attach}`
+  }
 
   const openOne = useMutation({
     mutationFn: openDraft,
-    onSuccess: (result) => {
-      if (result?.route === 'mailto') toast.info(fallbackMessage(result.reason))
+    onSuccess: (result, recipient) => {
+      if (!result) return
+      if (result.route === 'mailto') toast.info(fallbackMessage(result.reason))
+      else if (result.route === 'native' && result.outcome === 'sent') toast.success(`Sent to ${recipient.fullName}`)
+      else if (result.route === 'native' && result.outcome === 'saved') toast.success(`Saved to Drafts for ${recipient.fullName}`)
+      else if (result.route === 'native' && result.outcome === 'failed') toast.error(`Mail could not send to ${recipient.fullName}`)
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
@@ -210,22 +232,37 @@ function DayPackWorkspace() {
   const openAll = useMutation({
     mutationFn: async () => {
       let withoutFiles = 0
+      let done = 0
       for (const person of built?.people ?? []) {
+        // Running again carries on with the people not sent (or shared, or saved) yet.
+        const previous = drafted.get(person.recipient.id)
+        if (previous === 'sent' || previous === 'saved' || previous === 'shared') continue
         const result = await openDraft(person.recipient)
         if (result?.route === 'mailto') {
           // A reason (e.g. Outlook automation not allowed) will fail the same way for everyone:
           // stop after the first so it can be fixed, rather than opening every draft without files.
-          if (result.reason) return { withoutFiles: withoutFiles + 1, stoppedFor: result.reason }
+          if (result.reason) return { done, withoutFiles: withoutFiles + 1, stoppedFor: result.reason }
           withoutFiles += 1
         }
+        // On iPad each draft waits for Send or Cancel; Cancel stops the run.
+        const cancelled =
+          (result?.route === 'native' && result.outcome === 'cancelled') ||
+          (result?.route === 'share' && !result.completed)
+        if (cancelled) return { done, withoutFiles, stoppedFor: `Stopped at ${person.recipient.fullName}` }
+        done += 1
         // Give the mail app a moment between windows.
         await new Promise((resolve) => setTimeout(resolve, 400))
       }
-      return { withoutFiles, stoppedFor: null }
+      return { done, withoutFiles, stoppedFor: null }
     },
-    onSuccess: ({ withoutFiles, stoppedFor }) => {
-      if (stoppedFor) toast.error(`${stoppedFor}. Stopped after the first draft.`)
-      else if (withoutFiles > 0) toast.info('Drafts opened without attachments: drag each person’s files in from their folder.')
+    onSuccess: ({ done, withoutFiles, stoppedFor }) => {
+      if (stoppedFor) {
+        toast.info(`${stoppedFor}. Open all drafts again to carry on with the people not done yet.`)
+      } else if (withoutFiles > 0) {
+        toast.info(fallbackMessage(null))
+      } else if (ios && done > 0) {
+        toast.success(`Done: ${done} ${done === 1 ? 'person' : 'people'}`)
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
@@ -264,7 +301,7 @@ function DayPackWorkspace() {
   const preview = firstDraft ? { to: firstChosen!.fullName, subject: firstDraft.subject, body: firstDraft.body } : null
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-touch-targets>
       <PageHeader
         title="Send Day Pack"
         description="Send each person called to a unit their own copy of the day's paperwork, with their name watermarked on every page, in an email draft you check and send."
@@ -375,7 +412,7 @@ function DayPackWorkspace() {
               onClearAll={() => setSelectedPeople(changeSelection(() => new Set()))}
               multiUnitDay={dayUnits.length > 1}
               unitName={pack.context.unitName}
-              opened={opened}
+              drafted={drafted}
               canOpen={preparedMatches && !busy}
               onOpenDraft={(r) => openOne.mutate(r)}
               disabled={busy}
@@ -396,21 +433,30 @@ function DayPackWorkspace() {
                 className="gap-1.5"
                 disabled={!preparedMatches || busy}
                 onClick={() =>
-                  (built?.people.length ?? 0) > OPEN_ALL_CONFIRM_THRESHOLD ? setConfirmOpenAll(true) : openAll.mutate()
+                  // On iPad drafts open one at a time and wait for you, so there is nothing to confirm.
+                  !ios && (built?.people.length ?? 0) > OPEN_ALL_CONFIRM_THRESHOLD
+                    ? setConfirmOpenAll(true)
+                    : openAll.mutate()
                 }
               >
                 <Mails className="size-4" aria-hidden />
                 {openAll.isPending ? 'Opening drafts…' : 'Open all drafts'}
               </Button>
-              <Button type="button" variant="ghost" className="gap-1.5" disabled={!built} onClick={() => void revealFolder()}>
-                <FolderOpen className="size-4" aria-hidden />
-                Reveal folder
-              </Button>
+              {!ios && (
+                <Button type="button" variant="ghost" className="gap-1.5" disabled={!built} onClick={() => void revealFolder()}>
+                  <FolderOpen className="size-4" aria-hidden />
+                  Reveal folder
+                </Button>
+              )}
             </div>
             <p className="text-xs text-muted-foreground" role="status">
               {progress ??
                 (preparedMatches
-                  ? `${built!.people.length} ${built!.people.length === 1 ? 'pack' : 'packs'} ready, ${built!.people[0]!.files.length} ${built!.people[0]!.files.length === 1 ? 'file' : 'files'} each. Drafts open in Apple Mail or Outlook with the files attached; check each one and press Send.`
+                  ? `${built!.people.length} ${built!.people.length === 1 ? 'pack' : 'packs'} ready, ${built!.people[0]!.files.length} ${built!.people[0]!.files.length === 1 ? 'file' : 'files'} each. ${
+                      ios
+                        ? 'Each draft opens in Mail with the files attached; press Send or Cancel to move on. Without a Mail account, the share sheet opens instead: choose your mail app, then paste the address (copied for you) into To.'
+                        : 'Drafts open in Apple Mail or Outlook with the files attached; check each one and press Send.'
+                    }`
                   : `${chosenSources.length} ${chosenSources.length === 1 ? 'document' : 'documents'} for ${chosenRecipients.length} ${chosenRecipients.length === 1 ? 'person' : 'people'}. Prepare the packs to open the email drafts.`)}
             </p>
           </div>

@@ -9,7 +9,7 @@ vi.mock('@tauri-apps/plugin-opener', () => ({
   revealItemInDir: (...a: unknown[]) => revealItemInDir(...a),
 }))
 
-import { buildMailtoUrl, openMailDraft } from '@/lib/day-pack/composeMail'
+import { buildMailtoUrl, openMailDraft, parseMailDraftOutcome } from '@/lib/day-pack/composeMail'
 
 const draft = {
   to: ['ada@example.com'],
@@ -40,8 +40,8 @@ describe('openMailDraft', () => {
   const args = { ...draft, attachmentPaths: ['/a/call-sheet.pdf'], folderPath: '/a' }
 
   it('uses the native compose window when it is available', async () => {
-    invoke.mockResolvedValue(undefined)
-    expect(await openMailDraft(args)).toEqual({ route: 'native' })
+    invoke.mockResolvedValue('opened')
+    expect(await openMailDraft(args)).toEqual({ route: 'native', outcome: 'opened' })
     expect(invoke).toHaveBeenCalledWith('compose_mail_draft', {
       to: draft.to,
       cc: draft.cc,
@@ -69,5 +69,18 @@ describe('openMailDraft', () => {
     invoke.mockRejectedValue('attachment outside the day-packs folder')
     await expect(openMailDraft(args)).rejects.toThrow(/outside/)
     expect(openUrl).not.toHaveBeenCalled()
+  })
+})
+
+describe('parseMailDraftOutcome', () => {
+  it('reads the iOS composer and share sheet outcomes', () => {
+    expect(parseMailDraftOutcome('sent')).toEqual({ route: 'native', outcome: 'sent' })
+    expect(parseMailDraftOutcome('cancelled')).toEqual({ route: 'native', outcome: 'cancelled' })
+    expect(parseMailDraftOutcome('share:completed')).toEqual({ route: 'share', completed: true })
+    expect(parseMailDraftOutcome('share:cancelled')).toEqual({ route: 'share', completed: false })
+  })
+
+  it('treats anything else as a draft opened in the mail app', () => {
+    expect(parseMailDraftOutcome(null)).toEqual({ route: 'native', outcome: 'opened' })
   })
 })

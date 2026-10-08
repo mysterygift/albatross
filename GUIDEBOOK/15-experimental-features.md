@@ -175,4 +175,11 @@ A pack can hold these documents:
 
 > **Tip** Ticking or unticking a document or a person after preparing means preparing again, so the files always match what you send.
 
+### On iPad
+
+- Tap **Open draft** or **Open all drafts**. If the Mail app has an account, an email opens inside Albatross with the address, subject, message and files filled in. Tap **Send** (or **Cancel**), and the next person's email opens. Each person's row then says **Sent**, **In Drafts** or **Shared**.
+- If Mail isn't set up (for example you only use Outlook), the share sheet opens instead with the files and message. Choose **Outlook** (or another mail app), then paste the address into **To**: Albatross copies it for you just before the share sheet opens.
+- Cancelling stops **Open all drafts**. Tap it again to carry on with the people not done yet.
+- There is no **Reveal folder** on iPad.
+
 **Next:** [Troubleshooting](16-troubleshooting.md)

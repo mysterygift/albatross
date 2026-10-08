@@ -9,7 +9,7 @@ Experimental: send everyone called to one shoot day + unit their own copy of the
 | Page/UI | [`src/features/day-pack/`](../../src/features/day-pack): `DayPackPage.tsx` (pickers, state, actions), `day-pack-cards.tsx` (documents, recipients, email cards) |
 | Logic | [`src/lib/day-pack/`](../../src/lib/day-pack): `loadDayPackSources.ts`, `loadDayPackRecipients.ts`, `buildDayPackFiles.ts`, `emailTemplate.ts`, `composeMail.ts` |
 | Reused | `loadScheduleExportSources` and the shooting schedule, shot list and storyboard builders ([schedule.md](schedule.md)); `renderShootDaySidesPdf` (`sidesExportService.ts`); `renderRiskAssessmentPdf` (`exportRiskAssessmentPdf.ts`); `getCallSheetCastRequirements`, `getCallSheetCrewRequirements`, `buildDayRecipients` (`src/lib/call-sheets/`); `applyRecipientNameWatermarkToPDF` |
-| Native email | [`src-tauri/src/mail_compose.rs`](../../src-tauri/src/mail_compose.rs): `compose_mail_draft` (macOS; `objc2-app-kit` for Apple Mail, `osascript` for Outlook). `src-tauri/Info.plist` (`NSAppleEventsUsageDescription`) and `src-tauri/Entitlements.plist` (`com.apple.security.automation.apple-events`, for the hardened runtime) let it drive Outlook |
+| Native email | [`src-tauri/src/mail_compose.rs`](../../src-tauri/src/mail_compose.rs): `compose_mail_draft` (macOS; `objc2-app-kit` for Apple Mail, `osascript` for Outlook). `src-tauri/Info.plist` (`NSAppleEventsUsageDescription`) and `src-tauri/Entitlements.plist` (`com.apple.security.automation.apple-events`, for the hardened runtime) let it drive Outlook. iPad/iPhone: [`mail_compose_ios.rs`](../../src-tauri/src/mail_compose_ios.rs) (MessageUI composer or share sheet, `objc2` + `block2`) |
 | Queries | `getLatestScheduleChangeForDayUnit` (`repositories/schedule-changes.ts`) |
 | Tests | `src/lib/day-pack/*.test.ts` (`dayPack.integration.test.ts` runs on sql.js) |
 
@@ -42,6 +42,14 @@ No tables of its own. The custom subject and body are settings `day_pack_email_s
 | Anything else, or not macOS | Falls back |
 
 The share service cannot be used for every app: for apps other than Mail it passes on only the recipients and subject. A fallback is an error `unsupported` or `unsupported: <reason>`; the front end then opens a `mailto:` draft (RFC 6068, CRLF line breaks) with the body and reveals the person's folder, because `mailto:` cannot attach files. **Open all drafts** stops after the first fallback that has a reason, since it would fail the same way for everyone. Nothing is ever sent by the app.
+
+**iPad and iPhone** (`mail_compose_ios.rs`). `compose_mail_draft` presents over the webview's view controller and resolves only when the user is done, so drafts go one at a time:
+
+- `MFMailComposeViewController.canSendMail` (a Mail account is set up): the in-app composer with To, CC, subject, plain-text body and the PDFs (`addAttachmentData:mimeType:fileName:`). A delegate (`AlbatrossMailComposeDelegate`, kept for the app's lifetime because the composer holds it weakly) dismisses it and reports `sent`, `saved`, `cancelled` or `failed`. The user sends from inside Albatross.
+- No Mail account (e.g. Outlook only): the share sheet (`UIActivityViewController`) with the body text, the PDFs and the `subject` key, anchored as a popover on iPad. It cannot fill in recipients, so the To addresses are put on the clipboard first; picking Outlook there starts a draft with the attachments. Reports `share:completed` or `share:cancelled`.
+- A sheet already on screen is refused ("Another draft is still open").
+
+The front end (`parseMailDraftOutcome`) marks each person **Sent**, **In Drafts** or **Shared**. **Open all drafts** skips people already done and stops when one is cancelled, so running it again carries on. There is no **Reveal folder** on iOS, and no confirmation before opening many drafts.
 
 **Page.** Shoot day (defaults to the next one after today) and unit (rank order) are URL params `day` and `unit`. Changing the ticked documents or people discards a prepared pack. **Open all drafts** asks first above 10 drafts and opens them one by one. Missing and stale documents link to Call Sheets / Movement Orders (which read `?day=&unit=`), the Calendar (Sides Builder) or Risk Assessments.
 
