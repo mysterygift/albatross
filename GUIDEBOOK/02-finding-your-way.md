@@ -32,7 +32,7 @@ The sidebar is grouped by stage of work:
 - Select a page to open it. Select the arrow beside **Schedule**, **Script**, **People** or **Budget** to expand or collapse its sub-pages. Albatross remembers which groups you left open.
 - Hide or show the whole sidebar with the button at the left of the top bar, or with ⌘B (Ctrl+B).
 - Hover over a page to see its keyboard shortcut.
-- Experimental pages (Script Supervisor, Overtime) are hidden by default. See [Experimental features](15-experimental-features.md).
+- Experimental pages (Script Supervisor, Overtime, Receipt Capture) are hidden by default. See [Experimental features](15-experimental-features.md).
 
 ### Top bar
 
@@ -141,5 +141,17 @@ Albatross has eight looks: **Albatross Mint** (the default), **Bold**, **Yuzu**,
 2. Select a theme tile. It applies immediately.
 
 ![Appearance settings with theme tiles](images/02-themes.png)
+
+## iPad and iPhone
+
+The iPad and iPhone app has the same pages and data as the desktop app. These things differ:
+
+- **App menu.** There is no menu bar, so the menu button at the right of the top bar holds what the File menu and the current area's menu hold on a computer: **New production**, **Import production**, **Export production**, the commands for the page you are on (for example **Add cast member** on People), **Settings**, **Keyboard shortcuts** and **Log out**. The keyboard icon is not shown in the top bar.
+- **Sidebar.** Swipe right from the left edge of the screen to open the sidebar and swipe left on it to close it. On a narrow screen it opens over the page.
+- **Drag and drop.** Press and hold a strip, booking or list item for a moment before dragging it. A quick swipe scrolls the page instead.
+- **Controls.** Buttons that only appear when you hover are always visible, and menus and lists have larger tap targets.
+- **Saving and opening files.** Exports (PDFs, CSV files and `.apf` production files) are saved in Albatross's folder in the Files app, under **On My iPad › Albatross › Exports**, and the share sheet opens so you can preview, save elsewhere, AirDrop or email the file. Opening a stored document also opens the share sheet. To import a production, open an `.apf` file from Files, Mail or AirDrop and choose Albatross, or use **Import production** in the app menu.
+- **Script Breakdown.** Press and hold a word in the script, drag the handles over the words, then pick a category.
+- **Script Supervisor** always uses its tablet layout. See [Experimental features](15-experimental-features.md).
 
 **Next:** [Productions](03-productions.md)

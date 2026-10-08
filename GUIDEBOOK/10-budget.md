@@ -90,6 +90,8 @@ With any rule active, the Budget tab shows a **Derived (budget overlays)** block
 
 Switching type after you have started a form asks **Change transaction type?**; the form is discarded only if you click **Continue**. Open Allows are counted on the cost report and in **Examine account** so you can see what is still provisional.
 
+To log a petty-cash purchase from a photographed receipt, use the experimental **Receipt Capture** page; see [Experimental features](15-experimental-features.md#receipt-capture).
+
 ### PO & documents
 
 This optional section sits under the type selector.

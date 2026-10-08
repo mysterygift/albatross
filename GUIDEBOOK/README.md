@@ -1,6 +1,6 @@
 # The Albatross Guidebook
 
-A step-by-step guide to running a production in Albatross, written for the desktop app. The iPad app works the same way.
+A step-by-step guide to running a production in Albatross, written for the desktop app. The iPad and iPhone app has the same pages; what differs is listed in [Finding your way](02-finding-your-way.md#ipad-and-iphone).
 
 New here? Read chapters 1 and 2, then jump to whichever area you need. The chapters follow the order a production usually unfolds.
 
@@ -22,7 +22,7 @@ New here? Read chapters 1 and 2, then jump to whichever area you need. The chapt
 | 12 | [Documents, Deliverables and Music & Archive](12-documents-deliverables-music.md) | Store files, track deliverables, clear music |
 | 13 | [Tasks and Wrap Production](13-tasks-and-wrap.md) | Track to-dos and close a production out |
 | 14 | [Settings and admin](14-settings-and-admin.md) | Configure currency, themes, users, access and servers |
-| 15 | [Experimental features](15-experimental-features.md) | Try Script Supervisor and Overtime |
+| 15 | [Experimental features](15-experimental-features.md) | Try Script Supervisor, Overtime and Receipt Capture |
 | 16 | [Troubleshooting](16-troubleshooting.md) | Fix common problems and find your data |
 
 ## Conventions

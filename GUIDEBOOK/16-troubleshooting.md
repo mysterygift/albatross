@@ -10,7 +10,7 @@ Release builds are not code-signed yet, so macOS and Windows warn you the first 
 
 ### A feature I expect is missing
 
-Script Supervisor and Overtime are hidden until you turn them on. See [Experimental features](15-experimental-features.md).
+Script Supervisor, Overtime and Receipt Capture are hidden until you turn them on. See [Experimental features](15-experimental-features.md).
 
 ## Where is my data?
 
@@ -23,6 +23,8 @@ Everything lives in one folder on your computer:
 | Linux | `~/.config/Albatross/` |
 
 It holds the encrypted database (`albatross.db`), the small key files that sit beside it, and your attachments. Nothing is stored in the cloud.
+
+On iPad and iPhone the data is inside the app and cannot be browsed. Files you export are saved in the Files app under **On My iPad › Albatross › Exports**.
 
 > **Tip** To open it on macOS, choose **Go → Go to Folder...** in Finder and paste the path. On Windows, paste `%APPDATA%\Albatross` into the File Explorer address bar.
 
@@ -56,7 +58,8 @@ Double-clicking an `.apf` file should open Albatross. If it doesn't:
 
 - macOS: right-click the file, choose **Open With → Albatross**, and tick **Always Open With** if offered.
 - Windows: right-click the file, choose **Open with → Choose another app**, pick Albatross and tick **Always use this app**.
-- Any platform: open Albatross and use **Productions → Import project**, or **File → Import Production...**.
+- iPad and iPhone: open the file from Files, Mail or AirDrop and choose Albatross. Albatross imports it once you have signed in.
+- Any platform: open Albatross and use **Productions → Import project**, or **File → Import Production...** (the **Import production** item in the app menu on iPad and iPhone).
 
 If an import fails, Albatross shows a message saying why. Try exporting the file again from the source machine.
 
