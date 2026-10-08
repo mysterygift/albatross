@@ -43,9 +43,11 @@ libsqlite3-sys = { version = "0.30.1", features = ["bundled-sqlcipher-vendored-o
 [target.'cfg(target_os = "ios")'.dependencies]
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher"] }
 libsqlite3-sys = { version = "0.30.1", features = ["bundled-sqlcipher"] }
-# Security-scoped access to `.apf` files opened from the Files app (src/apf_ios.rs).
+# Security-scoped access to `.apf` files opened from the Files app (src/apf_ios.rs), and day pack
+# email drafts (src/mail_compose_ios.rs: MessageUI composer, share sheet).
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSString", "NSURL"] }
+block2 = "0.6"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"

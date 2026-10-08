@@ -7,12 +7,17 @@
 //!   let Albatross control Outlook. The sharing service is no use here: it hands other apps only the
 //!   recipients and subject.
 //!
+//! On iPad and iPhone see `mail_compose_ios`: the in-app mail composer, or the share sheet.
+//!
 //! Any other app, other platforms, or a route that fails return an error starting with
 //! "unsupported" (with the reason after a colon); the front end then opens a `mailto:` draft.
+//! Success returns how the draft ended: `opened` on macOS (the user sends from their mail app),
+//! or the iOS outcome.
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 /// Error prefix the front end treats as "use the mailto fallback".
+#[cfg_attr(target_os = "ios", allow(dead_code))]
 pub const UNSUPPORTED: &str = "unsupported";
 
 #[cfg(target_os = "macos")]
@@ -186,7 +191,12 @@ pub async fn compose_mail_draft(
     subject: String,
     body: String,
     attachments: Vec<String>,
-) -> Result<(), String> {
+) -> Result<String, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let attachments = validated_attachment_paths(&app, &attachments)?;
+        crate::mail_compose_ios::compose(app, to, cc, subject, body, attachments).await
+    }
     #[cfg(target_os = "macos")]
     {
         let attachments = validated_attachment_paths(&app, &attachments)?;
@@ -203,17 +213,21 @@ pub async fn compose_mail_draft(
                         .map_err(|_| "Mail did not respond".to_string())?
                 })
                 .await
-                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())??;
+                Ok("opened".to_string())
             }
-            Some(OUTLOOK) => tauri::async_runtime::spawn_blocking(move || {
-                compose_in_outlook(to, cc, subject, body, attachments)
-            })
-            .await
-            .map_err(|e| e.to_string())?,
+            Some(OUTLOOK) => {
+                tauri::async_runtime::spawn_blocking(move || {
+                    compose_in_outlook(to, cc, subject, body, attachments)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok("opened".to_string())
+            }
             _ => Err(UNSUPPORTED.to_string()),
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     {
         let _ = (&app, to, cc, subject, body);
         let _ = validated_attachment_paths;

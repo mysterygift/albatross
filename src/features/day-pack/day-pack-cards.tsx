@@ -18,6 +18,14 @@ import {
 import type { DayPackRecipient } from '@/lib/day-pack/loadDayPackRecipients'
 import { cn } from '@/lib/utils'
 
+const DRAFT_LABEL: Record<'none' | 'opened' | 'sent' | 'saved' | 'shared', string> = {
+  none: 'Open draft',
+  opened: 'Opened',
+  sent: 'Sent',
+  saved: 'In Drafts',
+  shared: 'Shared',
+}
+
 const STATUS_LABEL: Record<DayPackDocStatus, string> = {
   ready: 'Ready',
   stale: 'Check',
@@ -124,7 +132,7 @@ export function DayPackRecipientsCard({
   onClearAll,
   multiUnitDay,
   unitName,
-  opened,
+  drafted,
   canOpen,
   onOpenDraft,
   disabled,
@@ -136,7 +144,8 @@ export function DayPackRecipientsCard({
   onClearAll: () => void
   multiUnitDay: boolean
   unitName: string
-  opened: ReadonlySet<string>
+  /** How each person's draft went: opened in the mail app, or sent, saved or shared on iPad. */
+  drafted: ReadonlyMap<string, 'opened' | 'sent' | 'saved' | 'shared'>
   /** True once packs are prepared for the current selection. */
   canOpen: boolean
   onOpenDraft: (recipient: DayPackRecipient) => void
@@ -213,14 +222,14 @@ export function DayPackRecipientsCard({
                   ) : (
                     <Button
                       type="button"
-                      variant={opened.has(r.id) ? 'ghost' : 'outline'}
+                      variant={drafted.has(r.id) ? 'ghost' : 'outline'}
                       size="xs"
                       className="gap-1"
                       disabled={!canOpen || !selected.has(r.id)}
                       onClick={() => onOpenDraft(r)}
                     >
-                      {opened.has(r.id) ? <Check className="size-3.5" aria-hidden /> : <Mail className="size-3.5" aria-hidden />}
-                      {opened.has(r.id) ? 'Opened' : 'Open draft'}
+                      {drafted.has(r.id) ? <Check className="size-3.5" aria-hidden /> : <Mail className="size-3.5" aria-hidden />}
+                      {DRAFT_LABEL[drafted.get(r.id) ?? 'none']}
                     </Button>
                   )}
                 </li>

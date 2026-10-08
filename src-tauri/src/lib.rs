@@ -3,6 +3,8 @@ mod apf_desktop;
 mod apf_ios;
 mod db_encryption;
 mod mail_compose;
+#[cfg(target_os = "ios")]
+mod mail_compose_ios;
 mod open_route_service;
 mod sqlite_load;
 mod sqlite_paths;
