@@ -16,6 +16,7 @@ import {
   Megaphone,
   Route,
   ShieldAlert,
+  BookOpen,
 } from 'lucide-react'
 
 /**
@@ -135,7 +136,10 @@ export const navGroups: NavGroup[] = [
   {
     id: 'settings',
     label: 'Settings',
-    items: [{ to: '/settings', label: 'Settings', icon: Settings }],
+    items: [
+      { to: '/settings', label: 'Settings', icon: Settings },
+      { to: '/guidebook', label: 'Guidebook', icon: BookOpen },
+    ],
   },
 ]
 
