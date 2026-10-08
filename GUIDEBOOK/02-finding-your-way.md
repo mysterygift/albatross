@@ -32,7 +32,7 @@ The sidebar is grouped by stage of work:
 - Select a page to open it. Select the arrow beside **Schedule**, **Script**, **People** or **Budget** to expand or collapse its sub-pages. Albatross remembers which groups you left open.
 - Hide or show the whole sidebar with the button at the left of the top bar, or with ⌘B (Ctrl+B).
 - Hover over a page to see its keyboard shortcut.
-- Experimental pages (Script Supervisor, Overtime) are hidden by default. See [Experimental features](15-experimental-features.md).
+- Experimental pages (Script Supervisor, Overtime, Receipt Capture) are hidden by default. See [Experimental features](15-experimental-features.md).
 
 ### Top bar
 
@@ -141,5 +141,37 @@ Albatross has eight looks: **Albatross Mint** (the default), **Bold**, **Yuzu**,
 2. Select a theme tile. It applies immediately.
 
 ![Appearance settings with theme tiles](images/02-themes.png)
+
+## On iPhone
+
+The iPhone app has the same pages and does the same things. Only the layout and a few file steps differ.
+
+### Moving around
+
+- **Tab bar.** On a narrow screen a bar along the bottom has **More**, **Home**, **Schedule**, **People** and **Tasks**. **More** opens the full sidebar, with every page in the lists above. Each tab returns you to the last page you had open under it; select the current tab again to go to its first page, and once more to scroll to the top. The bar slides away while you type or a dialog is open.
+- **Sidebar.** It starts hidden. Swipe right from the left edge of the screen to open it, or swipe left on it to close it. It also closes when you choose a page.
+- **Top bar.** The keyboard shortcut hints and the keyboard button are not shown. The **App menu** button (three lines, at the right) holds what the desktop menu bar offers: **New production**, **Import production**, **Export production**, commands for the page you are on, **Settings**, **Keyboard shortcuts** and **Log out**.
+- **Dashboard.** Large shortcuts sit at the top: **Call sheet**, **Stripboard**, **Movement order** and **Crew contacts**, plus **Script supervisor** and **Log a receipt** when [experimental features](15-experimental-features.md) are on.
+- **Dragging.** Touch and hold an item for a moment, then drag. A quick swipe scrolls the page instead.
+
+### Pages that look different
+
+| Page | On iPhone |
+|---|---|
+| **Schedule → Calendar** | A compact month grid with a dot for each unit shooting. Select a date to jump to it in the list of shoot days below, or drag a card onto a date to move it. |
+| **Schedule → Stripboard** | **Unscheduled** starts closed, and opening it or the boneyard closes the other. |
+| **Script → Script Sections** | A **Sections** and **Script** switch replaces the two side-by-side panes. In **New section** and **Edit section**, tap the first line of the range, then the last, and use **−** and **+** to nudge either end. |
+| **Link script sections** (from a shot's **Sections** button in **Schedule → Shot Lists**) | The same **Sections** and **Script** switch. Tap a line in the script to link or unlink its section. |
+| **Script → Script Breakdown** | A scene picker with previous and next buttons replaces the scene list. Press and hold a word, drag the handles over the text, then pick a category from the panel at the bottom of the screen. |
+| **Script → Script Supervisor** | Always uses the large-button tablet layout. |
+| **People → Overtime** | Each crew member is a card, and the filter is a menu. |
+
+### Files
+
+iOS has no save dialog or folder picker. When you export something (a production file, a PDF, a CSV), Albatross saves it in the **Exports** folder of its own Files area, **On My iPhone → Albatross → Exports**, and opens the share sheet so you can preview it, save it elsewhere, AirDrop it or send it by email. **Distribute Call Sheets** and **Distribute Movement Orders** put all the personalised copies in one zip and share that. Opening a file from **Documents** opens the share sheet as well.
+
+To open a production file, choose **Albatross** for an `.apf` in Files, Mail or AirDrop. Albatross asks you to sign in if needed, then imports it. Your productions themselves stay inside the app and do not appear in Files, so keep backups with **Export project**.
+
+The first time you photograph a receipt or continuity photo, iOS asks for permission to use the camera.
 
 **Next:** [Productions](03-productions.md)

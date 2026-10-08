@@ -1,6 +1,6 @@
 # 15. Experimental features
 
-Experimental features are on-set tools that are still being tested. They are hidden by default so they don't clutter the app. Switch them on when you want to try them. Currently these are **Script Supervisor** and **Overtime**.
+Experimental features are on-set tools that are still being tested. They are hidden by default so they don't clutter the app. Switch them on when you want to try them. Currently these are **Script Supervisor**, **Overtime** and **Receipt Capture**.
 
 ## Turn them on
 
@@ -9,9 +9,9 @@ Experimental features are on-set tools that are still being tested. They are hid
 
 ![Experimental features card in Settings → Developer](images/15-experimental-toggle.png)
 
-**Script Supervisor** now appears under **Script** in the sidebar and **Overtime** under **People**, each marked with a flask icon and an **Experimental** badge. They also appear in search. Untick the box to hide them again. Nothing you have recorded is deleted.
+**Script Supervisor** now appears under **Script** in the sidebar, **Overtime** under **People** and **Receipt Capture** under **Budget**, each marked with a flask icon and an **Experimental** badge. They also appear in search. Untick the box to hide them again. Nothing you have recorded is deleted.
 
-> **Note** Experimental features may change between releases. They store their data on this computer only, so they are not available for a production opened from a collaboration server.
+> **Note** Experimental features may change between releases. Script Supervisor and Overtime store their data on this computer only, so they are not available for a production opened from a collaboration server.
 
 ## Script Supervisor
 
@@ -32,7 +32,7 @@ The choice locks as soon as any slate exists, so a shoot never mixes systems.
 
 ### The screen
 
-The header has the **Shoot day** picker, a **Line & log / Review** mode switch, a **Tablet layout** button (bigger touch targets, remembered on this device) and **New slate**. In **Line & log**:
+The header has the **Shoot day** picker, a **Line & log / Review** mode switch, a **Tablet layout** button (bigger touch targets, remembered on this device; not shown on iPhone, which always uses that layout) and **New slate**. In **Line & log**:
 
 - Left: the day's scenes from the stripboard, each with a status marker. Use **Another scene...** for a scene that isn't scheduled that day.
 - Middle: switch between **Slates** (the day's slates) and **Script** (the marked-up scene).
@@ -131,5 +131,17 @@ Click **Overtime rule** to set the rule for this production.
 Click **Save rule**.
 
 > **Note** Overtime is an estimate only. It covers crew, not cast, and does not create expenses in the budget.
+
+## Receipt Capture
+
+Receipt Capture logs a purchase from a photo of the receipt, so spend is recorded on the spot. It is made for a phone: on iPhone **Take photo** opens the camera. Open **Budget → Receipt Capture**, or select **Log a receipt** on the iPhone Dashboard.
+
+1. Select **Take photo**, or **Choose photo or PDF** for a file you already have. Use **Retake** or **Remove** to change it.
+2. Enter the **Total**, check the **Date on receipt** (today by default) and say **What was bought**.
+3. Under **Paid from**, leave **Not from a float** or pick a petty cash float. Picking a float selects its budget line and shows what is left on it, or by how much the spend overruns it.
+4. Choose the **Budget line**. Optionally set the **Vendor**, the **Receipt number** and **Notes**. **VAT rate (%)** appears when VAT tracking is on for the production, filled with its default rate.
+5. Select **Save spend**. Albatross saves the purchase on that budget line with the photo as its receipt. **Clear** starts again.
+
+If the float cannot be matched, the spend and receipt are still saved and a message tells you to match it from the float in [Budget](10-budget.md). **Spend dated today** at the bottom lists today's spend, each marked **Receipt** or **No receipt**. Large photos are scaled down to save space; PDFs and small images are kept as they are.
 
 **Next:** [Troubleshooting](16-troubleshooting.md)

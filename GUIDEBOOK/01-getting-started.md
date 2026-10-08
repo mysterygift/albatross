@@ -28,7 +28,7 @@ The first launch shows the setup wizard. It runs once per computer.
 
 > **Important** The recovery key is shown once and is never shown again. If you forget your password and have lost the key, your data cannot be recovered. There is no cloud or support reset.
 
-If setup is interrupted, relaunch Albatross and it resumes from the last step. If it reports **Setup can't continue automatically**, select **Try again**. If that does not clear it, see [Troubleshooting](16-troubleshooting.md).
+If setup is interrupted, relaunch Albatross and it resumes from the last step. If it stopped before the database encryption finished, setup starts again from the **Welcome to Albatross** screen. If it reports **Setup can't continue automatically**, select **Try again**. If that does not clear it, see [Troubleshooting](16-troubleshooting.md).
 
 ## Sign in
 

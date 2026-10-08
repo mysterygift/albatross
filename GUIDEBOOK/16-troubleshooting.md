@@ -10,7 +10,7 @@ Release builds are not code-signed yet, so macOS and Windows warn you the first 
 
 ### A feature I expect is missing
 
-Script Supervisor and Overtime are hidden until you turn them on. See [Experimental features](15-experimental-features.md).
+Script Supervisor, Overtime and Receipt Capture are hidden until you turn them on. See [Experimental features](15-experimental-features.md).
 
 ## Where is my data?
 
