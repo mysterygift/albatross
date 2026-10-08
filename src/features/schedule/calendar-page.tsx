@@ -515,6 +515,7 @@ function ShootDayBlock({
       <div
         ref={setNodeRef}
         {...listeners}
+        data-slot="calendar-day-handle"
         className="flex items-center gap-1 rounded px-0.5 text-[11px] font-medium text-muted-foreground cursor-grab active:cursor-grabbing select-none hover:text-foreground [-webkit-touch-callout:none]"
         title="Drag to move the whole shoot day"
         aria-label={`${label}: drag to move the whole shoot day`}
@@ -994,7 +995,7 @@ function DaySummaryDrawer({
 
         <div className="flex-1 overflow-y-auto px-7 py-4">
           <div className="space-y-4">
-            <div className="rounded-lg border border-border/60 p-3" data-slot="calendar-unit-controls">
+            <div className="rounded-lg border border-border/60 p-3" data-slot="calendar-unit-controls" data-touch-targets>
               <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
                 Unit
               </p>
@@ -2280,7 +2281,7 @@ export function ScheduleCalendarPage() {
       </Dialog>
 
       <Dialog open={!!emptySourceModal} onOpenChange={(open) => !open && setEmptySourceModal(null)}>
-        <DialogContent showCloseButton={false}>
+        <DialogContent showCloseButton={false} data-touch-targets>
           <DialogHeader>
             <DialogTitle>
               Move {emptySourceModal?.unitName ?? 'unit'} to{' '}
