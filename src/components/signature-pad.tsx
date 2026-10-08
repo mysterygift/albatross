@@ -180,7 +180,11 @@ export function SignaturePad({ ref, label, onChange, disabled, className }: Sign
     }
     e.preventDefault()
     if (pointerType === 'pen') penSeenRef.current = true
-    e.currentTarget.setPointerCapture(e.pointerId)
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      // The pointer already ended (or is synthetic); drawing still works without capture.
+    }
     const stroke: Stroke = { pointerType, points: [pointFrom(e, e.pointerType)] }
     strokesRef.current = [...strokesRef.current, stroke]
     activeRef.current = { pointerId: e.pointerId, stroke }
