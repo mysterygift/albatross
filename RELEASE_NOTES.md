@@ -9,7 +9,8 @@ Offline-first. Your data stays on your machine. Here's what's new.
 - 🦺 **Risk Assessments (RAMS)** – new under Plan, with built-in hazard templates (Masterclass, Red Wall, drone flying).
 - 🗺️ **Movement orders** – reworked layout, plus route maps with pins that export to PDF. Map tile settings now live in Settings.
 - 📋 **Call sheets** – industry-standard A4 layout.
-- 📅 **Calendar** – brand new look.
+- 📅 **Calendar** – brand new look. Drag a whole shoot day, or just one unit, by mouse or touch (press and hold, then drag). Drop a unit on another unit to swap Main/Second.
+- 🎥 **Up to five units a day** – Main, Second, Third, Fourth and Fifth Unit. **Add Second Unit** on the Stripboard is now **Add unit**.
 - 🎓 **New tutorial system** – with a starter budget to play with.
 - 🎨 **UI themes** – pick the look you like.
 - 📊 **Wider stripboard** – more room to work.

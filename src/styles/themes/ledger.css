@@ -47,6 +47,12 @@
   --unit-main-foreground: #f4efe6;
   --unit-second: #8e1b14;
   --unit-second-foreground: #f4efe6;
+  --unit-third: #3c5a4a;
+  --unit-third-foreground: #f4efe6;
+  --unit-fourth: #b8862b;
+  --unit-fourth-foreground: #1a1a18;
+  --unit-fifth: #2f4a7a;
+  --unit-fifth-foreground: #f4efe6;
 
   /* Shape and emphasis */
   --ui-border-w: 1px;
