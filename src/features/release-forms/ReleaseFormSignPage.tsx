@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowLeft, Clock, PenLine } from 'lucide-react'
+import { ArrowLeft, Clock, PenLine } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { RequireProduction } from '@/components/require-production'
 import { SignaturePad, type SignaturePadHandle } from '@/components/signature-pad'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -15,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/sonner'
 import { useCurrentProduction } from '@/features/productions/context'
+import { CompanyNamePrompt } from '@/features/release-forms/CompanyNamePrompt'
 import { saveReleaseCopy } from '@/features/release-forms/exportReleasePdf'
 import { useReleaseFormSettings } from '@/features/release-forms/useReleaseFormSettings'
 import { documentsQueryKey } from '@/lib/documents/persistDocument'
@@ -98,6 +98,15 @@ export function ReleaseFormSignPage() {
         <div className="mx-auto max-w-3xl space-y-4">
           <Skeleton className="h-10 w-72" />
           <Skeleton className="h-96 w-full" />
+        </div>
+      ) : !settings.companyName ? (
+        <div className="mx-auto max-w-xl space-y-6">
+          <PageHeader title={RELEASE_FORM_TITLES[formType]} />
+          <Card>
+            <CardContent>
+              <CompanyNamePrompt settings={settings} />
+            </CardContent>
+          </Card>
         </div>
       ) : (
         <ReleaseFormSigner
@@ -248,16 +257,6 @@ function ReleaseFormSigner({
           </Button>
         }
       />
-
-      {!snapshot.companyName && (
-        <Alert>
-          <AlertTriangle />
-          <AlertDescription>
-            No production company is set, so the terms show a blank line in its place. Set it with Edit terms on the
-            Release Forms page.
-          </AlertDescription>
-        </Alert>
-      )}
 
       <Card>
         <CardHeader>

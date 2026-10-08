@@ -47,8 +47,12 @@ export async function getReleaseFormSettings(): Promise<ReleaseFormSettings> {
   }
 }
 
-/** Saves all settings; terms identical to the standard text are stored empty so they track it. */
+/**
+ * Saves all settings; terms identical to the standard text are stored empty so they track it. The
+ * production company is required: the terms grant their rights to it.
+ */
 export async function saveReleaseFormSettings(settings: ReleaseFormSettings): Promise<void> {
+  if (!settings.companyName.trim()) throw new Error('Enter your production company.')
   const termsValue = (key: keyof typeof STANDARD_RELEASE_TERMS) => {
     const value = settings[key].trim()
     return value === STANDARD_RELEASE_TERMS[key] ? '' : value
