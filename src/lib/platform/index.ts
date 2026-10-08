@@ -43,12 +43,21 @@ export function applyPlatformAttribute(root: HTMLElement = document.documentElem
 /** Below Tailwind's `md` breakpoint: iPhone portrait, where side-by-side panels don't fit. */
 export const PHONE_MAX_WIDTH = 767
 
+/** Shorter than any tablet held in landscape: an iPhone on its side. */
+export const PHONE_MAX_HEIGHT = 500
+
 /**
- * True when the viewport is phone-sized: narrower than `md` (iPhone portrait) or shorter than a
- * tablet in landscape (iPhone landscape). Read once for initial state; layouts that must follow
- * rotation should use `useIsPhone` instead.
+ * The one definition of a phone-sized viewport, shared by the tab bar, the sidebar's sheet mode and
+ * the page layouts: narrower than `md` (iPhone portrait) or short (iPhone landscape, even on the
+ * widest models). The CSS in `styles/platform-mobile.css` repeats these numbers in its media queries.
+ */
+export const PHONE_VIEWPORT_QUERY = `(max-width: ${PHONE_MAX_WIDTH}px), (max-height: ${PHONE_MAX_HEIGHT}px)`
+
+/**
+ * True when the viewport is phone-sized (see `PHONE_VIEWPORT_QUERY`). Read once for initial state;
+ * anything that must follow rotation should use `useIsPhone` instead.
  */
 export function isPhoneViewport(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
-  return window.matchMedia(`(max-width: ${PHONE_MAX_WIDTH}px), (max-height: 500px)`).matches
+  return window.matchMedia(PHONE_VIEWPORT_QUERY).matches
 }

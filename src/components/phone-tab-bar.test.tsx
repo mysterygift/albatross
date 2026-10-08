@@ -6,11 +6,11 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { PhoneTabBar } from '@/components/phone-tab-bar'
 
 const sidebar = vi.hoisted(() => ({ openMobile: false, setOpenMobile: vi.fn() }))
-const platform = vi.hoisted(() => ({ mobile: true, phoneWidth: true }))
+const platform = vi.hoisted(() => ({ mobile: true, phone: true }))
 
 vi.mock('@/components/ui/sidebar', () => ({ useSidebar: () => sidebar }))
 vi.mock('@/lib/platform', () => ({ isMobilePlatform: () => platform.mobile }))
-vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => platform.phoneWidth }))
+vi.mock('@/hooks/use-is-phone', () => ({ useIsPhone: () => platform.phone }))
 
 function CurrentPath() {
   const { pathname } = useLocation()
@@ -37,7 +37,7 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   platform.mobile = true
-  platform.phoneWidth = true
+  platform.phone = true
   sidebar.openMobile = false
   sidebar.setOpenMobile.mockClear()
 })
@@ -48,13 +48,13 @@ afterEach(() => {
 })
 
 describe('PhoneTabBar', () => {
-  it('shows only on a phone-width mobile screen', () => {
-    platform.phoneWidth = false
+  it('shows only on a phone-sized mobile screen', () => {
+    platform.phone = false
     renderAt('/')
     expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull()
     cleanup()
 
-    platform.phoneWidth = true
+    platform.phone = true
     platform.mobile = false
     renderAt('/')
     expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull()

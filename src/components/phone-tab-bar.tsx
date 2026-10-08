@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { Calendar, CheckSquare, LayoutDashboard, Menu, Users, type LucideIcon } from 'lucide-react'
 
 import { useSidebar } from '@/components/ui/sidebar'
-import { useIsMobile } from '@/hooks/use-mobile'
+import { useIsPhone } from '@/hooks/use-is-phone'
 import { isMobilePlatform } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 
@@ -35,14 +35,14 @@ function isTextEntry(el: Element | null): boolean {
 }
 
 /**
- * iPhone (portrait) navigation: More at the bottom left, which shows and hides the full sidebar, then the
+ * iPhone navigation (portrait or landscape; the same phone rule as the page layouts): More at the bottom left, which shows and hides the full sidebar, then the
  * four places used most on the go within thumb reach. Each tab remembers the last page visited under it,
  * like an iOS tab bar. It slides away while the keyboard is up so it doesn't sit on top of the field
  * being typed into.
  */
 export function PhoneTabBar() {
-  const isPhoneWidth = useIsMobile()
-  const show = isPhoneWidth && isMobilePlatform()
+  const isPhone = useIsPhone()
+  const show = isPhone && isMobilePlatform()
   const { pathname, search } = useLocation()
   const navigate = useNavigate()
   const { openMobile, setOpenMobile } = useSidebar()
@@ -99,7 +99,7 @@ export function PhoneTabBar() {
       data-hidden={typing || undefined}
       aria-hidden={typing || undefined}
       inert={typing || undefined}
-      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[60] border-t border-border bg-background/95 pb-[var(--safe-bottom)] backdrop-blur"
+      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[60] border-t border-border bg-background/95 pb-[var(--safe-bottom)] pl-[var(--safe-left)] pr-[var(--safe-right)] backdrop-blur"
     >
       <ul className="flex h-14 items-stretch">
         {/* More sits bottom left, under the sidebar it slides out, and toggles it. Edge swipes still work too. */}

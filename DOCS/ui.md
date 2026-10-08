@@ -68,8 +68,8 @@ The iPhone build ([contributing.md](contributing.md#iphone-build)) uses the same
 
 | Piece | Where |
 |---|---|
-| Platform checks: `isIosPlatform`, `isMobilePlatform`, `hasNativeMenuBar`, `isPhoneViewport` (width up to 767 px, or height up to 500 px for a phone on its side); `applyPlatformAttribute` sets `<html data-platform>` | `src/lib/platform/index.ts` |
-| Viewport hooks: `useIsPhone` (width or height, follows rotation), `usePhoneWidth` (portrait width only); the shadcn sidebar uses `useIsMobile` (under 768 px) | `src/hooks/use-is-phone.ts`, `src/hooks/use-mobile.ts` |
+| Platform checks: `isIosPlatform`, `isMobilePlatform`, `hasNativeMenuBar`, `isPhoneViewport` (width up to 767 px, or height up to 500 px for a phone on its side; both come from `PHONE_VIEWPORT_QUERY`); `applyPlatformAttribute` sets `<html data-platform>` | `src/lib/platform/index.ts` |
+| Viewport hooks: `useIsPhone` (width or height, follows rotation) is the single phone switch: the tab bar, the shadcn sidebar's sheet mode and the page layouts all use it, so a phone on its side gets the tab bar too. `usePhoneWidth` (width only) is for how a dialog or toolbar wraps | `src/hooks/use-is-phone.ts` |
 | Safe areas (`--safe-top` etc., with `viewport-fit=cover` in `index.html`), no-hover controls, 44 pt menu rows and 40 pt buttons, inputs and selects on coarse pointers, 16 px field text so iOS does not zoom, full-screen sheets, dialog scrolling, page-sheet dialogs (`data-phone-sheet`), `data-touch-targets` pages | `src/styles/platform-mobile.css`, every rule scoped to `html[data-platform]` or a media query |
 | Page fade, dialog and sheet motion, press feedback, reduced-motion fallback | `src/styles/motion.css` |
 

@@ -94,7 +94,7 @@ import { AnnotationDialog, type AnnotationDialogState } from './AnnotationDialog
 import { SlateNotesPanel } from './SlateNotesPanel'
 import { RevisionReview, revisionRecorded, revisionSummary } from './RevisionReview'
 import { useTouchLayout } from './useTouchLayout'
-import { useIsMobile } from '@/hooks/use-mobile'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
 
 function localIsoDate(d = new Date()): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -114,7 +114,7 @@ export function ScriptSupervisorPage() {
   const { data: dataSource } = useEffectiveDataSourceForProduction(currentProductionId)
   const [touch, toggleTouch] = useTouchLayout()
   // Phone width: the toolbar wraps onto two rows (day + new slate, then the mode switch).
-  const phoneWidth = useIsMobile()
+  const phoneWidth = usePhoneWidth()
 
   const { data: days = [], isLoading: daysLoading } = useQuery({
     queryKey: ['shoot-days', currentProductionId],
