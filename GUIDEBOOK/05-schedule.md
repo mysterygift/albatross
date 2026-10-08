@@ -106,14 +106,16 @@ Icons on a strip let you edit it:
 | Skull | **Send to Boneyard** | Removes the strip from the day and keeps it in the Boneyard. |
 | Bin | **Delete strip** | Deletes a Call, Lunch, Wrap, Move or Note strip. |
 
-### Second unit
+### More units
 
-1. Click **Add Second Unit**.
-2. Tick the shoot days that need one and click **Add Second Unit**.
+A shoot day can run up to five units: **Main Unit**, **Second Unit**, **Third Unit**, **Fourth Unit** and **Fifth Unit**.
 
-The button is disabled when every day already has a second unit. Main Unit always appears first. Each unit has its own totals, and a unit that goes over 48 eighths of a page shows **Over 48 eighths**.
+1. Click **Add unit**.
+2. Tick the shoot days that need another unit and click **Add unit**. Each day shows which unit it will get.
 
-To take a Second Unit off a day, click the bin icon beside its name and confirm. Shots scheduled on it return to **Unscheduled Shots**, and its Call, Lunch, Wrap, Move and Note strips are deleted. Main Unit cannot be removed.
+Days that already have five units are not listed, and the button is disabled when every day is full. Units always appear in order, Main Unit first. Each unit has its own totals, and a unit that goes over 48 eighths of a page shows **Over 48 eighths**.
+
+To take a unit off a day, click the bin icon beside its name and confirm. Shots scheduled on it return to **Unscheduled Shots**, and its Call, Lunch, Wrap, Move and Note strips are deleted. The units after it move up a place, so removing the Second Unit makes the Third Unit the Second Unit. Main Unit cannot be removed; to drop it, first make another unit the Main Unit on the [Calendar](#calendar).
 
 ### Delete a shoot day
 
@@ -141,9 +143,21 @@ The Calendar shows every shoot day in a month and is where you review and adjust
 
 1. Open **Schedule → Calendar**.
 2. Use the arrows beside the month name to change month.
-3. Each coloured card is one unit on one day. It shows the unit name, call and wrap times, runtime, main location and shot count. Main Unit and Second Unit have different colours.
+3. Each shoot day has a **Day** header (with how many of its five units are in use) above one coloured card per unit. A card shows the unit name, call and wrap times, runtime, main location and shot count. Each unit (Main to Fifth) has its own colour.
 
-To move a day, drag its grip handle onto another date. If that date already has a shoot day, **That date already has a shoot day.** appears; click **Swap** to exchange the two days.
+**Move a whole day.** Drag the **Day** header onto another date. If that date already has a shoot day, **That date already has a shoot day.** appears; click **Swap** to exchange the two days.
+
+**Move one unit.** Drag a unit card onto another date. Its shots go with it.
+- If that date has a shoot day, the unit joins it as the next unit. A Main Unit dropped on a day that already has a Main Unit becomes its Second Unit (or Third, and so on). A day with five units cannot take another.
+- If the date is empty, a new shoot day is made there with the unit as its Main Unit.
+- The units left behind move up a place, so if the Main Unit leaves, the Second Unit becomes the Main Unit.
+- If it was the only unit on its day and the date already has a shoot day, choose whether to delete the old day or keep it with an empty Main Unit.
+
+**Swap units on a day.** Drag a unit card onto another unit on the same day to swap their places, for example to make the Second Unit the Main Unit. The day's call and wrap times follow whichever unit is the Main Unit.
+
+On a touch screen, press and hold a card or day header for a moment, then drag. A quick swipe scrolls the page and a tap opens the day summary. You can also do all of this from the day summary (below), without dragging.
+
+Moves and swaps show everywhere straight away: the Stripboard, call sheets, movement orders and risk assessments use the new day and unit. A unit moved to another day is taken off the old day's risk assessment.
 
 > **Note** The Calendar does not create shoot days. Use **New shoot day** on the Stripboard.
 
@@ -153,6 +167,7 @@ Click a card to open its summary on the right.
 
 ![A day summary](images/05-day-summary.png)
 
+- **Unit**: **Make this unit the** swaps this unit's place with another unit on the day. Pick a date and click **Move unit to date** to move just this unit.
 - **Edit day details** lets you change **Call time**, **Wrap time** (HH:MM) and **Notes**. Click **Save**. **Lunch** is shown for reference and cannot be edited here.
 - **Work Summary**: scenes scheduled, pages and shots.
 - **People Summary**: cast called and crew booked.

@@ -1,8 +1,10 @@
 /**
- * Schedule Calendar — month view of shoot day events (one per shoot_day_unit).
+ * Schedule Calendar — month view of shoot days and their units (one card per shoot_day_unit).
  *
- * Drag any event to another date to move the entire shoot day to that date.
- * If the target date already has a shoot, you can swap the two days. Day Summary Drawer on click.
+ * Drag a day's header to move the whole shoot day (swap offered when the date is taken). Drag a
+ * unit card to another date to move just that unit (it takes the next free rank there), or onto
+ * another unit on the same day to swap their ranks. Mouse drags start after 8px; touch drags start
+ * after a short press. Day Summary Drawer on click.
  */
 import { PageHeader } from '@/components/page-header'
 import { RequireProduction } from '@/components/require-production'
@@ -15,7 +17,9 @@ import {
   useSensors,
   useDraggable,
   useDroppable,
-  closestCenter,
+  pointerWithin,
+  rectIntersection,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
@@ -33,6 +37,22 @@ import {
   listShootDaysByProduction,
   ensureCallWrapStripsForProduction,
 } from '@/lib/db/repositories/schedule'
+import {
+  moveShootDayUnitToDate,
+  swapShootDayUnitRanks,
+  type EmptiedSourceDayAction,
+  type MoveShootDayUnitResult,
+} from '@/lib/db/repositories/shoot-day-unit-ranks'
+import {
+  CALENDAR_DATE_DROP_PREFIX,
+  CALENDAR_DAY_DRAG_PREFIX,
+  CALENDAR_UNIT_DRAG_PREFIX,
+  CALENDAR_UNIT_DROP_PREFIX,
+  resolveCalendarDrop,
+  type CalendarDragItem,
+  type CalendarDropTarget,
+} from '@/lib/schedule/calendarDrop'
+import { MAX_UNITS_PER_DAY, unitColorVars } from '@/lib/schedule/unitKey'
 import { invalidateStripboardCaches, stripboardQueryKeys } from '@/features/schedule/stripboard-hooks'
 import { ShootDayScriptSectionsPanel } from '@/features/schedule/shoot-day-script-sections-panel'
 import { SidesBuilderSheet } from '@/features/schedule/sides-builder-sheet'
@@ -75,6 +95,8 @@ import {
   listStripsByProductionForActor,
   listCrewForActor,
   moveShootDayToDateForActor,
+  moveShootDayUnitToDateForActor,
+  swapShootDayUnitRanksForActor,
   swapShootDaysForActor,
   updateShootDayForActor,
 } from '@/lib/access/projectDomainService'
@@ -157,6 +179,12 @@ function formatDateLabel(dateStr: string): string {
     month: 'long',
     year: 'numeric',
   })
+}
+
+/** Format date YYYY-MM-DD as e.g. "Tue 14 Oct". */
+function formatShortDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00')
+  return d.toLocaleDateString('default', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
 function formatTravelMinutes(minutes: number): string {
@@ -362,9 +390,7 @@ export function CalendarEventCardBody({
   isOverlay?: boolean
   isEpisodic?: boolean
 }) {
-  const isMain = event.unitKey === 'main'
-  const bgVar = isMain ? 'var(--unit-main)' : 'var(--unit-second)'
-  const fgVar = isMain ? 'var(--unit-main-foreground)' : 'var(--unit-second-foreground)'
+  const colors = unitColorVars(event.unitKey)
 
   return (
     <div
@@ -378,8 +404,8 @@ export function CalendarEventCardBody({
         !isOverlay && 'cursor-pointer flex-1 min-w-0'
       )}
       style={{
-        backgroundColor: bgVar,
-        color: fgVar,
+        backgroundColor: colors.background,
+        color: colors.foreground,
       }}
     >
       <div className="font-medium">{event.unitName}</div>
@@ -400,40 +426,106 @@ export function CalendarEventCardBody({
   )
 }
 
-function DraggableEventCard({
+function DraggableUnitCard({
   event,
   onClick,
   isEpisodic,
+  isMoving,
 }: {
   event: CalendarShootDayEvent
   onClick: () => void
   isEpisodic?: boolean
+  isMoving?: boolean
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: event.shootDayUnitId,
-    data: {
-      shootDayUnitId: event.shootDayUnitId,
-      shootDayId: event.shootDayId,
-      date: event.date,
-    },
+  const dragItem: CalendarDragItem = {
+    kind: 'unit',
+    shootDayUnitId: event.shootDayUnitId,
+    shootDayId: event.shootDayId,
+    date: event.date,
+  }
+  const { listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
+    id: `${CALENDAR_UNIT_DRAG_PREFIX}${event.shootDayUnitId}`,
+    data: dragItem,
+  })
+  const dropTarget: CalendarDropTarget = {
+    kind: 'unit',
+    shootDayUnitId: event.shootDayUnitId,
+    shootDayId: event.shootDayId,
+    date: event.date,
+  }
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: `${CALENDAR_UNIT_DROP_PREFIX}${event.shootDayUnitId}`,
+    data: dropTarget,
   })
   return (
     <div
+      ref={(node) => {
+        setDragRef(node)
+        setDropRef(node)
+      }}
+      {...listeners}
+      data-calendar-unit={event.shootDayUnitId}
       className={cn(
-        'flex items-stretch gap-0.5 rounded-md overflow-hidden',
-        isDragging && 'opacity-50'
+        'flex items-stretch gap-0.5 rounded-md cursor-grab active:cursor-grabbing select-none [-webkit-touch-callout:none]',
+        isDragging && 'opacity-40',
+        isMoving && 'animate-pulse',
+        isOver && !isDragging && 'ring-2 ring-primary ring-offset-1 ring-offset-background'
+      )}
+      title="Drag to another date to move this unit, or onto another unit on this day to swap"
+    >
+      <div
+        className="flex items-center shrink-0 px-0.5 text-muted-foreground"
+        aria-hidden
+      >
+        <GripVertical className="size-3.5" />
+      </div>
+      <CalendarEventCardBody event={event} onClick={onClick} isOverlay={false} isEpisodic={isEpisodic} />
+    </div>
+  )
+}
+
+/** One shoot day in a date cell: a draggable header (moves the whole day) above its unit cards. */
+function ShootDayBlock({
+  shootDayId,
+  date,
+  dayNumber,
+  unitCount,
+  children,
+}: {
+  shootDayId: string
+  date: string
+  dayNumber: number | null
+  unitCount: number
+  children: ReactNode
+}) {
+  const dragItem: CalendarDragItem = { kind: 'day', shootDayId, date }
+  const { listeners, setNodeRef, isDragging } = useDraggable({
+    id: `${CALENDAR_DAY_DRAG_PREFIX}${shootDayId}`,
+    data: dragItem,
+  })
+  const label = dayNumber != null ? `Day ${dayNumber}` : 'Shoot day'
+  return (
+    <div
+      data-calendar-day={shootDayId}
+      className={cn(
+        'mt-1 space-y-1 rounded-md border border-dashed border-border/70 p-1',
+        isDragging && 'opacity-40'
       )}
     >
       <div
         ref={setNodeRef}
         {...listeners}
-        {...attributes}
-        className="cursor-grab active:cursor-grabbing touch-none flex items-center shrink-0 px-0.5 text-muted-foreground hover:text-foreground"
-        aria-label="Drag to reschedule"
+        className="flex items-center gap-1 rounded px-0.5 text-[11px] font-medium text-muted-foreground cursor-grab active:cursor-grabbing select-none hover:text-foreground [-webkit-touch-callout:none]"
+        title="Drag to move the whole shoot day"
+        aria-label={`${label}: drag to move the whole shoot day`}
       >
-        <GripVertical className="size-3.5" />
+        <GripVertical className="size-3.5 shrink-0" aria-hidden />
+        <span>{label}</span>
+        <span className="ml-auto opacity-80">
+          {unitCount}/{MAX_UNITS_PER_DAY}
+        </span>
       </div>
-      <CalendarEventCardBody event={event} onClick={onClick} isOverlay={false} isEpisodic={isEpisodic} />
+      {children}
     </div>
   )
 }
@@ -445,10 +537,12 @@ function DroppableDayCell({
   dateStr: string
   children: ReactNode
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `date-${dateStr}` })
+  const dropTarget: CalendarDropTarget = { kind: 'date', date: dateStr }
+  const { setNodeRef, isOver } = useDroppable({ id: `${CALENDAR_DATE_DROP_PREFIX}${dateStr}`, data: dropTarget })
   return (
     <div
       ref={setNodeRef}
+      data-calendar-date={dateStr}
       className={cn(
         'min-h-[100px] rounded border border-border bg-card/30 p-2 text-left',
         isOver && 'ring-2 ring-primary/50 ring-offset-2 ring-offset-background'
@@ -479,7 +573,8 @@ function CompactDayCell({
   isToday: boolean
   onSelect: () => void
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `date-${dateStr}` })
+  const dropTarget: CalendarDropTarget = { kind: 'date', date: dateStr }
+  const { setNodeRef, isOver } = useDroppable({ id: `${CALENDAR_DATE_DROP_PREFIX}${dateStr}`, data: dropTarget })
   const label = events.length > 0 ? `${day}, ${events.length} shoot ${events.length === 1 ? 'unit' : 'units'}` : `${day}`
   return (
     <button
@@ -501,7 +596,7 @@ function CompactDayCell({
           <span
             key={e.shootDayUnitId}
             className="size-1.5 rounded-full"
-            style={{ backgroundColor: e.unitKey === 'main' ? 'var(--unit-main)' : 'var(--unit-second)' }}
+            style={{ backgroundColor: unitColorVars(e.unitKey).background }}
           />
         ))}
       </span>
@@ -512,7 +607,8 @@ function CompactDayCell({
 /**
  * Calendar on a phone. Seven ~55pt columns are too narrow for event cards, so the month is a compact
  * grid of dates with unit dots (tap a date to jump to it), and the month's shoot days are listed
- * underneath at full width. Cards keep their drag handle: drag one onto a date in the grid to move it.
+ * underneath at full width, as the same day blocks the desktop grid uses: drag a day's header or a unit
+ * onto a date in the grid to move it, or a unit onto another unit of its day to swap them.
  */
 function PhoneMonthCalendar({
   year,
@@ -521,8 +617,7 @@ function PhoneMonthCalendar({
   daysInMonth,
   monthLabel,
   eventsByDate,
-  isEpisodic,
-  onOpenEvent,
+  renderShootDays,
 }: {
   year: number
   month: number
@@ -530,8 +625,8 @@ function PhoneMonthCalendar({
   daysInMonth: number
   monthLabel: string
   eventsByDate: Map<string, CalendarShootDayEvent[]>
-  isEpisodic: boolean
-  onOpenEvent: (event: CalendarShootDayEvent) => void
+  /** The date's shoot day blocks (draggable header plus unit cards), shared with the desktop grid. */
+  renderShootDays: (dateStr: string) => ReactNode
 }) {
   const now = new Date()
   const todayStr = toYyyyMmDd(now.getFullYear(), now.getMonth(), now.getDate())
@@ -590,14 +685,7 @@ function PhoneMonthCalendar({
                   {dateStr === todayStr && <span className="ml-2 text-xs font-medium">Today</span>}
                 </h3>
                 <div className="space-y-1.5 [&_[data-slot=calendar-event]]:px-3 [&_[data-slot=calendar-event]]:py-2 [&_[data-slot=calendar-event]]:text-sm">
-                  {(eventsByDate.get(dateStr) ?? []).map((event) => (
-                    <DraggableEventCard
-                      key={event.shootDayUnitId}
-                      event={event}
-                      onClick={() => onOpenEvent(event)}
-                      isEpisodic={isEpisodic}
-                    />
-                  ))}
+                  {renderShootDays(dateStr)}
                 </div>
               </div>
             )
@@ -606,6 +694,30 @@ function PhoneMonthCalendar({
       </section>
     </div>
   )
+}
+
+/**
+ * Prefer the unit card under the pointer (swap within a day), then the date cell under it. A day
+ * drag only targets date cells, and a unit is never its own target. Falls back to rectangle
+ * overlap when the pointer is between cells.
+ */
+const calendarCollisionDetection: CollisionDetection = (args) => {
+  const item = args.active.data.current as CalendarDragItem | undefined
+  const droppableContainers = args.droppableContainers.filter((container) => {
+    const target = container.data.current as CalendarDropTarget | undefined
+    if (!target) return false
+    if (target.kind === 'date') return true
+    return item?.kind === 'unit' && target.shootDayUnitId !== item.shootDayUnitId
+  })
+  const pointerHits = pointerWithin({ ...args, droppableContainers })
+  if (pointerHits.length > 0) {
+    const unitHit = pointerHits.find((hit) => String(hit.id).startsWith(CALENDAR_UNIT_DROP_PREFIX))
+    return [unitHit ?? pointerHits[0]!]
+  }
+  return rectIntersection({
+    ...args,
+    droppableContainers: droppableContainers.filter((c) => String(c.id).startsWith(CALENDAR_DATE_DROP_PREFIX)),
+  })
 }
 
 function ShootDaySidesExportsList({ shootDayId }: { shootDayId: string }) {
@@ -655,6 +767,10 @@ function DaySummaryDrawer({
   isEpisodic,
   shootingBlocDisplay,
   episodesOnUnitSummary,
+  unitsOnDay,
+  isUnitActionPending,
+  onSwapWithUnit,
+  onMoveUnitToDate,
 }: {
   event: CalendarShootDayEvent | null
   open: boolean
@@ -675,6 +791,12 @@ function DaySummaryDrawer({
   shootingBlocDisplay?: string | null
   /** Comma-separated episode names for scheduled material on this unit, or "—". */
   episodesOnUnitSummary?: string | null
+  /** Every unit on the selected event's shoot day, Main Unit first (the selected one included). */
+  unitsOnDay: CalendarShootDayEvent[]
+  isUnitActionPending: boolean
+  /** Swap ranks with another unit on the same day. */
+  onSwapWithUnit: (otherShootDayUnitId: string) => void
+  onMoveUnitToDate: (targetDate: string) => void
 }) {
   const [isEditing, setIsEditing] = useState(false)
   const [sidesBuilderOpen, setSidesBuilderOpen] = useState(false)
@@ -687,6 +809,7 @@ function DaySummaryDrawer({
   const [travelSegments, setTravelSegments] = useState<DayTravelSegment[]>([])
   const [isTravelLoading, setIsTravelLoading] = useState(false)
   const [travelRefreshTick, setTravelRefreshTick] = useState(0)
+  const [moveUnitDate, setMoveUnitDate] = useState('')
 
   useEffect(() => {
     if (!event) return
@@ -698,6 +821,7 @@ function DaySummaryDrawer({
       setWrapTimeError(null)
       setSaveError(null)
       setIsEditing(false)
+      setMoveUnitDate('')
     })
   }, [event?.shootDayUnitId, open])
 
@@ -764,8 +888,7 @@ function DaySummaryDrawer({
   if (!event) return null
 
   const runtimeWarning = event.estMinutes > RUNTIME_WARNING_THRESHOLD_MINUTES
-  const unitColor =
-    event.unitKey === 'main' ? 'var(--unit-main)' : 'var(--unit-second)'
+  const unitColor = unitColorVars(event.unitKey).background
 
   const resetEdits = () => {
     setCallTimeInput(event.callTime ?? '')
@@ -871,6 +994,56 @@ function DaySummaryDrawer({
 
         <div className="flex-1 overflow-y-auto px-7 py-4">
           <div className="space-y-4">
+            <div className="rounded-lg border border-border/60 p-3" data-slot="calendar-unit-controls">
+              <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                Unit
+              </p>
+              {unitsOnDay.length > 1 && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Make this unit the</span>
+                  <Select
+                    value={event.shootDayUnitId}
+                    onValueChange={(shootDayUnitId) => {
+                      if (shootDayUnitId !== event.shootDayUnitId) onSwapWithUnit(shootDayUnitId)
+                    }}
+                    disabled={isUnitActionPending}
+                  >
+                    <SelectTrigger className="h-8 w-[160px]" aria-label="Unit rank on this day">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {unitsOnDay.map((unit) => (
+                        <SelectItem key={unit.shootDayUnitId} value={unit.shootDayUnitId}>
+                          {unit.unitName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Input
+                  type="date"
+                  value={moveUnitDate}
+                  onChange={(e) => setMoveUnitDate(e.target.value)}
+                  className="h-8 w-[170px]"
+                  aria-label="Move this unit to date"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!moveUnitDate || moveUnitDate === event.date || isUnitActionPending}
+                  onClick={() => onMoveUnitToDate(moveUnitDate)}
+                >
+                  Move unit to date
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                A unit moved onto a day that already has a Main Unit becomes its next unit (Second, Third…), up to{' '}
+                {MAX_UNITS_PER_DAY} per day.
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
               {isEpisodic && (
                 <>
@@ -1205,10 +1378,23 @@ export function ScheduleCalendarPage() {
   }, [currentProductionId])
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  const [activeEvent, setActiveEvent] = useState<CalendarShootDayEvent | null>(null)
+  const [activeDrag, setActiveDrag] = useState<
+    | { kind: 'unit'; event: CalendarShootDayEvent }
+    | { kind: 'day'; shootDayId: string; events: CalendarShootDayEvent[] }
+    | null
+  >(null)
   const [conflictModal, setConflictModal] = useState<{
     sourceShootDayId: string
     existingShootDayId: string
+  } | null>(null)
+  /** A unit drop that would leave its shoot day with no units: ask what happens to that day. */
+  const [emptySourceModal, setEmptySourceModal] = useState<{
+    shootDayUnitId: string
+    targetDate: string
+    unitName: string
+    sourceDate: string
+    sourceDayLabel: string
+    closeDrawerOnSuccess: boolean
   } | null>(null)
 
 
@@ -1216,6 +1402,8 @@ export function ScheduleCalendarPage() {
     void invalidateStripboardCaches(queryClient, currentProductionId)
   }
 
+  // Mouse: drag after moving 8px so a click still opens the Day Summary. Touch: press briefly, then
+  // drag, so a tap opens the Day Summary and a quick swipe still scrolls the page.
   const sensors = useSensors(
     ...usePlatformDragSensors(8)
   )
@@ -1234,6 +1422,29 @@ export function ScheduleCalendarPage() {
       return moveShootDayToDate(vars.shootDayId, vars.newDate)
     },
   })
+  const moveUnitMutation = useMutation({
+    mutationFn: async (vars: {
+      shootDayUnitId: string
+      targetDate: string
+      emptiedSourceDay?: EmptiedSourceDayAction
+    }): Promise<MoveShootDayUnitResult> => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return moveShootDayUnitToDateForActor({ db, actor: authSession.currentUser, data: vars })
+      }
+      return moveShootDayUnitToDate(vars)
+    },
+  })
+  const swapUnitsMutation = useMutation({
+    mutationFn: async (vars: { shootDayUnitIdA: string; shootDayUnitIdB: string }) => {
+      if (authSession.authSupported && authSession.currentUser) {
+        const db = await getDb()
+        return swapShootDayUnitRanksForActor({ db, actor: authSession.currentUser, ...vars })
+      }
+      return swapShootDayUnitRanks(vars.shootDayUnitIdA, vars.shootDayUnitIdB)
+    },
+  })
+  const isUnitActionPending = moveUnitMutation.isPending || swapUnitsMutation.isPending
   const ensureCallWrapStripsMutation = useMutation({
     mutationFn: async (productionId: string) => {
       if (authSession.authSupported && authSession.currentUser) {
@@ -1279,23 +1490,63 @@ export function ScheduleCalendarPage() {
     },
   })
 
-  const handleDragStart = (ev: DragStartEvent) => {
-    const { active } = ev
-    const found = events.find((e) => e.shootDayUnitId === active.id)
-    setActiveEvent(found ?? null)
+  const unitMoveErrorMessage = (error: unknown): string => {
+    const message = error instanceof Error ? error.message : ''
+    if (message === 'TARGET_DAY_FULL') return `That shoot day already has ${MAX_UNITS_PER_DAY} units.`
+    if (message === 'SHOOT_DAY_UNIT_NOT_FOUND') return 'That unit is no longer on the schedule.'
+    return 'Move failed.'
   }
 
-  const handleDragEnd = (ev: DragEndEvent) => {
-    setActiveEvent(null)
-    const { active, over } = ev
-    const overId = over?.id
-    if (overId == null || typeof overId !== 'string' || !overId.startsWith('date-')) return
-    const targetDate = overId.slice(5)
-    if (targetDate.length !== 10) return
-    const data = active.data.current as { shootDayUnitId?: string; shootDayId?: string; date?: string } | undefined
-    if (!data?.shootDayId || !data?.date || data.date === targetDate) return
+  const moveUnit = (
+    vars: { shootDayUnitId: string; targetDate: string; emptiedSourceDay?: EmptiedSourceDayAction },
+    options: { closeDrawerOnSuccess?: boolean } = {}
+  ) => {
+    if (isUnitActionPending) return
+    const moving = events.find((e) => e.shootDayUnitId === vars.shootDayUnitId)
+    moveUnitMutation
+      .mutateAsync(vars)
+      .then((result) => {
+        if (result.status === 'unchanged') return
+        if (result.status === 'needs_source_decision') {
+          const dayNumber = shootDays.find((d) => d.id === result.sourceShootDayId)?.day_number ?? null
+          setEmptySourceModal({
+            shootDayUnitId: vars.shootDayUnitId,
+            targetDate: vars.targetDate,
+            unitName: moving?.unitName ?? 'This unit',
+            sourceDate: moving?.date ?? '',
+            sourceDayLabel: dayNumber != null ? `Day ${dayNumber}` : 'its shoot day',
+            closeDrawerOnSuccess: options.closeDrawerOnSuccess === true,
+          })
+          return
+        }
+        invalidateScheduleQueries()
+        if (options.closeDrawerOnSuccess) setDrawerOpen(false)
+        const when = formatShortDate(vars.targetDate)
+        toast.success(
+          result.movedWholeDay
+            ? `Shoot day moved to ${when}.`
+            : `${moving?.unitName ?? 'Unit'} moved to ${when} as ${result.unitName}.`
+        )
+      })
+      .catch((error) => toast.error(unitMoveErrorMessage(error)))
+  }
+
+  const swapUnits = (shootDayUnitIdA: string, shootDayUnitIdB: string) => {
+    if (isUnitActionPending) return
+    const a = events.find((e) => e.shootDayUnitId === shootDayUnitIdA)
+    const b = events.find((e) => e.shootDayUnitId === shootDayUnitIdB)
+    swapUnitsMutation
+      .mutateAsync({ shootDayUnitIdA, shootDayUnitIdB })
+      .then(() => {
+        invalidateScheduleQueries()
+        if (a && b) toast.success(`${a.unitName} is now ${b.unitName}.`)
+      })
+      .catch(() => toast.error('Could not swap units.'))
+  }
+
+  const moveDay = (shootDayId: string, targetDate: string) => {
     if (moveMutation.isPending) return
-    const variables = { shootDayId: data.shootDayId, newDate: targetDate }
+    const variables = { shootDayId, newDate: targetDate }
     moveMutation.mutateAsync(variables).then((result) => {
       if (result.success) {
         invalidateScheduleQueries()
@@ -1308,6 +1559,46 @@ export function ScheduleCalendarPage() {
         toast.error('A shoot already exists on that date.')
       }
     }).catch(() => toast.error('Move failed.'))
+  }
+
+  const handleDragStart = (ev: DragStartEvent) => {
+    const item = ev.active.data.current as CalendarDragItem | undefined
+    if (item?.kind === 'unit') {
+      const found = events.find((e) => e.shootDayUnitId === item.shootDayUnitId)
+      setActiveDrag(found ? { kind: 'unit', event: found } : null)
+    } else if (item?.kind === 'day') {
+      setActiveDrag({
+        kind: 'day',
+        shootDayId: item.shootDayId,
+        events: events.filter((e) => e.shootDayId === item.shootDayId),
+      })
+    } else {
+      setActiveDrag(null)
+    }
+  }
+
+  const handleDragEnd = (ev: DragEndEvent) => {
+    setActiveDrag(null)
+    const item = ev.active.data.current as CalendarDragItem | undefined
+    const target = ev.over?.data.current as CalendarDropTarget | undefined
+    if (!item || !target) return
+    const action = resolveCalendarDrop(item, target, (date) => eventsByDate.get(date)?.length ?? 0)
+    switch (action.type) {
+      case 'move-day':
+        moveDay(action.shootDayId, action.targetDate)
+        break
+      case 'move-unit':
+        moveUnit({ shootDayUnitId: action.shootDayUnitId, targetDate: action.targetDate })
+        break
+      case 'swap-units':
+        swapUnits(action.shootDayUnitIdA, action.shootDayUnitIdB)
+        break
+      case 'reject':
+        toast.error(`That shoot day already has ${MAX_UNITS_PER_DAY} units.`)
+        break
+      case 'none':
+        break
+    }
   }
 
   const year = viewDate.getFullYear()
@@ -1479,6 +1770,11 @@ export function ScheduleCalendarPage() {
     queryFn: async () => (await getSetting(OPENROUTESERVICE_API_KEY_SETTING)) ?? '',
   })
   const crewHierarchy = hierarchyData ?? defaultCrewHierarchy
+
+  const dayNumberByShootDayId = useMemo(
+    () => new Map(shootDays.map((d) => [d.id, d.day_number ?? null])),
+    [shootDays]
+  )
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalendarShootDayEvent[]>()
@@ -1717,6 +2013,39 @@ export function ScheduleCalendarPage() {
   }
   const closeDrawer = () => setDrawerOpen(false)
 
+  /** A date's shoot day blocks: a draggable "Day N" header above a draggable card per unit. */
+  const renderShootDays = (dateStr: string) => {
+    const dayEvents = eventsByDate.get(dateStr) ?? []
+    const shootDayIdsOnDate = [...new Set(dayEvents.map((e) => e.shootDayId))]
+    return shootDayIdsOnDate.map((shootDayId) => {
+      const unitEvents = dayEvents.filter((e) => e.shootDayId === shootDayId)
+      return (
+        <ShootDayBlock
+          key={shootDayId}
+          shootDayId={shootDayId}
+          date={dateStr}
+          dayNumber={dayNumberByShootDayId.get(shootDayId) ?? null}
+          unitCount={unitEvents.length}
+        >
+          {unitEvents.map((event) => (
+            <DraggableUnitCard
+              key={event.shootDayUnitId}
+              event={event}
+              onClick={() => openDrawer(event)}
+              isEpisodic={isEpisodicProduction}
+              isMoving={
+                (moveUnitMutation.isPending && moveUnitMutation.variables?.shootDayUnitId === event.shootDayUnitId) ||
+                (swapUnitsMutation.isPending &&
+                  (swapUnitsMutation.variables?.shootDayUnitIdA === event.shootDayUnitId ||
+                    swapUnitsMutation.variables?.shootDayUnitIdB === event.shootDayUnitId))
+              }
+            />
+          ))}
+        </ShootDayBlock>
+      )
+    })
+  }
+
   useEffect(() => {
     if (!currentProductionId) return
     const migrationKey = `schedule-call-wrap-migration:${currentProductionId}`
@@ -1770,7 +2099,7 @@ export function ScheduleCalendarPage() {
               </SelectContent>
             </Select>
           )}
-          {moveMutation.isPending && (
+          {(moveMutation.isPending || isUnitActionPending) && (
             <span className="text-muted-foreground text-sm">Moving…</span>
           )}
           <Button variant="outline" size="icon" onClick={goPrevMonth}>
@@ -1785,11 +2114,18 @@ export function ScheduleCalendarPage() {
         </div>
       </div>
 
+      <p className="text-xs text-muted-foreground">
+        Drag a day&apos;s header to move the whole shoot day. Drag a unit to another date to move just that
+        unit, or onto another unit on the same day to swap them (e.g. make the Second Unit the Main Unit).
+        On touch screens, press and hold, then drag.
+      </p>
+
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={calendarCollisionDetection}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveDrag(null)}
       >
         {phoneWidth ? (
           <PhoneMonthCalendar
@@ -1799,8 +2135,7 @@ export function ScheduleCalendarPage() {
             daysInMonth={daysInMonth}
             monthLabel={monthLabel}
             eventsByDate={eventsByDate}
-            isEpisodic={isEpisodicProduction}
-            onOpenEvent={openDrawer}
+            renderShootDays={renderShootDays}
           />
         ) : (
         <div className="grid grid-cols-7 gap-1 text-center text-sm text-muted-foreground">
@@ -1814,20 +2149,10 @@ export function ScheduleCalendarPage() {
           ))}
           {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
             const dateStr = toYyyyMmDd(year, month, day)
-            const dayEvents = eventsByDate.get(dateStr) ?? []
             return (
               <DroppableDayCell key={day} dateStr={dateStr}>
                 <span className="text-foreground font-medium">{day}</span>
-                <div className="mt-1 space-y-1">
-                  {dayEvents.map((event) => (
-                    <DraggableEventCard
-                      key={event.shootDayUnitId}
-                      event={event}
-                      onClick={() => openDrawer(event)}
-                      isEpisodic={isEpisodicProduction}
-                    />
-                  ))}
-                </div>
+                {renderShootDays(dateStr)}
               </DroppableDayCell>
             )
           })}
@@ -1835,14 +2160,31 @@ export function ScheduleCalendarPage() {
         )}
 
         <DragOverlay dropAnimation={null}>
-          {activeEvent ? (
+          {activeDrag?.kind === 'unit' ? (
             <div className="w-[min(100%,220px)] rounded-md shadow-lg ring-1 ring-border opacity-95">
               <CalendarEventCardBody
-                event={activeEvent}
+                event={activeDrag.event}
                 onClick={() => {}}
                 isOverlay
                 isEpisodic={isEpisodicProduction}
               />
+            </div>
+          ) : activeDrag?.kind === 'day' ? (
+            <div className="w-[min(100%,220px)] space-y-1 rounded-md border border-border bg-card p-1.5 shadow-lg opacity-95">
+              <p className="px-0.5 text-[11px] font-medium text-muted-foreground">
+                {dayNumberByShootDayId.get(activeDrag.shootDayId) != null
+                  ? `Day ${dayNumberByShootDayId.get(activeDrag.shootDayId)}`
+                  : 'Shoot day'}
+              </p>
+              {activeDrag.events.map((event) => (
+                <CalendarEventCardBody
+                  key={event.shootDayUnitId}
+                  event={event}
+                  onClick={() => {}}
+                  isOverlay
+                  isEpisodic={isEpisodicProduction}
+                />
+              ))}
             </div>
           ) : null}
         </DragOverlay>
@@ -1865,6 +2207,16 @@ export function ScheduleCalendarPage() {
             : undefined
         }
         episodesOnUnitSummary={episodesOnUnitSummary ?? undefined}
+        unitsOnDay={selectedEvent ? events.filter((e) => e.shootDayId === selectedEvent.shootDayId) : []}
+        isUnitActionPending={isUnitActionPending}
+        onSwapWithUnit={(otherShootDayUnitId) => {
+          if (selectedEvent) swapUnits(selectedEvent.shootDayUnitId, otherShootDayUnitId)
+        }}
+        onMoveUnitToDate={(targetDate) => {
+          if (selectedEvent) {
+            moveUnit({ shootDayUnitId: selectedEvent.shootDayUnitId, targetDate }, { closeDrawerOnSuccess: true })
+          }
+        }}
         onSaveEdits={async ({ shootDayId, callTime, wrapTime, notes }) => {
           await updateDaySummaryMutation.mutateAsync({
             shootDayId,
@@ -1921,6 +2273,53 @@ export function ScheduleCalendarPage() {
               Swap
             </Button>
             <Button type="button" variant="ghost" onClick={() => setConflictModal(null)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!emptySourceModal} onOpenChange={(open) => !open && setEmptySourceModal(null)}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>
+              Move {emptySourceModal?.unitName ?? 'unit'} to{' '}
+              {emptySourceModal ? formatShortDate(emptySourceModal.targetDate) : ''}?
+            </DialogTitle>
+            <DialogDescription>
+              It is the only unit on {emptySourceModal?.sourceDayLabel ?? 'its shoot day'}
+              {emptySourceModal?.sourceDate ? ` (${formatShortDate(emptySourceModal.sourceDate)})` : ''}. It joins the
+              shoot day already on that date, with its shots. Delete the day it leaves, or keep it with an empty Main Unit?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter showCloseButton={false} className="flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isUnitActionPending}
+              onClick={() => {
+                if (!emptySourceModal) return
+                const { shootDayUnitId, targetDate, closeDrawerOnSuccess } = emptySourceModal
+                setEmptySourceModal(null)
+                moveUnit({ shootDayUnitId, targetDate, emptiedSourceDay: 'delete' }, { closeDrawerOnSuccess })
+              }}
+            >
+              Delete {emptySourceModal?.sourceDayLabel ?? 'day'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isUnitActionPending}
+              onClick={() => {
+                if (!emptySourceModal) return
+                const { shootDayUnitId, targetDate, closeDrawerOnSuccess } = emptySourceModal
+                setEmptySourceModal(null)
+                moveUnit({ shootDayUnitId, targetDate, emptiedSourceDay: 'keep' }, { closeDrawerOnSuccess })
+              }}
+            >
+              Keep {emptySourceModal?.sourceDayLabel ?? 'day'} empty
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setEmptySourceModal(null)}>
               Cancel
             </Button>
           </DialogFooter>

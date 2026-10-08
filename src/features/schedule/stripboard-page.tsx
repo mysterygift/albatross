@@ -34,7 +34,7 @@ import { useAuthSession } from '@/lib/auth/useAuthSession'
 import { getDb } from '@/lib/db/client'
 import {
   createShootDayWithDefaultMainUnitForActor,
-  addSecondUnitToShootDaysForActor,
+  addUnitToShootDaysForActor,
   getOrCreateShootDayUnitForActor,
   listEpisodesByProductionForActor,
   listLocationsByProductionForActor,
@@ -69,7 +69,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { StripboardStrip, StripType } from '@/lib/db/types'
-import { createShootDayWithDefaultMainUnit, addSecondUnitToShootDays } from '@/lib/db/repositories/schedule'
+import { createShootDayWithDefaultMainUnit } from '@/lib/db/repositories/schedule'
+import { addUnitToShootDays } from '@/lib/db/repositories/shoot-day-unit-ranks'
 import { listShootingBlocsByProduction } from '@/lib/db/repositories/shootingBlocs'
 import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
 import {
@@ -80,7 +81,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import type { ShotWithScene } from '@/lib/db/repositories/stripboard-strips'
 import { SmartSchedulingInsightsPanel } from './smart-scheduling-insights-panel'
 import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
-import { unitNameToKey } from '@/lib/schedule/unitKey'
+import { MAX_UNITS_PER_DAY, UNIT_RANKS, unitNameToRank, unitRankToName } from '@/lib/schedule/unitKey'
 import { resolveStripShotAndScene } from '@/lib/schedule/stripboardRows'
 
 const STRIP_TYPES: { type: StripType; label: string }[] = [
@@ -338,9 +339,9 @@ export function StripboardPage() {
   const [newDayOpen, setNewDayOpen] = useState(false)
   const [newDayDate, setNewDayDate] = useState('')
   const [newDayError, setNewDayError] = useState<string | null>(null)
-  const [addSecondUnitOpen, setAddSecondUnitOpen] = useState(false)
-  const [selectedSecondUnitDayIds, setSelectedSecondUnitDayIds] = useState<Set<string>>(new Set())
-  const [addSecondUnitError, setAddSecondUnitError] = useState<string | null>(null)
+  const [addUnitOpen, setAddUnitOpen] = useState(false)
+  const [selectedAddUnitDayIds, setSelectedAddUnitDayIds] = useState<Set<string>>(new Set())
+  const [addUnitError, setAddUnitError] = useState<string | null>(null)
   const [deleteShootDayTarget, setDeleteShootDayTarget] = useState<{
     id: string
     shoot_date: string
@@ -348,14 +349,14 @@ export function StripboardPage() {
   } | null>(null)
   const [deleteShootDayDialogOpen, setDeleteShootDayDialogOpen] = useState(false)
   const [deleteShootDayError, setDeleteShootDayError] = useState<string | null>(null)
-  const [removeSecondUnitTarget, setRemoveSecondUnitTarget] = useState<{
+  const [removeUnitTarget, setRemoveUnitTarget] = useState<{
     shootDayUnitId: string
     shootDate: string
     dayNumber: number | null
     unitName: string
   } | null>(null)
-  const [removeSecondUnitDialogOpen, setRemoveSecondUnitDialogOpen] = useState(false)
-  const [removeSecondUnitError, setRemoveSecondUnitError] = useState<string | null>(null)
+  const [removeUnitDialogOpen, setRemoveUnitDialogOpen] = useState(false)
+  const [removeUnitError, setRemoveUnitError] = useState<string | null>(null)
   const [addStripOpen, setAddStripOpen] = useState(false)
   const blocViewFilter: ShootingBlocViewFilter = urlState.bloc
   const setBlocViewFilter = useCallback(
@@ -477,7 +478,7 @@ export function StripboardPage() {
     moveToBoneyardMutation,
     deleteStripMutation,
     deleteShootDayMutation,
-    removeSecondUnitMutation,
+    removeUnitMutation,
     moveStripMutation,
     reorderStripMutation,
     createStripMutation,
@@ -499,19 +500,23 @@ export function StripboardPage() {
 
   const mainUnit = units.find((u) => u.name === 'Main Unit') ?? units[0]
 
-  const secondUnit = useMemo(
-    () => units.find((u) => unitNameToKey(u.name) === 'second'),
-    [units]
-  )
-
-  const shootDaysEligibleForSecond = useMemo(() => {
-    const shootDayIdsWithSecond = new Set(
-      dayUnits
-        .filter((du) => du.unit_id === secondUnit?.id)
-        .map((du) => du.shoot_day_id)
-    )
-    return shootDays.filter((d) => !shootDayIdsWithSecond.has(d.id))
-  }, [shootDays, dayUnits, secondUnit?.id])
+  /** Days that can take another unit, with the unit each would get (Second … Fifth). */
+  const shootDaysEligibleForUnit = useMemo(() => {
+    const unitNameById = new Map(units.map((u) => [u.id, u.name]))
+    const rankedDayUnits = new Map<string, Set<number | null>>()
+    for (const du of dayUnits) {
+      const ranks = rankedDayUnits.get(du.shoot_day_id) ?? new Set<number | null>()
+      ranks.add(unitNameToRank(unitNameById.get(du.unit_id) ?? ''))
+      rankedDayUnits.set(du.shoot_day_id, ranks)
+    }
+    return shootDays.flatMap((day) => {
+      const ranks = rankedDayUnits.get(day.id) ?? new Set<number | null>()
+      const unitCount = dayUnits.filter((du) => du.shoot_day_id === day.id).length
+      if (unitCount >= MAX_UNITS_PER_DAY) return []
+      const nextRank = UNIT_RANKS.find((rank) => !ranks.has(rank))
+      return nextRank ? [{ day, nextUnitName: unitRankToName(nextRank) }] : []
+    })
+  }, [shootDays, dayUnits, units])
 
   const createShootDayMutation = useMutation({
     mutationFn: async () => {
@@ -556,7 +561,7 @@ export function StripboardPage() {
     },
   })
 
-  const addSecondUnitMutation = useMutation({
+  const addUnitMutation = useMutation({
     mutationFn: async (shootDayIds: string[]) => {
       if (!currentProductionId) {
         throw new Error('No production selected')
@@ -564,31 +569,34 @@ export function StripboardPage() {
       if (shootDayIds.length === 0) {
         throw new Error('Select at least one shoot day')
       }
-      setAddSecondUnitError(null)
+      setAddUnitError(null)
       if (authSession.authSupported && authSession.currentUser) {
         const db = await getDb()
-        return addSecondUnitToShootDaysForActor({
+        return addUnitToShootDaysForActor({
           db,
           actor: authSession.currentUser,
           productionId: currentProductionId,
           shootDayIds,
         })
       }
-      return addSecondUnitToShootDays({
+      return addUnitToShootDays({
         productionId: currentProductionId,
         shootDayIds,
       })
     },
     onSuccess: (result, shootDayIds) => {
-      setAddSecondUnitOpen(false)
-      setSelectedSecondUnitDayIds(new Set())
-      setAddSecondUnitError(null)
+      setAddUnitOpen(false)
+      setSelectedAddUnitDayIds(new Set())
+      setAddUnitError(null)
       const linkedCount = result.linkedShootDayUnitIds.length
       toast.success(
-        linkedCount === 1
-          ? 'Second Unit added to 1 shoot day.'
-          : `Second Unit added to ${linkedCount} shoot day(s).`
+        linkedCount === 1 ? 'Unit added to 1 shoot day.' : `Unit added to ${linkedCount} shoot days.`
       )
+      if (result.skippedFullShootDayIds.length > 0) {
+        toast.warning(
+          `${result.skippedFullShootDayIds.length} shoot day(s) already have ${MAX_UNITS_PER_DAY} units and were skipped.`
+        )
+      }
       if (shootDayIds.length > 0) {
         setActiveDayId(shootDayIds[0]!)
       }
@@ -596,15 +604,15 @@ export function StripboardPage() {
     },
     onError: (error) => {
       const message =
-        error instanceof Error ? error.message : 'Could not add Second Unit. Please try again.'
+        error instanceof Error ? error.message : 'Could not add unit. Please try again.'
       if (message === 'No production selected') {
-        setAddSecondUnitError('Select a production before adding Second Unit.')
+        setAddUnitError('Select a production before adding a unit.')
       } else if (message === 'Select at least one shoot day') {
-        setAddSecondUnitError('Select at least one shoot day.')
+        setAddUnitError('Select at least one shoot day.')
       } else if (message === 'INVALID_SHOOT_DAY') {
-        setAddSecondUnitError('One or more selected shoot days are invalid.')
+        setAddUnitError('One or more selected shoot days are invalid.')
       } else {
-        setAddSecondUnitError('Could not add Second Unit. Please try again.')
+        setAddUnitError('Could not add unit. Please try again.')
       }
     },
   })
@@ -899,18 +907,18 @@ export function StripboardPage() {
               size="sm"
               className="gap-1"
               onClick={() => {
-                setAddSecondUnitError(null)
-                setSelectedSecondUnitDayIds(new Set())
-                setAddSecondUnitOpen(true)
+                setAddUnitError(null)
+                setSelectedAddUnitDayIds(new Set())
+                setAddUnitOpen(true)
               }}
               disabled={
                 !currentProductionId ||
                 shootDays.length === 0 ||
-                shootDaysEligibleForSecond.length === 0
+                shootDaysEligibleForUnit.length === 0
               }
             >
               <Layers2 className="size-4" />
-              Add Second Unit
+              Add unit
             </Button>
             <Button data-tutorial="stripboard-new-day"
               variant="outline"
@@ -1022,15 +1030,15 @@ export function StripboardPage() {
                 setDeleteShootDayTarget({ id: d.id, shoot_date: d.shoot_date, day_number: d.day_number })
                 setDeleteShootDayDialogOpen(true)
               }}
-              onRequestRemoveSecondUnit={(sdu, unitName, d) => {
-                setRemoveSecondUnitError(null)
-                setRemoveSecondUnitTarget({
+              onRequestRemoveUnit={(sdu, unitName, d) => {
+                setRemoveUnitError(null)
+                setRemoveUnitTarget({
                   shootDayUnitId: sdu.id,
                   shootDate: d.shoot_date,
                   dayNumber: d.day_number,
                   unitName,
                 })
-                setRemoveSecondUnitDialogOpen(true)
+                setRemoveUnitDialogOpen(true)
               }}
             />
           </div>
@@ -1178,53 +1186,54 @@ export function StripboardPage() {
       </Dialog>
 
       <Dialog
-        open={addSecondUnitOpen}
+        open={addUnitOpen}
         onOpenChange={(open) => {
-          setAddSecondUnitOpen(open)
+          setAddUnitOpen(open)
           if (!open) {
-            setSelectedSecondUnitDayIds(new Set())
-            setAddSecondUnitError(null)
+            setSelectedAddUnitDayIds(new Set())
+            setAddUnitError(null)
           }
         }}
       >
         <DialogContent className="max-w-md">
-          <h3 className="text-base font-semibold text-foreground">Add Second Unit</h3>
+          <h3 className="text-base font-semibold text-foreground">Add unit</h3>
           <p className="text-sm text-muted-foreground">
-            Add a Second Unit column to selected shoot days. Main Unit columns are unchanged.
+            Add the next unit (up to {MAX_UNITS_PER_DAY} per day) to the selected shoot days. Existing units are
+            unchanged.
           </p>
-          {addSecondUnitError && (
+          {addUnitError && (
             <p className="mt-2 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">
-              {addSecondUnitError}
+              {addUnitError}
             </p>
           )}
           <div className="mt-3 space-y-3">
-            {shootDaysEligibleForSecond.length > 1 && (
+            {shootDaysEligibleForUnit.length > 1 && (
               <div className="flex items-center gap-3 text-sm">
                 <button
                   type="button"
                   className="text-primary hover:underline"
                   onClick={() =>
-                    setSelectedSecondUnitDayIds(
-                      new Set(shootDaysEligibleForSecond.map((d) => d.id))
+                    setSelectedAddUnitDayIds(
+                      new Set(shootDaysEligibleForUnit.map(({ day }) => day.id))
                     )
                   }
-                  disabled={addSecondUnitMutation.isPending}
+                  disabled={addUnitMutation.isPending}
                 >
                   Select all
                 </button>
                 <button
                   type="button"
                   className="text-muted-foreground hover:underline"
-                  onClick={() => setSelectedSecondUnitDayIds(new Set())}
-                  disabled={addSecondUnitMutation.isPending}
+                  onClick={() => setSelectedAddUnitDayIds(new Set())}
+                  disabled={addUnitMutation.isPending}
                 >
                   Clear
                 </button>
               </div>
             )}
             <div className="max-h-64 space-y-2 overflow-y-auto">
-              {shootDaysEligibleForSecond.map((day) => {
-                const checked = selectedSecondUnitDayIds.has(day.id)
+              {shootDaysEligibleForUnit.map(({ day, nextUnitName }) => {
+                const checked = selectedAddUnitDayIds.has(day.id)
                 const label =
                   day.day_number != null
                     ? `${day.shoot_date} (Day ${day.day_number})`
@@ -1237,16 +1246,17 @@ export function StripboardPage() {
                     <Checkbox
                       checked={checked}
                       onCheckedChange={(value) => {
-                        setSelectedSecondUnitDayIds((prev) => {
+                        setSelectedAddUnitDayIds((prev) => {
                           const next = new Set(prev)
                           if (value === true) next.add(day.id)
                           else next.delete(day.id)
                           return next
                         })
                       }}
-                      disabled={addSecondUnitMutation.isPending}
+                      disabled={addUnitMutation.isPending}
                     />
                     <span className="text-sm text-foreground">{label}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">adds {nextUnitName}</span>
                   </label>
                 )
               })}
@@ -1256,8 +1266,8 @@ export function StripboardPage() {
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setAddSecondUnitOpen(false)}
-              disabled={addSecondUnitMutation.isPending}
+              onClick={() => setAddUnitOpen(false)}
+              disabled={addUnitMutation.isPending}
             >
               Cancel
             </Button>
@@ -1265,88 +1275,91 @@ export function StripboardPage() {
               type="button"
               className="bg-emerald-600 hover:bg-emerald-700"
               onClick={() =>
-                addSecondUnitMutation.mutate([...selectedSecondUnitDayIds])
+                addUnitMutation.mutate([...selectedAddUnitDayIds])
               }
               disabled={
-                addSecondUnitMutation.isPending || selectedSecondUnitDayIds.size === 0
+                addUnitMutation.isPending || selectedAddUnitDayIds.size === 0
               }
             >
-              {addSecondUnitMutation.isPending ? 'Adding…' : 'Add Second Unit'}
+              {addUnitMutation.isPending ? 'Adding…' : 'Add unit'}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog
-        open={removeSecondUnitDialogOpen}
+        open={removeUnitDialogOpen}
         onOpenChange={(open) => {
-          setRemoveSecondUnitDialogOpen(open)
+          setRemoveUnitDialogOpen(open)
           if (!open) {
-            setRemoveSecondUnitTarget(null)
-            setRemoveSecondUnitError(null)
+            setRemoveUnitTarget(null)
+            setRemoveUnitError(null)
           }
         }}
       >
         <DialogContent className="max-w-md">
-          <h3 className="text-base font-semibold text-foreground">Remove Second Unit</h3>
-          {removeSecondUnitTarget && (
+          <h3 className="text-base font-semibold text-foreground">
+            Remove {removeUnitTarget?.unitName ?? 'unit'}
+          </h3>
+          {removeUnitTarget && (
             <>
               <p className="text-sm text-foreground mt-1">
-                Remove Second Unit from shoot day{' '}
-                <span className="font-medium text-foreground">{removeSecondUnitTarget.shootDate}</span>
-                {removeSecondUnitTarget.dayNumber != null
-                  ? ` (Day ${removeSecondUnitTarget.dayNumber})`
+                Remove {removeUnitTarget.unitName} from shoot day{' '}
+                <span className="font-medium text-foreground">{removeUnitTarget.shootDate}</span>
+                {removeUnitTarget.dayNumber != null
+                  ? ` (Day ${removeUnitTarget.dayNumber})`
                   : ''}
                 ?
               </p>
               <p className="text-sm text-muted-foreground mt-2">
-                All shots scheduled on {removeSecondUnitTarget.unitName} for this day will move to
-                Unscheduled. Main Unit is unchanged.
+                All shots scheduled on {removeUnitTarget.unitName} for this day will move to
+                Unscheduled. Any units after it move up a place; Main Unit is unchanged.
               </p>
             </>
           )}
-          {removeSecondUnitError && (
+          {removeUnitError && (
             <p className="mt-2 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive" role="alert">
-              {removeSecondUnitError}
+              {removeUnitError}
             </p>
           )}
           <div className="mt-4 flex justify-end gap-2">
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setRemoveSecondUnitDialogOpen(false)}
-              disabled={removeSecondUnitMutation.isPending}
+              onClick={() => setRemoveUnitDialogOpen(false)}
+              disabled={removeUnitMutation.isPending}
             >
               Cancel
             </Button>
             <Button
               type="button"
               variant="destructive"
-              disabled={removeSecondUnitMutation.isPending || !removeSecondUnitTarget}
+              disabled={removeUnitMutation.isPending || !removeUnitTarget}
               onClick={() => {
-                if (!removeSecondUnitTarget) return
-                setRemoveSecondUnitError(null)
-                removeSecondUnitMutation.mutate(removeSecondUnitTarget.shootDayUnitId, {
+                if (!removeUnitTarget) return
+                const { unitName } = removeUnitTarget
+                setRemoveUnitError(null)
+                removeUnitMutation.mutate(removeUnitTarget.shootDayUnitId, {
                   onSuccess: () => {
-                    setRemoveSecondUnitDialogOpen(false)
-                    setRemoveSecondUnitTarget(null)
-                    toast.success('Second Unit removed. Shots moved to Unscheduled.')
+                    setRemoveUnitDialogOpen(false)
+                    setRemoveUnitTarget(null)
+                    toast.success(`${unitName} removed. Shots moved to Unscheduled.`)
                   },
                   onError: (error) => {
                     const message =
-                      error instanceof Error ? error.message : 'Could not remove Second Unit.'
+                      error instanceof Error ? error.message : 'Could not remove unit.'
                     if (message === 'CANNOT_REMOVE_MAIN_UNIT') {
-                      setRemoveSecondUnitError('Main Unit cannot be removed from a shoot day.')
+                      setRemoveUnitError('Main Unit cannot be removed from a shoot day.')
                     } else if (message === 'SHOOT_DAY_UNIT_NOT_FOUND') {
-                      setRemoveSecondUnitError('Second Unit is no longer on this shoot day.')
+                      setRemoveUnitError(`${unitName} is no longer on this shoot day.`)
                     } else {
-                      setRemoveSecondUnitError('Could not remove Second Unit. Please try again.')
+                      setRemoveUnitError(`Could not remove ${unitName}. Please try again.`)
                     }
                   },
                 })
               }}
             >
-              {removeSecondUnitMutation.isPending ? 'Removing…' : 'Remove Second Unit'}
+              {removeUnitMutation.isPending ? 'Removing…' : `Remove ${removeUnitTarget?.unitName ?? 'unit'}`}
             </Button>
           </div>
         </DialogContent>

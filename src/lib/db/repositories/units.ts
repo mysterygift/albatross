@@ -1,4 +1,4 @@
-import { unitNameToKey } from '@/lib/schedule/unitKey'
+import { sortUnitsForDisplay, unitNameToRank, unitRankToName, type UnitRank } from '@/lib/schedule/unitKey'
 import { getDb, now, uuid } from '../client'
 import { outboxPush } from '../outbox'
 import type { Unit } from '../types'
@@ -16,13 +16,14 @@ function rowToUnit(r: Record<string, unknown>): Unit {
   }
 }
 
+/** Live units for a production, Main Unit first, then Second … Fifth. */
 export async function listUnitsByProduction(productionId: string): Promise<Unit[]> {
   const db = await getDb()
   const rows = await db.select<Record<string, unknown>[]>(
     `SELECT * FROM ${TABLE} WHERE production_id = $1 AND deleted_at IS NULL ORDER BY name`,
     [productionId]
   )
-  return rows.map(rowToUnit)
+  return sortUnitsForDisplay(rows.map(rowToUnit))
 }
 
 export async function getUnitById(id: string): Promise<Unit | null> {
@@ -53,11 +54,16 @@ export async function ensureMainUnit(productionId: string): Promise<Unit> {
   return createUnit({ production_id: productionId, name: 'Main Unit' })
 }
 
-export async function ensureSecondUnit(productionId: string): Promise<Unit> {
+/**
+ * The production's unit for a rank (2 = "Second Unit" …), created when missing.
+ * Main Unit goes through `ensureMainUnit`, which matches the exact name.
+ */
+export async function ensureUnitForRank(productionId: string, rank: UnitRank): Promise<Unit> {
+  if (rank === 1) return ensureMainUnit(productionId)
   const units = await listUnitsByProduction(productionId)
-  const second = units.find((u) => unitNameToKey(u.name) === 'second')
-  if (second) return second
-  return createUnit({ production_id: productionId, name: 'Second Unit' })
+  const existing = units.find((u) => unitNameToRank(u.name) === rank)
+  if (existing) return existing
+  return createUnit({ production_id: productionId, name: unitRankToName(rank) })
 }
 
 export async function updateUnit(id: string, data: { name: string }): Promise<Unit> {

@@ -42,10 +42,8 @@ vi.mock('@/lib/db/client', async (importOriginal) => {
 })
 
 import { createProduction } from '@/lib/db/repositories/production'
-import {
-  addSecondUnitToShootDays,
-  createShootDayWithDefaultMainUnit,
-} from '@/lib/db/repositories/schedule'
+import { createShootDayWithDefaultMainUnit } from '@/lib/db/repositories/schedule'
+import { addUnitToShootDays } from '@/lib/db/repositories/shoot-day-unit-ranks'
 import { listShootDayUnitsByShootDay } from '@/lib/db/repositories/shoot-day-units'
 import { listStripsForDayUnit } from '@/lib/db/repositories/stripboard-strips'
 import { createUnit, listUnitsByProduction } from '@/lib/db/repositories/units'
@@ -65,7 +63,13 @@ async function makeDb(): Promise<Database> {
   return db
 }
 
-describe('addSecondUnitToShootDays', () => {
+async function unitNamesOnDay(productionId: string, shootDayId: string): Promise<string[]> {
+  const units = await listUnitsByProduction(productionId)
+  const nameById = new Map(units.map((u) => [u.id, u.name]))
+  return (await listShootDayUnitsByShootDay(shootDayId)).map((du) => nameById.get(du.unit_id) ?? '?')
+}
+
+describe('addUnitToShootDays', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -78,7 +82,7 @@ describe('addSecondUnitToShootDays', () => {
       shootDate: '2026-06-01',
     })
 
-    const result = await addSecondUnitToShootDays({
+    const result = await addUnitToShootDays({
       productionId: production.id,
       shootDayIds: [shootDay.id],
     })
@@ -86,6 +90,7 @@ describe('addSecondUnitToShootDays', () => {
     const units = await listUnitsByProduction(production.id)
     expect(units.some((u) => u.name === 'Second Unit')).toBe(true)
     expect(result.linkedShootDayUnitIds).toHaveLength(1)
+    expect(result.skippedFullShootDayIds).toEqual([])
 
     const dayUnits = await listShootDayUnitsByShootDay(shootDay.id)
     expect(dayUnits).toHaveLength(2)
@@ -109,7 +114,7 @@ describe('addSecondUnitToShootDays', () => {
       shootDate: '2026-06-02',
     })
 
-    const result = await addSecondUnitToShootDays({
+    const result = await addUnitToShootDays({
       productionId: production.id,
       shootDayIds: [day1.shootDay.id, day2.shootDay.id],
     })
@@ -121,7 +126,7 @@ describe('addSecondUnitToShootDays', () => {
     }
   })
 
-  it('is idempotent when second unit is already linked to a day', async () => {
+  it('adds the next unit each time, up to Fifth Unit, then skips the full day', async () => {
     await makeDb()
     const production = await createProduction({ name: 'P', notes: null }, { skipBudgetSeed: true })
     const { shootDay } = await createShootDayWithDefaultMainUnit({
@@ -129,19 +134,22 @@ describe('addSecondUnitToShootDays', () => {
       shootDate: '2026-06-01',
     })
 
-    const first = await addSecondUnitToShootDays({
-      productionId: production.id,
-      shootDayIds: [shootDay.id],
-    })
-    const second = await addSecondUnitToShootDays({
-      productionId: production.id,
-      shootDayIds: [shootDay.id],
-    })
+    for (let i = 0; i < 4; i++) {
+      const result = await addUnitToShootDays({ productionId: production.id, shootDayIds: [shootDay.id] })
+      expect(result.linkedShootDayUnitIds).toHaveLength(1)
+    }
+    expect(await unitNamesOnDay(production.id, shootDay.id)).toEqual([
+      'Main Unit',
+      'Second Unit',
+      'Third Unit',
+      'Fourth Unit',
+      'Fifth Unit',
+    ])
 
-    expect(first.linkedShootDayUnitIds).toHaveLength(1)
-    expect(second.linkedShootDayUnitIds).toHaveLength(0)
-    const dayUnits = await listShootDayUnitsByShootDay(shootDay.id)
-    expect(dayUnits).toHaveLength(2)
+    const full = await addUnitToShootDays({ productionId: production.id, shootDayIds: [shootDay.id] })
+    expect(full.linkedShootDayUnitIds).toHaveLength(0)
+    expect(full.skippedFullShootDayIds).toEqual([shootDay.id])
+    expect(await listShootDayUnitsByShootDay(shootDay.id)).toHaveLength(5)
   })
 
   it('reuses an existing second unit instead of creating a duplicate', async () => {
@@ -153,12 +161,13 @@ describe('addSecondUnitToShootDays', () => {
       shootDate: '2026-06-01',
     })
 
-    const result = await addSecondUnitToShootDays({
+    const result = await addUnitToShootDays({
       productionId: production.id,
       shootDayIds: [shootDay.id],
     })
 
-    expect(result.secondUnitId).toBe(importedSecond.id)
+    const dayUnits = await listShootDayUnitsByShootDay(shootDay.id)
+    expect(dayUnits.find((du) => du.id === result.linkedShootDayUnitIds[0])?.unit_id).toBe(importedSecond.id)
     const units = await listUnitsByProduction(production.id)
     expect(units.filter((u) => u.name.toLowerCase().includes('2nd') || u.name.toLowerCase().includes('second'))).toHaveLength(1)
   })
@@ -173,7 +182,7 @@ describe('addSecondUnitToShootDays', () => {
     })
 
     await expect(
-      addSecondUnitToShootDays({
+      addUnitToShootDays({
         productionId: production.id,
         shootDayIds: [shootDay.id],
       })

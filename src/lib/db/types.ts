@@ -1198,7 +1198,7 @@ export type Take = {
 // ─── Calendar (Schedule view) ───────────────────────────────────────────────
 
 /** Unit key for calendar display; derived from unit name. */
-export type CalendarUnitKey = 'main' | 'second'
+export type CalendarUnitKey = 'main' | 'second' | 'third' | 'fourth' | 'fifth'
 
 export type CalendarShootDayEvent = {
   shootDayId: string
@@ -1210,6 +1210,8 @@ export type CalendarShootDayEvent = {
   unitId: string
   unitName: string
   unitKey: CalendarUnitKey
+  /** 1 = Main Unit … 5 = Fifth Unit; 6 for a unit whose name has no rank. */
+  unitRank: number
   callTime: string | null
   lunchTime: string | null
   wrapTime: string | null
