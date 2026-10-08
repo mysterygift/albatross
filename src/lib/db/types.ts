@@ -720,6 +720,8 @@ export type Booking = {
   production_id: string
   person_id: string
   shoot_day_id: string | null
+  /** Unit of a multi-unit shoot day the person is called to; null means the whole day (all units). */
+  shoot_day_unit_id: string | null
   start_date: string | null
   end_date: string | null
   role: string | null

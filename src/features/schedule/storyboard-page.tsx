@@ -1,3 +1,6 @@
+import { ExportPdfMenu } from './export-pdf-menu'
+import { exportStoryboardPdf } from './scheduleExports'
+import type { ScheduleExportActor } from '@/lib/schedule/scheduleExportSources'
 import { RequireProduction } from '@/components/require-production'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/page-header'
@@ -617,7 +620,26 @@ export function StoryboardPage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="md:justify-self-end">
+        <div className="flex flex-wrap items-center gap-2 md:justify-self-end">
+          <ExportPdfMenu
+            productionId={currentProductionId}
+            disabled={(scenesQuery.data ?? []).length === 0}
+            options={[
+              ...(selectedSceneId !== ALL_SCENES
+                ? [
+                    {
+                      label: 'This scene',
+                      run: (actor: ScheduleExportActor) =>
+                        exportStoryboardPdf({ productionId: currentProductionId!, actor, sceneId: selectedSceneId }),
+                    },
+                  ]
+                : []),
+              {
+                label: 'All scenes',
+                run: (actor: ScheduleExportActor) => exportStoryboardPdf({ productionId: currentProductionId!, actor }),
+              },
+            ]}
+          />
           <Button
             variant="outline"
             className="h-9"

@@ -61,7 +61,7 @@ Reference implementations: `moveShootDayToDate` in `repositories/schedule.ts`, `
 
 ## Migrations
 
-SQLite migrations are plain SQL files in `src-tauri/migrations/` named `NNNN_<entity>_<descriptor>.sql` (currently `0001` to `0106`). Each is registered in `src-tauri/src/lib.rs`, in the `migrations` vec in `run()`:
+SQLite migrations are plain SQL files in `src-tauri/migrations/` named `NNNN_<entity>_<descriptor>.sql` (currently `0001` to `0107`). Each is registered in `src-tauri/src/lib.rs`, in the `migrations` vec in `run()`:
 
 ```rust
 Migration { version: 105, description: "crew_availability_cascade",
@@ -107,7 +107,7 @@ Postgres: `postgres/schema/baseline.sql` is the full baseline and `postgres/migr
 
 ## Schema map
 
-119 tables after migration `0106`, derived by applying all migrations. Almost all rows are production-scoped with `id` (UUID text) and the three timestamps; only notable details are listed.
+119 tables after migration `0107`, derived by applying all migrations. Almost all rows are production-scoped with `id` (UUID text) and the three timestamps; only notable details are listed.
 
 **Productions and episodes**
 
@@ -154,7 +154,7 @@ Postgres: `postgres/schema/baseline.sql` is the full baseline and `postgres/migr
 | Table | Purpose |
 |---|---|
 | `people` | Cast and crew (`is_cast`), contact, agent, role (encrypted fields) |
-| `bookings` | Person booked over a date range / shoot day |
+| `bookings` | Person booked over a date range / shoot day; optional `shoot_day_unit_id` (0107) calls them to one unit, null = whole day |
 | `cast_availability`, `crew_availability` | Availability windows |
 | `crew_day_hours`, `crew_hours_person_settings`, `production_crew_hours_settings` | Overtime: hours, per-person exemption, rules |
 

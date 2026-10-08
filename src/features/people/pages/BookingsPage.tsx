@@ -41,9 +41,11 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Plus, Settings } from 'lucide-react'
 import { getBookingCoverageByShootDay } from '@/lib/people/bookingIntelligence'
+import { sortShootDayUnitsForDisplay } from '@/lib/schedule/unitKey'
 import type { Booking } from '@/lib/db/types'
 import type { Person } from '@/lib/db/types'
 import { BookingsView, type BookingChanges } from '@/features/people/components/bookings/BookingsView'
+import { BookingUnitNamesContext } from '@/features/people/components/bookings/bookingViewShared'
 import { MissingBookingsHoverCard } from '@/features/people/components/bookings/MissingBookingsHoverCard'
 import { BookingAppearanceSettingsDialog } from '@/features/people/components/bookings/BookingAppearanceSettingsDialog'
 import {
@@ -77,6 +79,8 @@ export function BookingsPage() {
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
   const [personId, setPersonId] = useState('')
   const [shootDayId, setShootDayId] = useState('')
+  /** '' = all units of the day. */
+  const [shootDayUnitId, setShootDayUnitId] = useState('')
   const [role, setRole] = useState('')
   const [notes, setNotes] = useState('')
   const [filterUnit, setFilterUnit] = useState<string>('all')
@@ -182,7 +186,13 @@ export function BookingsPage() {
       const shootDayIdsWithUnit = new Set(
         shootDayUnits.filter((sdu) => sdu.unit_id === filterUnit).map((sdu) => sdu.shoot_day_id)
       )
-      list = list.filter((b) => b.shoot_day_id && shootDayIdsWithUnit.has(b.shoot_day_id))
+      const unitIdByShootDayUnitId = new Map(shootDayUnits.map((sdu) => [sdu.id, sdu.unit_id]))
+      // A booking with a unit matches only that unit; one without covers every unit of its day.
+      list = list.filter((b) =>
+        b.shoot_day_unit_id
+          ? unitIdByShootDayUnitId.get(b.shoot_day_unit_id) === filterUnit
+          : !!b.shoot_day_id && shootDayIdsWithUnit.has(b.shoot_day_id)
+      )
     }
     if (filterDepartment !== 'all') {
       list = list.filter((b) => {
@@ -198,6 +208,32 @@ export function BookingsPage() {
     return list
   }, [bookings, filterUnit, filterDepartment, filterCastCrew, shootDayUnits, personById])
 
+  const unitById = useMemo(() => new Map(units.map((u) => [u.id, u])), [units])
+
+  /** Units of the shoot day picked in the dialog, Main Unit first. */
+  const dialogDayUnits = useMemo(
+    () =>
+      sortShootDayUnitsForDisplay(
+        shootDayUnits.filter((sdu) => sdu.shoot_day_id === shootDayId),
+        unitById
+      ),
+    [shootDayUnits, shootDayId, unitById]
+  )
+  const unitNameByBookingId = useMemo(() => {
+    const unitIdByShootDayUnitId = new Map(shootDayUnits.map((sdu) => [sdu.id, sdu.unit_id]))
+    const m = new Map<string, string>()
+    for (const b of bookings) {
+      if (!b.shoot_day_unit_id) continue
+      const name = unitById.get(unitIdByShootDayUnitId.get(b.shoot_day_unit_id) ?? '')?.name
+      if (name) m.set(b.id, name)
+    }
+    return m
+  }, [bookings, shootDayUnits, unitById])
+
+  const effectiveShootDayUnitId = dialogDayUnits.some((sdu) => sdu.id === shootDayUnitId)
+    ? shootDayUnitId
+    : ''
+
   const createMutation = useMutation({
     mutationFn: async () => {
       if (authSession.authSupported && authSession.currentUser) {
@@ -208,6 +244,7 @@ export function BookingsPage() {
           productionId: currentProductionId!,
           personId,
           shootDayId: shootDayId || null,
+          shootDayUnitId: effectiveShootDayUnitId || null,
           role: role.trim() || null,
           notes: notes.trim() || null,
         })
@@ -216,6 +253,7 @@ export function BookingsPage() {
         production_id: currentProductionId!,
         person_id: personId,
         shoot_day_id: shootDayId || null,
+        shoot_day_unit_id: effectiveShootDayUnitId || null,
         role: role.trim() || null,
         notes: notes.trim() || null,
       })
@@ -228,6 +266,7 @@ export function BookingsPage() {
       setEditingBooking(null)
       setPersonId('')
       setShootDayId('')
+      setShootDayUnitId('')
       setRole('')
       setNotes('')
     },
@@ -238,6 +277,7 @@ export function BookingsPage() {
       setEditingBooking(null)
       setPersonId('')
       setShootDayId('')
+      setShootDayUnitId('')
       setRole('')
       setNotes('')
       setOpen(true)
@@ -252,6 +292,7 @@ export function BookingsPage() {
       const data = {
         person_id: personId,
         shoot_day_id: shootDayId || null,
+        shoot_day_unit_id: effectiveShootDayUnitId || null,
         role: role.trim() || null,
         notes: notes.trim() || null,
       }
@@ -269,6 +310,7 @@ export function BookingsPage() {
       setEditingBooking(null)
       setPersonId('')
       setShootDayId('')
+      setShootDayUnitId('')
       setRole('')
       setNotes('')
     },
@@ -366,6 +408,7 @@ export function BookingsPage() {
     setEditingBooking(booking)
     setPersonId(booking.person_id)
     setShootDayId(booking.shoot_day_id ?? '')
+    setShootDayUnitId(booking.shoot_day_unit_id ?? '')
     setRole(booking.role ?? '')
     setNotes(booking.notes ?? '')
     setOpen(true)
@@ -426,6 +469,7 @@ export function BookingsPage() {
                 setEditingBooking(null)
                 setPersonId('')
                 setShootDayId('')
+                setShootDayUnitId('')
                 setRole('')
                 setNotes('')
                 setOpen(true)
@@ -442,6 +486,7 @@ export function BookingsPage() {
                   setEditingBooking(null)
                   setPersonId('')
                   setShootDayId('')
+                  setShootDayUnitId('')
                   setRole('')
                   setNotes('')
                 }
@@ -484,6 +529,30 @@ export function BookingsPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {dialogDayUnits.length > 1 && (
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Unit</Label>
+                      <Select
+                        value={effectiveShootDayUnitId || 'all'}
+                        onValueChange={(v) => setShootDayUnitId(v === 'all' ? '' : v)}
+                      >
+                        <SelectTrigger className="w-full focus-visible:ring-mint-500/50 focus-visible:border-mint-500">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All units</SelectItem>
+                          {dialogDayUnits.map((sdu) => (
+                            <SelectItem key={sdu.id} value={sdu.id}>
+                              {unitById.get(sdu.unit_id)?.name ?? 'Unit'}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Call sheets and day packs for other units of this day leave this person out.
+                      </p>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label className="text-muted-foreground">Role (optional)</Label>
                     <Input
@@ -537,7 +606,8 @@ export function BookingsPage() {
         }
       />
 
-      <BookingsView
+      <BookingUnitNamesContext.Provider value={unitNameByBookingId}>
+        <BookingsView
           bookings={filteredBookings}
           allBookings={bookings}
           shootDays={shootDays}
@@ -558,6 +628,7 @@ export function BookingsPage() {
           onApplyChanges={applyBookingChanges}
           onEditBooking={openEditBooking}
         />
+      </BookingUnitNamesContext.Provider>
 
       <BookingAppearanceSettingsDialog
         open={appearanceSettingsOpen}

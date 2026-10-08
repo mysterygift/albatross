@@ -36,7 +36,7 @@ The PDF opens with the production, date, day number and unit, then **Essential t
 
 ## Check who is called
 
-Below the form, **Cast called (booked & required)** lists the cast who are both booked and needed by the scheduled scenes, with number, name, phone and agent. **Departmental requirements (booked crew by department)** lists booked crew grouped by department, heads of department first.
+Below the form, **Cast called (booked & required)** lists the cast who are both booked and needed by the scheduled scenes, with number, name, phone and agent. **Departmental requirements (booked crew by department)** lists booked crew grouped by department, heads of department first. On a day with several units, crew booked to another unit are left out; crew booked for **All units** appear on every unit's sheet (see [Book people onto shoot days](07-people.md#book-people-onto-shoot-days)).
 
 Two alerts help you spot gaps:
 

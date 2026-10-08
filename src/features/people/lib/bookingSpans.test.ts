@@ -33,6 +33,7 @@ function booking(id: string, personId: string, shootDayId: string): Booking {
     production_id: 'p1',
     person_id: personId,
     shoot_day_id: shootDayId,
+    shoot_day_unit_id: null,
     start_date: null,
     end_date: null,
     role: null,

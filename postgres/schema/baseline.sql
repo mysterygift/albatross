@@ -947,24 +947,6 @@ CREATE TABLE shoot_days (
   CONSTRAINT fk_shoot_days_2_production_id FOREIGN KEY (production_id) REFERENCES productions(id) ON UPDATE NO ACTION ON DELETE CASCADE
 );
 
-CREATE TABLE bookings (
-  id UUID DEFAULT gen_random_uuid(),
-  production_id UUID NOT NULL,
-  person_id UUID NOT NULL,
-  shoot_day_id UUID,
-  start_date DATE,
-  end_date DATE,
-  role TEXT,
-  notes TEXT,
-  created_at TIMESTAMPTZ NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL,
-  deleted_at TIMESTAMPTZ,
-  CONSTRAINT pk_bookings PRIMARY KEY (id),
-  CONSTRAINT fk_bookings_1_shoot_day_id FOREIGN KEY (shoot_day_id) REFERENCES shoot_days(id) ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT fk_bookings_2_person_id FOREIGN KEY (person_id) REFERENCES people(id) ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT fk_bookings_3_production_id FOREIGN KEY (production_id) REFERENCES productions(id) ON UPDATE NO ACTION ON DELETE CASCADE
-);
-
 CREATE TABLE crew_day_hours (
   id UUID DEFAULT gen_random_uuid(),
   production_id UUID NOT NULL,
@@ -1512,6 +1494,26 @@ CREATE TABLE shoot_day_units (
   CONSTRAINT fk_shoot_day_units_2_shoot_day_id FOREIGN KEY (shoot_day_id) REFERENCES shoot_days(id) ON UPDATE NO ACTION ON DELETE CASCADE
 );
 
+CREATE TABLE bookings (
+  id UUID DEFAULT gen_random_uuid(),
+  production_id UUID NOT NULL,
+  person_id UUID NOT NULL,
+  shoot_day_id UUID,
+  start_date DATE,
+  end_date DATE,
+  role TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  deleted_at TIMESTAMPTZ,
+  shoot_day_unit_id UUID,
+  CONSTRAINT pk_bookings PRIMARY KEY (id),
+  CONSTRAINT fk_bookings_1_shoot_day_unit_id FOREIGN KEY (shoot_day_unit_id) REFERENCES shoot_day_units(id) ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT fk_bookings_2_shoot_day_id FOREIGN KEY (shoot_day_id) REFERENCES shoot_days(id) ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT fk_bookings_3_person_id FOREIGN KEY (person_id) REFERENCES people(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT fk_bookings_4_production_id FOREIGN KEY (production_id) REFERENCES productions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+);
+
 CREATE TABLE call_sheets (
   id UUID DEFAULT gen_random_uuid(),
   production_id UUID NOT NULL,
@@ -2012,6 +2014,7 @@ CREATE INDEX idx_audit_logs_action_created_at ON audit_logs(action, created_at D
 CREATE INDEX idx_audit_logs_project_created_at ON audit_logs(project_id, created_at DESC);
 CREATE INDEX idx_audit_logs_target_created_at ON audit_logs(target_user_id, created_at DESC);
 CREATE INDEX idx_audit_logs_actor_created_at ON audit_logs(actor_user_id, created_at DESC);
+CREATE INDEX idx_bookings_shoot_day_unit ON bookings(shoot_day_unit_id);
 CREATE INDEX idx_bookings_shoot_day_id ON bookings(shoot_day_id);
 CREATE INDEX idx_bookings_person_id ON bookings(person_id);
 CREATE INDEX idx_bookings_production_id ON bookings(production_id);

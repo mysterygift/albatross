@@ -35,6 +35,7 @@ The README disclaimer applies: Albatross was built with heavy AI assistance, has
 | Instance key and DEK escrow | `albatross.recovery.meta.json` | AES-256-GCM wrap (`wrap1:`) | Argon2id(recovery key, salt) |
 | Document and attachment files | `attachments/<productionId>/` in app data | Not encrypted | None |
 | `.apf` exports | Wherever the user saves them | Not encrypted, PII in plaintext | None |
+| Day packs (personalised PDFs from Send Day Pack) | `day-packs/<productionId>/<date>-<unit>/` in app data, replaced on each Prepare | Not encrypted; names and call sheet contact details in plaintext | None |
 | Plaintext key material (instance key, DEK, passwords, recovery key) | Nowhere on disk | Memory only; `keyMaterialStorageAudit.test.ts` fails if it is persisted or logged | None |
 
 Field encryption is layered under SQLCipher. The registry is `SENSITIVE_TABLES` in `src/lib/security/sensitiveTables.ts`; a column listed there must be read and written through its repository, which calls `requireSensitiveDataAccess()` first.
@@ -208,7 +209,7 @@ Protected: the database file and its sidecars against someone who copies them of
 
 Not protected:
 - Anything while the app is signed in. Keys and decrypted data live in process memory, and a signed-in user sees whatever their access allows.
-- Attachments and `.apf` files, which are plaintext.
+- Attachments, day packs and `.apf` files, which are plaintext.
 - Metadata outside the encrypted columns (production names, dates, budgets, scripts and so on are protected only by SQLCipher).
 - A compromised machine, keylogger or malicious build.
 - Weak passwords: the only policy is a minimum length of 8.

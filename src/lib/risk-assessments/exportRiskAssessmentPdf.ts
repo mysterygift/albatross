@@ -3,6 +3,7 @@ import { getProductionById } from '@/lib/db/repositories/production'
 import {
   buildSetGeneratedDocumentStatements,
   getRiskAssessment,
+  type RiskAssessmentFull,
 } from '@/lib/db/repositories/risk-assessments'
 import { getShootDayById } from '@/lib/db/repositories/schedule'
 import { listShootDayUnitsByShootDay } from '@/lib/db/repositories/shoot-day-units'
@@ -28,11 +29,10 @@ export type RiskAssessmentPdfExport = {
   documentId: string
 }
 
-/**
- * Renders a saved RAMS, stores it in Documents (entity = shoot day) and links it as the RAMS's
- * latest PDF. A previously exported PDF for the same RAMS is replaced, so there is one per RAMS.
- */
-export async function exportRiskAssessmentPdf(riskAssessmentId: string): Promise<RiskAssessmentPdfExport> {
+/** Renders a saved RAMS to PDF bytes without storing anything. */
+export async function renderRiskAssessmentPdf(
+  riskAssessmentId: string
+): Promise<{ bytes: Uint8Array; fileName: string; riskAssessment: RiskAssessmentFull }> {
   const ra = await getRiskAssessment(riskAssessmentId)
   if (!ra) throw new Error('Risk assessment not found')
   const [production, day, dayUnits, units] = await Promise.all([
@@ -56,7 +56,15 @@ export async function exportRiskAssessmentPdf(riskAssessmentId: string): Promise
       riskAssessment: ra,
     })
   )
-  const fileName = riskAssessmentPdfFileName(day.shoot_date, ra.location_name)
+  return { bytes, fileName: riskAssessmentPdfFileName(day.shoot_date, ra.location_name), riskAssessment: ra }
+}
+
+/**
+ * Renders a saved RAMS, stores it in Documents (entity = shoot day) and links it as the RAMS's
+ * latest PDF. A previously exported PDF for the same RAMS is replaced, so there is one per RAMS.
+ */
+export async function exportRiskAssessmentPdf(riskAssessmentId: string): Promise<RiskAssessmentPdfExport> {
+  const { bytes, fileName, riskAssessment: ra } = await renderRiskAssessmentPdf(riskAssessmentId)
 
   const previousId = ra.generated_document_id
   const documentId = crypto.randomUUID()

@@ -10,7 +10,7 @@ const LOCAL_COLLABORATION_SETTING_MIGRATION_KEY = '_migration_local_collaboratio
 /** Setting key for the developer-mode flag (shows diagnostics in Settings). */
 export const DEVELOPER_MODE_SETTING_KEY = 'developer_mode'
 
-/** Setting key for showing experimental features (Overtime, Script Supervisor) in the sidebar. */
+/** Setting key for showing experimental features (Overtime, Script Supervisor, Send Day Pack) in the sidebar. */
 export const SHOW_EXPERIMENTAL_SETTING_KEY = 'show_experimental'
 
 const DEFAULTS: Record<string, string> = {

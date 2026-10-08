@@ -97,20 +97,22 @@ describe('experimental features', () => {
   const subTargets = (groups: ReturnType<typeof visibleNavGroups>) =>
     groups.flatMap((g) => g.items.flatMap((i) => (isNavGroup(i) ? i.sub.map((s) => s.to) : [i.to])))
 
-  it('marks Overtime and Script Supervisor as experimental', () => {
-    expect(experimentalNavLabels()).toEqual(['Script: Script Supervisor', 'People: Overtime'])
+  it('marks Overtime, Script Supervisor and Send Day Pack as experimental', () => {
+    expect(experimentalNavLabels()).toEqual(['Script: Script Supervisor', 'People: Overtime', 'Send Day Pack'])
   })
 
   it('hides experimental entries unless they are shown', () => {
     const hidden = subTargets(visibleNavGroups(false))
     expect(hidden).not.toContain('/schedule/script-supervisor')
     expect(hidden).not.toContain('/people/overtime')
+    expect(hidden).not.toContain('/day-pack')
     expect(hidden).toContain('/schedule/script-sections')
     expect(hidden).toContain('/budget/vendors')
 
     const shown = subTargets(visibleNavGroups(true))
     expect(shown).toContain('/schedule/script-supervisor')
     expect(shown).toContain('/people/overtime')
+    expect(shown).toContain('/day-pack')
   })
 
   it('keeps experimental routes reachable for breadcrumbs and links', () => {
