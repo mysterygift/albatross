@@ -5,7 +5,7 @@
  * in SQL to avoid N+1. Primary location derived from scheduled SHOT strips.
  */
 import { getDb } from '../client'
-import { unitNameToKey } from '@/lib/schedule/unitKey'
+import { MAX_UNITS_PER_DAY, unitNameToKey, unitNameToRank } from '@/lib/schedule/unitKey'
 import type {
   CalendarShootDayEvent,
   CalendarDateRange,
@@ -147,7 +147,7 @@ export async function listCalendarShootDayEvents(
     }
   }
 
-  return rows.map((r) => {
+  const events = rows.map((r) => {
     const primaryLocationId = r.primary_location_id as string | null
     const mapped = {
       shootDayId: r.shoot_day_id as string,
@@ -158,6 +158,7 @@ export async function listCalendarShootDayEvents(
       unitId: r.unit_id as string,
       unitName: r.unit_name as string,
       unitKey: unitNameToKey(r.unit_name as string),
+      unitRank: unitNameToRank(r.unit_name as string) ?? MAX_UNITS_PER_DAY + 1,
       callTime: (r.call_time as string | null) ?? null,
       lunchTime: parseLunchTime(r.meal_times_json as string | null),
       wrapTime: (r.wrap_time as string | null) ?? null,
@@ -169,4 +170,8 @@ export async function listCalendarShootDayEvents(
     } satisfies CalendarShootDayEvent
     return mapped
   })
+  // Within a day, Main Unit first, then Second … Fifth (SQL sorts by name, which is alphabetical).
+  return events.sort(
+    (a, b) => a.date.localeCompare(b.date) || a.unitRank - b.unitRank || a.unitName.localeCompare(b.unitName)
+  )
 }

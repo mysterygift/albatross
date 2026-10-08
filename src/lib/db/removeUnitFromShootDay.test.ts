@@ -43,17 +43,16 @@ vi.mock('@/lib/db/client', async (importOriginal) => {
 
 import { createProduction } from '@/lib/db/repositories/production'
 import {
-  addSecondUnitToShootDays,
   createScene,
   createShootDayWithDefaultMainUnit,
   createShot,
 } from '@/lib/db/repositories/schedule'
+import { addUnitToShootDays, removeUnitFromShootDay } from '@/lib/db/repositories/shoot-day-unit-ranks'
 import { listShootDayUnitsByShootDay } from '@/lib/db/repositories/shoot-day-units'
 import {
   createShotStrip,
   listStripsByShootDay,
   listUnscheduledShots,
-  removeSecondUnitFromShootDay,
 } from '@/lib/db/repositories/stripboard-strips'
 import { listUnitsByProduction } from '@/lib/db/repositories/units'
 import { sortShootDayUnitsForDisplay } from '@/lib/schedule/unitKey'
@@ -73,7 +72,7 @@ async function makeDb(): Promise<Database> {
   return db
 }
 
-describe('removeSecondUnitFromShootDay', () => {
+describe('removeUnitFromShootDay', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -86,7 +85,7 @@ describe('removeSecondUnitFromShootDay', () => {
       productionId: production.id,
       shootDate: '2026-06-01',
     })
-    const { linkedShootDayUnitIds } = await addSecondUnitToShootDays({
+    const { linkedShootDayUnitIds } = await addUnitToShootDays({
       productionId: production.id,
       shootDayIds: [shootDay.id],
     })
@@ -94,7 +93,7 @@ describe('removeSecondUnitFromShootDay', () => {
     const { shot } = await createShot({ scene_id: scene.id, shot_number: '1A' })
     const shotStrip = await createShotStrip(production.id, shot.id, shootDay.id, secondDayUnitId)
 
-    await removeSecondUnitFromShootDay(secondDayUnitId)
+    await removeUnitFromShootDay(secondDayUnitId)
 
     const dayUnits = await listShootDayUnitsByShootDay(shootDay.id)
     expect(dayUnits).toHaveLength(1)
@@ -114,7 +113,40 @@ describe('removeSecondUnitFromShootDay', () => {
       shootDate: '2026-06-01',
     })
 
-    await expect(removeSecondUnitFromShootDay(shootDayUnitId)).rejects.toThrow(/CANNOT_REMOVE_MAIN_UNIT/)
+    await expect(removeUnitFromShootDay(shootDayUnitId)).rejects.toThrow(/CANNOT_REMOVE_MAIN_UNIT/)
+  })
+
+  it('moves later units up a rank and lets the removed unit be added again', async () => {
+    await makeDb()
+    const production = await createProduction({ name: 'P', notes: null }, { skipBudgetSeed: true })
+    const { shootDay } = await createShootDayWithDefaultMainUnit({
+      productionId: production.id,
+      shootDate: '2026-06-01',
+    })
+    const second = await addUnitToShootDays({ productionId: production.id, shootDayIds: [shootDay.id] })
+    const third = await addUnitToShootDays({ productionId: production.id, shootDayIds: [shootDay.id] })
+    const thirdDayUnitId = third.linkedShootDayUnitIds[0]!
+
+    await removeUnitFromShootDay(second.linkedShootDayUnitIds[0]!)
+
+    const units = await listUnitsByProduction(production.id)
+    const nameById = new Map(units.map((u) => [u.id, u.name]))
+    let dayUnits = await listShootDayUnitsByShootDay(shootDay.id)
+    expect(dayUnits.map((du) => nameById.get(du.unit_id))).toEqual(['Main Unit', 'Second Unit'])
+    // The old Third Unit row (and its strips) is now the Second Unit.
+    expect(dayUnits[1]!.id).toBe(thirdDayUnitId)
+    const thirdStrips = await listStripsByShootDay(shootDay.id)
+    expect(thirdStrips.filter((s) => s.shoot_day_unit_id === thirdDayUnitId).map((s) => s.strip_type).sort()).toEqual([
+      'CALL',
+      'WRAP',
+    ])
+
+    // Re-adding fills Third Unit again even though a removed row once held a slot on this day.
+    await addUnitToShootDays({ productionId: production.id, shootDayIds: [shootDay.id] })
+    dayUnits = await listShootDayUnitsByShootDay(shootDay.id)
+    const unitsAfter = await listUnitsByProduction(production.id)
+    const nameAfter = new Map(unitsAfter.map((u) => [u.id, u.name]))
+    expect(dayUnits.map((du) => nameAfter.get(du.unit_id))).toEqual(['Main Unit', 'Second Unit', 'Third Unit'])
   })
 })
 
@@ -126,7 +158,7 @@ describe('sortShootDayUnitsForDisplay', () => {
       productionId: production.id,
       shootDate: '2026-06-01',
     })
-    await addSecondUnitToShootDays({
+    await addUnitToShootDays({
       productionId: production.id,
       shootDayIds: [shootDay.id],
     })

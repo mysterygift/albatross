@@ -445,6 +445,7 @@ describe('Non-episodic regression shield', () => {
           unitId: 'u',
           unitName: 'Main',
           unitKey: 'main',
+          unitRank: 1,
           callTime: null,
           lunchTime: null,
           wrapTime: null,

@@ -4,10 +4,8 @@ import { OptimisticConcurrencyConflictError } from '../concurrency'
 import { outboxPush, outboxStatementForRow } from '../outbox'
 import type { Scene, Shot, StripboardStrip, StripStatus, StripType } from '../types'
 import { deleteShootDay, getShootDayById, listScenesByProduction, listShootDaysByProduction, listShotsByProduction } from './schedule'
-import { getShootDayUnitById, listShootDayUnitsByShootDay } from './shoot-day-units'
-import { getUnitById } from './units'
+import { listShootDayUnitsByShootDay } from './shoot-day-units'
 import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
-import { unitNameToKey } from '@/lib/schedule/unitKey'
 
 const TABLE = 'stripboard_strips'
 export const SORT_GAP = 1000
@@ -159,6 +157,12 @@ async function syncShootDayCallWrapForMainUnit(
   }
   await db.execute(updateSql, bindValues)
   await outboxPush('shoot_days', shootDayId, 'update', JSON.stringify({ call_time: callTime, wrap_time: wrapTime }))
+}
+
+/** Re-mirror the day's Main Unit CALL/WRAP times into `shoot_days`, e.g. after units change rank or day. */
+export async function resyncShootDayCallWrapFromMainUnit(shootDayId: string): Promise<void> {
+  const db = await getDb()
+  await syncShootDayCallWrapForMainUnit(db, shootDayId, now())
 }
 
 /** List strips that are on the board (SCHEDULED with a day). Used for stripboard columns. */
@@ -864,9 +868,9 @@ export async function listUnscheduledShots(
   return list
 }
 
-const CONTENT_STRIP_TYPES: ReadonlyArray<StripType> = ['SHOT', 'SCENE']
+export const CONTENT_STRIP_TYPES: ReadonlyArray<StripType> = ['SHOT', 'SCENE']
 
-async function softDeleteStripForDayRemoval(stripId: string): Promise<void> {
+export async function softDeleteStripForDayRemoval(stripId: string): Promise<void> {
   const db = await getDb()
   const ts = now()
   await db.execute(
@@ -907,40 +911,4 @@ export async function deleteShootDayAndDiscardStrips(shootDayId: string): Promis
   }
 
   await deleteShootDay(shootDayId)
-}
-
-/**
- * Remove Second Unit from a shoot day. Scheduled SHOT/SCENE strips move to Unscheduled;
- * structural strips on that unit are soft-deleted. Main Unit cannot be removed.
- */
-export async function removeSecondUnitFromShootDay(shootDayUnitId: string): Promise<void> {
-  const shootDayUnit = await getShootDayUnitById(shootDayUnitId)
-  if (!shootDayUnit) {
-    throw new Error('SHOOT_DAY_UNIT_NOT_FOUND')
-  }
-
-  const unit = await getUnitById(shootDayUnit.unit_id)
-  if (!unit) {
-    throw new Error('UNIT_NOT_FOUND')
-  }
-  if (unitNameToKey(unit.name) !== 'second') {
-    throw new Error('CANNOT_REMOVE_MAIN_UNIT')
-  }
-
-  const strips = await listStripsForDayUnit(shootDayUnit.shoot_day_id, shootDayUnitId)
-  for (const strip of strips) {
-    if (strip.strip_status === 'SCHEDULED' && CONTENT_STRIP_TYPES.includes(strip.strip_type)) {
-      await moveStripToUnscheduled(strip.id)
-    } else {
-      await softDeleteStripForDayRemoval(strip.id)
-    }
-  }
-
-  const db = await getDb()
-  const ts = now()
-  await db.execute(
-    `UPDATE shoot_day_units SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
-    [ts, ts, shootDayUnitId]
-  )
-  await outboxPush('shoot_day_units', shootDayUnitId, 'delete', null)
 }
