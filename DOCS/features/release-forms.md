@@ -5,7 +5,7 @@ Contributor and location releases signed on screen (finger, Apple Pencil or mous
 ## Code map
 | Area | Location |
 |---|---|
-| Pages/UI | `src/features/release-forms/` (`page.tsx` list, `ReleaseFormSignPage.tsx`, `NewReleaseDialog.tsx`, `EditTermsDialog.tsx`, `useReleaseFormSettings.ts`, `exportReleasePdf.ts`) |
+| Pages/UI | `src/features/release-forms/` (`page.tsx` list, `ReleaseFormSignPage.tsx`, `NewReleaseDialog.tsx`, `CompanyNamePrompt.tsx`, `EditTermsDialog.tsx`, `useReleaseFormSettings.ts`, `exportReleasePdf.ts`) |
 | Signature pad | `src/components/signature-pad.tsx`, pure logic in `src/components/signaturePadModel.ts` |
 | Logic | `src/lib/releaseForms/` (`defaultTerms.ts`, `terms.ts`, `settings.ts`, `signReleaseForm.ts`) |
 | PDF | `src/lib/pdf/releaseForm.ts` (`pdf-lib`, `PdfLayout`) |
@@ -14,6 +14,7 @@ Contributor and location releases signed on screen (finger, Apple Pencil or mous
 
 ## Data model
 - **Terms** are app-wide settings, not per production: `release_forms_company_name`, `release_forms_contributor_terms`, `release_forms_guardian_terms`, `release_forms_location_terms`. An empty or missing terms value means the standard text in `defaultTerms.ts`; saving text identical to the standard stores `''` so it keeps tracking the standard. The `settings` table is per device (not in `.apf` or publish), so each computer or iPad has its own terms.
+- **Production company is required.** `saveReleaseFormSettings` and `signReleaseForm` throw without it. Until it is set, **New Release** and the signing page show `CompanyNamePrompt` instead of the forms, and **Edit terms** cannot save with it empty.
 - **Tokens** (`RELEASE_TOKENS`): `{{production_company}}` (the setting), `{{production_name}}` (current production's name), `{{location_address}}` and `{{shoot_dates}}` (location form fields). Blank values render as `________`; unknown tokens are left as typed. Paragraphs are separated by blank lines (`termsParagraphs`).
 - **Signed releases** are `documents` rows with `entity_type` `signed_contributor_release` or `signed_location_release`, `entity_id` null, file `attachments/<productionId>/<documentId>-<form>-release-<name>-<yyyy-mm-dd-hhmm>.pdf`. They travel with `.apf` export, duplicate production and publish like any document. Signer details exist only inside the PDF.
 

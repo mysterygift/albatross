@@ -115,6 +115,13 @@ describe('ReleaseFormSignPage', () => {
     expect(screen.getByText(/the right to enter and remain upon 12 Mill Lane/)).toBeTruthy()
   })
 
+  it('asks for the production company instead of showing the form when none is set', async () => {
+    mocks.settings.delete('release_forms_company_name')
+    renderAt('/release-forms/new/contributor')
+    expect(await screen.findByText(/set your production company first/i)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^sign$/i })).toBeNull()
+  })
+
   it('keeps the terms a form opened with even if the saved terms change', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     renderAt('/release-forms/new/contributor', qc)
