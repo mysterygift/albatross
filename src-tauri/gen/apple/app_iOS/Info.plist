@@ -82,5 +82,7 @@
 			</dict>
 		</dict>
 	</array>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Albatross creates email drafts in Outlook with your day pack files attached. Nothing is sent until you press Send.</string>
 </dict>
 </plist>
