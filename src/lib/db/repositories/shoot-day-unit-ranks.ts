@@ -170,7 +170,8 @@ async function buildPlacementStatements(
   }
 
   // Rows that change day take their strips and call sheets along; risk assessment links to the
-  // old day's RAMS no longer apply.
+  // old day's RAMS and bookings to the unit no longer apply (those bookings stay on their day,
+  // covering all of its units).
   for (const p of changed.filter((c) => c.fromShootDayId !== c.toShootDayId)) {
     const stripRows = await db.select<Record<string, unknown>[]>(
       `SELECT id FROM stripboard_strips WHERE shoot_day_unit_id = $1 AND deleted_at IS NULL`,
@@ -228,11 +229,42 @@ async function buildPlacementStatements(
         payloadJson: null,
       })
     }
+
+    const unlink = await bookingUnitUnlinkStatements(p.shootDayUnitId, ts)
+    statements.push(...unlink.statements)
+    outbox.push(...unlink.outbox)
   }
 
   const outboxStatement = outboxStatementForRows(outbox)
   if (outboxStatement) statements.push(outboxStatement)
   return statements
+}
+
+/** Statements that turn bookings for one unit into whole-day bookings. */
+async function bookingUnitUnlinkStatements(
+  shootDayUnitId: string,
+  ts: string
+): Promise<{ statements: Stmt[]; outbox: OutboxRow[] }> {
+  const db = await getDb()
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT id FROM bookings WHERE shoot_day_unit_id = $1 AND deleted_at IS NULL`,
+    [shootDayUnitId]
+  )
+  if (rows.length === 0) return { statements: [], outbox: [] }
+  return {
+    statements: [
+      {
+        sql: `UPDATE bookings SET shoot_day_unit_id = NULL, updated_at = $1 WHERE shoot_day_unit_id = $2 AND deleted_at IS NULL`,
+        bindValues: [ts, shootDayUnitId],
+      },
+    ],
+    outbox: rows.map((r) => ({
+      entity: 'bookings',
+      entityId: r.id as string,
+      operation: 'update' as const,
+      payloadJson: JSON.stringify({ shoot_day_unit_id: null }),
+    })),
+  }
 }
 
 async function runStatements(statements: Stmt[]): Promise<void> {
@@ -451,12 +483,16 @@ export async function removeUnitFromShootDay(shootDayUnitId: string): Promise<vo
     }
   }
 
-  const db = await getDb()
   const ts = now()
-  await db.execute(`UPDATE shoot_day_units SET deleted_at = $1, updated_at = $2 WHERE id = $3`, [
-    ts,
-    ts,
-    shootDayUnitId,
+  const unlink = await bookingUnitUnlinkStatements(shootDayUnitId, ts)
+  const outboxStatement = outboxStatementForRows(unlink.outbox)
+  await runStatements([
+    ...unlink.statements,
+    ...(outboxStatement ? [outboxStatement] : []),
+    {
+      sql: `UPDATE shoot_day_units SET deleted_at = $1, updated_at = $2 WHERE id = $3`,
+      bindValues: [ts, ts, shootDayUnitId],
+    },
   ])
   await outboxPush('shoot_day_units', shootDayUnitId, 'delete', null)
 

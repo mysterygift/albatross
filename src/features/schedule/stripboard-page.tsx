@@ -83,6 +83,8 @@ import { SmartSchedulingInsightsPanel } from './smart-scheduling-insights-panel'
 import { normalizeScheduleTimeInput } from '@/lib/schedule/time'
 import { MAX_UNITS_PER_DAY, UNIT_RANKS, unitNameToRank, unitRankToName } from '@/lib/schedule/unitKey'
 import { resolveStripShotAndScene } from '@/lib/schedule/stripboardRows'
+import { ExportPdfMenu } from './export-pdf-menu'
+import { exportShootingSchedulePdf } from './scheduleExports'
 
 const STRIP_TYPES: { type: StripType; label: string }[] = [
   { type: 'MOVE', label: 'Move / Setup' },
@@ -920,6 +922,24 @@ export function StripboardPage() {
               <Layers2 className="size-4" />
               Add unit
             </Button>
+            <ExportPdfMenu
+              productionId={currentProductionId}
+              disabled={shootDays.length === 0}
+              options={[
+                {
+                  label: activeDay
+                    ? `Current day (${activeDay.day_number != null ? `Day ${activeDay.day_number}` : activeDay.shoot_date})`
+                    : 'Current day',
+                  disabled: !activeDay,
+                  run: (actor) =>
+                    exportShootingSchedulePdf({ productionId: currentProductionId!, actor, shootDayId: activeDay!.id }),
+                },
+                {
+                  label: 'Whole schedule',
+                  run: (actor) => exportShootingSchedulePdf({ productionId: currentProductionId!, actor }),
+                },
+              ]}
+            />
             <Button data-tutorial="stripboard-new-day"
               variant="outline"
               size="sm"

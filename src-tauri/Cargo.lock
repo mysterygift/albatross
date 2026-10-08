@@ -101,6 +101,7 @@ dependencies = [
  "libsqlite3-sys",
  "log",
  "objc2",
+ "objc2-app-kit",
  "objc2-foundation",
  "reqwest 0.12.28",
  "rusqlite",

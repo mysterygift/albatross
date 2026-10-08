@@ -50,6 +50,12 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Day pack email drafts (Apple Mail via NSSharingService, default mail app via NSWorkspace); same versions tao already uses.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSBundle", "NSString", "NSURL"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSSharingService", "NSWorkspace"] }
+
 # Xcode 27 strip corrupts host proc-macro dylibs (mis-aligned LINKEDIT)
 [profile.release.build-override]
 strip = "none"

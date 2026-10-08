@@ -1905,7 +1905,12 @@ export function ScheduleCalendarPage() {
       (sum, sceneId) => sum + (sceneById.get(sceneId)?.page_eighths ?? 0),
       0
     )
-    const crewGroups = getCallSheetCrewRequirements(crewHierarchy, bookingsForSelectedDay, crew)
+    const crewGroups = getCallSheetCrewRequirements(
+      crewHierarchy,
+      bookingsForSelectedDay,
+      crew,
+      selectedEvent.shootDayUnitId
+    )
     const crewBooked = crewGroups.reduce((sum, group) => sum + group.rows.length, 0)
 
     return {

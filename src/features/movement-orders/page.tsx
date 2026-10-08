@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { RequireProduction } from '@/components/require-production'
 import { PageHeader } from '@/components/page-header'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -110,14 +111,17 @@ import {
   type MovementOrderRecipient,
 } from '@/features/movement-orders/MovementOrderDistributionDialog'
 import { isIosPlatform, isMobilePlatform } from '@/lib/platform'
+import { buildDayRecipients } from '@/lib/call-sheets/recipients'
 
 
 export function MovementOrdersPage() {
   const { currentProductionId } = useCurrentProduction()
   const authSession = useAuthSession()
   const queryClient = useQueryClient()
-  const [shootDayId, setShootDayId] = useState<string | null>(null)
-  const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(null)
+  // `?day=&unit=` preselects a shoot day and unit (links from Send Day Pack).
+  const [searchParams] = useSearchParams()
+  const [shootDayId, setShootDayId] = useState<string | null>(() => searchParams.get('day'))
+  const [shootDayUnitId, setShootDayUnitId] = useState<string | null>(() => searchParams.get('unit'))
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [paperSize, setPaperSize] = useState<PaperSize>(DEFAULT_PAPER_SIZE)
@@ -376,8 +380,8 @@ export function MovementOrdersPage() {
   }, [sceneIdsScheduled, shotIdsScheduled, castBySceneId, castByShotId, bookingsForDay, cast])
 
   const crewGroupsForPreview = useMemo(
-    () => getCallSheetCrewRequirements(crewHierarchy, bookingsForDay, crew),
-    [crewHierarchy, bookingsForDay, crew]
+    () => getCallSheetCrewRequirements(crewHierarchy, bookingsForDay, crew, shootDayUnitId),
+    [crewHierarchy, bookingsForDay, crew, shootDayUnitId]
   )
 
   const selectedUnitScheduledStrips = useMemo(
@@ -605,26 +609,10 @@ export function MovementOrdersPage() {
     }
   }, [movementOrderDataForView])
 
-  const distributionRecipients: MovementOrderRecipient[] = useMemo(() => {
-    if (!movementOrderDataForView) return []
-    const castRecipients: MovementOrderRecipient[] = (castResult.castRows ?? []).map((row) => ({
-      id: `cast-${row.person_id}`,
-      fullName: row.name,
-      type: 'cast' as const,
-    }))
-    const crewRecipients: MovementOrderRecipient[] = crewGroupsForPreview.flatMap((group) =>
-      group.rows.map((row) => ({
-        id: `crew-${row.person_id}`,
-        fullName: row.name,
-        type: 'crew' as const,
-      }))
-    )
-    const map = new Map<string, MovementOrderRecipient>()
-    for (const r of [...castRecipients, ...crewRecipients]) {
-      if (!map.has(r.id)) map.set(r.id, r)
-    }
-    return Array.from(map.values())
-  }, [movementOrderDataForView, castResult.castRows, crewGroupsForPreview])
+  const distributionRecipients: MovementOrderRecipient[] = useMemo(
+    () => (movementOrderDataForView ? buildDayRecipients(castResult.castRows ?? [], crewGroupsForPreview) : []),
+    [movementOrderDataForView, castResult.castRows, crewGroupsForPreview]
+  )
 
   const generateMutation = useMutation({
     mutationFn: async (options: {

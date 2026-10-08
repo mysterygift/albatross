@@ -72,13 +72,16 @@ function resolveScriptVersionLabels(
 }
 
 /**
- * Generate, store, and record a sides export for a shoot day. Throws if no sections are selected.
+ * Render sides for a shoot day without storing anything. Throws the first blocking coverage issue
+ * (e.g. no sections selected), as `exportShootDaySides` does.
  */
-export async function exportShootDaySides(
-  args: ExportShootDaySidesArgs
-): Promise<ExportShootDaySidesResult> {
-  const { source, model, filters } = args
-
+export async function renderShootDaySidesPdf(args: {
+  source: SidesBuilderSource
+  model: SidesDraftModel
+  productionTitle?: string
+  generatedAt?: Date
+}): Promise<Uint8Array> {
+  const { source, model } = args
   const blocking = getBlockingExportIssues(
     analyzeExportCoverage({
       source,
@@ -91,15 +94,11 @@ export async function exportShootDaySides(
     throw new Error(blocking[0]!.message)
   }
 
-  const { productionId, shootDayId } = source
-
-  // Resolve presentation context (read-only).
   const productionTitle =
-    args.productionTitle ?? (await getProductionById(productionId))?.name ?? 'Production'
-  const versions = await listScriptVersionsByProduction(productionId)
+    args.productionTitle ?? (await getProductionById(source.productionId))?.name ?? 'Production'
+  const versions = await listScriptVersionsByProduction(source.productionId)
   const scriptVersionLabels = resolveScriptVersionLabels(source.scriptVersionIds, versions)
 
-  // 1. Generate the PDF first; a generation failure leaves zero DB rows and zero files.
   const pdfData = buildSidesPdfData({
     productionTitle,
     shootDate: source.shootDate,
@@ -108,7 +107,25 @@ export async function exportShootDaySides(
     model,
     generatedAt: args.generatedAt,
   })
-  const bytes = new Uint8Array(await generateSidesPdf(pdfData))
+  return new Uint8Array(await generateSidesPdf(pdfData))
+}
+
+/**
+ * Generate, store, and record a sides export for a shoot day. Throws if no sections are selected.
+ */
+export async function exportShootDaySides(
+  args: ExportShootDaySidesArgs
+): Promise<ExportShootDaySidesResult> {
+  const { source, model, filters } = args
+  const { productionId, shootDayId } = source
+
+  // 1. Generate the PDF first; a generation failure leaves zero DB rows and zero files.
+  const bytes = await renderShootDaySidesPdf({
+    source,
+    model,
+    productionTitle: args.productionTitle,
+    generatedAt: args.generatedAt,
+  })
 
   const documentId = uuid()
   const exportId = uuid()

@@ -43,7 +43,7 @@ Cards: Profile and contact, Department and responsibility (HOD badge, department
 Per-person call/wrap overrides and overtime live on **People → Overtime** (experimental, see [overtime.md](overtime.md); `src/features/people/overtime/`, `src/lib/overtime/`, `src/lib/db/repositories/overtime.ts`; tables from migration 0102: `production_crew_hours_settings`, `crew_day_hours`, `crew_hours_person_settings`). It lists crew booked on a shoot day via `bookings`. Crew Manager does not edit hours.
 
 ## Connections
-- **Call sheets**: `getCallSheetCrewRequirements` takes crew who have a booking on the shoot day, groups by hierarchy department, puts the HOD first, then role order, then name; people with no or unknown department go in an "Other" group at the end. See [call-sheets.md](call-sheets.md).
+- **Call sheets**: `getCallSheetCrewRequirements` takes crew who have a booking on the shoot day for the unit (or for the whole day; `bookingsForShootDayUnit`), groups by hierarchy department, puts the HOD first, then role order, then name; people with no or unknown department go in an "Other" group at the end. See [call-sheets.md](call-sheets.md).
 - **Tasks**: department labels from the hierarchy decide which tasks count towards a department.
 - **Duplicate production** copies `production_crew_hierarchy_configs` and `people`, but not bookings.
 - Equipment and Movement Orders read crew departments for contact lists and ownership ([equipment.md](equipment.md), [movement-orders.md](movement-orders.md)).

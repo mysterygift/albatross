@@ -89,6 +89,8 @@ export function textForPdf(text: string): string {
   return toWinAnsi(
     text
       .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, '')
+      // Thin, narrow no-break (time formats) and other Unicode spaces.
+      .replace(/[\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
       .replace(/\u2013|\u2014/g, '-')
       .replace(/[\u2018\u2019]/g, "'")
       .replace(/[\u201C\u201D]/g, '"')
@@ -278,9 +280,19 @@ export interface TableColumn {
 
 export type TableCell =
   | string
-  | { text: string; bold?: boolean; color?: PdfColor }
+  /** `detail` is drawn under `text` in the regular face, slightly smaller (e.g. a shot description). */
+  | { text: string; bold?: boolean; color?: PdfColor; detail?: string }
   /** An empty tick box, centred in the cell, for paper checklists. */
   | { checkbox: true }
+
+/** A row that spans every column, e.g. a schedule banner (LUNCH, MOVE), on an optional fill. */
+export interface TableSpanRow {
+  span: string
+  bold?: boolean
+  fill?: PdfColor
+}
+
+export type TableRow = TableCell[] | TableSpanRow
 
 export interface NumberedRow {
   badge: string
@@ -639,10 +651,11 @@ export class PdfLayout {
    * Table whose rows grow to fit wrapped cells. Rows never split across pages, and the header
    * repeats on each new page.
    */
-  table(args: { columns: TableColumn[]; rows: TableCell[][]; fontSize?: number }): void {
+  table(args: { columns: TableColumn[]; rows: TableRow[]; fontSize?: number }): void {
     const { columns, rows } = args
     if (rows.length === 0) return
     const size = args.fontSize ?? BODY
+    const detailSize = size - 0.5
     const totalWeight = columns.reduce((sum, c) => sum + c.weight, 0)
     const widths = columns.map((c) => (c.weight / totalWeight) * this.contentWidth)
 
@@ -654,14 +667,41 @@ export class PdfLayout {
     const cellText = (cell: TableCell) =>
       typeof cell === 'string' ? cell : 'text' in cell ? cell.text : ''
     const cellBold = (cell: TableCell) => typeof cell !== 'string' && 'bold' in cell && cell.bold === true
+    const cellDetail = (cell: TableCell) =>
+      typeof cell !== 'string' && 'detail' in cell && cell.detail?.trim() ? cell.detail : null
     const boxSize = Math.round(size * 1.35)
-    const measure = (row: TableCell[]) => {
-      const lines = row.map((cell, i) =>
-        this.wrap(cellText(cell), widths[i]! - TABLE_PAD_X * 2, size, cellBold(cell))
-      )
-      const textH = Math.max(1, ...lines.map((l) => l.length)) * this.lineHeight(size)
+
+    /** One cell's lines; detail lines come after the main text in the regular face. */
+    type CellLine = { text: string; bold: boolean; size: number }
+    const cellLines = (cell: TableCell, width: number): CellLine[] => {
+      const bold = cellBold(cell)
+      const main = this.wrap(cellText(cell), width, size, bold).map((text) => ({ text, bold, size }))
+      const detail = cellDetail(cell)
+      if (!detail) return main
+      return [...main, ...this.wrap(detail, width, detailSize).map((text) => ({ text, bold: false, size: detailSize }))]
+    }
+    const linesHeight = (lines: CellLine[]) =>
+      Math.max(this.lineHeight(size), lines.reduce((sum, l) => sum + this.lineHeight(l.size), 0))
+
+    const measure = (row: TableRow) => {
+      if (!Array.isArray(row)) {
+        const lines = this.wrap(row.span, this.contentWidth - TABLE_PAD_X * 2, size, row.bold === true).map(
+          (text) => ({ text, bold: row.bold === true, size })
+        )
+        return { lines: [lines], height: linesHeight(lines) + TABLE_PAD_Y * 2 }
+      }
+      const lines = row.map((cell, i) => cellLines(cell, widths[i]! - TABLE_PAD_X * 2))
+      const textH = Math.max(...lines.map(linesHeight))
       const boxH = row.some(isCheckbox) ? boxSize + 2 : 0
       return { lines, height: Math.max(textH, boxH) + TABLE_PAD_Y * 2 }
+    }
+
+    const drawLines = (lines: CellLine[], x: number, width: number, align: TableColumn['align'], color: PdfColor) => {
+      let baseline = this.y - TABLE_PAD_Y - size * 1.05
+      for (const line of lines) {
+        this.drawAligned(line.text, x, width, baseline, line.size, line.bold, align, color)
+        baseline -= this.lineHeight(line.size)
+      }
     }
 
     const drawHeader = () => {
@@ -700,37 +740,39 @@ export class PdfLayout {
         this.addPage()
         drawHeader()
       }
-      let x = this.xLeft
-      row.forEach((cell, i) => {
-        if (isCheckbox(cell)) {
-          // Centred on the cap height of the first text line, so the box sits level with the text.
-          const baseline = this.y - TABLE_PAD_Y - size * 1.05
+      if (!Array.isArray(row)) {
+        if (row.fill) {
           this.page.drawRectangle({
-            x: x + (widths[i]! - boxSize) / 2,
-            y: baseline + size * 0.36 - boxSize / 2,
-            width: boxSize,
-            height: boxSize,
-            borderColor: COLOR_FRAME,
-            borderWidth: 0.8,
+            x: this.xLeft,
+            y: this.y - height,
+            width: this.contentWidth,
+            height,
+            color: row.fill,
           })
-          x += widths[i]!
-          return
         }
-        const color = typeof cell !== 'string' && 'color' in cell && cell.color ? cell.color : COLOR_INK
-        lines[i]!.forEach((line, n) => {
-          this.drawAligned(
-            line,
-            x,
-            widths[i]!,
-            this.y - TABLE_PAD_Y - size * 1.05 - n * this.lineHeight(size),
-            size,
-            cellBold(cell),
-            columns[i]!.align,
-            color
-          )
+        drawLines(lines[0]!, this.xLeft, this.contentWidth, 'left', COLOR_INK)
+      } else {
+        let x = this.xLeft
+        row.forEach((cell, i) => {
+          if (isCheckbox(cell)) {
+            // Centred on the cap height of the first text line, so the box sits level with the text.
+            const baseline = this.y - TABLE_PAD_Y - size * 1.05
+            this.page.drawRectangle({
+              x: x + (widths[i]! - boxSize) / 2,
+              y: baseline + size * 0.36 - boxSize / 2,
+              width: boxSize,
+              height: boxSize,
+              borderColor: COLOR_FRAME,
+              borderWidth: 0.8,
+            })
+            x += widths[i]!
+            return
+          }
+          const color = typeof cell !== 'string' && 'color' in cell && cell.color ? cell.color : COLOR_INK
+          drawLines(lines[i]!, x, widths[i]!, columns[i]!.align, color)
+          x += widths[i]!
         })
-        x += widths[i]!
-      })
+      }
       drawHorizontalRule(this.page, this.y - height, this.xLeft, this.xRight, COLOR_ROW_RULE, 0.6)
       this.y -= height
     }
@@ -856,6 +898,22 @@ export class PdfLayout {
     }
   }
 
+  /**
+   * Embed a PNG or JPEG, told apart by their signature bytes (not the file name). Returns null for
+   * other formats (WebP, GIF) or unreadable bytes, so one bad image cannot fail the PDF.
+   */
+  async embedImage(bytes: Uint8Array): Promise<PDFImage | null> {
+    const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+    try {
+      if (isPng) return await this.doc.embedPng(bytes)
+      if (isJpeg) return await this.doc.embedJpg(bytes)
+    } catch {
+      return null
+    }
+    return null
+  }
+
   /** Size a full-width image is drawn at: its aspect ratio, capped to fit on one page. */
   private fullWidthImageSize(image: PDFImage): { width: number; height: number } {
     const maxHeight = this.pageHeight - this.margin * 2 - 60
@@ -887,19 +945,28 @@ export class PdfLayout {
     this.y -= height + 6
   }
 
-  /** Framed images with a caption above each, `columns` across. Rows never split across pages. */
-  imageGrid(items: Array<{ image: PDFImage; caption: string }>, columns: number): void {
+  /**
+   * Framed images with a caption above each and an optional `detail` below, `columns` across. Rows
+   * never split across pages. A null image draws an empty frame (16:9) reading "Preview not
+   * available", so a panel in an unsupported format still has its place.
+   */
+  imageGrid(items: Array<{ image: PDFImage | null; caption: string; detail?: string | null }>, columns: number): void {
     if (items.length === 0) return
     const cols = Math.max(1, Math.min(columns, items.length))
     const gutter = 8
     const cellW = (this.contentWidth - gutter * (cols - 1)) / cols
     const captionSize = 8.5
+    const detailSize = 7.5
+    const heightOf = (image: PDFImage | null) => (image ? (cellW * image.height) / image.width : (cellW * 9) / 16)
     for (let i = 0; i < items.length; i += cols) {
       const row = items.slice(i, i + cols)
       const captions = row.map((item) => this.wrap(item.caption, cellW, captionSize, true))
+      const details = row.map((item) => (item.detail?.trim() ? this.wrap(item.detail, cellW, detailSize) : []))
       const captionH = Math.max(1, ...captions.map((c) => c.length)) * this.lineHeight(captionSize)
-      const imageH = Math.max(...row.map((item) => (cellW * item.image.height) / item.image.width))
-      this.ensureSpace(captionH + imageH + 8)
+      const detailLines = Math.max(0, ...details.map((d) => d.length))
+      const detailH = detailLines > 0 ? detailLines * this.lineHeight(detailSize) + 3 : 0
+      const imageH = Math.max(...row.map((item) => heightOf(item.image)))
+      this.ensureSpace(captionH + imageH + detailH + 8)
       row.forEach((item, j) => {
         const x = this.xLeft + j * (cellW + gutter)
         captions[j]!.forEach((line, n) => {
@@ -908,12 +975,26 @@ export class PdfLayout {
             bold: true,
           })
         })
-        const h = (cellW * item.image.height) / item.image.width
+        const h = heightOf(item.image)
         const top = this.y - captionH
-        this.page.drawImage(item.image, { x, y: top - h, width: cellW, height: h })
+        if (item.image) {
+          this.page.drawImage(item.image, { x, y: top - h, width: cellW, height: h })
+        } else {
+          const label = 'Preview not available'
+          const labelW = this.textWidth(label, detailSize)
+          this.text(label, x + (cellW - labelW) / 2, top - h / 2 - detailSize / 3, {
+            size: detailSize,
+            color: COLOR_MUTED,
+          })
+        }
         this.frame(x, top, cellW, h)
+        details[j]!.forEach((line, n) => {
+          this.text(line, x, top - h - 3 - detailSize * 1.05 - n * this.lineHeight(detailSize), {
+            size: detailSize,
+          })
+        })
       })
-      this.y -= captionH + imageH + 8
+      this.y -= captionH + imageH + detailH + 8
     }
   }
 

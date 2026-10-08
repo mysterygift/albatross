@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Shown when Send Day Pack first asks to create drafts in Microsoft Outlook. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Albatross creates email drafts in Outlook with your day pack files attached. Nothing is sent until you press Send.</string>
+</dict>
+</plist>

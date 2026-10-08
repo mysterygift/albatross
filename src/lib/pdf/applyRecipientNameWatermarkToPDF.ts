@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib'
-import { embedStandardFont } from '@/lib/pdf/layoutKit'
+import { embedStandardFont, textForPdf } from '@/lib/pdf/layoutKit'
 
 type InputPDFBytes = Uint8Array | ArrayBuffer
 
@@ -21,8 +21,8 @@ export async function applyRecipientNameWatermarkToPDF(
   PDFBytes: InputPDFBytes,
   options: RecipientNameWatermarkOptions,
 ): Promise<Uint8Array> {
-  const name = options.recipientFullName?.trim()
-  if (!name) {
+  const rawName = options.recipientFullName?.trim()
+  if (!rawName) {
     throw new Error('applyRecipientNameWatermarkToPDF: recipientFullName is required and cannot be empty.')
   }
 
@@ -41,6 +41,11 @@ export async function applyRecipientNameWatermarkToPDF(
   } catch {
     throw new Error('applyRecipientNameWatermarkToPDF: Failed to read input PDF bytes.')
   }
+
+  // Helvetica is WinAnsi-only: map letters it lacks ("č" → "c") so a name never throws. A name with
+  // nothing printable left (e.g. only CJK characters) leaves the PDF unwatermarked rather than failing.
+  const name = textForPdf(rawName).trim()
+  if (!name) return doc.save()
 
   const pages = doc.getPages()
   if (!pages.length) {

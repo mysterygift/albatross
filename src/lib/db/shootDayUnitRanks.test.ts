@@ -52,9 +52,11 @@ import {
 import {
   addUnitToShootDays,
   moveShootDayUnitToDate,
+  removeUnitFromShootDay,
   reorderShootDayUnits,
   swapShootDayUnitRanks,
 } from '@/lib/db/repositories/shoot-day-unit-ranks'
+import { createBooking, listBookingsByShootDay, updateBooking } from '@/lib/db/repositories/booking'
 import { listShootDayUnitsByShootDay } from '@/lib/db/repositories/shoot-day-units'
 import {
   createShotStrip,
@@ -92,6 +94,14 @@ async function dayUnits(productionId: string, shootDayId: string) {
   const units = await listUnitsByProduction(productionId)
   const nameById = new Map(units.map((u) => [u.id, u.name]))
   return (await listShootDayUnitsByShootDay(shootDayId)).map((du) => ({ id: du.id, name: nameById.get(du.unit_id) }))
+}
+
+/** A bare people row; the repository insert needs the data key, which these tests don't set up. */
+async function insertPerson(productionId: string, id: string): Promise<void> {
+  await dbAdapter.execute(
+    `INSERT INTO people (id, production_id, name, is_cast, created_at, updated_at) VALUES ($1, $2, $3, 0, 't', 't')`,
+    [id, productionId, id]
+  )
 }
 
 async function setCallTime(shootDayId: string, shootDayUnitId: string, time: string) {
@@ -330,5 +340,74 @@ describe('swapShootDayUnitRanks / reorderShootDayUnits', () => {
     await addUnitToShootDays({ productionId: production.id, shootDayIds: [day.shootDay.id] })
 
     await expect(reorderShootDayUnits(day.shootDay.id, [day.shootDayUnitId])).rejects.toThrow(/UNIT_ORDER_MISMATCH/)
+  })
+})
+
+describe('booking unit links', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('turns bookings for a unit into whole-day bookings when the unit moves to another day', async () => {
+    await makeDb()
+    const { production } = await setup()
+    const dayA = await createShootDayWithDefaultMainUnit({ productionId: production.id, shootDate: '2026-06-01' })
+    await createShootDayWithDefaultMainUnit({ productionId: production.id, shootDate: '2026-06-02' })
+    const { linkedShootDayUnitIds } = await addUnitToShootDays({
+      productionId: production.id,
+      shootDayIds: [dayA.shootDay.id],
+    })
+    const second = linkedShootDayUnitIds[0]!
+    await insertPerson(production.id, 'crew-1')
+    await insertPerson(production.id, 'crew-2')
+    await createBooking({ production_id: production.id, person_id: 'crew-1', shoot_day_id: dayA.shootDay.id, shoot_day_unit_id: second })
+    await createBooking({ production_id: production.id, person_id: 'crew-2', shoot_day_id: dayA.shootDay.id, shoot_day_unit_id: dayA.shootDayUnitId })
+
+    await moveShootDayUnitToDate({ shootDayUnitId: second, targetDate: '2026-06-02' })
+
+    const byPerson = new Map((await listBookingsByShootDay(dayA.shootDay.id)).map((b) => [b.person_id, b]))
+    expect(byPerson.get('crew-1')?.shoot_day_unit_id).toBeNull()
+    expect(byPerson.get('crew-2')?.shoot_day_unit_id).toBe(dayA.shootDayUnitId)
+  })
+
+  it('turns bookings for a removed unit into whole-day bookings', async () => {
+    await makeDb()
+    const { production } = await setup()
+    const day = await createShootDayWithDefaultMainUnit({ productionId: production.id, shootDate: '2026-06-01' })
+    const { linkedShootDayUnitIds } = await addUnitToShootDays({
+      productionId: production.id,
+      shootDayIds: [day.shootDay.id],
+    })
+    await insertPerson(production.id, 'crew-1')
+    await createBooking({
+      production_id: production.id,
+      person_id: 'crew-1',
+      shoot_day_id: day.shootDay.id,
+      shoot_day_unit_id: linkedShootDayUnitIds[0]!,
+    })
+
+    await removeUnitFromShootDay(linkedShootDayUnitIds[0]!)
+
+    expect((await listBookingsByShootDay(day.shootDay.id))[0]?.shoot_day_unit_id).toBeNull()
+  })
+
+  it('drops the unit when a booking moves to another day, and keeps it otherwise', async () => {
+    await makeDb()
+    const { production } = await setup()
+    const dayA = await createShootDayWithDefaultMainUnit({ productionId: production.id, shootDate: '2026-06-01' })
+    const dayB = await createShootDayWithDefaultMainUnit({ productionId: production.id, shootDate: '2026-06-02' })
+    await insertPerson(production.id, 'crew-1')
+    const booking = await createBooking({
+      production_id: production.id,
+      person_id: 'crew-1',
+      shoot_day_id: dayA.shootDay.id,
+      shoot_day_unit_id: dayA.shootDayUnitId,
+    })
+
+    const sameDay = await updateBooking(booking.id, { shoot_day_id: dayA.shootDay.id, role: 'Focus puller' })
+    expect(sameDay.shoot_day_unit_id).toBe(dayA.shootDayUnitId)
+
+    const moved = await updateBooking(booking.id, { shoot_day_id: dayB.shootDay.id })
+    expect(moved.shoot_day_unit_id).toBeNull()
   })
 })

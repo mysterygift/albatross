@@ -49,6 +49,9 @@
           "conformsTo": ["public.data", "public.archive"]
         }
       }
-    ]
+    ],
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
+    }
   }
 }

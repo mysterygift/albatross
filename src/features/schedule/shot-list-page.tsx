@@ -123,19 +123,15 @@ import { nextShotNumberForDuplicate } from '@/lib/schedule/shotNumberDuplicate'
 
 import { sceneScheduleLabel } from '@/lib/schedule/sceneDisplay'
 import { sortScenesByNumber } from '@/lib/schedule/sceneFields'
+import { formatShotDuration as formatDuration } from '@/lib/pdf/shotList'
+import { ExportPdfMenu } from './export-pdf-menu'
+import { exportShotListPdf } from './scheduleExports'
 import {
   DEFAULT_NEW_SCENE_DAY_NIGHT,
   DEFAULT_NEW_SCENE_INT_EXT,
   findDefaultSceneLocationId,
   resolveDefaultNewSceneLocationId,
 } from '@/lib/schedule/sceneDefaults'
-
-function formatDuration(sec: number | null): string {
-  if (sec == null) return '—'
-  const m = Math.floor(sec / 60)
-  const s = sec % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
 
 function latestVersionForEpisodeScope(
   versions: ScriptVersion[],
@@ -1475,6 +1471,22 @@ export function ShotListPage() {
                   Reset cast
                 </Button>
               )}
+              <ExportPdfMenu
+                productionId={currentProductionId}
+                disabled={scenes.length === 0}
+                options={[
+                  {
+                    label: selectedScene ? `This scene (${selectedScene.scene_number})` : 'This scene',
+                    disabled: !selectedScene,
+                    run: (actor) =>
+                      exportShotListPdf({ productionId: currentProductionId!, actor, sceneId: selectedScene!.id }),
+                  },
+                  {
+                    label: 'All scenes',
+                    run: (actor) => exportShotListPdf({ productionId: currentProductionId!, actor }),
+                  },
+                ]}
+              />
               <Button data-tutorial="shot-add"
                 type="button"
                 variant="outline"

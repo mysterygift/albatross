@@ -13,14 +13,15 @@ Cast and crew records for a production, who is booked on which shoot day, and th
 | Repositories | `src/lib/db/repositories/{person,booking,cast-availability,crew-availability,scene-cast,shot-cast,stripboard-strips}.ts` |
 | DooD PDF | `src/lib/pdf/dood.ts` |
 | Contact validation | `src/lib/contacts/contactFieldValidation.ts` |
-| Tables | `people`, `bookings` (0001, rebuilt in 0004), `scene_cast`, `cast_availability` (0002, 0004), `shot_cast` (0041), `crew_availability` (0074, 0103); person columns added in 0040, 0042, 0086 |
+| Tables | `people`, `bookings` (0001, rebuilt in 0004; `shoot_day_unit_id` 0107), `scene_cast`, `cast_availability` (0002, 0004), `shot_cast` (0041), `crew_availability` (0074, 0103); person columns added in 0040, 0042, 0086 |
 | Tests | `src/lib/people/*.test.ts`, `src/features/people/**/*.test.*`, `src/lib/db/repositories/person.delete.test.ts` |
 
 ## Data model
 - `people` is one table for cast and crew, scoped by `production_id`. `is_cast` (integer 0/1) separates them; `listCast` / `listCrew` filter on it, and `ensurePeopleIsCastNormalized` repairs legacy boolean values on SQLite. Cast fields: `cast_number`, `role_name` (character), `agent_name/email/phone`. Crew fields: `department`, `role_name`. Shared: `email`, `phone`, `phases`, `notes`, `contributor_form_status` (`not_requested | requested | signed | expired`).
 - `name_sort_key` is a blind index for ordering when field encryption is on. `PERSON_PROTECTED_FIELDS` (`src/lib/security/sensitiveEntityFieldCrypto.ts`) lists the encrypted columns: name, email, phone, department, notes, cast number, agent fields, role. See [../security.md](../security.md).
 - `scene_cast(scene_id, person_id)`: who is in a scene. `shot_cast(shot_id, person_id)`, unique per shot and person: who is in a shot. Adding someone to a shot also adds them to the parent scene (restoring soft-deleted rows).
-- `bookings`: `person_id`, `shoot_day_id` (nullable, `ON DELETE SET NULL`), `start_date`, `end_date`, `role`, `notes`. One row per person per shoot day; the Bookings page groups consecutive days into spans for display only (`bookingSpans.ts`).
+- `bookings`: `person_id`, `shoot_day_id` (nullable, `ON DELETE SET NULL`), `shoot_day_unit_id` (nullable, `ON DELETE SET NULL`), `start_date`, `end_date`, `role`, `notes`. One row per person per shoot day; the Bookings page groups consecutive days into spans for display only (`bookingSpans.ts`).
+- `shoot_day_unit_id` calls the person to one unit of a multi-unit day; `NULL` means the whole day (all units), which is how bookings made before 0107 behave. `updateBooking` clears it when the day changes without a new unit (drag to another day), and `moveShootDayUnitToDate` / `removeUnitFromShootDay` clear it when the unit leaves the day. `.apf` prune clears a link to a unit not in the package.
 - `cast_availability` / `crew_availability`: date windows with `availability` of `AVAILABLE | UNAVAILABLE | TENTATIVE`. The UI only creates UNAVAILABLE windows. Both cascade on production or person delete.
 - Everything soft-deletes (`deleted_at`). `deletePerson` soft-deletes the person's `scene_cast`, `shot_cast`, both availability tables, `bookings` and `floats` rows in one transaction.
 
@@ -45,7 +46,7 @@ Computed in the browser by `DayOutOfDaysPage`, never stored. Rows are all cast; 
 Bookings and `shot_cast` do not feed DooD. `crew_availability` is not used either (DooD is cast-only). The CSV and PDF exports honour the search and "Only with clashes" filters, save a copy through `persistProductionDocument` (so it appears in Documents) and then offer a save dialog. `CastDetailPage` repeats the same work-date logic for its single-person summary; keep the two in step.
 
 ### Bookings and booking intelligence
-`BookingsPage` offers a Calendar and a Timeline view (view, lanes per week and colours persist per production in `localStorage`, see `bookingAppearance.ts`), filters by unit, department and cast/crew, and drag to move or resize spans. `getBookingCoverageByShootDay` (advisory, read-only) compares need with bookings per day:
+`BookingsPage` offers a Calendar and a Timeline view (view, lanes per week and colours persist per production in `localStorage`, see `bookingAppearance.ts`), filters by unit, department and cast/crew, and drag to move or resize spans. The booking dialog shows a **Unit** select ("All units" or one of the day's units, rank order) when the chosen day has more than one unit; span tooltips show unit chips through `BookingUnitNamesContext`. The unit filter matches a booking's own unit, or any unit of its day for whole-day bookings. `getBookingCoverageByShootDay` (advisory, read-only) compares need with bookings per day:
 - Needed on a day: if the day has scheduled shots, people in `shot_cast` for those shots; otherwise people in `scene_cast` for the scheduled scenes.
 - Result sets per day: needed but not booked, booked but not needed, properly booked. `getPersonBookingNeedSummary` gives the per-person totals used on the detail page.
 
