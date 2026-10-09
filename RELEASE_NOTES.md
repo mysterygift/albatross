@@ -14,6 +14,7 @@ Offline-first. Your data stays on your machine. Here's what's new.
 - 🖨️ **Export PDF** on the Stripboard (shooting schedule), Shot Lists and Storyboard.
 - 👥 **Book crew to a unit** – on days with several units, a booking can be for one unit, so each unit's call sheet lists only its own crew.
 - 🎥 **Up to five units a day** – Main, Second, Third, Fourth and Fifth Unit. **Add Second Unit** on the Stripboard is now **Add unit**.
+- 🎒 **Equipment, faster** – tick several registry items and edit them together (vendor, status, dates and more), with names and serials kept per item. **Add from registry** on a list now lets you search, filter, tick lots of kit and set quantities, then add it all in one go.
 - 🎓 **New tutorial system** – with a starter budget to play with.
 - 🎨 **UI themes** – pick the look you like.
 - 📊 **Wider stripboard** – more room to work.

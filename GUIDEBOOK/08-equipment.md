@@ -32,6 +32,16 @@ The page has two tabs: **Registry** (every item) and **Equipment Lists** (kits m
 
 The table shows **Name**, **Qty**, **Category**, **Department**, **Source**, **Status**, **Vendor**, **Rental Window** and **Replacement Value**. Use the pencil icon to edit an item and the bin icon to remove it. The bin asks for confirmation, then removes the item and its return reminder (see below).
 
+### Edit several items at once
+
+Tick the box at the start of each row you want to change. The box in the header ticks every item that matches the current search and filters. A bar above the table shows how many items are selected, and how many of them the filters are hiding.
+
+1. Click **Edit selected**. With one item selected, this opens the normal edit form.
+2. In **Edit n items**, tick each field you want to change and set its value. Changing a value ticks its field for you. A field where the items differ says **(mixed)**.
+3. Click **Apply to n items**.
+
+Fields you leave unticked keep each item's own value. A ticked field left blank clears that value on every selected item. **Name** and **Serial number** are locked, because each item needs its own; edit items one at a time to change them. Return reminders update for each item, just as they do when you edit one item.
+
 ### Find items
 
 Search by name, UUID or serial number, and filter by category, source, department or status. Every item has a short UUID, which the exports use to recognise it.
@@ -68,7 +78,7 @@ Lists pick items from the registry; they do not copy them. Editing an item in th
 
 Click a list to open it. A list shows each item's number, order, **Name**, **UUID**, **Category**, **Serial**, **Qty**, **OUT**, **IN** and **Notes**.
 
-- **Add from registry** adds items that are not yet on the list. Click an item in the **Add equipment to list** dialog to add it; the dialog closes after each item, so reopen it to add more.
+- **Add from registry** opens a window listing the whole registry. Search by name, UUID or serial number, and filter by category, department or source. Tick the items you want (or click a row) and set **Qty to add** for each. Typing a quantity ticks the item. Ticks stay when you change the search, so you can build a kit over several searches. Items already on the list are greyed out and marked **On list**; tick **Hide items already on list** to hide them. A quantity above what the registry holds turns red, but you can still add it. Click **Add n items** to add everything you ticked.
 - Set **Qty** per row to the number of units to pack. If that is more than the registry holds, the number turns red and an **Insufficient stock in registry** warning appears at the top.
 - Use the up and down arrows to reorder.
 - The remove icon takes an item off the list only. It stays in the registry.
