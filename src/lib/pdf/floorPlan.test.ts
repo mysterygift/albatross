@@ -180,6 +180,22 @@ describe('generateFloorPlanPdf', () => {
     expect(text).toContain('Honeywagon')
   })
 
+  it('draws shapes in their own colours', async () => {
+    const coloured = {
+      ...plans[0]!,
+      layout: {
+        ...layout,
+        shapes: [
+          { id: 'grass', kind: 'rect' as const, x: 0, y: 0, width: 300, height: 200, stroke: '#22c55e', fill: '#22c55e', fillOpacity: 0.3 },
+          { id: 'pond', kind: 'path' as const, points: [{ x: 400, y: 100 }, { x: 500, y: 100 }, { x: 450, y: 180 }], closed: true, fill: '#3b82f6' },
+        ],
+      },
+    }
+    const data = buildFloorPlanPdfData({ ...base, plans: [coloured], setups: [], scope: { kind: 'location', locationId: 'diner' } })
+    const bytes = await generateFloorPlanPdf(data)
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1)
+  })
+
   it('reads data URLs and ignores anything else', () => {
     expect(dataUrlBytes(PNG_1x1)?.[1]).toBe(0x50)
     expect(dataUrlBytes('https://example.com/a.png')).toBeNull()

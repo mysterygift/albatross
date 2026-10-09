@@ -422,6 +422,18 @@ describe('FloorPlanCanvas', () => {
     expect(svg().getAttribute('viewBox')).toBe('400 250 600 400')
   })
 
+  it('draws shapes in their own colours', () => {
+    const initial = {
+      ...emptyLayout(),
+      shapes: [{ id: 'r', kind: 'rect' as const, x: 10, y: 10, width: 100, height: 50, stroke: '#ef4444', fill: '#22c55e', fillOpacity: 0.25 }],
+    }
+    render(<LayoutHarness initial={initial} tool="select" onChange={vi.fn()} />)
+    const rect = document.querySelector('[data-shape-id="r"]') as SVGRectElement
+    expect(rect.style.fill).toBe('rgb(34, 197, 94)')
+    expect(rect.style.stroke).toBe('rgb(239, 68, 68)')
+    expect(rect.style.fillOpacity).toBe('0.25')
+  })
+
   it('finishes a line with Done', () => {
     const onChange = vi.fn()
     render(<LayoutHarness tool="path" onChange={onChange} />)
