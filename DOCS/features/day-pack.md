@@ -8,7 +8,7 @@ Experimental: send everyone called to one shoot day + unit their own copy of the
 |---|---|
 | Page/UI | [`src/features/day-pack/`](../../src/features/day-pack): `DayPackPage.tsx` (pickers, state, actions), `day-pack-cards.tsx` (documents, recipients, email cards) |
 | Logic | [`src/lib/day-pack/`](../../src/lib/day-pack): `loadDayPackSources.ts`, `loadDayPackRecipients.ts`, `buildDayPackFiles.ts`, `emailTemplate.ts`, `composeMail.ts` |
-| Reused | `loadScheduleExportSources` and the shooting schedule, shot list and storyboard builders ([schedule.md](schedule.md)); `renderShootDaySidesPdf` (`sidesExportService.ts`); `renderRiskAssessmentPdf` (`exportRiskAssessmentPdf.ts`); `getCallSheetCastRequirements`, `getCallSheetCrewRequirements`, `buildDayRecipients` (`src/lib/call-sheets/`); `applyRecipientNameWatermarkToPDF` |
+| Reused | `loadScheduleExportSources` and the shooting schedule, shot list and storyboard builders ([schedule.md](schedule.md)); `loadFloorPlansForExport` and the floor plan PDF ([floor-plans.md](floor-plans.md)); `renderShootDaySidesPdf` (`sidesExportService.ts`); `renderRiskAssessmentPdf` (`exportRiskAssessmentPdf.ts`); `getCallSheetCastRequirements`, `getCallSheetCrewRequirements`, `buildDayRecipients` (`src/lib/call-sheets/`); `applyRecipientNameWatermarkToPDF` |
 | Native email | [`src-tauri/src/mail_compose.rs`](../../src-tauri/src/mail_compose.rs): `compose_mail_draft` (macOS; `objc2-app-kit` for Apple Mail, `osascript` for Outlook). `src-tauri/Info.plist` (`NSAppleEventsUsageDescription`) and `src-tauri/Entitlements.plist` (`com.apple.security.automation.apple-events`, for the hardened runtime) let it drive Outlook. iPad/iPhone: [`mail_compose_ios.rs`](../../src-tauri/src/mail_compose_ios.rs) (MessageUI composer or share sheet, `objc2` + `block2`) |
 | Queries | `getLatestScheduleChangeForDayUnit` (`repositories/schedule-changes.ts`) |
 | Tests | `src/lib/day-pack/*.test.ts` (`dayPack.integration.test.ts` runs on sql.js) |
@@ -26,6 +26,7 @@ No tables of its own. The custom subject and body are settings `day_pack_email_s
 | Script sides | Latest `shoot_day_sides_exports` row for the unit (an export with no unit counts on a one-unit day). Otherwise default sides for every section on the unit (`loadSidesBuilderSource` with the unit, `defaultSidesFilters`, nothing deselected), status `generated`; a blocking coverage issue makes it `missing` |
 | Risk assessments | Every RAMS whose units include this one, rendered fresh, one PDF each. A draft adds a "Not signed off" warning (`getRamsSignOffStatus`) |
 | Shooting schedule, shot list, storyboard | Generated for this day + unit; shots in strip order (`shotIdsInStripOrder`). `empty` when there are no shooting strips, shots or panels |
+| Floor plans | Generated for this day + unit: the floor plan setups for its shots in strip order, each scene's blocking before its first shot (`buildFloorPlanPdfData` with the `day` scope; see [floor-plans.md](floor-plans.md)). Cast in their Bookings colours (`castColorMap`). `empty` when no setup covers those shots |
 
 "Latest change" is the newest `updated_at` across the unit's strips, the shoot day, the shoot-day unit and the bookings that call people to the unit, deleted rows included.
 
