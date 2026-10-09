@@ -53,16 +53,17 @@ import {
   listFloorPlanSetupsByProduction,
   listFloorPlansByProduction,
   saveFloorPlanSetup,
+  setFloorPlanBackgroundImage,
   updateFloorPlan,
 } from '@/lib/db/repositories/floor-plans'
-import type { FloorPlanMarker } from '@/lib/floor-plans/model'
+import { emptyLayout, type FloorPlanMarker } from '@/lib/floor-plans/model'
 
 const P = 'prod-diner'
 const OTHER = 'prod-other'
 const TS = '2026-10-09T09:00:00.000Z'
 
 const camera: FloorPlanMarker = { id: 'm1', kind: 'camera', x: 100, y: 120, rotation: 90, label: 'A' }
-const actor: FloorPlanMarker = { id: 'm2', kind: 'actor', x: 300, y: 200, rotation: 180, label: 'Marta' }
+const actor: FloorPlanMarker = { id: 'm2', kind: 'actor', x: 300, y: 200, rotation: 180, label: 'Marta', personId: 'p-marta' }
 
 async function count(table: string, where = '1=1', binds: unknown[] = []): Promise<number> {
   const rows = await dbAdapter.select<Array<{ c: number }>>(`SELECT COUNT(*) AS c FROM ${table} WHERE ${where}`, binds)
@@ -107,13 +108,19 @@ describe('floor plans repository', () => {
 
   it('creates, renames and redraws a plan, with outbox rows', async () => {
     const plan = await createFloorPlan({ productionId: P, locationId: 'diner', name: '  Dining room ' })
-    expect(plan).toMatchObject({ name: 'Dining room', location_id: 'diner', layout: { shapes: [] } })
+    expect(plan).toMatchObject({ name: 'Dining room', location_id: 'diner', layout: emptyLayout(), background_image: null })
 
     const layout = {
+      ...emptyLayout(),
+      unitsPerMetre: 25,
+      north: 15,
+      geo: { lat: 51.5, lon: -0.12, timezone: 'Europe/London' },
+      background: { source: 'image' as const, x: 0, y: 0, width: 1200, height: 800, opacity: 0.5, map: null },
       shapes: [
         { id: 'r1', kind: 'rect' as const, x: 10, y: 20, width: 300, height: 200 },
         { id: 'p1', kind: 'path' as const, points: [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 50 }], closed: true },
         { id: 't1', kind: 'text' as const, x: 40, y: 40, width: 120, height: 30, rotation: 90, text: 'Counter', fontSize: 18 },
+        { id: 'i1', kind: 'item' as const, type: 'easy-up-3x3', x: 900, y: 600, rotation: 0, label: 'Easy-up | Video village', width: 3, depth: 3 },
       ],
     }
     const updated = await updateFloorPlan(plan.id, { name: 'Diner floor', layout })
@@ -121,6 +128,19 @@ describe('floor plans repository', () => {
     expect(updated.layout).toEqual(layout)
     expect(await listFloorPlansByProduction(P)).toHaveLength(1)
     expect(await count('outbox', `entity = 'floor_plans'`)).toBe(2)
+  })
+
+  it('sets and clears the background image apart from the drawing', async () => {
+    const plan = await createFloorPlan({ productionId: P, locationId: 'diner', name: 'Diner' })
+    await setFloorPlanBackgroundImage(plan.id, 'data:image/jpeg;base64,AAAA')
+    expect((await listFloorPlansByProduction(P))[0]!.background_image).toBe('data:image/jpeg;base64,AAAA')
+    const outbox = await dbAdapter.select<Array<{ payload_json: string }>>(
+      `SELECT payload_json FROM outbox WHERE entity = 'floor_plans' ORDER BY rowid DESC LIMIT 1`
+    )
+    expect(outbox[0]!.payload_json).toBe('{"background_image":"set"}')
+    await expect(setFloorPlanBackgroundImage(plan.id, 'data:text/html;base64,AAAA')).rejects.toThrow(/PNG, JPEG or WebP/)
+    await setFloorPlanBackgroundImage(plan.id, null)
+    expect((await listFloorPlansByProduction(P))[0]!.background_image).toBeNull()
   })
 
   it('refuses a location from another production and a blank name', async () => {

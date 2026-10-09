@@ -7,6 +7,7 @@ CREATE TABLE floor_plans (
   location_id UUID NOT NULL,
   name TEXT NOT NULL,
   layout_json JSONB NOT NULL DEFAULT '{"shapes":[]}',
+  background_image TEXT,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   deleted_at TIMESTAMPTZ,

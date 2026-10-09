@@ -1,8 +1,10 @@
 -- Floor plans (experimental). Local SQLite only, like the overtime tables.
 --
--- A floor plan is a drawing of a space at one location: rectangles, point-to-point shapes and text
--- labels in layout_json (see src/lib/floor-plans/model.ts). A setup marks camera and actor positions
--- on a plan for one scene, or one shot of it (shot_id NULL = blocking for the whole scene).
+-- A floor plan is a drawing of a space at one location: rectangles, point-to-point shapes, text
+-- labels and equipment in layout_json, with its scale, north and background placement (see
+-- src/lib/floor-plans/model.ts). background_image is the background picture or map as a data URL,
+-- kept apart so saving the drawing never resends it. A setup marks camera, cast and equipment
+-- positions on a plan for one scene, or one shot of it (shot_id NULL = blocking for the whole scene).
 
 CREATE TABLE IF NOT EXISTS floor_plans (
   id TEXT PRIMARY KEY,
@@ -10,6 +12,7 @@ CREATE TABLE IF NOT EXISTS floor_plans (
   location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   layout_json TEXT NOT NULL DEFAULT '{"shapes":[]}',
+  background_image TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT

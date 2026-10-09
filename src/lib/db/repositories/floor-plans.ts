@@ -32,6 +32,8 @@ export type FloorPlan = {
   location_id: string
   name: string
   layout: FloorPlanLayout
+  /** Background picture or map as a data URL; placed by `layout.background`. */
+  background_image: string | null
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -60,6 +62,7 @@ function rowToFloorPlan(r: Record<string, unknown>): FloorPlan {
     location_id: r.location_id as string,
     name: r.name as string,
     layout: parseLayout(typeof r.layout_json === 'string' ? r.layout_json : JSON.stringify(r.layout_json ?? null)),
+    background_image: strOrNull(r.background_image),
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     deleted_at: strOrNull(r.deleted_at),
@@ -196,6 +199,33 @@ export async function updateFloorPlan(
   const plan = await getFloorPlanRow(id)
   if (!plan) throw new Error('Floor plan not found')
   return plan
+}
+
+/** Largest background accepted, as a data URL (images are downscaled before they get here). */
+export const MAX_BACKGROUND_IMAGE_CHARS = 12_000_000
+
+/**
+ * Sets or clears the background picture. Kept apart from the layout so the drawing's autosave
+ * never resends it; the outbox records only that it changed.
+ */
+export async function setFloorPlanBackgroundImage(id: string, dataUrl: string | null): Promise<void> {
+  const existing = await getFloorPlanRow(id)
+  if (!existing) throw new Error('Floor plan not found')
+  await assertLocal(existing.production_id)
+  if (dataUrl != null) {
+    if (!/^data:image\/(png|jpeg|webp);base64,/.test(dataUrl)) throw new Error('The background must be a PNG, JPEG or WebP image.')
+    if (dataUrl.length > MAX_BACKGROUND_IMAGE_CHARS) throw new Error('The background image is too large.')
+  }
+  const ts = now()
+  await runBatch([
+    { sql: `UPDATE ${PLANS} SET background_image = $1, updated_at = $2 WHERE id = $3`, bindValues: [dataUrl, ts, id] },
+    outboxStatementForRow({
+      entity: PLANS,
+      entityId: id,
+      operation: 'update',
+      payloadJson: JSON.stringify({ background_image: dataUrl ? 'set' : null }),
+    }),
+  ])
 }
 
 /** Soft-deletes the plan and its setups together. */

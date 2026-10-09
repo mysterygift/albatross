@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_UNITS_PER_METRE,
   angleBetween,
+  cameraColor,
+  emptyLayout,
+  itemColor,
+  planAngleForBearing,
+  scaleBarMetres,
   constrainSegment,
   drawingBounds,
   nextMarkerLabel,
@@ -30,8 +36,28 @@ describe('floor plan model', () => {
     // A two-point path cannot be closed; a text box gets the default rotation and size.
     expect(layout.shapes[1]).toMatchObject({ closed: false })
     expect(layout.shapes[2]).toMatchObject({ rotation: 0, fontSize: 18 })
-    expect(parseLayout('not json')).toEqual({ shapes: [] })
-    expect(parseLayout(null)).toEqual({ shapes: [] })
+    expect(parseLayout('not json')).toEqual(emptyLayout())
+    expect(parseLayout(null)).toEqual(emptyLayout())
+    expect(layout.unitsPerMetre).toBe(DEFAULT_UNITS_PER_METRE)
+  })
+
+  it('parses scale, north, background, location and equipment', () => {
+    const layout = parseLayout(
+      JSON.stringify({
+        shapes: [{ id: 'e', kind: 'item', type: 'easy-up-3x3', x: 10, y: 20, label: 'Easy-up' }],
+        unitsPerMetre: 25,
+        north: -15,
+        background: { source: 'map', x: 0, y: 0, width: 1200, height: 800, opacity: 3, map: { lat: 51, lon: 0, metresAcross: 100 } },
+        geo: { lat: 51.5, lon: -0.1, timezone: 'Europe/London' },
+      })
+    )
+    expect(layout.shapes[0]).toEqual({ id: 'e', kind: 'item', type: 'easy-up-3x3', x: 10, y: 20, rotation: 0, label: 'Easy-up', width: 3, depth: 3 })
+    expect(layout).toMatchObject({ unitsPerMetre: 25, north: 345, geo: { lat: 51.5, lon: -0.1, timezone: 'Europe/London' } })
+    expect(layout.background).toMatchObject({ source: 'map', opacity: 1, map: { metresAcross: 100 } })
+    expect(parseLayout(JSON.stringify({ shapes: [], background: { source: 'video' }, geo: { lat: 99, lon: 0 } }))).toMatchObject({
+      background: null,
+      geo: null,
+    })
   })
 
   it('parses markers, dropping unknown kinds', () => {
@@ -39,13 +65,36 @@ describe('floor plan model', () => {
       JSON.stringify([
         { id: 'a', kind: 'camera', x: 1, y: 2, rotation: 90, label: 'A' },
         { id: 'b', kind: 'boom', x: 1, y: 2 },
-        { id: 'c', kind: 'actor', x: 5, y: 6 },
+        { id: 'c', kind: 'actor', x: 5, y: 6, personId: 'p1' },
+        { id: 'd', kind: 'item', type: 'arri-m18', x: 7, y: 8, rotation: 45, label: 'M18 | HMI' },
       ])
     )
     expect(markers).toEqual([
       { id: 'a', kind: 'camera', x: 1, y: 2, rotation: 90, label: 'A' },
-      { id: 'c', kind: 'actor', x: 5, y: 6, rotation: 0, label: '' },
+      { id: 'c', kind: 'actor', x: 5, y: 6, rotation: 0, label: '', personId: 'p1' },
+      { id: 'd', kind: 'item', type: 'arri-m18', x: 7, y: 8, rotation: 45, label: 'M18 | HMI', width: 0.47, depth: 0.54 },
     ])
+  })
+
+  it('colours cameras by letter and lights by source', () => {
+    expect(cameraColor('A')).toBe('#f97316')
+    expect(cameraColor('b')).toBe('#22d3ee')
+    expect(cameraColor('F')).toBe(cameraColor('A'))
+    expect(itemColor('arri-650-plus')).toBe('#f59e0b')
+    expect(itemColor('arri-m18')).toBe('#bfdbfe')
+    expect(itemColor('arri-skypanel-s60')).toBe('#f1f5f9')
+    expect(itemColor('floppy-4x4')).toBe('#0a0a0a')
+    expect(itemColor('fisher-11')).toBe('#94a3b8')
+  })
+
+  it('picks a round scale bar and turns compass bearings into plan angles', () => {
+    expect(scaleBarMetres(40)).toBe(2)
+    expect(scaleBarMetres(4)).toBe(20)
+    // North up: due east points right (0), due south points down (90).
+    expect(planAngleForBearing(0, 90)).toBe(0)
+    expect(planAngleForBearing(0, 180)).toBe(90)
+    // North rotated 15° clockwise on the plan: east turns with it.
+    expect(planAngleForBearing(15, 90)).toBe(15)
   })
 
   it('snaps angles to 90 degree steps', () => {
@@ -74,10 +123,10 @@ describe('floor plan model', () => {
   })
 
   it('measures everything drawn, including a camera’s view', () => {
-    expect(drawingBounds({ shapes: [] })).toBeNull()
+    expect(drawingBounds(emptyLayout())).toBeNull()
     const cam: FloorPlanMarker = { id: 'c', kind: 'camera', x: 500, y: 500, rotation: 0, label: 'A' }
     const bounds = drawingBounds(
-      { shapes: [{ id: 'r', kind: 'rect', x: 100, y: 100, width: 200, height: 100 }] },
+      { ...emptyLayout(), shapes: [{ id: 'r', kind: 'rect', x: 100, y: 100, width: 200, height: 100 }] },
       [cam]
     )
     expect(bounds).toEqual({ minX: 100, minY: 100, maxX: 570, maxY: 570 })
@@ -93,7 +142,7 @@ describe('floor plan model', () => {
   it('suggests the next free marker label', () => {
     const markers: FloorPlanMarker[] = [
       { id: '1', kind: 'camera', x: 0, y: 0, rotation: 0, label: 'A' },
-      { id: '2', kind: 'actor', x: 0, y: 0, rotation: 0, label: '1' },
+      { id: '2', kind: 'actor', x: 0, y: 0, rotation: 0, label: '1', personId: null },
     ]
     expect(nextMarkerLabel(markers, 'camera')).toBe('B')
     expect(nextMarkerLabel(markers, 'actor')).toBe('2')

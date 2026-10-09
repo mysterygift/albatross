@@ -43,8 +43,10 @@ import {
   listFloorPlanSetupsByProduction,
   listFloorPlansByProduction,
   saveFloorPlanSetup,
+  setFloorPlanBackgroundImage,
   updateFloorPlan,
 } from '@/lib/db/repositories/floor-plans'
+import { emptyLayout } from '@/lib/floor-plans/model'
 
 describe('duplicateProduction — floor plans', () => {
   beforeEach(async () => {
@@ -68,8 +70,9 @@ describe('duplicateProduction — floor plans', () => {
     )
     await dbAdapter.execute(`INSERT INTO shots (id, scene_id, shot_number, created_at, updated_at) VALUES ('sh', 'sc', '4A', 't', 't')`)
     const plan = await createFloorPlan({ productionId: source.id, locationId: 'loc', name: 'Diner' })
-    const layout = { shapes: [{ id: 'r', kind: 'rect' as const, x: 0, y: 0, width: 100, height: 80 }] }
+    const layout = { ...emptyLayout(), unitsPerMetre: 30, shapes: [{ id: 'r', kind: 'rect' as const, x: 0, y: 0, width: 100, height: 80 }] }
     await updateFloorPlan(plan.id, { layout })
+    await setFloorPlanBackgroundImage(plan.id, 'data:image/png;base64,BBBB')
     const markers = [{ id: 'm', kind: 'camera' as const, x: 10, y: 10, rotation: 0, label: 'A' }]
     await saveFloorPlanSetup({ productionId: source.id, floorPlanId: plan.id, sceneId: 'sc', shotId: 'sh', markers, notes: 'Wide' })
     await saveFloorPlanSetup({ productionId: source.id, floorPlanId: plan.id, sceneId: 'sc', shotId: null, markers })
@@ -77,7 +80,7 @@ describe('duplicateProduction — floor plans', () => {
     const copy = await duplicateProduction(source.id, 'Copy')
 
     const [copiedPlan] = await listFloorPlansByProduction(copy.id)
-    expect(copiedPlan).toMatchObject({ name: 'Diner', layout })
+    expect(copiedPlan).toMatchObject({ name: 'Diner', layout, background_image: 'data:image/png;base64,BBBB' })
     expect(copiedPlan!.id).not.toBe(plan.id)
     expect(copiedPlan!.location_id).not.toBe('loc')
     const setups = await listFloorPlanSetupsByProduction(copy.id)

@@ -2,12 +2,16 @@
  * Floor plan drawing model, shared by the editor, the repository and the PDF.
  *
  * Coordinates are plan units on a fixed canvas (`PLAN_WIDTH` x `PLAN_HEIGHT`, y pointing down, as
- * in SVG). Angles are degrees clockwise from +x (pointing right). Units are not a real-world scale.
+ * in SVG). Angles are degrees clockwise from +x (pointing right). `unitsPerMetre` gives the plan a
+ * real scale (40 by default, so the canvas is 30 x 20 m); setting a background's scale changes it.
  */
+
+import { catalogItem } from './catalog'
 
 export const PLAN_WIDTH = 1200
 export const PLAN_HEIGHT = 800
 export const PLAN_GRID = 20
+export const DEFAULT_UNITS_PER_METRE = 40
 
 export type Point = { x: number; y: number }
 
@@ -30,24 +34,71 @@ export type FloorPlanText = {
   fontSize: number
 }
 
-export type FloorPlanShape = FloorPlanRect | FloorPlanPath | FloorPlanText
-
-export type FloorPlanLayout = { shapes: FloorPlanShape[] }
-
-export const FLOOR_PLAN_MARKER_KINDS = ['camera', 'actor'] as const
-export type FloorPlanMarkerKind = (typeof FLOOR_PLAN_MARKER_KINDS)[number]
-
-/** A camera or actor position for a setup; `rotation` is the way it faces. */
-export type FloorPlanMarker = {
+/**
+ * A piece of equipment from the catalogue (`type` is its id), centred on `x`/`y` and facing
+ * `rotation`. `width` (across) and `depth` (along the way it faces) are in metres.
+ */
+export type FloorPlanItem = {
   id: string
-  kind: FloorPlanMarkerKind
+  kind: 'item'
+  type: string
   x: number
   y: number
   rotation: number
   label: string
+  width: number
+  depth: number
 }
 
-/** Radius a marker is drawn at, in plan units (also used for bounds). */
+export type FloorPlanShape = FloorPlanRect | FloorPlanPath | FloorPlanText | FloorPlanItem
+
+/** An image under the drawing: an uploaded picture or a map of the location. */
+export type FloorPlanBackground = {
+  source: 'image' | 'map'
+  /** Placement in plan units. */
+  x: number
+  y: number
+  width: number
+  height: number
+  /** 0 to 1. */
+  opacity: number
+  /** Map backgrounds: what was rendered, so it can be rendered again. */
+  map?: { lat: number; lon: number; metresAcross: number } | null
+}
+
+/** Where the plan is on Earth, for the sun path and map backgrounds. */
+export type FloorPlanGeo = { lat: number; lon: number; timezone: string | null }
+
+export type FloorPlanLayout = {
+  shapes: FloorPlanShape[]
+  background: FloorPlanBackground | null
+  unitsPerMetre: number
+  /** Which way north points on the plan: degrees clockwise from straight up. 0 = north is up. */
+  north: number
+  geo: FloorPlanGeo | null
+}
+
+/** A camera position; cameras are coloured by their letter. */
+export type FloorPlanCameraMarker = { id: string; kind: 'camera'; x: number; y: number; rotation: number; label: string }
+
+/** A cast position; coloured with the person's booking calendar colour. */
+export type FloorPlanActorMarker = {
+  id: string
+  kind: 'actor'
+  x: number
+  y: number
+  rotation: number
+  label: string
+  personId: string | null
+}
+
+/** What a setup holds: cameras, cast and the equipment used for that scene or shot. */
+export type FloorPlanMarker = FloorPlanCameraMarker | FloorPlanActorMarker | FloorPlanItem
+
+export const FLOOR_PLAN_MARKER_KINDS = ['camera', 'actor', 'item'] as const
+export type FloorPlanMarkerKind = (typeof FLOOR_PLAN_MARKER_KINDS)[number]
+
+/** Radius a camera or actor is drawn at, in plan units (also used for bounds). */
 export const MARKER_RADIUS = 16
 /** Length of the camera's field-of-view wedge, in plan units. */
 export const CAMERA_VIEW_LENGTH = 70
@@ -57,8 +108,19 @@ export const CAMERA_VIEW_HALF_ANGLE = 22
 export const DEFAULT_TEXT_FONT_SIZE = 18
 export const MIN_TEXT_SIZE = 20
 
+/** Camera colours by letter: A, B, C, D, E, then round again. */
+export const CAMERA_COLORS = ['#f97316', '#22d3ee', '#a3e635', '#f472b6', '#facc15']
+
+/** Lights are coloured by source. */
+export const LIGHT_SOURCE_COLORS = { tungsten: '#f59e0b', hmi: '#bfdbfe', led: '#f1f5f9' } as const
+export const GRIP_COLOR = '#94a3b8'
+export const GRIP_FILL = '#475569'
+export const FLAG_FILL = '#0a0a0a'
+/** Cast with no booking colour (supporting artists, or no person linked). */
+export const DEFAULT_ACTOR_COLOR = '#64748b'
+
 export function emptyLayout(): FloorPlanLayout {
-  return { shapes: [] }
+  return { shapes: [], background: null, unitsPerMetre: DEFAULT_UNITS_PER_METRE, north: 0, geo: null }
 }
 
 // ---------------------------------------------------------------------------
@@ -67,16 +129,34 @@ export function emptyLayout(): FloorPlanLayout {
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
+const obj = (v: unknown): Record<string, unknown> | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null)
 
 function parsePoint(v: unknown): Point | null {
-  if (!v || typeof v !== 'object') return null
-  const p = v as Record<string, unknown>
-  return isNum(p.x) && isNum(p.y) ? { x: p.x, y: p.y } : null
+  const p = obj(v)
+  return p && isNum(p.x) && isNum(p.y) ? { x: p.x, y: p.y } : null
+}
+
+function parseItem(s: Record<string, unknown>, id: string): FloorPlanItem | null {
+  const type = str(s.type)
+  if (!type || !isNum(s.x) || !isNum(s.y)) return null
+  const known = catalogItem(type)
+  const size = (v: unknown, fallback: number) => (isNum(v) && v > 0 ? v : fallback)
+  return {
+    id,
+    kind: 'item',
+    type,
+    x: s.x,
+    y: s.y,
+    rotation: isNum(s.rotation) ? s.rotation : 0,
+    label: str(s.label),
+    width: size(s.width, known?.width ?? 1),
+    depth: size(s.depth, known?.depth ?? 1),
+  }
 }
 
 function parseShape(v: unknown): FloorPlanShape | null {
-  if (!v || typeof v !== 'object') return null
-  const s = v as Record<string, unknown>
+  const s = obj(v)
+  if (!s) return null
   const id = str(s.id)
   if (!id) return null
   if (s.kind === 'rect') {
@@ -102,36 +182,60 @@ function parseShape(v: unknown): FloorPlanShape | null {
       fontSize: isNum(s.fontSize) && s.fontSize > 0 ? s.fontSize : DEFAULT_TEXT_FONT_SIZE,
     }
   }
+  if (s.kind === 'item') return parseItem(s, id)
   return null
 }
 
+function parseBackground(v: unknown): FloorPlanBackground | null {
+  const b = obj(v)
+  if (!b || (b.source !== 'image' && b.source !== 'map')) return null
+  if (!isNum(b.x) || !isNum(b.y) || !isNum(b.width) || !isNum(b.height) || b.width <= 0 || b.height <= 0) return null
+  const m = obj(b.map)
+  return {
+    source: b.source,
+    x: b.x,
+    y: b.y,
+    width: b.width,
+    height: b.height,
+    opacity: isNum(b.opacity) ? Math.min(1, Math.max(0, b.opacity)) : 0.6,
+    map: m && isNum(m.lat) && isNum(m.lon) && isNum(m.metresAcross) ? { lat: m.lat, lon: m.lon, metresAcross: m.metresAcross } : null,
+  }
+}
+
+function parseGeo(v: unknown): FloorPlanGeo | null {
+  const g = obj(v)
+  if (!g || !isNum(g.lat) || !isNum(g.lon) || Math.abs(g.lat) > 90 || Math.abs(g.lon) > 180) return null
+  return { lat: g.lat, lon: g.lon, timezone: str(g.timezone) || null }
+}
+
+/** Parses stored layout JSON (or the object Postgres returns for JSONB). */
 export function parseLayout(json: string | null | undefined): FloorPlanLayout {
   if (!json) return emptyLayout()
   try {
-    const raw = JSON.parse(json) as unknown
-    const shapes = raw && typeof raw === 'object' && Array.isArray((raw as { shapes?: unknown }).shapes)
-      ? ((raw as { shapes: unknown[] }).shapes.map(parseShape).filter((s): s is FloorPlanShape => s != null))
-      : []
-    return { shapes }
+    const raw = obj(JSON.parse(json))
+    if (!raw) return emptyLayout()
+    return {
+      shapes: Array.isArray(raw.shapes) ? raw.shapes.map(parseShape).filter((s): s is FloorPlanShape => s != null) : [],
+      background: parseBackground(raw.background),
+      unitsPerMetre: isNum(raw.unitsPerMetre) && raw.unitsPerMetre > 0 ? raw.unitsPerMetre : DEFAULT_UNITS_PER_METRE,
+      north: isNum(raw.north) ? normalizeAngle(raw.north) : 0,
+      geo: parseGeo(raw.geo),
+    }
   } catch {
     return emptyLayout()
   }
 }
 
 function parseMarker(v: unknown): FloorPlanMarker | null {
-  if (!v || typeof v !== 'object') return null
-  const m = v as Record<string, unknown>
+  const m = obj(v)
+  if (!m) return null
   const id = str(m.id)
-  if (!id || !FLOOR_PLAN_MARKER_KINDS.includes(m.kind as FloorPlanMarkerKind)) return null
+  if (!id) return null
+  if (m.kind === 'item') return parseItem(m, id)
+  if (m.kind !== 'camera' && m.kind !== 'actor') return null
   if (!isNum(m.x) || !isNum(m.y)) return null
-  return {
-    id,
-    kind: m.kind as FloorPlanMarkerKind,
-    x: m.x,
-    y: m.y,
-    rotation: isNum(m.rotation) ? m.rotation : 0,
-    label: str(m.label),
-  }
+  const base = { id, x: m.x, y: m.y, rotation: isNum(m.rotation) ? m.rotation : 0, label: str(m.label) }
+  return m.kind === 'camera' ? { ...base, kind: 'camera' } : { ...base, kind: 'actor', personId: str(m.personId) || null }
 }
 
 export function parseMarkers(json: string | null | undefined): FloorPlanMarker[] {
@@ -214,22 +318,30 @@ export function translateShape<T extends FloorPlanShape>(shape: T, dx: number, d
   return { ...shape, x: shape.x + dx, y: shape.y + dy }
 }
 
+/** Half the item's largest extent in plan units, at least a marker's size so tiny kit stays visible. */
+export function itemReach(item: Pick<FloorPlanItem, 'width' | 'depth'>, unitsPerMetre: number): number {
+  return Math.max(MARKER_RADIUS, (Math.max(item.width, item.depth) * unitsPerMetre) / 2)
+}
+
 export type Bounds = { minX: number; minY: number; maxX: number; maxY: number }
 
 /**
- * Bounding box of everything drawn: shapes and markers (with a camera's view wedge). Null when
- * there is nothing to draw.
+ * Bounding box of everything drawn: shapes, markers (with a camera's view wedge) and equipment.
+ * Null when there is nothing to draw. The background image is left out: it frames the drawing.
  */
 export function drawingBounds(layout: FloorPlanLayout, markers: FloorPlanMarker[] = []): Bounds | null {
   const pts: Point[] = []
+  const upm = layout.unitsPerMetre
+  const around = (x: number, y: number, reach: number) => pts.push({ x: x - reach, y: y - reach }, { x: x + reach, y: y + reach })
   for (const s of layout.shapes) {
     if (s.kind === 'rect') pts.push({ x: s.x, y: s.y }, { x: s.x + s.width, y: s.y + s.height })
     else if (s.kind === 'path') pts.push(...s.points)
-    else pts.push(...textCorners(s))
+    else if (s.kind === 'text') pts.push(...textCorners(s))
+    else around(s.x, s.y, itemReach(s, upm))
   }
   for (const m of markers) {
-    const reach = m.kind === 'camera' ? CAMERA_VIEW_LENGTH : MARKER_RADIUS
-    pts.push({ x: m.x - reach, y: m.y - reach }, { x: m.x + reach, y: m.y + reach })
+    if (m.kind === 'item') around(m.x, m.y, itemReach(m, upm))
+    else around(m.x, m.y, m.kind === 'camera' ? CAMERA_VIEW_LENGTH : MARKER_RADIUS)
   }
   if (pts.length === 0) return null
   return {
@@ -247,17 +359,8 @@ export function pathData(shape: FloorPlanPath): string {
   return `M ${first.x} ${first.y} ${rest.map((p) => `L ${p.x} ${p.y}`).join(' ')}${shape.closed ? ' Z' : ''}`
 }
 
-/** SVG path data for a camera's field-of-view wedge. */
-export function cameraWedgeData(m: Pick<FloorPlanMarker, 'x' | 'y' | 'rotation'>): string {
-  const a = ((m.rotation - CAMERA_VIEW_HALF_ANGLE) * Math.PI) / 180
-  const b = ((m.rotation + CAMERA_VIEW_HALF_ANGLE) * Math.PI) / 180
-  const p1 = { x: m.x + Math.cos(a) * CAMERA_VIEW_LENGTH, y: m.y + Math.sin(a) * CAMERA_VIEW_LENGTH }
-  const p2 = { x: m.x + Math.cos(b) * CAMERA_VIEW_LENGTH, y: m.y + Math.sin(b) * CAMERA_VIEW_LENGTH }
-  return `M ${m.x} ${m.y} L ${p1.x} ${p1.y} L ${p2.x} ${p2.y} Z`
-}
-
-/** Next default label for a new marker: "A", "B"… for cameras, "1", "2"… for actors. */
-export function nextMarkerLabel(markers: FloorPlanMarker[], kind: FloorPlanMarkerKind): string {
+/** Next default label for a new camera ("A", "B"…) or actor ("1", "2"…). */
+export function nextMarkerLabel(markers: FloorPlanMarker[], kind: 'camera' | 'actor'): string {
   const used = new Set(markers.filter((m) => m.kind === kind).map((m) => m.label.trim().toUpperCase()))
   if (kind === 'camera') {
     for (let i = 0; i < 26; i += 1) {
@@ -267,4 +370,35 @@ export function nextMarkerLabel(markers: FloorPlanMarker[], kind: FloorPlanMarke
     return ''
   }
   for (let i = 1; ; i += 1) if (!used.has(String(i))) return String(i)
+}
+
+/** A camera's colour from its letter (A orange, B cyan…); other labels take the first colour. */
+export function cameraColor(label: string): string {
+  const letter = label.trim().toUpperCase().charCodeAt(0)
+  if (letter >= 65 && letter <= 90) return CAMERA_COLORS[(letter - 65) % CAMERA_COLORS.length]!
+  return CAMERA_COLORS[0]!
+}
+
+/** The colour of an item: lights by source, flags black, everything else grip grey. */
+export function itemColor(type: string): string {
+  const entry = catalogItem(type)
+  if (entry?.light) return LIGHT_SOURCE_COLORS[entry.light.source]
+  if (entry?.glyph === 'flag') return FLAG_FILL
+  return GRIP_COLOR
+}
+
+/** A round scale-bar length (1, 2, 5, 10, 20, 50… m) that draws between about 80 and 200 units. */
+export function scaleBarMetres(unitsPerMetre: number): number {
+  for (const m of [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]) {
+    if (m * unitsPerMetre >= 80) return m
+  }
+  return 1000
+}
+
+/**
+ * Plan angle (degrees clockwise from +x, as everything else on the plan) of a compass bearing
+ * (degrees clockwise from north), given which way north points on the plan.
+ */
+export function planAngleForBearing(north: number, bearing: number): number {
+  return normalizeAngle(north + bearing - 90)
 }

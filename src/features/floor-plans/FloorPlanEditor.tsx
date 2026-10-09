@@ -1,17 +1,35 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Copy, MousePointer2, Redo2, Spline, Square, Trash2, Type, Undo2, User, Video } from 'lucide-react'
+import {
+  Check,
+  Copy,
+  Image as ImageIcon,
+  Lamp,
+  LayoutGrid,
+  MousePointer2,
+  Plus,
+  Redo2,
+  Spline,
+  Square,
+  Sun,
+  Type,
+  Undo2,
+  User,
+  Video,
+  X,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -20,85 +38,122 @@ import {
   type FloorPlan,
   type FloorPlanSetup,
 } from '@/lib/db/repositories/floor-plans'
-import type { Scene, Shot } from '@/lib/db/types'
-import {
-  normalizeAngle,
-  type FloorPlanLayout,
-  type FloorPlanMarker,
-  type FloorPlanShape,
-} from '@/lib/floor-plans/model'
+import type { Scene, ShootDay, Shot } from '@/lib/db/types'
+import type { CatalogItem, EquipmentCategory } from '@/lib/floor-plans/catalog'
+import type { FloorPlanGeo, FloorPlanLayout, FloorPlanMarker, FloorPlanShape } from '@/lib/floor-plans/model'
+import { formatClock, localTimeZone, sunDay, sunOverlay, type SunOverlay } from '@/lib/floor-plans/sun'
 import { sceneSlugline } from '@/lib/schedule/sceneDisplay'
 import type { ScheduleExportSources } from '@/lib/schedule/scheduleExportSources'
 import { cn } from '@/lib/utils'
+import { BackgroundDialog, LocationDialog } from './BackgroundDialog'
+import { EquipmentLibrary } from './EquipmentLibrary'
 import { FloorPlanCanvas, type FloorPlanTool } from './FloorPlanCanvas'
-import { shotCameraDetails } from './floorPlanDisplay'
+import { WHOLE_SCENE, formatShootDay, shotCameraDetails } from './floorPlanDisplay'
 import { floorPlanSetupsQueryKey, floorPlansQueryKey } from './floorPlanQueries'
+import { SelectionPopover, type CastOption } from './SelectionPopover'
 import { useAutosave, type AutosaveStatus } from './useAutosave'
 import { useEditHistory } from './useEditHistory'
 import { useSnapPreference } from './useSnapPreference'
 
-// ─── Shared toolbar pieces ──────────────────────────────────────────────────
-
-type ToolOption = { tool: FloorPlanTool; label: string; hint: string; icon: ReactNode }
-
-function ToolButton({ option, active, onSelect }: { option: ToolOption; active: boolean; onSelect: () => void }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant={active ? 'secondary' : 'ghost'}
-          aria-pressed={active}
-          aria-label={option.label}
-          onClick={onSelect}
-          className={cn(active && 'ring-1 ring-primary/40')}
-        >
-          {option.icon}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        <span className="font-medium">{option.label}</span>
-        <span className="block text-xs opacity-80">{option.hint}</span>
-      </TooltipContent>
-    </Tooltip>
-  )
+/** Sun settings shared by both modes, kept by the page so they survive switching shots. */
+export type SunSettings = {
+  enabled: boolean
+  date: string
+  minutes: number
+  setEnabled: (on: boolean) => void
+  setDate: (date: string) => void
+  setMinutes: (minutes: number) => void
+  days: ShootDay[]
 }
 
-function IconAction({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
+const LAYOUT_CATEGORIES: EquipmentCategory[] = ['lighting', 'grip', 'camera-support', 'unit-base']
+const LIGHT_CATEGORIES: EquipmentCategory[] = ['lighting']
+const GRIP_CATEGORIES: EquipmentCategory[] = ['grip', 'camera-support', 'unit-base']
+
+// ─── Toolbar pieces ─────────────────────────────────────────────────────────
+
+function ToolButton({
+  label,
+  icon,
+  active,
+  onClick,
+  showLabel,
+}: {
+  label: string
+  icon: ReactNode
+  active: boolean
+  onClick?: () => void
+  showLabel?: boolean
+}) {
+  const button = (
+    <Button
+      type="button"
+      size={showLabel ? 'sm' : 'icon-sm'}
+      variant={active ? 'secondary' : 'ghost'}
+      aria-pressed={active}
+      aria-label={showLabel ? undefined : label}
+      onClick={onClick}
+      className={cn('h-9', showLabel ? 'gap-1.5 px-3' : 'w-9', active && 'ring-1 ring-primary/40')}
+    >
+      {icon}
+      {showLabel ? label : null}
+    </Button>
+  )
+  if (showLabel) return button
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label={label} onClick={onClick} disabled={disabled}>
-          {children}
-        </Button>
-      </TooltipTrigger>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
   )
 }
 
+const Divider = () => <span className="mx-1 h-6 w-px bg-border" aria-hidden />
+
 function SnapToggle({ snap, onChange }: { snap: boolean; onChange: (on: boolean) => void }) {
   return (
-    <div className="flex items-center gap-2 px-1">
-      <Checkbox id="floor-plan-snap" checked={snap} onCheckedChange={(v) => onChange(v === true)} />
-      <Label htmlFor="floor-plan-snap" className="cursor-pointer text-sm font-normal">
-        Snap to 90°
-      </Label>
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant={snap ? 'secondary' : 'ghost'}
+          aria-pressed={snap}
+          aria-label="Snap to 90°"
+          onClick={() => onChange(!snap)}
+          className="h-9 px-2.5 font-semibold"
+        >
+          90°
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{snap ? 'Snapping to 90°' : 'Free angles'}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+function HistoryButtons({ history }: { history: { undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean } }) {
+  return (
+    <>
+      <Button type="button" size="icon-sm" variant="ghost" aria-label="Undo" onClick={history.undo} disabled={!history.canUndo} className="size-9">
+        <Undo2 />
+      </Button>
+      <Button type="button" size="icon-sm" variant="ghost" aria-label="Redo" onClick={history.redo} disabled={!history.canRedo} className="size-9">
+        <Redo2 />
+      </Button>
+    </>
   )
 }
 
 const STATUS_TEXT: Record<AutosaveStatus, string> = {
   saved: 'Saved',
-  pending: 'Unsaved changes',
+  pending: 'Unsaved',
   saving: 'Saving…',
   error: 'Not saved',
 }
 
 function SaveStatus({ status }: { status: AutosaveStatus }) {
   return (
-    <span className={cn('ml-auto text-xs', status === 'error' ? 'text-destructive' : 'text-muted-foreground')} aria-live="polite">
+    <span className={cn('px-1 text-xs', status === 'error' ? 'text-destructive' : 'text-muted-foreground')} aria-live="polite">
       {STATUS_TEXT[status]}
     </span>
   )
@@ -106,172 +161,313 @@ function SaveStatus({ status }: { status: AutosaveStatus }) {
 
 function Toolbar({ children }: { children: ReactNode }) {
   return (
-    <div role="toolbar" aria-label="Floor plan tools" className="flex flex-wrap items-center gap-1 rounded-lg border bg-card px-2 py-1.5">
+    <div role="toolbar" aria-label="Floor plan tools" className="flex flex-wrap items-center gap-1 rounded-xl border bg-card p-1.5">
       {children}
     </div>
   )
 }
 
-const Divider = () => <span className="mx-1 h-6 w-px bg-border" aria-hidden />
-
-function AngleInput({ id, value, onChange }: { id: string; value: number; onChange: (deg: number) => void }) {
+/** "Placing M18": shown while a tool waits for a click on the plan. */
+function PlacingChip({ label, onCancel }: { label: string; onCancel: () => void }) {
   return (
-    <Input
-      id={id}
-      type="number"
-      step={1}
-      className="h-8 w-20"
-      value={Math.round(value)}
-      onChange={(e) => {
-        const n = Number(e.target.value)
-        if (Number.isFinite(n)) onChange(normalizeAngle(n))
-      }}
-    />
+    <span className="flex h-9 items-center gap-1 rounded-md bg-primary/15 pr-1 pl-3 text-sm">
+      {label}
+      <Button type="button" size="icon-xs" variant="ghost" aria-label="Cancel" onClick={onCancel}>
+        <X />
+      </Button>
+    </span>
   )
+}
+
+function LibraryButton({
+  label,
+  icon,
+  categories,
+  onPick,
+}: {
+  label: string
+  icon: ReactNode
+  categories: EquipmentCategory[]
+  onPick: (item: CatalogItem) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" size="sm" variant={open ? 'secondary' : 'ghost'} className="h-9 gap-1.5 px-3">
+          {icon}
+          {label}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-auto p-3">
+        <EquipmentLibrary
+          categories={categories}
+          onPick={(item) => {
+            setOpen(false)
+            onPick(item)
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+type SunDayInfo = ReturnType<typeof sunDay>
+
+/** Sun on/off, the day and the time of day. Without a location, offers to set one. */
+function SunControl({ sun, day, onSetLocation }: { sun: SunSettings; day: SunDayInfo | null; onSetLocation: () => void }) {
+  const toggle = (
+    <Button
+      type="button"
+      size="icon-sm"
+      variant={sun.enabled ? 'secondary' : 'ghost'}
+      aria-pressed={sun.enabled}
+      aria-label="Sun path"
+      onClick={() => sun.setEnabled(!sun.enabled)}
+      className={cn('size-9', sun.enabled && 'text-amber-400')}
+    >
+      <Sun />
+    </Button>
+  )
+  if (!sun.enabled) return toggle
+  if (!day) {
+    return (
+      <span className="flex items-center gap-1">
+        {toggle}
+        <Button type="button" size="sm" variant="ghost" className="h-9" onClick={onSetLocation}>
+          Set location
+        </Button>
+      </span>
+    )
+  }
+  const min = day.sunrise ?? 0
+  const max = day.sunset ?? 1439
+  const value = Math.min(max, Math.max(min, sun.minutes))
+  const isShootDay = sun.days.some((d) => d.shoot_date === sun.date)
+  return (
+    <span className="flex flex-wrap items-center gap-2 text-amber-400">
+      {toggle}
+      <Select value={sun.date} onValueChange={sun.setDate}>
+        <SelectTrigger size="sm" className="h-9 min-w-40 text-foreground" aria-label="Day">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {sun.days.map((d) => (
+            <SelectItem key={d.id} value={d.shoot_date}>
+              {formatShootDay(d)}
+            </SelectItem>
+          ))}
+          {!isShootDay ? <SelectItem value={sun.date}>{sun.date}</SelectItem> : null}
+        </SelectContent>
+      </Select>
+      <label className="flex items-center gap-2">
+        <span className="sr-only">Time of day</span>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={5}
+          value={value}
+          onChange={(e) => sun.setMinutes(Number(e.target.value))}
+          className="w-36 accent-amber-400"
+        />
+        <span className="w-12 text-sm text-foreground tabular-nums">{formatClock(value)}</span>
+      </label>
+    </span>
+  )
+}
+
+function useSunOverlay(geo: FloorPlanGeo | null, sun: SunSettings): { day: SunDayInfo | null; overlay: SunOverlay | null } {
+  const day = useMemo(
+    () => (geo && sun.enabled ? sunDay(sun.date, geo.lat, geo.lon, geo.timezone ?? localTimeZone()) : null),
+    [geo, sun.enabled, sun.date]
+  )
+  const overlay = useMemo(() => {
+    if (!day) return null
+    const minutes = Math.min(day.sunset ?? 1439, Math.max(day.sunrise ?? 0, sun.minutes))
+    return sunOverlay(day, minutes)
+  }, [day, sun.minutes])
+  return { day, overlay }
 }
 
 // ─── Layout ─────────────────────────────────────────────────────────────────
 
-const LAYOUT_TOOLS: ToolOption[] = [
-  { tool: 'select', label: 'Select', hint: 'Click to select; drag to move. Delete removes.', icon: <MousePointer2 /> },
-  { tool: 'rect', label: 'Rectangle', hint: 'Click and drag to draw a room or furniture.', icon: <Square /> },
-  { tool: 'path', label: 'Line', hint: 'Click point to point; double-click to finish.', icon: <Spline /> },
-  { tool: 'text', label: 'Text', hint: 'Click to place a label.', icon: <Type /> },
-]
-
-/** Draw layout mode: edits the plan's shapes, saving as you go. */
-export function LayoutEditor({ plan, productionId }: { plan: FloorPlan; productionId: string }) {
+/** Layout mode: draw the space, place permanent equipment, set background, scale and north. */
+export function LayoutEditor({
+  plan,
+  productionId,
+  sun,
+  locationQuery,
+  onBackgroundImage,
+}: {
+  plan: FloorPlan
+  productionId: string
+  sun: SunSettings
+  locationQuery: string
+  onBackgroundImage: (dataUrl: string | null) => Promise<void>
+}) {
   const queryClient = useQueryClient()
   const history = useEditHistory<FloorPlanLayout>(plan.layout)
   const [tool, setTool] = useState<FloorPlanTool>('select')
+  const [placingItem, setPlacingItem] = useState<CatalogItem | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [snap, setSnap] = useSnapPreference()
+  const [backgroundOpen, setBackgroundOpen] = useState(false)
+  const [measured, setMeasured] = useState<number | null>(null)
+  const [measuredMetres, setMeasuredMetres] = useState('')
   const textInputRef = useRef<HTMLTextAreaElement>(null)
+  const layout = history.value
 
   const autosave = useAutosave(
-    history.value,
-    async (layout) => {
+    layout,
+    async (next) => {
       queryClient.setQueryData<FloorPlan[]>(floorPlansQueryKey(productionId), (plans) =>
-        plans?.map((p) => (p.id === plan.id ? { ...p, layout } : p))
+        plans?.map((p) => (p.id === plan.id ? { ...p, layout: next } : p))
       )
-      await updateFloorPlan(plan.id, { layout })
+      await updateFloorPlan(plan.id, { layout: next })
     },
     { paused: history.dragging }
   )
+  const { day, overlay } = useSunOverlay(layout.geo, sun)
 
-  /** Puts the cursor in the new label's text, after the placing click has moved focus to the canvas. */
+  const selected = layout.shapes.find((s) => s.id === selectedId) ?? null
+  const updateShape = (shape: FloorPlanShape, transient = false) =>
+    history.set({ ...layout, shapes: layout.shapes.map((s) => (s.id === shape.id ? shape : s)) }, transient)
+  const remove = () => {
+    if (!selected) return
+    history.set({ ...layout, shapes: layout.shapes.filter((s) => s.id !== selected.id) })
+    setSelectedId(null)
+  }
+  const pickTool = (next: FloorPlanTool) => {
+    setTool(next)
+    if (next !== 'item') setPlacingItem(null)
+    if (next !== 'measure') setMeasured(null)
+  }
+  /** Puts the cursor in a new label's text, after the placing click has moved focus to the canvas. */
   const focusLabelText = () =>
     setTimeout(() => {
       textInputRef.current?.focus()
       textInputRef.current?.select()
     }, 0)
 
-  const selected = history.value.shapes.find((s) => s.id === selectedId) ?? null
-  const updateShape = (shape: FloorPlanShape, transient = false) =>
-    history.set({ shapes: history.value.shapes.map((s) => (s.id === shape.id ? shape : s)) }, transient)
-  const remove = () => {
-    if (!selected) return
-    history.set({ shapes: history.value.shapes.filter((s) => s.id !== selected.id) })
-    setSelectedId(null)
+  const applyMeasurement = () => {
+    const metres = Number(measuredMetres)
+    if (!measured || !Number.isFinite(metres) || metres <= 0) return
+    history.set({ ...layout, unitsPerMetre: measured / metres })
+    setMeasuredMetres('')
+    pickTool('select')
   }
 
   return (
     <div className="space-y-3">
       <Toolbar>
-        {LAYOUT_TOOLS.map((option) => (
-          <ToolButton key={option.tool} option={option} active={tool === option.tool} onSelect={() => setTool(option.tool)} />
-        ))}
+        <ToolButton label="Select" icon={<MousePointer2 />} active={tool === 'select'} onClick={() => pickTool('select')} />
+        <ToolButton label="Rectangle" icon={<Square />} active={tool === 'rect'} onClick={() => pickTool('rect')} />
+        <ToolButton label="Line" icon={<Spline />} active={tool === 'path'} onClick={() => pickTool('path')} />
+        <ToolButton label="Text" icon={<Type />} active={tool === 'text'} onClick={() => pickTool('text')} />
+        <LibraryButton
+          label="Add"
+          icon={<Plus />}
+          categories={LAYOUT_CATEGORIES}
+          onPick={(item) => {
+            setPlacingItem(item)
+            setTool('item')
+          }}
+        />
         <Divider />
+        <ToolButton label="Background" icon={<ImageIcon />} active={backgroundOpen || tool === 'background'} onClick={() => setBackgroundOpen(true)} />
         <SnapToggle snap={snap} onChange={setSnap} />
-        <Divider />
-        <IconAction label="Undo" onClick={history.undo} disabled={!history.canUndo}>
-          <Undo2 />
-        </IconAction>
-        <IconAction label="Redo" onClick={history.redo} disabled={!history.canRedo}>
-          <Redo2 />
-        </IconAction>
-        <IconAction label="Delete selected" onClick={remove} disabled={!selected}>
-          <Trash2 />
-        </IconAction>
+        <SunControl sun={sun} day={day} onSetLocation={() => setBackgroundOpen(true)} />
+        {tool === 'item' && placingItem ? <PlacingChip label={placingItem.short} onCancel={() => pickTool('select')} /> : null}
+        {tool === 'measure' && !measured ? <PlacingChip label="Draw along a known length" onCancel={() => pickTool('select')} /> : null}
+        {tool === 'background' ? <PlacingChip label="Drag the background" onCancel={() => pickTool('select')} /> : null}
+        <div className="flex-1" />
         <SaveStatus status={autosave.status} />
+        <HistoryButtons history={history} />
       </Toolbar>
 
       <FloorPlanCanvas
-        layout={history.value}
+        layout={layout}
+        backgroundImage={plan.background_image}
         onLayoutChange={history.set}
         tool={tool}
-        onToolChange={setTool}
+        onToolChange={pickTool}
+        placingItem={placingItem?.id ?? null}
         snap={snap}
         selectedId={selectedId}
         onSelect={setSelectedId}
         onUndo={history.undo}
         onRedo={history.redo}
         onTextCreated={focusLabelText}
-      />
-
-      {selected?.kind === 'text' ? (
-        <div className="grid gap-3 rounded-lg border bg-card p-3 sm:grid-cols-[1fr_auto_auto]">
-          <div className="space-y-1.5">
-            <Label htmlFor="fp-text">Label text</Label>
-            <Textarea
-              id="fp-text"
-              ref={textInputRef}
-              rows={2}
-              value={selected.text}
-              // Typing is one undo step, committed when the box loses focus.
-              onChange={(e) => updateShape({ ...selected, text: e.target.value }, true)}
-              onBlur={() => history.set(history.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="fp-text-size">Text size</Label>
-            <Input
-              id="fp-text-size"
-              type="number"
-              min={6}
-              max={120}
-              className="h-8 w-20"
-              value={selected.fontSize}
-              onChange={(e) => {
-                const n = Number(e.target.value)
-                if (Number.isFinite(n) && n >= 6 && n <= 120) updateShape({ ...selected, fontSize: n })
-              }}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="fp-text-rotation">Rotation (°)</Label>
-            <AngleInput id="fp-text-rotation" value={selected.rotation} onChange={(rotation) => updateShape({ ...selected, rotation })} />
-          </div>
-        </div>
-      ) : selected?.kind === 'path' && selected.points.length > 2 ? (
-        <div className="flex items-center gap-2 rounded-lg border bg-card p-3">
-          <Checkbox
-            id="fp-path-closed"
-            checked={selected.closed}
-            onCheckedChange={(v) => updateShape({ ...selected, closed: v === true })}
+        onMeasure={(length) => {
+          setMeasured(length)
+          setMeasuredMetres('')
+        }}
+        sun={overlay}
+      >
+        {selected && tool === 'select' ? (
+          <SelectionPopover
+            entity={selected}
+            unitsPerMetre={layout.unitsPerMetre}
+            onChange={(next, transient) => updateShape(next as FloorPlanShape, transient)}
+            onDelete={remove}
+            textInputRef={textInputRef}
+            onTextCommit={() => history.set(history.value)}
           />
-          <Label htmlFor="fp-path-closed" className="font-normal">
-            Closed shape
-          </Label>
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {LAYOUT_TOOLS.find((t) => t.tool === tool)?.hint} Arrow keys nudge the selection (Shift for bigger steps); ⌘Z / Ctrl+Z undoes.
-        </p>
-      )}
+        ) : null}
+        {measured ? (
+          <form
+            className="absolute top-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-lg border bg-popover p-2 shadow-lg"
+            onSubmit={(e) => {
+              e.preventDefault()
+              applyMeasurement()
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <label className="flex items-center gap-2 text-sm">
+              Length
+              <Input autoFocus type="number" min={0.01} step="any" className="h-8 w-24" value={measuredMetres} onChange={(e) => setMeasuredMetres(e.target.value)} />
+              m
+            </label>
+            <Button type="submit" size="sm" disabled={!(Number(measuredMetres) > 0)}>
+              Set scale
+            </Button>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label="Cancel" onClick={() => pickTool('select')}>
+              <X />
+            </Button>
+          </form>
+        ) : null}
+      </FloorPlanCanvas>
+
+      <BackgroundDialog
+        open={backgroundOpen}
+        onOpenChange={setBackgroundOpen}
+        layout={layout}
+        onLayoutChange={(next) => history.set(next)}
+        hasImage={!!plan.background_image}
+        onImage={onBackgroundImage}
+        locationQuery={locationQuery}
+        onArmTool={(next) => {
+          setBackgroundOpen(false)
+          pickTool(next)
+        }}
+      />
     </div>
   )
 }
 
 // ─── Setups ─────────────────────────────────────────────────────────────────
 
-const SETUP_TOOLS: ToolOption[] = [
-  { tool: 'select', label: 'Select', hint: 'Drag a marker to move it; drag its handle to turn it.', icon: <MousePointer2 /> },
-  { tool: 'camera', label: 'Camera', hint: 'Click to place a camera.', icon: <Video /> },
-  { tool: 'actor', label: 'Actor', hint: 'Click to place an actor.', icon: <User /> },
-]
+export type ShotStrip = {
+  scenesHere: Scene[]
+  scenesElsewhere: Scene[]
+  shots: Shot[]
+  hasSetup: (sceneId: string, shotId: string | null) => boolean
+  onPick: (sceneId: string, shotId: string) => void
+}
 
-/** Plot setups mode: camera and actor positions for one scene or shot on this plan. */
+/** Setups mode: cameras, cast and equipment for one scene (blocking) or shot on this plan. */
 export function SetupEditor({
   plan,
   productionId,
@@ -280,6 +476,11 @@ export function SetupEditor({
   setup,
   otherSetups,
   sources,
+  cast,
+  actorColor,
+  strip,
+  sun,
+  locationQuery,
 }: {
   plan: FloorPlan
   productionId: string
@@ -290,25 +491,33 @@ export function SetupEditor({
   /** Other setups on this plan, to start from. */
   otherSetups: Array<{ setup: FloorPlanSetup; label: string }>
   sources: ScheduleExportSources
+  cast: CastOption[]
+  actorColor: (personId: string | null) => string
+  strip: ShotStrip
+  sun: SunSettings
+  locationQuery: string
 }) {
   const queryClient = useQueryClient()
   const history = useEditHistory<FloorPlanMarker[]>(setup?.markers ?? [])
   const [notes, setNotes] = useState(setup?.notes ?? '')
   const [tool, setTool] = useState<FloorPlanTool>('select')
+  const [placingItem, setPlacingItem] = useState<CatalogItem | null>(null)
+  const [placingPerson, setPlacingPerson] = useState<{ personId: string | null; label: string } | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [snap, setSnap] = useSnapPreference()
+  const [locationOpen, setLocationOpen] = useState(false)
+  const { day, overlay } = useSunOverlay(plan.layout.geo, sun)
 
   const setupsKey = floorPlanSetupsQueryKey(productionId)
   const doc = useMemo(() => ({ markers: history.value, notes }), [history.value, notes])
   const autosave = useAutosave(
     doc,
     async ({ markers, notes: text }) => {
-      const key = setupsKey
       const matches = (s: FloorPlanSetup) =>
         s.floor_plan_id === plan.id && s.scene_id === scene.id && (s.shot_id ?? null) === (shot?.id ?? null)
       const empty = markers.length === 0 && !text.trim()
       // Show the change straight away; the saved row replaces it below.
-      queryClient.setQueryData<FloorPlanSetup[]>(key, (list = []) => {
+      queryClient.setQueryData<FloorPlanSetup[]>(setupsKey, (list = []) => {
         const rest = list.filter((s) => !matches(s))
         if (empty) return rest
         const existing = list.find(matches)
@@ -339,19 +548,16 @@ export function SetupEditor({
         markers,
         notes: text,
       })
-      queryClient.setQueryData<FloorPlanSetup[]>(key, (list = []) => [...list.filter((s) => !matches(s)), ...(saved ? [saved] : [])])
+      queryClient.setQueryData<FloorPlanSetup[]>(setupsKey, (list = []) => [...list.filter((s) => !matches(s)), ...(saved ? [saved] : [])])
     },
     { paused: history.dragging }
   )
 
-  const castNames = useMemo(() => {
-    const ids = (shot ? sources.castByShotId.get(shot.id) : undefined) ?? sources.castBySceneId.get(scene.id) ?? []
-    const byId = new Map(sources.cast.map((p) => [p.id, p]))
-    return ids
-      .map((id) => byId.get(id))
-      .filter((p): p is NonNullable<typeof p> => !!p)
-      .map((p) => p.role_name?.trim() || p.name)
-  }, [sources, scene.id, shot])
+  const saveGeo = async (geo: FloorPlanGeo) => {
+    const layout = { ...plan.layout, geo }
+    queryClient.setQueryData<FloorPlan[]>(floorPlansQueryKey(productionId), (plans) => plans?.map((p) => (p.id === plan.id ? { ...p, layout } : p)))
+    await updateFloorPlan(plan.id, { layout })
+  }
 
   const selected = history.value.find((m) => m.id === selectedId) ?? null
   const updateMarker = (marker: FloorPlanMarker) => history.set(history.value.map((m) => (m.id === marker.id ? marker : m)))
@@ -364,40 +570,85 @@ export function SetupEditor({
     history.set(source.markers.map((m) => ({ ...m, id: crypto.randomUUID() })))
     setSelectedId(null)
   }
+  const pickTool = (next: FloorPlanTool) => {
+    setTool(next)
+    if (next !== 'item') setPlacingItem(null)
+    if (next !== 'actor') setPlacingPerson(null)
+  }
+  const placeItem = (item: CatalogItem) => {
+    setPlacingItem(item)
+    setTool('item')
+  }
 
-  const locationName = (id: string | null) => (id ? sources.locations.find((l) => l.id === id)?.name : null)
-  const heading = sceneSlugline(scene, locationName(scene.location_id))
-  const description = shot ? shot.shot_description?.trim() || shot.subject?.trim() : scene.description?.trim() || scene.title?.trim()
-  const details = shot ? shotCameraDetails(shot) : ''
+  const placedPeople = new Set(history.value.flatMap((m) => (m.kind === 'actor' && m.personId ? [m.personId] : [])))
+  const castInScene = cast.filter((c) => c.inScene)
+  const castOthers = cast.filter((c) => !c.inScene)
+  const castGroups = [
+    { label: 'In this scene', people: castInScene },
+    { label: castInScene.length > 0 ? 'Other cast' : 'Cast', people: castOthers },
+  ].filter((g) => g.people.length > 0)
 
   return (
     <div className="space-y-3">
       <Toolbar>
-        {SETUP_TOOLS.map((option) => (
-          <ToolButton key={option.tool} option={option} active={tool === option.tool} onSelect={() => setTool(option.tool)} />
-        ))}
+        <ToolButton label="Select" icon={<MousePointer2 />} active={tool === 'select'} onClick={() => pickTool('select')} />
+        <ToolButton label="Camera" showLabel icon={<Video />} active={tool === 'camera'} onClick={() => pickTool('camera')} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" size="sm" variant={tool === 'actor' ? 'secondary' : 'ghost'} className="h-9 gap-1.5 px-3">
+              <User />
+              Cast
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
+            {castGroups.map((group, gi) => (
+              <div key={group.label}>
+                {gi > 0 ? <DropdownMenuSeparator /> : null}
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{group.label}</DropdownMenuLabel>
+                {group.people.map((c) => (
+                  <DropdownMenuItem
+                    key={c.personId}
+                    onClick={() => {
+                      setPlacingPerson({ personId: c.personId, label: c.name })
+                      setTool('actor')
+                    }}
+                  >
+                    <span className="size-3 rounded-full border border-black/20" style={{ background: c.color }} />
+                    <span className="flex-1 truncate">{c.name}</span>
+                    {placedPeople.has(c.personId) ? <Check className="size-3.5 text-muted-foreground" /> : null}
+                  </DropdownMenuItem>
+                ))}
+              </div>
+            ))}
+            {castGroups.length > 0 ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem
+              onClick={() => {
+                setPlacingPerson(null)
+                setTool('actor')
+              }}
+            >
+              <span className="size-3 rounded-full bg-slate-500" />
+              Someone else
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <LibraryButton label="Lights" icon={<Lamp />} categories={LIGHT_CATEGORIES} onPick={placeItem} />
+        <LibraryButton label="Grip" icon={<LayoutGrid />} categories={GRIP_CATEGORIES} onPick={placeItem} />
         <Divider />
         <SnapToggle snap={snap} onChange={setSnap} />
-        <Divider />
-        <IconAction label="Undo" onClick={history.undo} disabled={!history.canUndo}>
-          <Undo2 />
-        </IconAction>
-        <IconAction label="Redo" onClick={history.redo} disabled={!history.canRedo}>
-          <Redo2 />
-        </IconAction>
-        <IconAction label="Delete selected" onClick={remove} disabled={!selected}>
-          <Trash2 />
-        </IconAction>
+        <SunControl sun={sun} day={day} onSetLocation={() => setLocationOpen(true)} />
+        {tool === 'item' && placingItem ? <PlacingChip label={placingItem.short} onCancel={() => pickTool('select')} /> : null}
+        {tool === 'actor' ? <PlacingChip label={placingPerson?.label ?? 'Cast'} onCancel={() => pickTool('select')} /> : null}
+        {tool === 'camera' ? <PlacingChip label="Camera" onCancel={() => pickTool('select')} /> : null}
         {otherSetups.length > 0 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" size="sm" variant="ghost" className="gap-1">
-                <Copy className="size-4" />
-                Start from…
+              <Button type="button" size="sm" variant="ghost" className="h-9 gap-1.5 px-3">
+                <Copy />
+                Copy from
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Replace the markers with a copy of</DropdownMenuLabel>
+            <DropdownMenuContent align="start" className="w-48">
               {otherSetups.map(({ setup: other, label }) => (
                 <DropdownMenuItem key={other.id} onClick={() => copyFrom(other)}>
                   {label}
@@ -406,76 +657,152 @@ export function SetupEditor({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
+        <div className="flex-1" />
         <SaveStatus status={autosave.status} />
+        <HistoryButtons history={history} />
       </Toolbar>
 
       <FloorPlanCanvas
         layout={plan.layout}
+        backgroundImage={plan.background_image}
         markers={history.value}
         onMarkersChange={history.set}
         tool={tool}
-        onToolChange={setTool}
+        onToolChange={pickTool}
+        placingItem={placingItem?.id ?? null}
+        placingPerson={placingPerson}
         snap={snap}
         selectedId={selectedId}
         onSelect={setSelectedId}
         onUndo={history.undo}
         onRedo={history.redo}
-      />
-
-      {selected ? (
-        <div className="grid gap-3 rounded-lg border bg-card p-3 sm:grid-cols-[1fr_auto]">
-          <div className="space-y-1.5">
-            <Label htmlFor="fp-marker-label">{selected.kind === 'camera' ? 'Camera' : 'Actor or character'}</Label>
-            <Input
-              id="fp-marker-label"
-              value={selected.label}
-              list={selected.kind === 'actor' ? 'fp-cast-names' : undefined}
-              placeholder={selected.kind === 'camera' ? 'e.g. A' : 'e.g. Marta'}
-              onChange={(e) => updateMarker({ ...selected, label: e.target.value })}
-            />
-            <datalist id="fp-cast-names">
-              {castNames.map((name) => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="fp-marker-rotation">Facing (°)</Label>
-            <AngleInput id="fp-marker-rotation" value={selected.rotation} onChange={(rotation) => updateMarker({ ...selected, rotation })} />
-          </div>
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">{SETUP_TOOLS.find((t) => t.tool === tool)?.hint}</p>
-      )}
-
-      <section aria-label="Shot details" className="space-y-3 rounded-lg border bg-card p-4">
-        <div className="space-y-0.5">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Scene {scene.scene_number}
-            {heading ? ` · ${heading}` : ''}
-          </p>
-          <h3 className="font-semibold">
-            {shot ? `Shot ${shot.shot_number}` : 'Scene blocking'}
-            {details ? <span className="ml-2 text-sm font-normal text-muted-foreground">{details}</span> : null}
-          </h3>
-        </div>
-        <p className={cn('text-sm whitespace-pre-wrap', !description && 'text-muted-foreground')}>
-          {description || (shot ? 'No description for this shot yet. Add one on the Shot Lists page.' : 'No scene description yet.')}
-        </p>
-        {castNames.length > 0 ? (
-          <p className="text-xs text-muted-foreground">Cast: {castNames.join(', ')}</p>
-        ) : null}
-        <div className="space-y-1.5">
-          <Label htmlFor="fp-setup-notes">Setup notes</Label>
-          <Textarea
-            id="fp-setup-notes"
-            rows={2}
-            value={notes}
-            placeholder="e.g. Dolly track along the counter; B camera on sticks by the door"
-            onChange={(e) => setNotes(e.target.value)}
+        actorColor={actorColor}
+        sun={overlay}
+      >
+        {selected && tool === 'select' ? (
+          <SelectionPopover
+            entity={selected}
+            unitsPerMetre={plan.layout.unitsPerMetre}
+            cast={cast}
+            onChange={(next) => updateMarker(next as FloorPlanMarker)}
+            onDelete={remove}
           />
-        </div>
-      </section>
+        ) : null}
+      </FloorPlanCanvas>
+
+      <ShotStripView scene={scene} shot={shot} strip={strip} sources={sources} notes={notes} onNotes={setNotes} />
+
+      <LocationDialog
+        open={locationOpen}
+        onOpenChange={setLocationOpen}
+        geo={plan.layout.geo}
+        defaultQuery={locationQuery}
+        onGeo={(geo) => void saveGeo(geo)}
+      />
+    </div>
+  )
+}
+
+/** Scene picker and the scene's shots as cards; the chosen one shows its description and notes. */
+function ShotStripView({
+  scene,
+  shot,
+  strip,
+  sources,
+  notes,
+  onNotes,
+}: {
+  scene: Scene
+  shot: Shot | null
+  strip: ShotStrip
+  sources: ScheduleExportSources
+  notes: string
+  onNotes: (notes: string) => void
+}) {
+  const locationName = (id: string | null) => (id ? sources.locations.find((l) => l.id === id)?.name : null)
+  const sceneLabel = (s: Scene) => [`Scene ${s.scene_number}`, s.title?.trim()].filter(Boolean).join(' | ')
+  const heading = sceneSlugline(scene, locationName(scene.location_id))
+  const description = shot ? shot.shot_description?.trim() || shot.subject?.trim() : scene.description?.trim() || scene.title?.trim()
+  const details = shot ? shotCameraDetails(shot) : ''
+  const cards: Array<{ id: string; shotId: string | null; title: string; sub: string }> = [
+    { id: WHOLE_SCENE, shotId: null, title: 'Blocking', sub: 'Whole scene' },
+    ...strip.shots.map((s) => ({ id: s.id, shotId: s.id, title: s.shot_number, sub: s.shot_size ?? '' })),
+  ]
+  const selectedId = shot?.id ?? WHOLE_SCENE
+
+  return (
+    <div className="flex items-stretch gap-2 overflow-x-auto pb-1" role="group" aria-label="Shots">
+      <div className="flex shrink-0 flex-col justify-center gap-1 rounded-lg border bg-card px-3 py-2">
+        <span className="text-xs text-muted-foreground">Scene</span>
+        <Select value={scene.id} onValueChange={(id) => strip.onPick(id, WHOLE_SCENE)}>
+          <SelectTrigger size="sm" className="h-8 w-52" aria-label="Scene">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {strip.scenesHere.length > 0 ? (
+              <SelectGroup>
+                <SelectLabel>At this location</SelectLabel>
+                {strip.scenesHere.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {sceneLabel(s)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ) : null}
+            {strip.scenesElsewhere.length > 0 ? (
+              <SelectGroup>
+                <SelectLabel>{strip.scenesHere.length > 0 ? 'Other scenes' : 'Scenes'}</SelectLabel>
+                {strip.scenesElsewhere.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {sceneLabel(s)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ) : null}
+          </SelectContent>
+        </Select>
+      </div>
+      {cards.map((card) => {
+        const has = strip.hasSetup(scene.id, card.shotId)
+        if (card.id === selectedId) {
+          return (
+            <section
+              key={card.id}
+              aria-label={card.shotId ? `Shot ${card.title}` : 'Scene blocking'}
+              aria-current="true"
+              className="grid min-w-[26rem] flex-1 grid-cols-[minmax(0,1fr)_minmax(0,14rem)] gap-3 rounded-lg border border-primary bg-primary/5 px-3 py-2"
+            >
+              <div className="min-w-0 space-y-0.5">
+                <p className="truncate text-xs text-muted-foreground">{[`Scene ${scene.scene_number}`, heading].filter(Boolean).join(' | ')}</p>
+                <p className="font-semibold">{[card.shotId ? card.title : 'Blocking', details].filter(Boolean).join(' | ')}</p>
+                <p className={cn('text-sm whitespace-pre-wrap', !description && 'text-muted-foreground')}>{description || 'No description'}</p>
+              </div>
+              <Textarea
+                aria-label="Notes"
+                rows={3}
+                value={notes}
+                placeholder="Notes"
+                onChange={(e) => onNotes(e.target.value)}
+                className="min-h-0 resize-none text-sm"
+              />
+            </section>
+          )
+        }
+        return (
+          <button
+            key={card.id}
+            type="button"
+            onClick={() => strip.onPick(scene.id, card.id)}
+            className={cn(
+              'flex w-24 shrink-0 flex-col justify-center gap-0.5 rounded-lg border px-3 py-2 text-left hover:bg-muted',
+              has ? 'bg-card' : 'border-dashed text-muted-foreground'
+            )}
+          >
+            <span className="truncate font-semibold">{card.title}</span>
+            <span className="truncate text-xs text-muted-foreground">{card.sub}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }

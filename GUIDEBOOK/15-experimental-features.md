@@ -15,35 +15,43 @@ Experimental features are on-set tools that are still being tested. They are hid
 
 ## Floor Plans
 
-Floor Plans lets you draw the spaces at your locations and mark where the cameras and actors go for each scene and shot. Open **Schedule → Floor Plans**.
+Floor Plans lets you draw a set or a unit base at a location, to scale, and mark where the cameras, cast, lights and grip go for each scene and shot. Open **Schedule → Floor Plans**.
 
-![A floor plan with cameras and actors plotted for a shot](images/15-floor-plans.png)
+![A floor plan with cameras, cast, lights and grip plotted for a shot](images/15-floor-plans.png)
 
-### Draw a floor plan
+### Start a plan
 
-1. Click **New floor plan**, give it a name (for example *Kitchen*) and choose its **Location**. A location can have as many plans as it has spaces. Add the location on **Locations** first if it isn't there.
-2. With **Draw layout** selected, pick a tool from the toolbar:
+1. Click **New floor plan**, give it a name (for example *Kitchen* or *Unit base*) and choose its **Location**. Add the location on **Locations** first if it isn't there. To switch plans later, click the plan's name at the top of the page.
+2. Click **Background** in the toolbar if you want something to draw over:
+   - **Map of location** draws a map of the location's address, north up and to scale (choose 100, 200 or 500 m across). It needs a map key in **Settings**.
+   - **Image** uses a picture you have, such as a map screenshot or a recce photo. Then choose **Fit**, **Fill** or **Move** (drag it, or drag its corner to resize it) and set its **Opacity**.
+3. Set the scale: type the **Plan width** in metres, or click the ruler, drag along something you know the length of (a doorway, a road) and type its length. Set **North** so the arrow points north on your picture.
+
+### Draw the layout
+
+With **Layout** selected, pick a tool:
 
 | Tool | How to use it |
 |---|---|
-| **Rectangle** | Click and drag. Good for rooms, tables, beds and doorways |
+| **Rectangle** | Click and drag. Good for rooms, tables and doorways |
 | **Line** | Click from point to point. Double-click or press Enter to finish; click the first point again to close the shape. Esc cancels |
-| **Text** | Click where the label goes, then type it in **Label text** |
-| **Select** | Click a shape to select it, drag it to move it. Drag a corner to resize a rectangle, a point to reshape a line. A label has a square corner to resize it and a round knob to rotate it |
+| **Text** | Click where the label goes, then type it |
+| **Add** | Pick a piece of kit, then click the plan to place it. Kit placed here, such as easy-ups, the generator or video village, stays on the plan for every setup |
+| **Select** | Click anything to move it or open its settings. Drag the round knob to turn it, and the square handle to resize |
 
-3. **Snap to 90°** keeps lines straight across or straight up and down, and turns labels a quarter at a time. Untick it to draw and rotate freely.
-
-Press Delete to remove the selected shape, the arrow keys to nudge it (hold Shift for bigger steps) and ⌘Z / Ctrl+Z to undo. Everything saves as you go.
+**90°** keeps lines straight across or up and down and turns things a quarter at a time. Turn it off to draw and turn freely. Press Delete to remove the selected item, the arrow keys to nudge it, and ⌘Z / Ctrl+Z to undo. Everything saves as you go.
 
 ### Plot the setups
 
-1. Switch to **Plot setups**.
-2. Choose the **Scene** (scenes set at this plan's location are listed first), then the **Shot**, or **Whole scene (blocking)** for positions that apply to every shot. The shot's description, size, lens, support, movement and cast show beneath the plan while you work.
-3. Pick **Camera** or **Actor** and click on the plan to place one. Cameras are labelled A, B, C…; actors 1, 2, 3… Type a different label, such as the character's name, in the box under the plan.
-4. Drag a marker to move it, and drag its round knob to turn it to face the right way. **Snap to 90°** works here too.
-5. Add **Setup notes** if you need them, such as where the dolly track runs.
+1. Switch to **Setups**. The scene and its shots run along the bottom: pick the scene (scenes at this location come first), then **Blocking** for the whole scene or a shot. The chosen shot shows its description, camera details and notes.
+2. Click **Camera** and then the plan to place a camera. Cameras are lettered A, B, C… and each letter has its own colour.
+3. Click **Cast**, choose who (the scene's cast come first), then click the plan. Each person shows in their colour from the **Bookings** calendar.
+4. Click **Lights** or **Grip**, choose the kit, then click the plan. Lights are coloured by source: amber for tungsten, blue for HMI, white for LED. Every item has a label you can change.
+5. Drag anything to move it and its round knob to turn it. **Copy from** starts a shot from another setup in the same scene.
 
-Shots that already have a setup on the plan show ● in the **Shot** list. **Start from…** copies the markers of another setup in the same scene, so you only move what changes.
+### See the sun
+
+Click the sun in the toolbar. The first time, Albatross asks for the location (it looks up the address, or you can type coordinates such as `51.5072, -0.1276`). Pick the day and slide the time: the sun's path runs round the plan, and the dashed ray shows where the light comes from at that time.
 
 ### Export floor plans
 
@@ -56,7 +64,7 @@ Click **Export PDF** and choose what to print:
 | **Scene** | The scene's blocking, then each shot's setup |
 | **Shots** | Just the shots you tick |
 
-Each setup prints the floor plan with its cameras and actors, and the shot details and notes underneath. A copy is filed under **Documents → Script & sides**, then a save dialog opens.
+Each setup prints the plan with its background, kit, cameras and cast in their colours, a north arrow and a scale bar, with the shot details and notes underneath. A copy is filed under **Documents → Script & sides**, then a save dialog opens.
 
 ## Script Supervisor
 

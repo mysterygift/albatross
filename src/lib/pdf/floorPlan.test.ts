@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
-import { buildFloorPlanPdfData, generateFloorPlanPdf, markerSummary } from '@/lib/pdf/floorPlan'
+import { buildFloorPlanPdfData, dataUrlBytes, generateFloorPlanPdf, markerSummary } from '@/lib/pdf/floorPlan'
 import { extractPdfText } from '@/test/episodicIntegrationHelpers'
 import type { FloorPlan, FloorPlanSetup } from '@/lib/db/repositories/floor-plans'
-import type { FloorPlanMarker } from '@/lib/floor-plans/model'
+import { emptyLayout, type FloorPlanMarker } from '@/lib/floor-plans/model'
 import type { Scene, Shot } from '@/lib/db/types'
 
 const ts = { created_at: 't', updated_at: 't', deleted_at: null }
@@ -25,6 +25,7 @@ const locations = [
 ]
 
 const layout = {
+  ...emptyLayout(),
   shapes: [
     { id: 'r', kind: 'rect' as const, x: 100, y: 100, width: 600, height: 400 },
     { id: 'w', kind: 'path' as const, points: [{ x: 100, y: 100 }, { x: 700, y: 100 }], closed: false },
@@ -33,14 +34,14 @@ const layout = {
 }
 
 const plan = (id: string, locationId: string, name: string): FloorPlan =>
-  ({ id, production_id: 'p', location_id: locationId, name, layout, ...ts }) as FloorPlan
+  ({ id, production_id: 'p', location_id: locationId, name, layout, background_image: null, ...ts }) as FloorPlan
 
 const plans = [plan('main', 'diner', 'Main room'), plan('kitchen', 'diner', 'Kitchen'), plan('bay', 'garage', 'Bay')]
 
 const cam: FloorPlanMarker = { id: 'c', kind: 'camera', x: 150, y: 150, rotation: 45, label: 'A' }
-const marta: FloorPlanMarker = { id: 'm', kind: 'actor', x: 400, y: 300, rotation: 180, label: 'Marta' }
+const marta: FloorPlanMarker = { id: 'm', kind: 'actor', x: 400, y: 300, rotation: 180, label: 'Marta', personId: 'p-marta' }
 
-const setup = (id: string, planId: string, sceneId: string, shotId: string | null, markers = [cam, marta], notes: string | null = null) =>
+const setup = (id: string, planId: string, sceneId: string, shotId: string | null, markers: FloorPlanMarker[] = [cam, marta], notes: string | null = null) =>
   ({ id, production_id: 'p', floor_plan_id: planId, scene_id: sceneId, shot_id: shotId, markers, notes, ...ts }) as FloorPlanSetup
 
 const setups = [
@@ -105,13 +106,60 @@ describe('buildFloorPlanPdfData', () => {
 })
 
 describe('markerSummary', () => {
-  it('lists cameras and actors by label', () => {
-    expect(markerSummary([cam, { ...cam, id: 'c2', label: 'B' }, marta])).toBe('Cameras A, B | Actor Marta')
+  it('lists cameras, cast, lights and grip by label', () => {
+    const hmi: FloorPlanMarker = { id: 'h', kind: 'item', type: 'arri-m18', x: 0, y: 0, rotation: 0, label: 'M18 | HMI', width: 0.47, depth: 0.54 }
+    const track: FloorPlanMarker = { id: 't', kind: 'item', type: 'track-straight', x: 0, y: 0, rotation: 0, label: 'Track', width: 0.62, depth: 3.6 }
+    expect(markerSummary([cam, { ...cam, id: 'c2', label: 'B' }, marta, hmi, track])).toBe('Cameras A, B | Cast Marta | Light M18 | Grip Track')
     expect(markerSummary([])).toBeNull()
   })
 })
 
+const PNG_1x1 =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
 describe('generateFloorPlanPdf', () => {
+  it('draws equipment with labels, cast colours and a background picture', async () => {
+    const kit: FloorPlanMarker[] = [
+      cam,
+      marta,
+      { id: 'h', kind: 'item', type: 'arri-m18', x: 600, y: 600, rotation: 270, label: 'M18 | HMI', width: 0.47, depth: 0.54 },
+      { id: 'f', kind: 'item', type: 'floppy-4x4', x: 560, y: 560, rotation: 270, label: '4x4 floppy', width: 1.22, depth: 0.03 },
+    ]
+    const tent = { id: 'e', kind: 'item' as const, type: 'easy-up-3x3', x: 900, y: 650, rotation: 0, label: 'Easy-up | Video village', width: 3, depth: 3 }
+    const withBackground = {
+      ...plans[0]!,
+      background_image: PNG_1x1,
+      layout: {
+        ...layout,
+        shapes: [...layout.shapes, tent],
+        north: 15,
+        background: { source: 'image' as const, x: 0, y: 0, width: 1200, height: 800, opacity: 0.5, map: null },
+      },
+    }
+    const data = buildFloorPlanPdfData({
+      ...base,
+      plans: [withBackground],
+      setups: [setup('s', 'main', 'sc4', '4a', kit)],
+      scope: { kind: 'scene', sceneId: 'sc4' },
+      actorColors: new Map([['p-marta', '#8b5cf6']]),
+    })
+    expect(data.actorColors).toEqual({ 'p-marta': '#8b5cf6' })
+    // The background widens the drawing to the whole picture.
+    expect(data.entries[0]!.bounds).toEqual({ minX: 0, minY: 0, maxX: 1200, maxY: 800 })
+    const bytes = await generateFloorPlanPdf(data)
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1)
+    const text = await extractPdfText(bytes)
+    expect(text).toContain('M18 | HMI')
+    expect(text).toContain('4x4 floppy')
+    expect(text).toContain('Easy-up | Video village')
+    expect(text).toContain('Light M18 | Grip 4x4 floppy')
+  })
+
+  it('reads data URLs and ignores anything else', () => {
+    expect(dataUrlBytes(PNG_1x1)?.[1]).toBe(0x50)
+    expect(dataUrlBytes('https://example.com/a.png')).toBeNull()
+  })
+
   it('draws each setup with its title, description and markers', async () => {
     const data = buildFloorPlanPdfData({ ...base, scope: { kind: 'location', locationId: 'diner' } })
     const bytes = await generateFloorPlanPdf(data)
@@ -131,7 +179,7 @@ describe('generateFloorPlanPdf', () => {
 
     const blank = buildFloorPlanPdfData({
       ...base,
-      plans: [{ ...plans[0]!, layout: { shapes: [] } }],
+      plans: [{ ...plans[0]!, layout: emptyLayout() }],
       setups: [],
       scope: { kind: 'location', locationId: 'diner' },
     })

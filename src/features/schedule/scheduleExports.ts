@@ -172,6 +172,8 @@ export async function exportFloorPlansPdf(args: {
   productionId: string
   actor?: ScheduleExportActor
   request: FloorPlanExportRequest
+  /** Cast booking colours by person id. */
+  actorColors?: Map<string, string>
 }): Promise<ScheduleExportResult> {
   const [sources, floorPlans] = await Promise.all([
     loadScheduleExportSources(args.productionId, args.actor),
@@ -221,6 +223,7 @@ export async function exportFloorPlansPdf(args: {
     scenes: sources.scenes,
     shots: sources.shots,
     locations: sources.locations,
+    actorColors: args.actorColors,
   })
   return fileAndOffer({
     productionId: args.productionId,

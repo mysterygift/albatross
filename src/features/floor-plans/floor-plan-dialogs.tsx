@@ -117,6 +117,7 @@ export function ExportFloorPlansDialog({
   sources,
   plans,
   setups,
+  actorColors,
   defaults,
 }: {
   open: boolean
@@ -125,6 +126,7 @@ export function ExportFloorPlansDialog({
   sources: ScheduleExportSources
   plans: FloorPlan[]
   setups: FloorPlanSetup[]
+  actorColors: Map<string, string>
   defaults: { locationId: string | null; sceneId: string | null; shotId: string | null }
 }) {
   const authSession = useAuthSession()
@@ -180,7 +182,7 @@ export function ExportFloorPlansDialog({
     mutationFn: async (req: FloorPlanExportRequest) => {
       const actor =
         authSession.authSupported && authSession.currentUser ? { db: await getDb(), actor: authSession.currentUser } : null
-      return exportFloorPlansPdf({ productionId, actor, request: req })
+      return exportFloorPlansPdf({ productionId, actor, request: req, actorColors })
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: documentsQueryKey(productionId) })
@@ -228,7 +230,7 @@ export function ExportFloorPlansDialog({
               hint="Scene blocking, then each shot's setup."
               value={sceneId}
               onChange={setSceneId}
-              options={scenes.map((s) => ({ value: s.id, label: [`Scene ${s.scene_number}`, s.title].filter(Boolean).join(' · ') }))}
+              options={scenes.map((s) => ({ value: s.id, label: [`Scene ${s.scene_number}`, s.title].filter(Boolean).join(' | ') }))}
               empty="No scenes yet."
             />
           ) : (
@@ -254,7 +256,7 @@ export function ExportFloorPlansDialog({
                       />
                       <span>
                         <span className="font-medium">
-                          Scene {scene.scene_number} · Shot {shot.shot_number}
+                          Scene {scene.scene_number} | Shot {shot.shot_number}
                         </span>
                         {shot.shot_description?.trim() ? (
                           <span className="block text-xs text-muted-foreground">{shot.shot_description}</span>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileDown, Info, LayoutGrid, MoreHorizontal, Plus } from 'lucide-react'
+import { Check, ChevronDown, FileDown, Info, LayoutGrid } from 'lucide-react'
 import { EmptyState } from '@/components/empty-state'
 import { ExperimentalBadge } from '@/components/experimental-badge'
 import { PageHeader } from '@/components/page-header'
@@ -11,14 +11,16 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Label } from '@/components/ui/label'
 import { SegmentedControl } from '@/components/ui/segmented-control'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/sonner'
+import { loadColorConfig, resolvePersonColor } from '@/features/people/lib/bookingCalendarColors'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
@@ -28,25 +30,28 @@ import {
   deleteFloorPlan,
   listFloorPlanSetupsByProduction,
   listFloorPlansByProduction,
+  setFloorPlanBackgroundImage,
   updateFloorPlan,
   type FloorPlan,
   type FloorPlanSetup,
 } from '@/lib/db/repositories/floor-plans'
-import type { Scene } from '@/lib/db/types'
+import { localIsoDate } from '@/lib/dates/localIsoDate'
+import { DEFAULT_ACTOR_COLOR } from '@/lib/floor-plans/model'
 import { loadScheduleExportSources, type ScheduleExportSources } from '@/lib/schedule/scheduleExportSources'
 import { sortScenesByNumber } from '@/lib/schedule/sceneFields'
-import { cn } from '@/lib/utils'
 import { ExportFloorPlansDialog, FloorPlanDialog } from './floor-plan-dialogs'
-import { LayoutEditor, SetupEditor } from './FloorPlanEditor'
+import { LayoutEditor, SetupEditor, type SunSettings } from './FloorPlanEditor'
+import { WHOLE_SCENE, castOptionsFor, defaultSunDate } from './floorPlanDisplay'
 import { floorPlanSetupsQueryKey, floorPlansQueryKey } from './floorPlanQueries'
-import { WHOLE_SCENE } from './floorPlanDisplay'
 
 type Mode = 'layout' | 'setup'
 
 const MODE_OPTIONS: Array<{ value: Mode; label: string }> = [
-  { value: 'layout', label: 'Draw layout' },
-  { value: 'setup', label: 'Plot setups' },
+  { value: 'layout', label: 'Layout' },
+  { value: 'setup', label: 'Setups' },
 ]
+
+const SUN_STORAGE_KEY = 'albatross.floorPlans.sun'
 
 export function FloorPlansPage() {
   return (
@@ -56,8 +61,47 @@ export function FloorPlansPage() {
   )
 }
 
-const DESCRIPTION =
-  'Draw the spaces at each location, then mark where cameras and actors go for every scene and shot.'
+function useSunSettings(sources: ScheduleExportSources | undefined, plan: FloorPlan | null): SunSettings {
+  const [enabled, setEnabledState] = useState(() => {
+    try {
+      return localStorage.getItem(SUN_STORAGE_KEY) === 'true'
+    } catch {
+      return false
+    }
+  })
+  const [date, setDate] = useState<string | null>(null)
+  const [minutes, setMinutes] = useState(12 * 60)
+  const days = useMemo(
+    () => [...(sources?.shootDays ?? [])].filter((d) => !d.deleted_at).sort((a, b) => a.shoot_date.localeCompare(b.shoot_date)),
+    [sources]
+  )
+  const fallback = useMemo(
+    () => (sources && plan ? defaultSunDate(sources, plan.location_id, localIsoDate()) : localIsoDate()),
+    [sources, plan]
+  )
+  return {
+    enabled,
+    date: date ?? fallback,
+    minutes,
+    setEnabled: (on) => {
+      setEnabledState(on)
+      try {
+        localStorage.setItem(SUN_STORAGE_KEY, on ? 'true' : 'false')
+      } catch {
+        // Storage unavailable: the choice lasts for this session only.
+      }
+    },
+    setDate,
+    setMinutes,
+    days,
+  }
+}
+
+/** Each cast member's booking calendar colour. */
+function actorColorMap(productionId: string, sources: ScheduleExportSources): Map<string, string> {
+  const config = loadColorConfig(productionId, sources.cast)
+  return new Map(sources.cast.map((p) => [p.id, resolvePersonColor(p, config)]))
+}
 
 function FloorPlansWorkspace() {
   const { currentProductionId } = useCurrentProduction()
@@ -109,19 +153,31 @@ function FloorPlansWorkspace() {
   const [planDialog, setPlanDialog] = useState<{ plan: FloorPlan | null; key: number } | null>(null)
   const [deleting, setDeleting] = useState<FloorPlan | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
+  const sun = useSunSettings(sources, plan)
 
-  const locationName = (id: string) => sources?.locations.find((l) => l.id === id)?.name ?? 'Location'
+  const locations = useMemo(() => sources?.locations ?? [], [sources])
+  const locationName = (id: string) => locations.find((l) => l.id === id)?.name ?? 'Location'
   const groups = useMemo(() => {
     const byLocation = new Map<string, FloorPlan[]>()
     for (const p of plans) byLocation.set(p.location_id, [...(byLocation.get(p.location_id) ?? []), p])
     return [...byLocation.entries()]
-      .map(([locationId, list]) => ({ locationId, name: sources?.locations.find((l) => l.id === locationId)?.name ?? '', plans: list }))
+      .map(([locationId, list]) => ({ locationId, name: locations.find((l) => l.id === locationId)?.name ?? '', plans: list }))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [plans, sources])
+  }, [plans, locations])
+  const planLocation = plan ? locations.find((l) => l.id === plan.location_id) : undefined
+  const locationQuery = planLocation?.address?.trim() || planLocation?.name || ''
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: floorPlansQueryKey(productionId) })
     void queryClient.invalidateQueries({ queryKey: floorPlanSetupsQueryKey(productionId) })
+  }
+
+  const saveBackgroundImage = async (dataUrl: string | null) => {
+    if (!plan) return
+    await setFloorPlanBackgroundImage(plan.id, dataUrl)
+    queryClient.setQueryData<FloorPlan[]>(floorPlansQueryKey(productionId), (list) =>
+      list?.map((p) => (p.id === plan.id ? { ...p, background_image: dataUrl } : p))
+    )
   }
 
   if (isRemote) {
@@ -137,27 +193,61 @@ function FloorPlansWorkspace() {
   }
 
   const loading = !sources || plansQuery.isLoading || setupsQuery.isLoading
-  const locations = sources?.locations ?? []
+  const newPlan = () => setPlanDialog({ plan: null, key: Date.now() })
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Floor Plans"
-        description={DESCRIPTION}
-        actions={
-          <>
-            <ExperimentalBadge />
-            <Button variant="outline" size="sm" className="gap-1" disabled={!sources || plans.length === 0} onClick={() => setExportOpen(true)}>
-              <FileDown className="size-4" />
-              Export PDF
-            </Button>
-            <Button size="sm" className="gap-1" disabled={locations.length === 0} onClick={() => setPlanDialog({ plan: null, key: Date.now() })}>
-              <Plus className="size-4" />
-              New floor plan
-            </Button>
-          </>
-        }
-      />
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        {plan ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" className="h-10 max-w-full gap-2 px-2 text-xl font-semibold">
+                <h1 className="truncate">
+                  {locationName(plan.location_id)} | {plan.name}
+                </h1>
+                <ChevronDown className="size-5" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-96 w-72 overflow-y-auto">
+              {groups.map((group) => (
+                <DropdownMenuGroup key={group.locationId}>
+                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{group.name}</DropdownMenuLabel>
+                  {group.plans.map((p) => (
+                    <DropdownMenuItem key={p.id} onClick={() => updateParams({ plan: p.id })}>
+                      <span className="flex-1 truncate">{p.name}</span>
+                      {p.id === plan.id ? <Check className="size-4" /> : null}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={newPlan}>New floor plan…</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setPlanDialog({ plan, key: Date.now() })}>Rename or move…</DropdownMenuItem>
+              <DropdownMenuItem className="text-destructive" onClick={() => setDeleting(plan)}>
+                Delete…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <h1 className="text-2xl font-semibold">Floor Plans</h1>
+        )}
+        <ExperimentalBadge />
+        <div className="flex-1" />
+        {plan ? (
+          <SegmentedControl
+            value={mode}
+            onValueChange={(m) => updateParams({ mode: m === 'setup' ? 'setup' : null })}
+            options={MODE_OPTIONS}
+            size="sm"
+            className="w-56"
+            ariaLabel="Mode"
+          />
+        ) : null}
+        <Button variant="outline" size="sm" className="gap-1" disabled={!sources || plans.length === 0} onClick={() => setExportOpen(true)}>
+          <FileDown className="size-4" />
+          Export PDF
+        </Button>
+      </div>
 
       {loading ? (
         <Skeleton className="h-96 w-full" />
@@ -176,80 +266,30 @@ function FloorPlansWorkspace() {
         <EmptyState
           icon={LayoutGrid}
           title="No floor plans yet"
-          description="Draw a room or set at one of your locations, then plot camera and actor positions for each shot."
-          action={<Button onClick={() => setPlanDialog({ plan: null, key: Date.now() })}>New floor plan</Button>}
+          description="Draw a set or a unit base, then plot cameras, cast and kit for each shot."
+          action={<Button onClick={newPlan}>New floor plan</Button>}
+        />
+      ) : mode === 'layout' ? (
+        <LayoutEditor
+          key={plan.id}
+          plan={plan}
+          productionId={productionId}
+          sun={sun}
+          locationQuery={locationQuery}
+          onBackgroundImage={saveBackgroundImage}
         />
       ) : (
-        <div className="grid gap-5 lg:grid-cols-[14rem_minmax(0,1fr)]">
-          <nav aria-label="Floor plans" className="space-y-4">
-            {groups.map((group) => (
-              <div key={group.locationId} className="space-y-1">
-                <p className="px-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">{group.name}</p>
-                {group.plans.map((p) => (
-                  <div key={p.id} className="group flex items-center gap-1">
-                    <button
-                      type="button"
-                      aria-current={p.id === plan.id ? 'page' : undefined}
-                      onClick={() => updateParams({ plan: p.id })}
-                      className={cn(
-                        'min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted',
-                        p.id === plan.id && 'bg-muted font-medium'
-                      )}
-                    >
-                      {p.name}
-                      <span className="ml-1.5 text-xs text-muted-foreground">
-                        {setups.filter((s) => s.floor_plan_id === p.id).length || ''}
-                      </span>
-                    </button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="icon-xs" variant="ghost" aria-label={`Actions for ${p.name}`}>
-                          <MoreHorizontal />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setPlanDialog({ plan: p, key: Date.now() })}>Rename or move…</DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive" onClick={() => setDeleting(p)}>
-                          Delete…
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </nav>
-
-          <div className="min-w-0 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="truncate text-lg font-semibold">{plan.name}</h2>
-                <p className="text-sm text-muted-foreground">{locationName(plan.location_id)}</p>
-              </div>
-              <SegmentedControl
-                value={mode}
-                onValueChange={(m) => updateParams({ mode: m === 'setup' ? 'setup' : null })}
-                options={MODE_OPTIONS}
-                size="sm"
-                className="w-64"
-                ariaLabel="Editing mode"
-              />
-            </div>
-            {mode === 'layout' ? (
-              <LayoutEditor key={plan.id} plan={plan} productionId={productionId} />
-            ) : (
-              <SetupPane
-                plan={plan}
-                productionId={productionId}
-                sources={sources}
-                setups={setups}
-                sceneParam={searchParams.get('scene')}
-                shotParam={searchParams.get('shot')}
-                onPick={(sceneId, shotId) => updateParams({ scene: sceneId, shot: shotId })}
-              />
-            )}
-          </div>
-        </div>
+        <SetupPane
+          plan={plan}
+          productionId={productionId}
+          sources={sources}
+          setups={setups}
+          sceneParam={searchParams.get('scene')}
+          shotParam={searchParams.get('shot')}
+          onPick={(sceneId, shotId) => updateParams({ scene: sceneId, shot: shotId })}
+          sun={sun}
+          locationQuery={locationQuery}
+        />
       )}
 
       {planDialog ? (
@@ -276,7 +316,7 @@ function FloorPlansWorkspace() {
         open={!!deleting}
         onOpenChange={(open) => !open && setDeleting(null)}
         title={`Delete ${deleting?.name ?? 'floor plan'}?`}
-        description="The drawing and every camera and actor setup on it are deleted. Exported PDFs in Documents are kept."
+        description="The drawing and every setup on it are deleted. Exported PDFs in Documents are kept."
         confirmLabel="Delete"
         destructive
         onConfirm={async () => {
@@ -301,6 +341,7 @@ function FloorPlansWorkspace() {
           sources={sources}
           plans={plans}
           setups={setups}
+          actorColors={actorColorMap(productionId, sources)}
           defaults={{
             locationId: plan?.location_id ?? null,
             sceneId: mode === 'setup' ? searchParams.get('scene') : null,
@@ -312,7 +353,7 @@ function FloorPlansWorkspace() {
   )
 }
 
-/** Scene and shot pickers, then the setup editor for the pick. */
+/** Picks the scene and shot (from the URL), then the setup editor for them. */
 function SetupPane({
   plan,
   productionId,
@@ -321,6 +362,8 @@ function SetupPane({
   sceneParam,
   shotParam,
   onPick,
+  sun,
+  locationQuery,
 }: {
   plan: FloorPlan
   productionId: string
@@ -329,6 +372,8 @@ function SetupPane({
   sceneParam: string | null
   shotParam: string | null
   onPick: (sceneId: string, shotId: string) => void
+  sun: SunSettings
+  locationQuery: string
 }) {
   // Scenes set at this plan's location come first.
   const { here, elsewhere } = useMemo(() => {
@@ -338,7 +383,7 @@ function SetupPane({
       elsewhere: sorted.filter((s) => s.location_id !== plan.location_id),
     }
   }, [sources.scenes, plan.location_id])
-  const scene = sources.scenes.find((s) => s.id === sceneParam) ?? here[0] ?? null
+  const scene = sources.scenes.find((s) => s.id === sceneParam) ?? here[0] ?? elsewhere[0] ?? null
   const sceneShots = useMemo(
     () =>
       scene
@@ -348,32 +393,16 @@ function SetupPane({
         : [],
     [sources.shots, scene]
   )
-  const shot = sceneShots.find((s) => s.id === shotParam) ?? null
-  const shotValue = shot ? shot.id : shotParam === WHOLE_SCENE || sceneShots.length === 0 ? WHOLE_SCENE : sceneShots[0]!.id
-  const effectiveShot = shotValue === WHOLE_SCENE ? null : sceneShots.find((s) => s.id === shotValue) ?? null
+  const shot =
+    shotParam === WHOLE_SCENE ? null : sceneShots.find((s) => s.id === shotParam) ?? (shotParam ? null : sceneShots[0] ?? null)
+  const colors = useMemo(() => actorColorMap(productionId, sources), [productionId, sources])
+  const actorColor = (personId: string | null) => (personId ? colors.get(personId) : undefined) ?? DEFAULT_ACTOR_COLOR
 
-  const onPlan = setups.filter((s) => s.floor_plan_id === plan.id)
-  const hasSetup = (sceneId: string, shotId: string | null) =>
-    onPlan.some((s) => s.scene_id === sceneId && (s.shot_id ?? null) === shotId && (s.markers.length > 0 || s.notes))
-  const setup = scene
-    ? onPlan.find((s) => s.scene_id === scene.id && (s.shot_id ?? null) === (effectiveShot?.id ?? null)) ?? null
-    : null
-  const shotLabel = (shotId: string | null) =>
-    shotId ? `Shot ${sources.shots.find((s) => s.id === shotId)?.shot_number ?? '?'}` : 'Scene blocking'
-  const otherSetups = scene
-    ? onPlan
-        .filter((s) => s.scene_id === scene.id && s !== setup && s.markers.length > 0)
-        .map((s) => ({ setup: s, label: shotLabel(s.shot_id) }))
-    : []
-
-  const sceneLabel = (s: Scene) => [`Scene ${s.scene_number}`, s.title?.trim()].filter(Boolean).join(' · ')
-  const marked = (has: boolean) => (has ? ' ●' : '')
-
-  if (sources.scenes.length === 0) {
+  if (!scene) {
     return (
       <EmptyState
         title="No scenes yet"
-        description="Add scenes and shots on the Shot Lists page (or import a script) to plot setups."
+        description="Add scenes and shots on Shot Lists (or import a script) to plot setups."
         action={
           <Button asChild variant="outline">
             <Link to="/schedule/shots">Go to Shot Lists</Link>
@@ -383,74 +412,35 @@ function SetupPane({
     )
   }
 
+  const onPlan = setups.filter((s) => s.floor_plan_id === plan.id)
+  const setup = onPlan.find((s) => s.scene_id === scene.id && (s.shot_id ?? null) === (shot?.id ?? null)) ?? null
+  const shotLabel = (shotId: string | null) => (shotId ? `Shot ${sources.shots.find((s) => s.id === shotId)?.shot_number ?? '?'}` : 'Blocking')
+  const otherSetups = onPlan
+    .filter((s) => s.scene_id === scene.id && s !== setup && s.markers.length > 0)
+    .map((s) => ({ setup: s, label: shotLabel(s.shot_id) }))
+
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="fp-scene">Scene</Label>
-          <Select value={scene?.id} onValueChange={(id) => onPick(id, WHOLE_SCENE)}>
-            <SelectTrigger id="fp-scene" className="h-9 w-64">
-              <SelectValue placeholder="Choose a scene" />
-            </SelectTrigger>
-            <SelectContent>
-              {here.length > 0 ? (
-                <SelectGroup>
-                  <SelectLabel>At this location</SelectLabel>
-                  {here.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {sceneLabel(s)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ) : null}
-              {elsewhere.length > 0 ? (
-                <SelectGroup>
-                  <SelectLabel>{here.length > 0 ? 'Other scenes' : 'Scenes'}</SelectLabel>
-                  {elsewhere.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {sceneLabel(s)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ) : null}
-            </SelectContent>
-          </Select>
-        </div>
-        {scene ? (
-          <div className="space-y-1.5">
-            <Label htmlFor="fp-shot">Shot</Label>
-            <Select value={shotValue} onValueChange={(id) => onPick(scene.id, id)}>
-              <SelectTrigger id="fp-shot" className="h-9 w-64">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={WHOLE_SCENE}>Whole scene (blocking){marked(hasSetup(scene.id, null))}</SelectItem>
-                {sceneShots.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {[`Shot ${s.shot_number}`, s.shot_size].filter(Boolean).join(' · ')}
-                    {marked(hasSetup(scene.id, s.id))}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        ) : null}
-        <p className="pb-2 text-xs text-muted-foreground">● has a setup on this plan</p>
-      </div>
-      {scene ? (
-        <SetupEditor
-          key={`${plan.id}:${scene.id}:${effectiveShot?.id ?? WHOLE_SCENE}`}
-          plan={plan}
-          productionId={productionId}
-          scene={scene}
-          shot={effectiveShot}
-          setup={setup}
-          otherSetups={otherSetups}
-          sources={sources}
-        />
-      ) : (
-        <p className="text-sm text-muted-foreground">Choose a scene to plot its setups.</p>
-      )}
-    </div>
+    <SetupEditor
+      key={`${plan.id}:${scene.id}:${shot?.id ?? WHOLE_SCENE}`}
+      plan={plan}
+      productionId={productionId}
+      scene={scene}
+      shot={shot}
+      setup={setup}
+      otherSetups={otherSetups}
+      sources={sources}
+      cast={castOptionsFor(sources, scene.id, shot?.id ?? null, (id) => colors.get(id) ?? DEFAULT_ACTOR_COLOR)}
+      actorColor={actorColor}
+      sun={sun}
+      locationQuery={locationQuery}
+      strip={{
+        scenesHere: here,
+        scenesElsewhere: elsewhere,
+        shots: sceneShots,
+        hasSetup: (sceneId, shotId) =>
+          onPlan.some((s) => s.scene_id === sceneId && (s.shot_id ?? null) === shotId && (s.markers.length > 0 || !!s.notes)),
+        onPick,
+      }}
+    />
   )
 }

@@ -968,8 +968,8 @@ export async function duplicateProduction(
     const id = newId()
     floorPlanIdMap.set(r.id as string, id)
     statements.push({
-      sql: `INSERT INTO floor_plans (id, production_id, location_id, name, layout_json, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      bindValues: [id, newProdId, locationId, r.name, r.layout_json, ts, ts],
+      sql: `INSERT INTO floor_plans (id, production_id, location_id, name, layout_json, background_image, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      bindValues: [id, newProdId, locationId, r.name, r.layout_json, r.background_image ?? null, ts, ts],
     })
   }
   for (const r of floorPlanSetups) {
