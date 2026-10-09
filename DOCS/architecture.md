@@ -82,7 +82,7 @@ A feature lives in `src/features/<name>/`:
 ## Rust side (`src-tauri/src/`)
 | File | Role |
 |---|---|
-| `lib.rs` | `run()`: registers the migration list (106 entries, versions 1 to 106), plugins and command handlers; calls `menu::setup`; on iOS installs the open-URL hook |
+| `lib.rs` | `run()`: registers the migration list (108 entries, versions 1 to 108), plugins and command handlers; calls `menu::setup`; on iOS installs the open-URL hook |
 | `menu.rs` | Desktop only: builds the native menu (`rebuild_menu`) and forwards menu clicks as Tauri events (`albatross-menu-*`); `set_active_menu_section`, `set_budget_duplicate_live_as_draft_enabled` commands |
 | `menu_mobile.rs` | Mobile stand-in for `menu.rs` (same module name): the two commands accept and ignore their arguments; there is no menu bar |
 | `sqlite_load.rs` | `load_sqlite_with_passphrase`, `run_sqlite_migrations`, `execute_sqlite_transaction`: open the SQLCipher file with the key, then run the embedded migrations |

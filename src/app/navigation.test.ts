@@ -97,8 +97,9 @@ describe('experimental features', () => {
   const subTargets = (groups: ReturnType<typeof visibleNavGroups>) =>
     groups.flatMap((g) => g.items.flatMap((i) => (isNavGroup(i) ? i.sub.map((s) => s.to) : [i.to])))
 
-  it('marks Receipt Capture, Overtime, Script Supervisor and Send Day Pack as experimental', () => {
+  it('marks Floor Plans, Receipt Capture, Overtime, Script Supervisor and Send Day Pack as experimental', () => {
     expect(experimentalNavLabels()).toEqual([
+      'Schedule: Floor Plans',
       'Script: Script Supervisor',
       'People: Overtime',
       'Budget: Receipt Capture',
@@ -112,6 +113,7 @@ describe('experimental features', () => {
     expect(hidden).not.toContain('/people/overtime')
     expect(hidden).not.toContain('/budget/receipt-capture')
     expect(hidden).not.toContain('/day-pack')
+    expect(hidden).not.toContain('/schedule/floor-plans')
     expect(hidden).toContain('/schedule/script-sections')
     expect(hidden).toContain('/budget/vendors')
 
@@ -120,12 +122,14 @@ describe('experimental features', () => {
     expect(shown).toContain('/people/overtime')
     expect(shown).toContain('/budget/receipt-capture')
     expect(shown).toContain('/day-pack')
+    expect(shown).toContain('/schedule/floor-plans')
   })
 
   it('keeps experimental routes reachable for breadcrumbs and links', () => {
     expect(findNavTrail('/people/overtime')?.sub?.label).toBe('Overtime')
     expect(findNavTrail('/budget/receipt-capture')?.sub?.label).toBe('Receipt Capture')
     expect(findNavTrail('/schedule/script-supervisor')?.sub?.label).toBe('Script Supervisor')
+    expect(findNavTrail('/schedule/floor-plans')?.sub?.label).toBe('Floor Plans')
   })
 
   it('drops parents and groups left empty, and moves a hidden default child to the first visible one', () => {

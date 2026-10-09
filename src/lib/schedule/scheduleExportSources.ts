@@ -1,13 +1,20 @@
 /**
- * Everything the shooting schedule, shot list and storyboard exports read, loaded once for a
- * production. Used by the export buttons on the Stripboard, Shot List and Storyboard pages and by
- * the day pack. With an actor, view access is checked first (as the `*ForActor` wrappers do).
+ * Everything the shooting schedule, shot list, storyboard and floor plan exports read, loaded once
+ * for a production. Used by the export buttons on the Stripboard, Shot List, Storyboard and Floor
+ * Plans pages and by the day pack. With an actor, view access is checked first (as the `*ForActor`
+ * wrappers do).
  */
 import type { AuthenticatedUser } from '@/lib/auth/authService'
 import { requireProjectViewAccess } from '@/lib/access/projectAccessService'
 import { callSheetIncludeEpisodesSettingKey } from '@/lib/call-sheets/callSheetEpisodic'
 import type { DatabaseAdapter } from '@/lib/db/databaseAdapter'
 import { listEpisodesByProduction } from '@/lib/db/repositories/episodes'
+import {
+  listFloorPlanSetupsByProduction,
+  listFloorPlansByProduction,
+  type FloorPlan,
+  type FloorPlanSetup,
+} from '@/lib/db/repositories/floor-plans'
 import { listLocationsByProduction } from '@/lib/db/repositories/location'
 import { listCast } from '@/lib/db/repositories/person'
 import { getProductionById } from '@/lib/db/repositories/production'
@@ -105,4 +112,16 @@ export async function loadStoryboardImagesForExport(
 ): Promise<StoryboardImage[]> {
   await checkAccess(productionId, actor)
   return listStoryboardImagesByProduction(productionId)
+}
+
+export async function loadFloorPlansForExport(
+  productionId: string,
+  actor?: ScheduleExportActor
+): Promise<{ plans: FloorPlan[]; setups: FloorPlanSetup[] }> {
+  await checkAccess(productionId, actor)
+  const [plans, setups] = await Promise.all([
+    listFloorPlansByProduction(productionId),
+    listFloorPlanSetupsByProduction(productionId),
+  ])
+  return { plans, setups }
 }

@@ -7,6 +7,7 @@ import { ScheduleCalendarPage } from '@/features/schedule/calendar-page'
 import { StripboardPage } from '@/features/schedule/stripboard-page'
 import { ShotListPage } from '@/features/schedule/shot-list-page'
 import { StoryboardPage } from '@/features/schedule/storyboard-page'
+import { FloorPlansPage } from '@/features/floor-plans/FloorPlansPage'
 import { ScriptImportPage } from '@/features/schedule/script-import-page'
 import { ScriptSectionsPage } from '@/features/schedule/script-sections-page'
 import { ScriptBreakdownPage } from '@/features/schedule/script-breakdown-page'
@@ -61,6 +62,7 @@ export const router = createBrowserRouter([
       { path: 'schedule/stripboard', element: <StripboardPage /> },
       { path: 'schedule/shots', element: <ShotListPage /> },
       { path: 'schedule/storyboard', element: <StoryboardPage /> },
+      { path: 'schedule/floor-plans', element: <FloorPlansPage /> },
       { path: 'schedule/script-import', element: <ScriptImportPage /> },
       { path: 'schedule/script-sections', element: <ScriptSectionsPage /> },
       { path: 'schedule/script-breakdown', element: <ScriptBreakdownPage /> },

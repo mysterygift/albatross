@@ -163,6 +163,7 @@ Demo data present (Settings → Demo & tutorial → Create Demo Production creat
 | file | route / menu path | exact state to set up before capture | framing |
 |---|---|---|---|
 | 15-experimental-toggle.png | Settings → Developer | Show experimental features ticked (leave Developer mode off) | region: Experimental features card |
+| 15-floor-plans.png | Schedule → Floor Plans | Experimental features on; Mint Heist; a floor plan at a location with a background picture, a room, a counter and two labels drawn, an easy-up placed in Layout; Setups with a scene and shot chosen, two cameras, two cast (with booking colours set), an HMI, an LED panel, dolly and track placed, the sun on, and notes filled in | window |
 | 15-script-supervisor-log.png | Script → Script Supervisor | Experimental features on; Mint Heist; a shoot day chosen with scenes; mode Line & log; create one slate (New slate), roll and cut two takes, mark take 1 Print and take 2 NG with a reason; Slates tab showing; Show setup open | window |
 | 15-script-tramlines.png | Script → Script Supervisor, Script tab | Same slate selected; middle view switched to Script for the scene; draw a tramline over a few lines; add one Ad-lib note via the add-note button | region: middle script panel |
 | 15-script-supervisor-review.png | Script → Script Supervisor, Review | Same day; mode switched to Review; scroll to show progress tiles, Daily progress report and Exports cards | window |

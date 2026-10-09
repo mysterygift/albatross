@@ -7,8 +7,9 @@ Every external service and operating-system integration the desktop app uses tod
 | Service | Purpose | Needs key | Code |
 |---|---|---|---|
 | OpenRouteService | Geocoding and driving/walking routes | Yes (user's own) | `src/lib/logistics/openRouteService.ts`, `src-tauri/src/open_route_service.rs` |
-| Map tile server (MapTiler by default) | Basemap tiles for interactive maps and PDF maps | Yes for the default template | `src/lib/maps` |
-| Open-Meteo | Weather and sunrise/sunset on call sheets | No | `src/lib/weather/openMeteo.ts` |
+| Map tile server (MapTiler by default) | Basemap tiles for interactive maps, PDF maps and floor plan map backgrounds | Yes for the default template | `src/lib/maps`, `src/lib/floor-plans/background.ts` |
+| Open-Meteo | Weather and sunrise/sunset on call sheets; a floor plan location's time zone | No | `src/lib/weather/openMeteo.ts`, `src/lib/floor-plans/geo.ts` |
+| OpenStreetMap Nominatim | Floor plan location lookup when no OpenRouteService key is set | No (fair use: one lookup at a time, only on **Find**) | `src/lib/floor-plans/geo.ts` |
 | Currency API (Fawaz Ahmed, via jsDelivr) | Exchange rates | No | `src/lib/money/exchangeRates.ts` |
 | Albatross server | Optional collaboration | Account on the server | [collaboration.md](collaboration.md) |
 

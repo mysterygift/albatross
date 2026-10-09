@@ -63,6 +63,7 @@ export const navGroups: NavGroup[] = [
           { to: '/schedule/stripboard', label: 'Stripboard' },
           { to: '/schedule/shots', label: 'Shot Lists' },
           { to: '/schedule/storyboard', label: 'Storyboard' },
+          { to: '/schedule/floor-plans', label: 'Floor Plans', experimental: true },
         ],
       },
       {

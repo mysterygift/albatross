@@ -19,6 +19,7 @@ describe('document catalog', () => {
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.shootingSchedule)).toBe('schedule')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.shotList)).toBe('schedule')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.storyboardExport)).toBe('schedule')
+    expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.floorPlanExport)).toBe('schedule')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.callSheet)).toBe('set-paperwork')
     expect(getDocumentCategoryId(DOCUMENT_ENTITY_TYPES.movementOrderPersonalized)).toBe(
       'set-paperwork'
@@ -56,6 +57,7 @@ describe('document catalog', () => {
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.shootingSchedule)).toBe('/schedule/stripboard')
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.shotList)).toBe('/schedule/shots')
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.storyboardExport)).toBe('/schedule/storyboard')
+    expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.floorPlanExport)).toBe('/schedule/floor-plans')
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.permit)).toBe('/locations')
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.locationRelease)).toBe('/locations')
     expect(getDocumentSourceRoute(DOCUMENT_ENTITY_TYPES.contributorForm)).toBe('/people/cast-manager')

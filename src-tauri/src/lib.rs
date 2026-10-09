@@ -663,6 +663,12 @@ pub fn run() {
             sql: include_str!("../migrations/0107_bookings_shoot_day_unit.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 108,
+            description: "floor_plans",
+            sql: include_str!("../migrations/0108_floor_plans.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     #[cfg_attr(mobile, allow(unused_mut))]

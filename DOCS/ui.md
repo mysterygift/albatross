@@ -22,7 +22,7 @@ Every page renders inside this shell, scoped to the **current production** chose
 `src/app/navigation.ts` is the single source for the sidebar, breadcrumbs, section tabs and the search "Go to" commands.
 
 - `navGroups` is a list of groups (`top`, `plan`, `people`, `money`, `deliver`, `tasks`, `settings`) of items; an item with `sub` + `defaultChild` is a parent with child pages (Schedule, Script, People, Budget).
-- `experimental: true` on an item or sub-item hides it from the sidebar, section tabs and search unless **Settings → Developer → Show experimental features** is on (`visibleNavGroups(showExperimental)`, `useShowExperimental`). Routes stay registered, so direct links still work. Currently Script Supervisor, Overtime and Receipt Capture.
+- `experimental: true` on an item or sub-item hides it from the sidebar, section tabs and search unless **Settings → Developer → Show experimental features** is on (`visibleNavGroups(showExperimental)`, `useShowExperimental`). Routes stay registered, so direct links still work. Currently Floor Plans, Script Supervisor, Overtime, Receipt Capture and Send Day Pack.
 - `findNavTrail(pathname)` does a longest-prefix match and flags detail routes (`isDetail`), which breadcrumbs and `SectionTabs` use (tabs are hidden on detail routes).
 - Script pages live under `/schedule/script-*` on purpose; the native menu bridge depends on those paths.
 - Sidebar group open/closed state is saved in `localStorage` (`albatross.sidebar.groups`) and the group for the current route auto-opens.
