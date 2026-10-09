@@ -20,7 +20,6 @@ import {
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/sonner'
-import { loadColorConfig, resolvePersonColor } from '@/features/people/lib/bookingCalendarColors'
 import { useCurrentProduction } from '@/features/productions/context'
 import { useEffectiveDataSourceForProduction } from '@/hooks/useEffectiveDataSourceForProduction'
 import { useAuthSession } from '@/lib/auth/useAuthSession'
@@ -41,7 +40,7 @@ import { loadScheduleExportSources, type ScheduleExportSources } from '@/lib/sch
 import { sortScenesByNumber } from '@/lib/schedule/sceneFields'
 import { ExportFloorPlansDialog, FloorPlanDialog } from './floor-plan-dialogs'
 import { LayoutEditor, SetupEditor, type SunSettings } from './FloorPlanEditor'
-import { WHOLE_SCENE, castOptionsFor, defaultSunDate } from './floorPlanDisplay'
+import { WHOLE_SCENE, castColorMap, castOptionsFor, defaultSunDate } from './floorPlanDisplay'
 import { floorPlanSetupsQueryKey, floorPlansQueryKey } from './floorPlanQueries'
 
 type Mode = 'layout' | 'setup'
@@ -95,12 +94,6 @@ function useSunSettings(sources: ScheduleExportSources | undefined, plan: FloorP
     setMinutes,
     days,
   }
-}
-
-/** Each cast member's booking calendar colour. */
-function actorColorMap(productionId: string, sources: ScheduleExportSources): Map<string, string> {
-  const config = loadColorConfig(productionId, sources.cast)
-  return new Map(sources.cast.map((p) => [p.id, resolvePersonColor(p, config)]))
 }
 
 function FloorPlansWorkspace() {
@@ -341,7 +334,7 @@ function FloorPlansWorkspace() {
           sources={sources}
           plans={plans}
           setups={setups}
-          actorColors={actorColorMap(productionId, sources)}
+          actorColors={castColorMap(productionId, sources.cast)}
           defaults={{
             locationId: plan?.location_id ?? null,
             sceneId: mode === 'setup' ? searchParams.get('scene') : null,
@@ -395,7 +388,7 @@ function SetupPane({
   )
   const shot =
     shotParam === WHOLE_SCENE ? null : sceneShots.find((s) => s.id === shotParam) ?? (shotParam ? null : sceneShots[0] ?? null)
-  const colors = useMemo(() => actorColorMap(productionId, sources), [productionId, sources])
+  const colors = useMemo(() => castColorMap(productionId, sources.cast), [productionId, sources])
   const actorColor = (personId: string | null) => (personId ? colors.get(personId) : undefined) ?? DEFAULT_ACTOR_COLOR
 
   if (!scene) {

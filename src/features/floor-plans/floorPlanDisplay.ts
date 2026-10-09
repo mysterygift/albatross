@@ -1,3 +1,4 @@
+import { loadColorConfig, resolvePersonColor } from '@/features/people/lib/bookingCalendarColors'
 import type { Shot } from '@/lib/db/types'
 import type { ScheduleExportSources } from '@/lib/schedule/scheduleExportSources'
 import type { CastOption } from './SelectionPopover'
@@ -62,4 +63,10 @@ export function defaultSunDate(
     sources.shootDays.filter((d) => !d.deleted_at && filter(d.id)).map((d) => d.shoot_date).sort()
   const pick = (list: string[]) => list.find((d) => d >= today) ?? list[list.length - 1]
   return pick(dates((id) => dayIds.has(id))) ?? pick(dates(() => true)) ?? today
+}
+
+/** Each cast member's booking calendar colour, by person id (for floor plans and their PDFs). */
+export function castColorMap(productionId: string, cast: ScheduleExportSources['cast']): Map<string, string> {
+  const config = loadColorConfig(productionId, cast)
+  return new Map(cast.map((p) => [p.id, resolvePersonColor(p, config)]))
 }

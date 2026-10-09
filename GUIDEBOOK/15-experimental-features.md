@@ -218,6 +218,7 @@ A pack can hold these documents:
 | **Shot list** | Made now: the shots scheduled on this unit, in running order |
 | **Risk assessments** | Every risk assessment covering this unit, with a warning if one is not signed off |
 | **Storyboard** | Made now: the panels for the shots on this unit |
+| **Floor plans** | Made now: the floor plan setups for the shots on this unit, in shooting order |
 
 1. Choose the **Shoot day** and **Unit**. The next shoot day after today is picked for you.
 2. Under **Documents**, tick what to send. Each line says where it comes from and whether it is ready. **Check** means the call sheet, movement order or sides were saved before the day last changed; you can still send them, or save them again first. **Missing** has a button that takes you to the page to make it.

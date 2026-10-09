@@ -73,6 +73,7 @@ Everything else uses common sizes: flags, cutters and frames from their names in
 
 - [Locations](locations.md): plans belong to a location; its address seeds the location search.
 - [People](people.md): actor colours come from the Bookings calendar colours (`bookingCalendarColors.ts`, per production in `localStorage`).
+- [Send Day Pack](day-pack.md): the pack can include a unit's floor plans (its shots' setups, in strip order).
 - [Schedule](schedule.md): scenes, shots, cast per scene/shot and strip order; the export reuses `loadScheduleExportSources` and `fileAndOffer`.
 - External APIs (see [integrations.md](../integrations.md)): map tiles, OpenRouteService or Nominatim, Open-Meteo; each is called only from the Background or Location dialog.
 - `.apf` format version 12 carries both tables, the picture included ([import-export.md](../import-export.md)); Duplicate production copies them onto the copied location, scene and shot. Server publish does not include them.

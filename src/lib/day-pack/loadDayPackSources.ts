@@ -4,7 +4,7 @@
  * - Call sheet and movement order: the latest saved PDF (they are curated on their own pages).
  * - Sides: the latest Sides Builder export for the unit, else default sides generated on the fly.
  * - Risk assessments: every RAMS covering the unit, rendered fresh.
- * - Shooting schedule, shot list and storyboard: generated for this day + unit.
+ * - Shooting schedule, shot list, storyboard and floor plans: generated for this day + unit.
  *
  * Nothing is rendered until `render()` is called, and nothing here writes to the database.
  */
@@ -23,13 +23,16 @@ import { readAppDataBytes } from '@/lib/files/appDataObjectUrl'
 import { sanitizeForFilename } from '@/lib/files/sanitizeForFilename'
 import { readStoryboardImageBytes } from '@/lib/files/storyboard'
 import { getMovementOrderPdfFileName } from '@/lib/movement-orders/fileNaming'
+import { buildFloorPlanPdfData, generateFloorPlanPdf } from '@/lib/pdf/floorPlan'
 import { formatIssuedStamp } from '@/lib/pdf/layoutKit'
 import { generateShootingSchedulePdf } from '@/lib/pdf/shootingSchedule'
 import { buildShotListPdfData, generateShotListPdf } from '@/lib/pdf/shotList'
 import { buildStoryboardPdfData, generateStoryboardPdf } from '@/lib/pdf/storyboard'
 import { renderRiskAssessmentPdf } from '@/lib/risk-assessments/exportRiskAssessmentPdf'
 import { getRamsSignOffStatus } from '@/lib/risk-assessments/ramsSignOff'
+import type { FloorPlan, FloorPlanSetup } from '@/lib/db/repositories/floor-plans'
 import {
+  loadFloorPlansForExport,
   loadScheduleExportSources,
   loadStoryboardImagesForExport,
   type ScheduleExportActor,
@@ -45,6 +48,7 @@ export const DAY_PACK_DOC_KINDS = [
   'shot_list',
   'risk_assessments',
   'storyboard',
+  'floor_plans',
 ] as const
 
 export type DayPackDocKind = (typeof DAY_PACK_DOC_KINDS)[number]
@@ -57,6 +61,7 @@ export const DAY_PACK_DOC_LABELS: Record<DayPackDocKind, string> = {
   shot_list: 'Shot list',
   risk_assessments: 'Risk assessments',
   storyboard: 'Storyboard',
+  floor_plans: 'Floor plans',
 }
 
 /**
@@ -223,7 +228,9 @@ async function riskAssessmentsSource(context: DayPackContext): Promise<DayPackSo
 function scheduleSources(
   sched: ScheduleExportSources,
   context: DayPackContext,
-  images: StoryboardImage[]
+  images: StoryboardImage[],
+  floorPlans: { plans: FloorPlan[]; setups: FloorPlanSetup[] },
+  actorColors: Map<string, string> | undefined
 ): DayPackSource[] {
   const scopeLabel = [context.dayNumber != null ? `Day ${context.dayNumber}` : null, context.unitName]
     .filter(Boolean)
@@ -268,6 +275,21 @@ function scheduleSources(
     locations: sched.locations,
     shotOrder,
   })
+  // The floor plan setups for this unit's shots, each scene's blocking before its first shot.
+  const floorPlanData = buildFloorPlanPdfData({
+    productionName: sched.productionName,
+    scopeLabel,
+    scope: { kind: 'day', shotOrder },
+    plans: floorPlans.plans,
+    setups: floorPlans.setups,
+    scenes: sched.scenes,
+    shots: sched.shots,
+    locations: sched.locations,
+    actorColors,
+  })
+  const setupCount = floorPlanData.entries.length
+  const planCount = new Set(floorPlanData.entries.map((e) => `${e.locationName} | ${e.planName}`)).size
+
   const panelCount = storyboardData.scenes.reduce((sum, s) => sum + s.panels.length, 0)
   const shotCount = shotListData.scenes.reduce((sum, s) => sum + s.shots.length, 0)
   // Call and wrap strips alone are not a schedule.
@@ -310,6 +332,17 @@ function scheduleSources(
         },
       ],
     },
+    {
+      kind: 'floor_plans' as const,
+      label: DAY_PACK_DOC_LABELS.floor_plans,
+      status: setupCount > 0 ? ('ready' as const) : ('empty' as const),
+      detail:
+        setupCount > 0
+          ? `Generated: ${plural(setupCount, 'setup', 'setups')} on ${plural(planCount, 'plan', 'plans')}`
+          : 'No floor plan setups for the shots on this unit.',
+      warning: null,
+      render: async () => [{ stem: 'floor-plans', bytes: new Uint8Array(await generateFloorPlanPdf(floorPlanData)) }],
+    },
   ]
 }
 
@@ -320,6 +353,8 @@ export async function loadDayPackSources(args: {
   actor?: ScheduleExportActor
   /** Already loaded by the caller (e.g. for recipients); loaded here otherwise. */
   sched?: ScheduleExportSources
+  /** Cast booking colours by person id, for the floor plans. */
+  actorColors?: Map<string, string>
 }): Promise<DayPackSources> {
   const sched = args.sched ?? (await loadScheduleExportSources(args.productionId, args.actor))
   const day = sched.shootDays.find((d) => d.id === args.shootDayId)
@@ -352,9 +387,10 @@ export async function loadDayPackSources(args: {
   const [sides, risk, generated] = await Promise.all([
     sidesSource(context, dayUnit.unit_id, dayUnitCount, latestChange),
     riskAssessmentsSource(context),
-    loadStoryboardImagesForExport(args.productionId, args.actor).then((images) =>
-      scheduleSources(sched, context, images)
-    ),
+    Promise.all([
+      loadStoryboardImagesForExport(args.productionId, args.actor),
+      loadFloorPlansForExport(args.productionId, args.actor),
+    ]).then(([images, floorPlans]) => scheduleSources(sched, context, images, floorPlans, args.actorColors)),
   ])
   const byKind = new Map<DayPackDocKind, DayPackSource>([
     [
