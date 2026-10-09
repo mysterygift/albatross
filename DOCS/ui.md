@@ -91,6 +91,7 @@ Per-page layouts switch on `usePhoneWidth()` or `useIsPhone()`:
 | People → Overtime | Crew shown as cards, filter as a menu |
 | Settings | Section picker is a native select |
 | Call Sheets, Movement Orders | `PdfPreview` fits the PDF to the screen width |
+| Equipment → Edit selected, Add from registry | Bulk edit fields stack in one column; the picker shows name, quantity and a tick, with category, department and stock under the name, filters two to a row and the footer buttons on one row |
 
 New phone layouts follow the same rules: gate on the hooks, not on user-agent checks in components, keep the desktop markup path unchanged, and give touch controls at least 40 pt.
 

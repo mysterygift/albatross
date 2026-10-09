@@ -13,6 +13,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { VendorPicker } from '@/components/vendors/VendorPicker'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
+import { cn } from '@/lib/utils'
 import type { UpdateEquipmentPatch } from '@/lib/db/repositories/equipment'
 import type { Equipment } from '@/lib/db/types'
 import {
@@ -90,6 +92,8 @@ function BulkEditEquipmentForm({
     mixed: getMixedBulkFields(items),
   }))
   const { mixed } = initial
+  // Paired fields and the three dates stack on a phone; side by side they are too narrow to read.
+  const phone = usePhoneWidth()
   const [values, setValues] = useState<BulkEditValues>(initial.values)
   const [enabled, setEnabled] = useState<Set<BulkEditableField>>(() => new Set())
   // Number inputs are kept as text so "Mixed" fields can start blank.
@@ -175,7 +179,7 @@ function BulkEditEquipmentForm({
           />
           {quantityInvalid && <p className="text-xs text-destructive mt-1">Quantity must be at least 1</p>}
         </BulkField>
-        <div className="grid grid-cols-2 gap-4">
+        <div className={cn('grid gap-4', phone ? 'grid-cols-1' : 'grid-cols-2')}>
           <BulkField {...fieldProps('category', 'Category')}>
             <EquipmentCategorySelect
               id="bulk-category"
@@ -193,7 +197,7 @@ function BulkEditEquipmentForm({
             />
           </BulkField>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className={cn('grid gap-4', phone ? 'grid-cols-1' : 'grid-cols-2')}>
           <BulkField {...fieldProps('department', 'Department')}>
             <EquipmentDepartmentSelect
               id="bulk-department"
@@ -230,7 +234,7 @@ function BulkEditEquipmentForm({
           )}
         </BulkField>
         <LockedField label="Serial number" reason="Serial numbers are unique to each item" />
-        <div className="grid grid-cols-3 gap-4">
+        <div className={cn('grid gap-4', phone ? 'grid-cols-1' : 'grid-cols-3')}>
           <BulkField {...fieldProps('rental_start_date', 'Rental start')}>
             <Input
               id="bulk-rental_start_date"

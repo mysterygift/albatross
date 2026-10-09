@@ -43,6 +43,7 @@ import {
   shortItemUuid,
 } from '@/features/equipment/formatEquipmentLabel'
 import { isMobilePlatform } from '@/lib/platform'
+import { usePhoneWidth } from '@/hooks/use-is-phone'
 import { cn } from '@/lib/utils'
 
 /**
@@ -110,6 +111,8 @@ function AddFromRegistryPicker({
   isAdding: boolean
   errorMessage?: string | null
 }) {
+  // On a phone the table drops to three columns; category, department and stock go under the name.
+  const phone = usePhoneWidth()
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('')
   const [department, setDepartment] = useState('')
@@ -168,15 +171,18 @@ function AddFromRegistryPicker({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Add equipment to &ldquo;{listName}&rdquo;</DialogTitle>
-        <DialogDescription>
+        <DialogTitle className={cn(phone && 'pr-8')}>
+          {phone ? 'Add to' : 'Add equipment to'} &ldquo;{listName}&rdquo;
+        </DialogTitle>
+        {/* On a phone the list needs the room; screen readers still get the description. */}
+        <DialogDescription className={cn(phone && 'sr-only')}>
           Search the registry, tick the items you need and set how many of each. Ticked items stay ticked
           when you change the search.
         </DialogDescription>
       </DialogHeader>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[180px]">
+        <div className={cn('relative flex-1 min-w-[180px]', phone && 'basis-full')}>
           <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             autoFocus={!isMobilePlatform()}
@@ -188,7 +194,7 @@ function AddFromRegistryPicker({
           />
         </div>
         <Select value={category || '__all__'} onValueChange={(v) => setCategory(v === '__all__' ? '' : v)}>
-          <SelectTrigger className="w-[140px] h-9" aria-label="Filter by category">
+          <SelectTrigger className={cn('h-9', phone ? 'grow basis-[9rem]' : 'w-[140px]')} aria-label="Filter by category">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
@@ -199,7 +205,7 @@ function AddFromRegistryPicker({
           </SelectContent>
         </Select>
         <Select value={department || '__all__'} onValueChange={(v) => setDepartment(v === '__all__' ? '' : v)}>
-          <SelectTrigger className="w-[160px] h-9" aria-label="Filter by department">
+          <SelectTrigger className={cn('h-9', phone ? 'grow basis-[9rem]' : 'w-[160px]')} aria-label="Filter by department">
             <SelectValue placeholder="Department" />
           </SelectTrigger>
           <SelectContent>
@@ -210,7 +216,7 @@ function AddFromRegistryPicker({
           </SelectContent>
         </Select>
         <Select value={source || '__all__'} onValueChange={(v) => setSource(v === '__all__' ? '' : v)}>
-          <SelectTrigger className="w-[120px] h-9" aria-label="Filter by source">
+          <SelectTrigger className={cn('h-9', phone ? 'grow basis-[9rem]' : 'w-[120px]')} aria-label="Filter by source">
             <SelectValue placeholder="Source" />
           </SelectTrigger>
           <SelectContent>
@@ -220,7 +226,7 @@ function AddFromRegistryPicker({
             <SelectItem value="rented">{formatEquipmentLabel('rented')}</SelectItem>
           </SelectContent>
         </Select>
-        <div className="flex items-center gap-2">
+        <div className={cn('flex items-center gap-2', phone && 'basis-full')}>
           <Checkbox
             id="picker-hide-on-list"
             checked={hideOnList}
@@ -245,17 +251,21 @@ function AddFromRegistryPicker({
                 />
               </TableHead>
               <TableHead>Name</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Department</TableHead>
-              <TableHead>UUID</TableHead>
-              <TableHead className="text-right">In registry</TableHead>
-              <TableHead className="w-28 text-center">Qty to add</TableHead>
+              {!phone && (
+                <>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>UUID</TableHead>
+                  <TableHead className="text-right">In registry</TableHead>
+                </>
+              )}
+              <TableHead className={cn('text-center', phone ? 'w-20' : 'w-28')}>{phone ? 'Qty' : 'Qty to add'}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={phone ? 3 : 7} className="text-center text-muted-foreground py-8 whitespace-normal">
                   {equipment.length === 0
                     ? 'The registry is empty. Add equipment on the Registry tab first.'
                     : filtersActive
@@ -288,16 +298,27 @@ function AddFromRegistryPicker({
                         aria-label={`Select ${e.name}`}
                       />
                     </TableCell>
-                    <TableCell className="font-medium">
-                      <span className="flex items-center gap-2">
+                    <TableCell className={cn('font-medium', phone && 'whitespace-normal')}>
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                         {e.name}
                         {onList && <Badge variant="outline" className="font-normal text-xs">On list</Badge>}
                       </span>
+                      {phone && (
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          {[formatEquipmentCategoryLabel(e.category), e.department?.trim(), `${e.quantity ?? 1} in registry`]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
+                      )}
                     </TableCell>
-                    <TableCell>{formatEquipmentCategoryLabel(e.category)}</TableCell>
-                    <TableCell>{e.department?.trim() || '—'}</TableCell>
-                    <TableCell className="text-muted-foreground font-mono text-xs">{shortItemUuid(e.item_uuid)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{e.quantity ?? 1}</TableCell>
+                    {!phone && (
+                      <>
+                        <TableCell>{formatEquipmentCategoryLabel(e.category)}</TableCell>
+                        <TableCell>{e.department?.trim() || '—'}</TableCell>
+                        <TableCell className="text-muted-foreground font-mono text-xs">{shortItemUuid(e.item_uuid)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{e.quantity ?? 1}</TableCell>
+                      </>
+                    )}
                     <TableCell className="text-center" onClick={(ev) => ev.stopPropagation()}>
                       {onList ? (
                         '—'
@@ -319,7 +340,7 @@ function AddFromRegistryPicker({
                           />
                           {overStock && (
                             <span className="text-[10px] text-destructive leading-none">
-                              Only {e.quantity} in registry
+                              {phone ? `Only ${e.quantity}` : `Only ${e.quantity} in registry`}
                             </span>
                           )}
                         </div>
@@ -334,8 +355,8 @@ function AddFromRegistryPicker({
       </div>
 
       {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
-      <DialogFooter className="sm:items-center">
-        <p className="text-sm text-muted-foreground sm:mr-auto" aria-live="polite">
+      <DialogFooter className={cn('sm:items-center', phone && 'flex-row flex-wrap')}>
+        <p className={cn('text-sm text-muted-foreground sm:mr-auto', phone && 'basis-full')} aria-live="polite">
           {additions.length === 0
             ? 'No items selected'
             : `${additions.length} selected · ${totalUnits} unit${totalUnits === 1 ? '' : 's'}`}
@@ -347,14 +368,19 @@ function AddFromRegistryPicker({
           )}
         </p>
         {additions.length > 0 && (
-          <Button type="button" variant="ghost" onClick={() => setSelected(new Set())}>
-            Clear selection
+          <Button type="button" variant="ghost" className={cn(phone && 'flex-1')} onClick={() => setSelected(new Set())}>
+            {phone ? 'Clear' : 'Clear selection'}
           </Button>
         )}
-        <Button type="button" variant="outline" onClick={onCancel}>
+        <Button type="button" variant="outline" className={cn(phone && 'flex-1')} onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="button" onClick={() => onAdd(additions)} disabled={additions.length === 0 || isAdding}>
+        <Button
+          type="button"
+          className={cn(phone && 'flex-1')}
+          onClick={() => onAdd(additions)}
+          disabled={additions.length === 0 || isAdding}
+        >
           {isAdding
             ? 'Adding…'
             : additions.length === 0
