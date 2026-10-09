@@ -15,11 +15,20 @@ export const DEFAULT_UNITS_PER_METRE = 40
 
 export type Point = { x: number; y: number }
 
+/**
+ * Colours a rectangle or line can be given. Unset means the theme's own (foreground lines, a muted
+ * fill); `fillOpacity` (0 to 1) applies to either fill. Only rectangles and closed shapes are filled.
+ */
+export type FloorPlanShapeStyle = { stroke?: string; fill?: string; fillOpacity?: number }
+
+/** How see-through a fill is unless set: the plan shows through. */
+export const DEFAULT_SHAPE_FILL_OPACITY = 0.6
+
 /** Axis-aligned rectangle (a room, a table, a doorway). */
-export type FloorPlanRect = { id: string; kind: 'rect'; x: number; y: number; width: number; height: number }
+export type FloorPlanRect = { id: string; kind: 'rect'; x: number; y: number; width: number; height: number } & FloorPlanShapeStyle
 
 /** Point-to-point shape: an open line (a wall, a window) or a closed outline. */
-export type FloorPlanPath = { id: string; kind: 'path'; points: Point[]; closed: boolean }
+export type FloorPlanPath = { id: string; kind: 'path'; points: Point[]; closed: boolean } & FloorPlanShapeStyle
 
 /** Text label: `x`/`y` is the unrotated top-left corner; it rotates about its centre. */
 export type FloorPlanText = {
@@ -154,6 +163,17 @@ function parseItem(s: Record<string, unknown>, id: string): FloorPlanItem | null
   }
 }
 
+const HEX_COLOR = /^#[0-9a-f]{6}$/i
+
+/** The valid style fields of a stored shape; anything else is dropped. */
+function parseShapeStyle(s: Record<string, unknown>): FloorPlanShapeStyle {
+  const style: FloorPlanShapeStyle = {}
+  if (typeof s.stroke === 'string' && HEX_COLOR.test(s.stroke)) style.stroke = s.stroke.toLowerCase()
+  if (typeof s.fill === 'string' && HEX_COLOR.test(s.fill)) style.fill = s.fill.toLowerCase()
+  if (isNum(s.fillOpacity)) style.fillOpacity = Math.min(1, Math.max(0, s.fillOpacity))
+  return style
+}
+
 function parseShape(v: unknown): FloorPlanShape | null {
   const s = obj(v)
   if (!s) return null
@@ -161,12 +181,12 @@ function parseShape(v: unknown): FloorPlanShape | null {
   if (!id) return null
   if (s.kind === 'rect') {
     if (!isNum(s.x) || !isNum(s.y) || !isNum(s.width) || !isNum(s.height)) return null
-    return { id, kind: 'rect', x: s.x, y: s.y, width: s.width, height: s.height }
+    return { id, kind: 'rect', x: s.x, y: s.y, width: s.width, height: s.height, ...parseShapeStyle(s) }
   }
   if (s.kind === 'path') {
     const points = Array.isArray(s.points) ? s.points.map(parsePoint).filter((p): p is Point => p != null) : []
     if (points.length < 2) return null
-    return { id, kind: 'path', points, closed: s.closed === true && points.length > 2 }
+    return { id, kind: 'path', points, closed: s.closed === true && points.length > 2, ...parseShapeStyle(s) }
   }
   if (s.kind === 'text') {
     if (!isNum(s.x) || !isNum(s.y) || !isNum(s.width) || !isNum(s.height)) return null

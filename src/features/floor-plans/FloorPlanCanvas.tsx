@@ -8,6 +8,7 @@ import {
   CAMERA_VIEW_HALF_ANGLE,
   CAMERA_VIEW_LENGTH,
   DEFAULT_ACTOR_COLOR,
+  DEFAULT_SHAPE_FILL_OPACITY,
   DEFAULT_TEXT_FONT_SIZE,
   MARKER_RADIUS,
   MIN_TEXT_SIZE,
@@ -708,6 +709,15 @@ function ShapeView({
 }) {
   const cursor = interactive ? 'cursor-move' : undefined
   const tone = selected ? 'stroke-primary' : 'stroke-current'
+  // Chosen colours go in `style`, which beats the theme classes.
+  const paint = (filled: boolean) =>
+    shape.kind === 'text'
+      ? {}
+      : {
+          fill: filled ? shape.fill : undefined,
+          fillOpacity: filled ? (shape.fillOpacity ?? DEFAULT_SHAPE_FILL_OPACITY) : undefined,
+          stroke: shape.stroke,
+        }
   if (shape.kind === 'rect') {
     return (
       <rect
@@ -715,7 +725,8 @@ function ShapeView({
         y={shape.y}
         width={shape.width}
         height={shape.height}
-        className={cn('fill-muted/60', tone, cursor)}
+        className={cn('fill-muted', tone, cursor)}
+        style={paint(true)}
         strokeWidth={3}
         onPointerDown={onPointerDown}
         data-shape-id={shape.id}
@@ -730,7 +741,8 @@ function ShapeView({
         <path d={d} fill="none" stroke="transparent" strokeWidth={16} strokeLinecap="round" />
         <path
           d={d}
-          className={cn(shape.closed ? 'fill-muted/60' : 'fill-none', tone)}
+          className={cn(shape.closed ? 'fill-muted' : 'fill-none', tone)}
+          style={paint(shape.closed)}
           strokeWidth={4}
           strokeLinecap="round"
           strokeLinejoin="round"

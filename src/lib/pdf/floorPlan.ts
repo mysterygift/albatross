@@ -13,6 +13,7 @@ import {
   CAMERA_VIEW_HALF_ANGLE,
   CAMERA_VIEW_LENGTH,
   DEFAULT_ACTOR_COLOR,
+  DEFAULT_SHAPE_FILL_OPACITY,
   cameraColor,
   drawingBounds,
   itemReach,
@@ -22,6 +23,7 @@ import {
   type FloorPlanItem,
   type FloorPlanLayout,
   type FloorPlanMarker,
+  type FloorPlanShapeStyle,
   type Point,
 } from '@/lib/floor-plans/model'
 import {
@@ -260,6 +262,12 @@ function hexColor(hex: string) {
   return rgb(parseInt(full.slice(0, 2), 16) / 255, parseInt(full.slice(2, 4), 16) / 255, parseInt(full.slice(4, 6), 16) / 255)
 }
 
+/** A rectangle's or closed shape's fill: its own colour and opacity, else a pale grey (lighter over a picture). */
+function shapeFill(shape: FloorPlanShapeStyle, background: boolean): { color: ReturnType<typeof rgb>; opacity: number } {
+  if (!shape.fill && shape.fillOpacity == null) return { color: COLOR_SHAPE_FILL, opacity: background ? 0.55 : 1 }
+  return { color: shape.fill ? hexColor(shape.fill) : COLOR_SHAPE_FILL, opacity: shape.fillOpacity ?? DEFAULT_SHAPE_FILL_OPACITY }
+}
+
 /** Bytes of a `data:image/...;base64,` URL; null for anything else. */
 export function dataUrlBytes(dataUrl: string): Uint8Array | null {
   const match = /^data:image\/[a-z+]+;base64,(.+)$/i.exec(dataUrl)
@@ -437,15 +445,17 @@ function drawPlanBox(layout: PdfLayout, entry: FloorPlanPdfEntry, background: PD
       const b = t.local({ x: shape.x + shape.width, y: shape.y + shape.height })
       page.drawSvgPath(polygon([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }], true), {
         ...opts,
-        color: COLOR_SHAPE_FILL,
-        opacity: background ? 0.55 : 1,
-        borderColor: COLOR_INK,
+        ...shapeFill(shape, !!background),
+        borderColor: shape.stroke ? hexColor(shape.stroke) : COLOR_INK,
         borderWidth: 1.2,
       })
     } else if (shape.kind === 'path') {
+      // Closed shapes print unfilled unless given a fill colour.
+      const fill = shape.closed && (shape.fill || shape.fillOpacity != null) ? shapeFill(shape, !!background) : {}
       page.drawSvgPath(polygon(shape.points.map(t.local), shape.closed), {
         ...opts,
-        borderColor: COLOR_INK,
+        ...fill,
+        borderColor: shape.stroke ? hexColor(shape.stroke) : COLOR_INK,
         borderWidth: 1.6,
         borderLineCap: LineCapStyle.Round,
       })
