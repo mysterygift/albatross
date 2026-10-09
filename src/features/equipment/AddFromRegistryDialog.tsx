@@ -42,6 +42,7 @@ import {
   formatEquipmentCategoryLabel,
   shortItemUuid,
 } from '@/features/equipment/formatEquipmentLabel'
+import { isMobilePlatform } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 
 /**
@@ -72,7 +73,7 @@ export function AddFromRegistryDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-hidden flex flex-col sm:max-w-4xl">
+      <DialogContent className="max-h-[85vh] overflow-hidden flex flex-col sm:max-w-4xl" data-touch-targets>
         {open && (
           <AddFromRegistryPicker
             listName={listName}
@@ -178,7 +179,7 @@ function AddFromRegistryPicker({
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            autoFocus
+            autoFocus={!isMobilePlatform()}
             placeholder="Search name, UUID, serial…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -273,6 +274,7 @@ function AddFromRegistryPicker({
                     key={e.id}
                     data-state={ticked ? 'selected' : undefined}
                     aria-disabled={onList || undefined}
+                    data-slot="registry-picker-row"
                     className={cn(onList ? 'text-muted-foreground' : 'cursor-pointer')}
                     onClick={() => {
                       if (!onList) setTicked(e.id, !ticked)

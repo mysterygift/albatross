@@ -50,7 +50,7 @@ export function BulkEditEquipmentDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto" data-touch-targets>
         {open && items.length > 0 && (
           <BulkEditEquipmentForm
             items={items}

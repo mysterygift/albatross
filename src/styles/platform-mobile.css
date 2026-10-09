@@ -364,3 +364,27 @@ html[data-platform] [data-calendar-unit] {
   user-select: none;
   -webkit-touch-callout: none;
 }
+
+/*
+ * Checkboxes are 16px. Inside `data-touch-targets`, or when marked `data-touch-hit` (the Equipment
+ * registry's select column), give them a 40pt hit area on touch screens without changing their size.
+ */
+@media (pointer: coarse) {
+  html[data-platform] [data-touch-targets] [data-slot="checkbox"],
+  html[data-platform] [data-slot="checkbox"][data-touch-hit] {
+    position: relative;
+  }
+  html[data-platform] [data-touch-targets] [data-slot="checkbox"]::after,
+  html[data-platform] [data-slot="checkbox"][data-touch-hit]::after {
+    content: "";
+    position: absolute;
+    inset: -0.75rem;
+  }
+}
+
+/* Equipment "Add from registry": a long-press on a row toggles it rather than selecting text. */
+html[data-platform] [data-slot="registry-picker-row"] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}

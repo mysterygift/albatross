@@ -427,6 +427,7 @@ export function EquipmentPage() {
         id: 'select',
         header: () => (
           <Checkbox
+            data-touch-hit
             checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
             onCheckedChange={(v) => toggleAllFiltered(v === true)}
             disabled={filteredEquipment.length === 0}
@@ -435,6 +436,7 @@ export function EquipmentPage() {
         ),
         cell: ({ row }) => (
           <Checkbox
+            data-touch-hit
             checked={selectedIds.has(row.original.id)}
             onCheckedChange={(v) => toggleSelected(row.original.id, v === true)}
             aria-label={`Select ${row.original.name}`}
@@ -675,6 +677,7 @@ export function EquipmentPage() {
           className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2"
           role="region"
           aria-label="Selected equipment"
+          data-touch-targets
         >
           <span className="text-sm font-medium">
             {selectedItems.length} selected
