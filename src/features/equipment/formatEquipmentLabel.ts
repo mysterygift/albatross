@@ -44,3 +44,8 @@ export function formatEquipmentLabel(value: string | null | undefined): string {
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ')
 }
+
+/** Last 8 chars so demo IDs (shared prefix) still look unique. */
+export function shortItemUuid(itemUuid: string): string {
+  return itemUuid.length >= 8 ? itemUuid.slice(-8) : itemUuid
+}
