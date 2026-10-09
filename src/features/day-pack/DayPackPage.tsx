@@ -30,6 +30,7 @@ import {
 import type { DayRecipient } from '@/lib/call-sheets/recipients'
 import { loadDayPackRecipients } from '@/lib/day-pack/loadDayPackRecipients'
 import { isSendable, loadDayPackSources, type DayPackDocKind } from '@/lib/day-pack/loadDayPackSources'
+import { castColorMap } from '@/features/floor-plans/floorPlanDisplay'
 import { resolveAppDataPath } from '@/lib/files'
 import { localIsoDate } from '@/lib/dates/localIsoDate'
 import { loadScheduleExportSources } from '@/lib/schedule/scheduleExportSources'
@@ -102,7 +103,15 @@ function DayPackWorkspace() {
       const actor = await getActor()
       const loaded = await loadScheduleExportSources(productionId, actor)
       const [sources, recipients] = await Promise.all([
-        loadDayPackSources({ productionId, shootDayId: day!.id, shootDayUnitId: unit!.id, actor, sched: loaded }),
+        loadDayPackSources({
+          productionId,
+          shootDayId: day!.id,
+          shootDayUnitId: unit!.id,
+          actor,
+          sched: loaded,
+          // Floor plans show the cast in their Bookings calendar colours.
+          actorColors: castColorMap(productionId, loaded.cast),
+        }),
         loadDayPackRecipients({ sched: loaded, shootDayId: day!.id, shootDayUnitId: unit!.id }),
       ])
       return { ...sources, recipients }
