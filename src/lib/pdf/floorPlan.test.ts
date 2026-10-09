@@ -112,6 +112,8 @@ describe('markerSummary', () => {
     const track: FloorPlanMarker = { id: 't', kind: 'item', type: 'track-straight', x: 0, y: 0, rotation: 0, label: 'Track', width: 0.62, depth: 3.6 }
     expect(markerSummary([cam, { ...cam, id: 'c2', label: 'B' }, marta, hmi, track])).toBe('Cameras A, B | Cast Marta | Light M18 | Grip Track')
     expect(markerSummary([])).toBeNull()
+    const stand: FloorPlanMarker = { id: 's', kind: 'item', type: 'c-stand', x: 0, y: 0, rotation: 0, label: '', width: 0.7, depth: 0.7 }
+    expect(markerSummary([hmi, stand])).toBe('Light M18 | Grip C-stand')
   })
 })
 
