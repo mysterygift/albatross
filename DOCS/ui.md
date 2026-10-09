@@ -94,7 +94,7 @@ The iOS build (iPad and iPhone) shares the desktop UI; a few surfaces switch on 
 |---|---|
 | Detection | `src/lib/platform/index.ts`: `isIosPlatform` (an iPad reports a Mac user agent, so it is recognised by multi-touch), `isMobilePlatform` (iOS or Android), `hasNativeMenuBar` |
 | Platform attribute and CSS | `applyPlatformAttribute()` in `src/main.tsx` sets `<html data-platform="ios">` (or `android`). `src/styles/platform-mobile.css` is scoped to it: safe-area padding (`--safe-top` and friends; `index.html` uses `viewport-fit=cover`), no hover-only controls, larger tap targets under `pointer: coarse` |
-| Touch sizes | A page root or dialog with `data-touch-targets` (Script Breakdown) gets 40 pt buttons, selects and inputs on coarse pointers; some controls use Tailwind `pointer-coarse:` classes |
+| Touch sizes | A page root or dialog with `data-touch-targets` (Script Breakdown) gets 40 pt buttons, selects and inputs on coarse pointers, and a 40 pt hit area around checkboxes (also on any checkbox marked `data-touch-hit`); some controls use Tailwind `pointer-coarse:` classes |
 | Sidebar | `src/components/sidebar-swipe-gestures.tsx`: a swipe right from the left edge opens it (not while a dialog is open), a swipe left on it closes it. Below 768 px wide the sidebar is a sheet |
 | Drag and drop | `usePlatformDragSensors(distance)` (`src/lib/dnd/`) replaces `PointerSensor` in the stripboard, calendar, bookings, RAMS editor and crew structure editor: on mobile a drag starts after a 250 ms press so swipes still scroll |
 | Files | `src/lib/files/mobileShare.ts`: exports go to `Documents/Exports` and open the share sheet; see [import-export.md](import-export.md#ios-files-and-sharing) |
