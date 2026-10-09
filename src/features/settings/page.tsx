@@ -470,7 +470,7 @@ export function SettingsPage() {
           <CardHeader>
             <CardTitle>Episodic production</CardTitle>
             <CardDescription>
-              For series and multi-episode work. When enabled, episodes organize script, schedule, and deliveries in later releases.
+              For series and multi-episode work. Episodes organise the script, schedule and deliverables.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
