@@ -1,6 +1,6 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { catalogItem, defaultItemLabel } from '@/lib/floor-plans/catalog'
+import { catalogItem, defaultItemLabel, isArmGlyph } from '@/lib/floor-plans/catalog'
 import { itemLightColor, itemPrimitives, itemRoleStyle, type ItemPrimitive } from '@/lib/floor-plans/itemGeometry'
 import {
   CAMERA_VIEW_HALF_ANGLE,
@@ -59,6 +59,7 @@ type Gesture =
   | { kind: 'rotate-text'; id: string; centre: Point }
   | { kind: 'rotate'; id: string; target: 'shape' | 'marker' }
   | { kind: 'resize-item'; id: string; target: 'shape' | 'marker' }
+  | { kind: 'reach-item'; id: string; target: 'shape' | 'marker' }
   | { kind: 'measure'; start: Point }
   | { kind: 'move-background'; start: Point; original: FloorPlanBackground }
   | { kind: 'resize-background'; original: FloorPlanBackground; unitsPerMetre: number }
@@ -312,6 +313,13 @@ export function FloorPlanCanvas({
       const depth = Math.max(0.1, Math.round(((Math.abs(local.x - target.x) * 2) / upm) * 10) / 10)
       const width = Math.max(0.1, Math.round(((Math.abs(local.y - target.y) * 2) / upm) * 10) / 10)
       replaceTarget({ ...target, width, depth }, g.target, true)
+    } else if (g.kind === 'reach-item') {
+      // Dragging an arm's tip swings it round and sets how far it reaches.
+      const target = findItem(g.id, g.target)
+      if (!target || target.kind !== 'item') return
+      const raw = angleBetween(target, p)
+      const depth = Math.max(0.5, Math.round((Math.hypot(p.x - target.x, p.y - target.y) / upm) * 10) / 10)
+      replaceTarget({ ...target, rotation: snap ? snapAngle(raw) : Math.round(raw), depth }, g.target, true)
     } else if (g.kind === 'move-background') {
       const free = toPlan(e, false)
       setLayout({ background: { ...g.original, x: g.original.x + free.x - g.start.x, y: g.original.y + free.y - g.start.y } }, true)
@@ -347,7 +355,7 @@ export function FloorPlanCanvas({
       return
     }
     // Commit the drag as one undo step.
-    const onMarker = g.kind === 'move-marker' || ((g.kind === 'rotate' || g.kind === 'resize-item') && g.target === 'marker')
+    const onMarker = g.kind === 'move-marker' || ((g.kind === 'rotate' || g.kind === 'resize-item' || g.kind === 'reach-item') && g.target === 'marker')
     if (onMarker) onMarkersChange?.(markers, false)
     else onLayoutChange?.(layout, false)
   }
@@ -726,6 +734,8 @@ function ItemView({
 }) {
   const reach = itemReach(item, upm)
   const light = itemLightColor(item.type)
+  // An arm is selected at its base; its reach handle shows how far it goes.
+  const ring = isArmGlyph(catalogItem(item.type)?.glyph) ? Math.max(MARKER_RADIUS, (item.width * upm) / 2) : reach
   return (
     <g onPointerDown={onPointerDown} className={interactive ? 'cursor-move' : undefined} data-item-id={item.id}>
       <g transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`}>
@@ -736,7 +746,7 @@ function ItemView({
         <circle r={Math.max(14, Math.min(reach, 40))} fill="transparent" />
       </g>
       {selected ? (
-        <circle cx={item.x} cy={item.y} r={reach + 6} fill="none" className="stroke-primary" strokeWidth={2} strokeDasharray="6 4" pointerEvents="none" />
+        <circle cx={item.x} cy={item.y} r={ring + 6} fill="none" className="stroke-primary" strokeWidth={2} strokeDasharray="6 4" pointerEvents="none" />
       ) : null}
       {item.label.trim() ? (
         <text
@@ -829,8 +839,12 @@ function ItemHandles({
   target: 'shape' | 'marker'
   startHandle: (e: ReactPointerEvent, g: Gesture) => void
 }) {
-  const reach = itemReach(item, upm)
   const r = (item.rotation * Math.PI) / 180
+  if (isArmGlyph(catalogItem(item.type)?.glyph)) {
+    const tip = { x: item.x + Math.cos(r) * item.depth * upm, y: item.y + Math.sin(r) * item.depth * upm }
+    return <Handle at={tip} round cursor="cursor-grab" label="Reach" onPointerDown={(e) => startHandle(e, { kind: 'reach-item', id: item.id, target })} />
+  }
+  const reach = itemReach(item, upm)
   const dist = Math.min(reach, 60) + ROTATE_HANDLE_GAP
   const knob = { x: item.x + Math.cos(r) * dist, y: item.y + Math.sin(r) * dist }
   const corner = rotatePoint({ x: item.x + (item.depth * upm) / 2, y: item.y + (item.width * upm) / 2 }, item, item.rotation)

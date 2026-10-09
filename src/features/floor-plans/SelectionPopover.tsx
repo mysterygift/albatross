@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { catalogItem } from '@/lib/floor-plans/catalog'
+import { catalogItem, isArmGlyph } from '@/lib/floor-plans/catalog'
 import {
   PLAN_HEIGHT,
   PLAN_WIDTH,
@@ -175,6 +175,7 @@ export function SelectionPopover({
     )
   } else if (entity.kind === 'item') {
     const entry = catalogItem(entity.type)
+    const arm = isArmGlyph(entry?.glyph)
     title = (
       <>
         {swatch(itemColor(entity.type))}
@@ -193,8 +194,8 @@ export function SelectionPopover({
           <AngleField id="fp-item-facing" value={entity.rotation} onChange={(rotation) => onChange({ ...entity, rotation })} />
           {entry?.resizable ? (
             <>
-              <MetresField id="fp-item-width" label="Width (m)" value={entity.width} onChange={(width) => onChange({ ...entity, width })} />
-              <MetresField id="fp-item-depth" label="Length (m)" value={entity.depth} onChange={(depth) => onChange({ ...entity, depth })} />
+              <MetresField id="fp-item-width" label={arm ? 'Base (m)' : 'Width (m)'} value={entity.width} onChange={(width) => onChange({ ...entity, width })} />
+              <MetresField id="fp-item-depth" label={arm ? 'Reach (m)' : 'Length (m)'} value={entity.depth} onChange={(depth) => onChange({ ...entity, depth })} />
             </>
           ) : (
             <div className="space-y-1">

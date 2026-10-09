@@ -3,6 +3,7 @@ import { PDFDocument } from 'pdf-lib'
 import { buildFloorPlanPdfData, dataUrlBytes, generateFloorPlanPdf, markerSummary } from '@/lib/pdf/floorPlan'
 import { extractPdfText } from '@/test/episodicIntegrationHelpers'
 import type { FloorPlan, FloorPlanSetup } from '@/lib/db/repositories/floor-plans'
+import { EQUIPMENT_CATALOG, defaultItemLabel } from '@/lib/floor-plans/catalog'
 import { emptyLayout, type FloorPlanMarker } from '@/lib/floor-plans/model'
 import type { Scene, Shot } from '@/lib/db/types'
 
@@ -153,6 +154,30 @@ describe('generateFloorPlanPdf', () => {
     expect(text).toContain('4x4 floppy')
     expect(text).toContain('Easy-up | Video village')
     expect(text).toContain('Light M18 | Grip 4x4 floppy')
+  })
+
+  it('draws every item in the catalogue', async () => {
+    const kit: FloorPlanMarker[] = EQUIPMENT_CATALOG.map((item, i) => ({
+      id: item.id,
+      kind: 'item',
+      type: item.id,
+      x: 60 + (i % 12) * 95,
+      y: 60 + Math.floor(i / 12) * 60,
+      rotation: (i * 30) % 360,
+      label: defaultItemLabel(item),
+      width: item.width,
+      depth: item.depth,
+    }))
+    const data = buildFloorPlanPdfData({
+      ...base,
+      setups: [setup('s', 'main', 'sc4', '4a', kit)],
+      scope: { kind: 'shots', shotIds: ['4a'] },
+    })
+    const bytes = await generateFloorPlanPdf(data)
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1)
+    const text = await extractPdfText(bytes)
+    expect(text).toContain('Techno 30')
+    expect(text).toContain('Honeywagon')
   })
 
   it('reads data URLs and ignores anything else', () => {
