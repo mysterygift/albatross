@@ -498,8 +498,10 @@ function entryTextHeight(layout: PdfLayout, entry: FloorPlanPdfEntry): number {
 
 /** `Cameras A, B | Cast Marta, Joe | Lights M18, S60 | Grip Track` (labels without their source). */
 export function markerSummary(markers: FloorPlanMarker[]): string | null {
-  const names = (pick: (m: FloorPlanMarker) => boolean) =>
-    markers.filter(pick).map((m) => m.label.split(' | ')[0]!.trim() || '?')
+  // Unlabelled kit goes by its catalogue name (a stand under a light, a cone).
+  const name = (m: FloorPlanMarker) =>
+    m.label.split(' | ')[0]!.trim() || (m.kind === 'item' ? catalogItem(m.type)?.short : undefined) || '?'
+  const names = (pick: (m: FloorPlanMarker) => boolean) => markers.filter(pick).map(name)
   const isLight = (m: FloorPlanMarker) => m.kind === 'item' && catalogItem(m.type)?.category === 'lighting'
   const groups: Array<[string, string, string[]]> = [
     ['Camera', 'Cameras', names((m) => m.kind === 'camera')],
