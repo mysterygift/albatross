@@ -10,8 +10,9 @@ describe('textForPdf', () => {
     expect(textForPdf('‭Alex Producer')).toBe('Alex Producer')
   })
 
+  // Œ and œ are in WinAnsi (0x8C, 0x9C), so Helvetica draws them as they are.
   it('maps letters WinAnsi lacks to their base letter and keeps the ones it has', () => {
-    expect(textForPdf('Kovač Dvořák Łódź Ştefan Ğül Œuvre İbrahim')).toBe('Kovac Dvorák Lódz Stefan Gül OEuvre Ibrahim')
+    expect(textForPdf('Kovač Dvořák Łódź Ştefan Ğül Œuvre İbrahim')).toBe('Kovac Dvorák Lódz Stefan Gül Œuvre Ibrahim')
     expect(textForPdf('José Müller Ørsted Straße')).toBe('José Müller Ørsted Straße')
   })
 
