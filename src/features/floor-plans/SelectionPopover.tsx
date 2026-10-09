@@ -8,12 +8,16 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Textarea } from '@/components/ui/textarea'
 import { catalogItem, isArmGlyph } from '@/lib/floor-plans/catalog'
 import {
+  DEFAULT_SHAPE_FILL_OPACITY,
   cameraColor,
   itemColor,
   normalizeAngle,
   textCentre,
   type FloorPlanMarker,
+  type FloorPlanPath,
+  type FloorPlanRect,
   type FloorPlanShape,
+  type FloorPlanShapeStyle,
   type Point,
 } from '@/lib/floor-plans/model'
 import { cn } from '@/lib/utils'
@@ -47,6 +51,125 @@ function AngleField({ id, value, onChange }: { id: string; value: number; onChan
           if (Number.isFinite(n)) onChange(normalizeAngle(n))
         }}
       />
+    </div>
+  )
+}
+
+/** Quick colours for lines and fills; `null` is the theme's own. Any other comes from the picker. */
+const SHAPE_SWATCHES: Array<{ color: string | null; name: string }> = [
+  { color: null, name: 'Default' },
+  { color: '#ffffff', name: 'White' },
+  { color: '#64748b', name: 'Grey' },
+  { color: '#ef4444', name: 'Red' },
+  { color: '#f59e0b', name: 'Amber' },
+  { color: '#22c55e', name: 'Green' },
+  { color: '#3b82f6', name: 'Blue' },
+  { color: '#8b5cf6', name: 'Violet' },
+]
+
+/** A row of swatches plus a picker for any colour. */
+function ColourRow({
+  label,
+  value,
+  fallback,
+  onChange,
+}: {
+  label: string
+  value: string | undefined
+  /** Shown in the picker when the theme colour is in use. */
+  fallback: string
+  onChange: (color: string | undefined) => void
+}) {
+  const custom = value != null && !SHAPE_SWATCHES.some((s) => s.color === value)
+  return (
+    <div className="space-y-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div role="radiogroup" aria-label={label} className="flex items-center justify-between">
+        {SHAPE_SWATCHES.map((s) => {
+          const checked = (value ?? null) === s.color
+          return (
+            <button
+              key={s.name}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              aria-label={s.name}
+              title={s.name}
+              onClick={() => onChange(s.color ?? undefined)}
+              className={cn(
+                'size-6 shrink-0 rounded-full border border-border',
+                checked && 'ring-2 ring-primary ring-offset-1 ring-offset-popover',
+                s.color == null && 'bg-[linear-gradient(135deg,var(--foreground)_50%,var(--muted)_50%)]'
+              )}
+              style={s.color ? { backgroundColor: s.color } : undefined}
+            />
+          )
+        })}
+        <label
+          title="Other colour"
+          className={cn(
+            'relative size-6 shrink-0 cursor-pointer overflow-hidden rounded-full border border-border bg-[conic-gradient(red,yellow,lime,cyan,blue,magenta,red)]',
+            custom && 'ring-2 ring-primary ring-offset-1 ring-offset-popover'
+          )}
+          style={custom ? { background: value } : undefined}
+        >
+          <span className="sr-only">Other {label.toLowerCase()} colour</span>
+          <input
+            type="color"
+            value={value ?? fallback}
+            onChange={(e) => onChange(e.target.value)}
+            className="absolute inset-0 size-full cursor-pointer opacity-0"
+          />
+        </label>
+      </div>
+    </div>
+  )
+}
+
+/** Line colour, and for rectangles and closed shapes the fill colour and how opaque it is. */
+function ShapeColours({
+  shape,
+  filled,
+  onChange,
+}: {
+  shape: FloorPlanRect | FloorPlanPath
+  filled: boolean
+  onChange: (next: FloorPlanShape, transient?: boolean) => void
+}) {
+  const opacity = Math.round((shape.fillOpacity ?? DEFAULT_SHAPE_FILL_OPACITY) * 100)
+  const set = (patch: Partial<FloorPlanShapeStyle>, transient = false) => {
+    const next = { ...shape, ...patch }
+    // Back to the theme colour: drop the field rather than store "default".
+    for (const key of ['stroke', 'fill'] as const) if (next[key] === undefined) delete next[key]
+    onChange(next, transient)
+  }
+  return (
+    <div className="space-y-2">
+      <ColourRow label="Line" value={shape.stroke} fallback="#e5e7eb" onChange={(stroke) => set({ stroke })} />
+      {filled ? (
+        <>
+          <ColourRow label="Fill" value={shape.fill} fallback="#475569" onChange={(fill) => set({ fill })} />
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <label htmlFor="fp-fill-opacity">Opacity</label>
+              <span className="tabular-nums">{opacity}%</span>
+            </div>
+            <input
+              id="fp-fill-opacity"
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={opacity}
+              // Dragging is one undo step: live while it moves, recorded when it lets go.
+              onChange={(e) => set({ fillOpacity: Number(e.target.value) / 100 }, true)}
+              onPointerUp={() => onChange(shape)}
+              onKeyUp={() => onChange(shape)}
+              className="w-full accent-primary"
+            />
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }
@@ -260,17 +383,26 @@ export function SelectionPopover({
       </div>
     )
   } else if (entity.kind === 'path') {
-    title = 'Line'
-    body =
-      entity.points.length > 2 ? (
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox checked={entity.closed} onCheckedChange={(v) => onChange({ ...entity, closed: v === true })} />
-          Closed shape
-        </label>
-      ) : null
+    title = entity.closed ? 'Shape' : 'Line'
+    body = (
+      <div className="space-y-3">
+        {entity.points.length > 2 ? (
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={entity.closed} onCheckedChange={(v) => onChange({ ...entity, closed: v === true })} />
+            Closed shape
+          </label>
+        ) : null}
+        <ShapeColours shape={entity} filled={entity.closed} onChange={onChange} />
+      </div>
+    )
   } else {
     title = 'Rectangle'
-    body = <p className="text-sm text-muted-foreground">{formatItemSize(entity.width / unitsPerMetre, entity.height / unitsPerMetre)}</p>
+    body = (
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">{formatItemSize(entity.width / unitsPerMetre, entity.height / unitsPerMetre)}</p>
+        <ShapeColours shape={entity} filled onChange={onChange} />
+      </div>
+    )
   }
 
   const left = `${fx * 100}%`

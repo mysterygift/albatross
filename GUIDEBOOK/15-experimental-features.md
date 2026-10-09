@@ -37,7 +37,7 @@ With **Layout** selected, pick a tool:
 | **Line** | Click from point to point. Double-click or press Enter to finish; click the first point again to close the shape. Esc cancels |
 | **Text** | Click where the label goes, then type it |
 | **Add** | Pick a piece of kit, then click the plan to place it. Kit placed here, such as easy-ups, the generator or video village, stays on the plan for every setup |
-| **Select** | Click anything to move it or open its settings. Drag the round knob to turn it, and the square handle to resize |
+| **Select** | Click anything to move it or open its settings. For a rectangle or shape, pick its line and fill colours and how see-through the fill is. Drag the round knob to turn it, and the square handle to resize |
 
 **90°** keeps lines straight across or up and down and turns things a quarter at a time. Turn it off to draw and turn freely. Press Delete to remove the selected item, the arrow keys to nudge it, and ⌘Z / Ctrl+Z to undo. Everything saves as you go.
 

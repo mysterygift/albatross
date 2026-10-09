@@ -41,6 +41,21 @@ describe('floor plan model', () => {
     expect(layout.unitsPerMetre).toBe(DEFAULT_UNITS_PER_METRE)
   })
 
+  it('keeps valid shape colours and drops the rest', () => {
+    const layout = parseLayout(
+      JSON.stringify({
+        shapes: [
+          { id: 'r', kind: 'rect', x: 0, y: 0, width: 10, height: 10, stroke: '#EF4444', fill: '#22c55e', fillOpacity: 1.5 },
+          { id: 'p', kind: 'path', points: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 }], closed: true, stroke: 'red', fill: '#123', fillOpacity: 0.25 },
+        ],
+      })
+    )
+    expect(layout.shapes).toEqual([
+      { id: 'r', kind: 'rect', x: 0, y: 0, width: 10, height: 10, stroke: '#ef4444', fill: '#22c55e', fillOpacity: 1 },
+      { id: 'p', kind: 'path', points: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 }], closed: true, fillOpacity: 0.25 },
+    ])
+  })
+
   it('parses scale, north, background, location and equipment', () => {
     const layout = parseLayout(
       JSON.stringify({

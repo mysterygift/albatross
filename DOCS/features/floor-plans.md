@@ -24,7 +24,7 @@ Experimental: draw a set or a unit base at a location (to scale, over a map or p
 
 | Shape / marker | Fields |
 |---|---|
-| `rect`, `path`, `text` | As drawn in Layout mode (see the editor below) |
+| `rect`, `path`, `text` | As drawn in Layout mode (see the editor below). `rect` and `path` may carry `stroke` and `fill` (`#rrggbb`) and `fillOpacity` (0 to 1, default 0.6); unset means the theme's colours. Only rectangles and closed paths are filled; the PDF fills a closed path only when it has a fill colour or opacity |
 | `item` (layout or setup) | `type` (catalogue id), `x`, `y`, `rotation` (facing), `label`, `width` and `depth` in metres |
 | `camera` | `label` (letter); colour by letter (A orange, B cyan, C lime, D pink, E yellow, then round again) |
 | `actor` | `personId` (cast), `label` (character name, else the person's name); colour from the booking calendar (`resolvePersonColor`, principal cast colour or the supporting colour) |
@@ -55,7 +55,7 @@ Everything else uses common sizes: flags, cutters and frames from their names in
 
 **Page.** The plan picker is the page title (`Location | Plan`, grouped by location, with New, Rename or move, Delete). **Layout** and **Setups** sit beside **Export PDF**. Plan, mode, scene and shot are URL params (`plan`, `mode=setup`, `scene`, `shot`, `shot=scene` for blocking).
 
-**Layout mode.** One tool row: Select, Rectangle, Line (point to point; double-click, Enter or **Done** finishes, first point closes, Esc cancels), Text, **Add** (equipment library, all categories), Background, **90°** (snap: lines horizontal/vertical, rotations and facing in quarter turns; off is free; per viewer in `localStorage`), Sun, save state, undo/redo. Selecting anything opens a popover beside it (label, facing, size in metres for resizable kit, text size and rotation, closed shape). Items in the layout are permanent (unit base, practicals); items placed in Setups belong to that setup.
+**Layout mode.** One tool row: Select, Rectangle, Line (point to point; double-click, Enter or **Done** finishes, first point closes, Esc cancels), Text, **Add** (equipment library, all categories), Background, **90°** (snap: lines horizontal/vertical, rotations and facing in quarter turns; off is free; per viewer in `localStorage`), Sun, save state, undo/redo. Selecting anything opens a popover beside it (label, facing, size in metres for resizable kit, text size and rotation, closed shape; for rectangles and lines the line colour, and for filled shapes the fill colour and opacity, from swatches or a colour picker). Items in the layout are permanent (unit base, practicals); items placed in Setups belong to that setup.
 
 **Background, scale and north** (`BackgroundDialog`). **Map of location** renders the configured map tiles north up and to scale over the whole plan (100, 200 or 500 m across), sets the scale and north 0. **Image** shrinks the picture to 2400 px on the long side (JPEG) and fits it; then **Fit**, **Fill** or **Move** (drag on the plan, corner handle to resize; resizing carries the scale with it), opacity, **Remove**. **Plan width (m)** sets the scale directly, or the ruler draws a line over something of known length and asks for its length. North is a number with a live arrow. **Location** finds coordinates for the address (OpenRouteService with a key, else OpenStreetMap Nominatim, or typed `lat, lon`) and the time zone (Open-Meteo); both are kept in the plan, so the sun works offline afterwards.
 
