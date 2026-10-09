@@ -32,7 +32,7 @@ Each page follows the same layout: code map, data model, how it works, connectio
 | Money | [Budget](features/budget.md) · [Vendors](features/vendors.md) |
 | Deliver | [Call Sheets](features/call-sheets.md) · [Movement Orders](features/movement-orders.md) · [Documents](features/documents.md) · [Deliverables](features/deliverables.md) · [Music & Archive](features/music-archive.md) |
 | Run | [Tasks](features/tasks.md) · [Wrap Production](features/wrap-production.md) |
-| Experimental | [Script Supervisor](features/script-supervisor.md) · [Overtime](features/overtime.md) · [Send Day Pack](features/day-pack.md) |
+| Experimental | [Script Supervisor](features/script-supervisor.md) · [Overtime](features/overtime.md) · [Send Day Pack](features/day-pack.md) · [Floor Plans](features/floor-plans.md) |
 
 ## Conventions for these docs
 

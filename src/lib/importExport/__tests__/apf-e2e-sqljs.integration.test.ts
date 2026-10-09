@@ -669,6 +669,70 @@ describe('apf E2E (sql.js + real FS)', () => {
     ])
   })
 
+  it('round-trips floor plans and their setups, leaving out ones whose location or shot is gone', async () => {
+    clearUserData()
+    const adapter = sqlJsApfE2eContext.adapter!
+    const id = (n: number) => `bbbbbbbb-e2eb-4e2b-8f${String(n).padStart(2, '0')}-b1e2e2e2e2b1`
+    const LOC = id(1)
+    const LOC_GONE = id(2)
+    const SCENE = id(3)
+    const SHOT = id(4)
+    const SHOT_GONE = id(5)
+    const PLAN = id(6)
+    const PLAN_ORPHAN = id(7)
+    const SETUP_SHOT = id(8)
+    const SETUP_SCENE = id(9)
+    const SETUP_GONE_SHOT = id(10)
+    const layout = '{"shapes":[{"id":"r1","kind":"rect","x":10,"y":20,"width":300,"height":200}]}'
+    const markers = '[{"id":"m1","kind":"camera","x":100,"y":100,"rotation":90,"label":"A"}]'
+
+    const run = (sql: string, params: unknown[] = []) => adapter.execute(sql, params)
+    await run(
+      `INSERT INTO productions (id, name, created_at, updated_at, slug, currency_code) VALUES ($1, 'Floor plans', $2, $2, 'fp-e2e', 'GBP')`,
+      [PROD_ID, TS]
+    )
+    await run(`INSERT INTO locations (id, production_id, name, address, created_at, updated_at) VALUES ($1, $2, 'Diner', '1 Road', $3, $3)`, [LOC, PROD_ID, TS])
+    await run(
+      `INSERT INTO locations (id, production_id, name, address, created_at, updated_at, deleted_at) VALUES ($1, $2, 'Gone', '2 Road', $3, $3, $3)`,
+      [LOC_GONE, PROD_ID, TS]
+    )
+    await run(`INSERT INTO scenes (id, production_id, scene_number, created_at, updated_at) VALUES ($1, $2, '4', $3, $3)`, [SCENE, PROD_ID, TS])
+    await run(`INSERT INTO shots (id, scene_id, shot_number, created_at, updated_at) VALUES ($1, $2, '4A', $3, $3)`, [SHOT, SCENE, TS])
+    await run(`INSERT INTO shots (id, scene_id, shot_number, created_at, updated_at, deleted_at) VALUES ($1, $2, '4B', $3, $3, $3)`, [SHOT_GONE, SCENE, TS])
+    for (const [planId, locId] of [[PLAN, LOC], [PLAN_ORPHAN, LOC_GONE]] as const) {
+      await run(
+        `INSERT INTO floor_plans (id, production_id, location_id, name, layout_json, created_at, updated_at) VALUES ($1, $2, $3, 'Plan', $4, $5, $5)`,
+        [planId, PROD_ID, locId, layout, TS]
+      )
+    }
+    for (const [setupId, shotId] of [[SETUP_SHOT, SHOT], [SETUP_SCENE, null], [SETUP_GONE_SHOT, SHOT_GONE]] as const) {
+      await run(
+        `INSERT INTO floor_plan_setups (id, production_id, floor_plan_id, scene_id, shot_id, markers_json, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, 'Dolly in', $7, $7)`,
+        [setupId, PROD_ID, PLAN, SCENE, shotId, markers, TS]
+      )
+    }
+
+    await exportProductionAsApf(PROD_ID, apfPath)
+    const exported = parseApfArchiveBytes(new Uint8Array(await readFile(apfPath)))
+    const t = exported.normalized.data.tables
+    expect(t.floor_plans.map((r) => r.id)).toEqual([PLAN])
+    expect(t.floor_plan_setups.map((r) => r.id).sort()).toEqual([SETUP_SHOT, SETUP_SCENE].sort())
+
+    clearUserData()
+    const imp = await importProductionFromApf(apfPath)
+    expect(imp.ok).toBe(true)
+    if (!imp.ok) throw imp.error
+
+    const rows = (sql: string) => adapter.select<Record<string, unknown>[]>(sql, [PROD_ID])
+    expect(await rows(`SELECT id, location_id, layout_json FROM floor_plans WHERE production_id = $1`)).toEqual([
+      { id: PLAN, location_id: LOC, layout_json: layout },
+    ])
+    expect(await rows(`SELECT id, shot_id, markers_json, notes FROM floor_plan_setups WHERE production_id = $1 ORDER BY shot_id IS NULL`)).toEqual([
+      { id: SETUP_SHOT, shot_id: SHOT, markers_json: markers, notes: 'Dolly in' },
+      { id: SETUP_SCENE, shot_id: null, markers_json: markers, notes: 'Dolly in' },
+    ])
+  })
+
   it('imports legacy v3 scenes.heading via file migration into title', async () => {
     clearUserData()
     const adapter = sqlJsApfE2eContext.adapter!

@@ -117,6 +117,13 @@ const PARENT_LINKS: Partial<Record<ApfV1TableKey, ParentLink[]>> = {
     { column: 'shoot_day_id', parent: 'shoot_days', onMissing: 'drop' },
     { column: 'person_id', parent: 'people', onMissing: 'drop' },
   ],
+  // A plan whose location was deleted is hidden in the app, so it is left out of the package.
+  floor_plans: [{ column: 'location_id', parent: 'locations', onMissing: 'drop' }],
+  floor_plan_setups: [
+    { column: 'floor_plan_id', parent: 'floor_plans', onMissing: 'drop' },
+    { column: 'scene_id', parent: 'scenes', onMissing: 'drop' },
+    { column: 'shot_id', parent: 'shots', onMissing: 'drop' },
+  ],
 }
 
 function hasValue(v: unknown): boolean {

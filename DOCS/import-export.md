@@ -31,7 +31,7 @@ Readers detect ZIP by the `PK` magic bytes, not the extension, and ignore other 
 
 ## Versioning
 
-`CURRENT_APF_FORMAT_VERSION` is 11 and the importable range is 1 to 11. Manifest and data versions must match.
+`CURRENT_APF_FORMAT_VERSION` is 12 and the importable range is 1 to 12. Manifest and data versions must match.
 
 - **Newer than this build:** refused before any database work (`UNSUPPORTED_FORMAT_VERSION`).
 - **Older:** `migrateApfToCurrentVersion` applies one registered migrator per step (`APF_FILE_MIGRATIONS`, `v → v+1`) to the in-memory payload. A gap in the chain is an error (`MIGRATION_MISSING`).
@@ -48,17 +48,18 @@ Readers detect ZIP by the `PK` magic bytes, not the extension, and ignore other 
 | 8→9 | Script sections, sides and script supervisor tables |
 | 9→10 | Script breakdown (`breakdown_elements`, `breakdown_tags`) |
 | 10→11 | Storyboards (`storyboard_imports`, `storyboard_images` and their image files), `vendor_production_exclusions`, overtime (`production_crew_hours_settings`, `crew_hours_person_settings`, `crew_day_hours`) |
+| 11→12 | Floor plans (`floor_plans`, `floor_plan_setups`) |
 
 Tables with no migrator (`production_budget_features`, `tax_credit_schemes`, `vat_reclaim_rates`, `crew_availability`, `expense_tax_credit_allocations`) are covered by `injectMissingApfTableKeys`, which gives older files an empty array.
 
 ## What is exported
 
-95 tables (`APF_V1_TABLE_KEYS` is the 68 original keys, then the 19 `APF_V9_TABLE_KEYS`, 2 `APF_V10_TABLE_KEYS` and 6 `APF_V11_TABLE_KEYS`), loaded by `loadApfV1ProductionTables`. Grouped:
+97 tables (`APF_V1_TABLE_KEYS` is the 68 original keys, then the 19 `APF_V9_TABLE_KEYS`, 2 `APF_V10_TABLE_KEYS`, 6 `APF_V11_TABLE_KEYS` and 2 `APF_V12_TABLE_KEYS`), loaded by `loadApfV1ProductionTables`. Grouped:
 
 | Group | Tables |
 |---|---|
 | Production and structure | `productions`, `episodes`, `shooting_blocs`, `units`, `shoot_days`, `shoot_day_units`, `production_crew_hierarchy_configs` |
-| Script and schedule | `scenes`, `shots`, `location_scene`, `stripboard_items`, `stripboard_strips`, `scene_cast`, `shot_cast`, `script_documents`, all v9 script tables (`script_versions` … `script_revision_items`), `breakdown_elements`, `breakdown_tags`, `storyboard_imports`, `storyboard_images` |
+| Script and schedule | `scenes`, `shots`, `location_scene`, `stripboard_items`, `stripboard_strips`, `scene_cast`, `shot_cast`, `script_documents`, all v9 script tables (`script_versions` … `script_revision_items`), `breakdown_elements`, `breakdown_tags`, `storyboard_imports`, `storyboard_images`, `floor_plans`, `floor_plan_setups` |
 | People and places | `people`, `locations`, `bookings`, `cast_availability`, `crew_availability`, `key_contacts`, overtime: `production_crew_hours_settings`, `crew_hours_person_settings`, `crew_day_hours` |
 | Budget | `budget_categories`, `budget_accounts`, `budget_revisions`, `budget_items`, `budget_item_details`, `expenses`, `expense_transaction_details`, `expense_tax_credit_allocations`, `expense_receipts`, `budget_item_expense_links`, `floats`, `float_expense_links`, fringe, contingency, cost-report and production-total rules and their scope tables, `production_budget_features`, `tax_credit_schemes`, `vat_reclaim_rates` |
 | Vendors | `vendors`, `vendor_production_exclusions`, `vendor_purchase_orders`, `vendor_purchase_order_amendments`, `vendor_purchase_order_expenses`, `vendor_invoices`, `vendor_invoice_expenses` |
@@ -78,6 +79,7 @@ Tables with no migrator (`production_budget_features`, `tax_credit_schemes`, `va
 - **Storyboards:** live `storyboard_images` and `storyboard_imports`. Image bytes are bundled from `storage_key`; a missing file keeps its row and goes in `manifest.export.missingStoryboardImageIds`.
 - **Vendor exclusions:** a row hides a global vendor from this production. Global vendors travel as local copies only when referenced, so an exclusion whose vendor is not in the package is dropped by `pruneOrphanedApfRows`; one for a vendor in the package is kept and keeps it hidden.
 - **Overtime:** the production settings row, per-person exemptions and live logged hours. The settings tables have no `id` or `deleted_at`.
+- **Floor plans:** live plans and setups. Prune drops a plan whose location is not in the package (a deleted location) and a setup whose plan, scene or shot is not.
 - **Documents:** every live `documents` row for the production. Rows whose file cannot be read stay in the JSON and their ids go in `manifest.export.missingDocumentFileIds`; export does not fail.
 
 ## Import

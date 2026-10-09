@@ -42,6 +42,9 @@ export const APF_V11_TABLE_KEYS = [
   'crew_day_hours',
 ] as const
 
+/** Tables added in formatVersion 12: floor plans (per location), then their camera / actor setups. */
+export const APF_V12_TABLE_KEYS = ['floor_plans', 'floor_plan_setups'] as const
+
 /**
  * v1 table keys for `data/production.json` → `tables`.
  * Names match SQLite table names per DOCS/import-export.md (INCLUDE set).
@@ -119,6 +122,7 @@ export const APF_V1_TABLE_KEYS = [
   ...APF_V9_TABLE_KEYS,
   ...APF_V10_TABLE_KEYS,
   ...APF_V11_TABLE_KEYS,
+  ...APF_V12_TABLE_KEYS,
 ] as const
 
 export type ApfV1TableKey = (typeof APF_V1_TABLE_KEYS)[number]

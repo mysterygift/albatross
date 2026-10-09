@@ -66,6 +66,8 @@ export const DOCUMENT_ENTITY_TYPES = {
   shotList: 'shot_list',
   /** Storyboard PDF (entity_id = scene id for one scene, else null). */
   storyboardExport: 'storyboard_export',
+  /** Floor plans PDF (entity_id = the shoot day, location or scene exported, else null). */
+  floorPlanExport: 'floor_plan_export',
 } as const
 
 export type DocumentEntityType =
@@ -105,7 +107,7 @@ export const DOCUMENT_CATEGORIES: DocumentCategoryConfig[] = [
   {
     id: 'schedule',
     label: 'Script & sides',
-    description: 'Imported scripts, script breakdowns, sides, shooting schedules, shot lists and storyboards',
+    description: 'Imported scripts, script breakdowns, sides, shooting schedules, shot lists, storyboards and floor plans',
     icon: Calendar,
     sourceRoute: '/schedule/script-import',
     emptyMessage: 'No scripts or sides yet. Import a script or export sides from the schedule.',
@@ -117,6 +119,7 @@ export const DOCUMENT_CATEGORIES: DocumentCategoryConfig[] = [
       DOCUMENT_ENTITY_TYPES.shootingSchedule,
       DOCUMENT_ENTITY_TYPES.shotList,
       DOCUMENT_ENTITY_TYPES.storyboardExport,
+      DOCUMENT_ENTITY_TYPES.floorPlanExport,
       DOCUMENT_ENTITY_TYPES.manualUploadSchedule,
     ],
   },
@@ -265,6 +268,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   [DOCUMENT_ENTITY_TYPES.shootingSchedule]: 'Shooting schedule',
   [DOCUMENT_ENTITY_TYPES.shotList]: 'Shot list',
   [DOCUMENT_ENTITY_TYPES.storyboardExport]: 'Storyboard',
+  [DOCUMENT_ENTITY_TYPES.floorPlanExport]: 'Floor plans',
 }
 
 export function getDocumentTypeLabel(entityType: string | null): string {
@@ -280,6 +284,7 @@ export function getDocumentSourceRoute(entityType: string | null): string {
   if (entityType === DOCUMENT_ENTITY_TYPES.shootingSchedule) return '/schedule/stripboard'
   if (entityType === DOCUMENT_ENTITY_TYPES.shotList) return '/schedule/shots'
   if (entityType === DOCUMENT_ENTITY_TYPES.storyboardExport) return '/schedule/storyboard'
+  if (entityType === DOCUMENT_ENTITY_TYPES.floorPlanExport) return '/schedule/floor-plans'
   if (entityType === DOCUMENT_ENTITY_TYPES.contributorForm) return '/people/cast-manager'
   const categoryId = getDocumentCategoryId(entityType)
   return getDocumentCategory(categoryId).sourceRoute
@@ -341,6 +346,7 @@ const DELETABLE_ENTITY_TYPES: readonly string[] = [
   DOCUMENT_ENTITY_TYPES.shootingSchedule,
   DOCUMENT_ENTITY_TYPES.shotList,
   DOCUMENT_ENTITY_TYPES.storyboardExport,
+  DOCUMENT_ENTITY_TYPES.floorPlanExport,
 ]
 
 /**

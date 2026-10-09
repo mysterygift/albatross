@@ -10,6 +10,7 @@ export const API_CALL_TRACKER_IDS = [
   'open_meteo_forecast',
   'currency_conversion_api',
   'map_tiles',
+  'nominatim_geocode',
 ] as const
 
 export type ApiCallTrackerId = (typeof API_CALL_TRACKER_IDS)[number]
@@ -19,6 +20,7 @@ export const API_CALL_TRACKER_LABELS: Record<ApiCallTrackerId, string> = {
   open_meteo_forecast: 'Open-Meteo (forecast only)',
   currency_conversion_api: 'Currency conversion API (Fawaz / jsDelivr)',
   map_tiles: 'Map tiles (OpenMapTiles / MapTiler; interactive maps + PDF maps, one per tile)',
+  nominatim_geocode: 'OpenStreetMap Nominatim (floor plan location lookup without an OpenRouteService key)',
 }
 
 const counts: Record<ApiCallTrackerId, number> = {
@@ -26,6 +28,7 @@ const counts: Record<ApiCallTrackerId, number> = {
   open_meteo_forecast: 0,
   currency_conversion_api: 0,
   map_tiles: 0,
+  nominatim_geocode: 0,
 }
 
 let trackingEnabled = false

@@ -1,6 +1,6 @@
 # 15. Experimental features
 
-Experimental features are on-set tools that are still being tested. They are hidden by default so they don't clutter the app. Switch them on when you want to try them. Currently these are **Script Supervisor**, **Overtime** and **Send Day Pack**.
+Experimental features are on-set tools that are still being tested. They are hidden by default so they don't clutter the app. Switch them on when you want to try them. Currently these are **Floor Plans**, **Script Supervisor**, **Overtime** and **Send Day Pack**.
 
 ## Turn them on
 
@@ -9,9 +9,62 @@ Experimental features are on-set tools that are still being tested. They are hid
 
 ![Experimental features card in Settings → Developer](images/15-experimental-toggle.png)
 
-**Script Supervisor** now appears under **Script** in the sidebar, **Overtime** under **People** and **Send Day Pack** under **Deliver**, each marked with a flask icon and an **Experimental** badge. They also appear in search. Untick the box to hide them again. Nothing you have recorded is deleted.
+**Floor Plans** now appears under **Schedule** in the sidebar, **Script Supervisor** under **Script**, **Overtime** under **People** and **Send Day Pack** under **Deliver**, each marked with a flask icon and an **Experimental** badge. They also appear in search. Untick the box to hide them again. Nothing you have recorded is deleted.
 
 > **Note** Experimental features may change between releases. They store their data on this computer only, so they are not available for a production opened from a collaboration server.
+
+## Floor Plans
+
+Floor Plans lets you draw a set or a unit base at a location, to scale, and mark where the cameras, cast, lights and grip go for each scene and shot. Open **Schedule → Floor Plans**.
+
+![A floor plan with cameras, cast, lights and grip plotted for a shot](images/15-floor-plans.png)
+
+### Start a plan
+
+1. Click **New floor plan**, give it a name (for example *Kitchen* or *Unit base*) and choose its **Location**. Add the location on **Locations** first if it isn't there. To switch plans later, click the plan's name at the top of the page.
+2. Click **Background** in the toolbar if you want something to draw over:
+   - **Map of location** draws a map of the location's address, north up and to scale (choose 100, 200 or 500 m across). It needs a map key in **Settings**.
+   - **Image** uses a picture you have, such as a map screenshot or a recce photo. Then choose **Fit**, **Fill** or **Move** (drag it, or drag its corner to resize it) and set its **Opacity**.
+3. Set the scale: type the **Plan width** in metres, or click the ruler, drag along something you know the length of (a doorway, a road) and type its length. Set **North** so the arrow points north on your picture.
+
+### Draw the layout
+
+With **Layout** selected, pick a tool:
+
+| Tool | How to use it |
+|---|---|
+| **Rectangle** | Click and drag. Good for rooms, tables and doorways |
+| **Line** | Click from point to point. Double-click or press Enter to finish; click the first point again to close the shape. Esc cancels |
+| **Text** | Click where the label goes, then type it |
+| **Add** | Pick a piece of kit, then click the plan to place it. Kit placed here, such as easy-ups, the generator or video village, stays on the plan for every setup |
+| **Select** | Click anything to move it or open its settings. Drag the round knob to turn it, and the square handle to resize |
+
+**90°** keeps lines straight across or up and down and turns things a quarter at a time. Turn it off to draw and turn freely. Press Delete to remove the selected item, the arrow keys to nudge it, and ⌘Z / Ctrl+Z to undo. Everything saves as you go.
+
+### Plot the setups
+
+1. Switch to **Setups**. The scene and its shots run along the bottom: pick the scene (scenes at this location come first), then **Blocking** for the whole scene or a shot. The chosen shot shows its description, camera details and notes.
+2. Click **Camera** and then the plan to place a camera. Cameras are lettered A, B, C… and each letter has its own colour.
+3. Click **Cast**, choose who (the scene's cast come first), then click the plan. Each person shows in their colour from the **Bookings** calendar.
+4. Click **Lights** or **Grip**, choose the kit, then click the plan. Lights are coloured by source: amber for tungsten, blue for HMI, white for LED. Every item has a label you can change.
+5. Drag anything to move it and its round knob to turn it. **Copy from** starts a shot from another setup in the same scene.
+
+### See the sun
+
+Click the sun in the toolbar. The first time, Albatross asks for the location (it looks up the address, or you can type coordinates such as `51.5072, -0.1276`). Pick the day and slide the time: the sun's path runs round the plan, and the dashed ray shows where the light comes from at that time.
+
+### Export floor plans
+
+Click **Export PDF** and choose what to print:
+
+| Choice | Prints |
+|---|---|
+| **Shoot day** | Every setup for the shots on that day, on every unit and at every location, in stripboard order |
+| **Location** | Every floor plan at the location with all its setups. A plan with no setups prints its layout |
+| **Scene** | The scene's blocking, then each shot's setup |
+| **Shots** | Just the shots you tick |
+
+Each setup prints the plan with its background, kit, cameras and cast in their colours, a north arrow and a scale bar, with the shot details and notes underneath. A copy is filed under **Documents → Script & sides**, then a save dialog opens.
 
 ## Script Supervisor
 
