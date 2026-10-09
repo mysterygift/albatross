@@ -1,6 +1,6 @@
 # Toothpick (Manchester) demo project
 
-Generates `demo/Toothpick-Manchester-Demo.apf`, a content-rich demo project (`.apf` format v9) based on the short script
+Generates `demo/Toothpick-Manchester-Demo.apf`, a content-rich demo project (`.apf` in the app's current format) based on the short script
 **Toothpick** by Aran Davies (V1, 04/12/2025), shot in Manchester. It is built to exercise the Script Supervisor, but also
 covers schedule, people, finance, equipment, safety paperwork, music and deliverables.
 
@@ -28,8 +28,8 @@ sides and RAMS queries.
 
 | Path | What |
 | --- | --- |
-| `data/` | Source data: scenes (parser output + reviewed fixes), locations, people, vendors, finance, shots, schedule, ops |
-| `build/` | Turns the data into `.apf` table rows (`core`, `finance`, `ops`) and the in-project guide PDF |
+| `data/` | Source data: scenes (parser output + reviewed fixes), locations, people, vendors, finance, shots, schedule, ops, floor plans |
+| `build/` | Turns the data into `.apf` table rows (`core`, `finance`, `ops`, `floorPlans`) and the in-project guide PDF |
 | `lib/` | Helpers: deterministic ids, dates and sunrise/sunset, sql.js DB, PDF writer, script layout classifier, test shims |
 | `assets/Toothpick-V1.pdf` | The script. Bundled into the project as a document and used as the parser input |
 | `build.gen.ts`, `verify.gen.ts` | Entry points (`*.gen.ts` so they stay out of the app's own `npm test`) |
@@ -46,6 +46,11 @@ sides and RAMS queries.
   A Script Supervisor role is added through the project crew hierarchy.
 - **Finance:** 33 vendors, a typed budget (labour/rental/purchase/deposit/allow), 19 purchase orders and 38 invoices that reconcile
   to expenses, floats with receipts, VAT tracking, fringe and contingency.
+- **Floor plans (experimental):** 13 plans with 49 setups (`data/floorPlans.ts`, built by `build/floorPlans.ts`). Set plans for
+  nine locations with cameras, cast and catalogue kit placed for key shots (dollies on track, gimbal, sliders, HMIs, LED panels,
+  tubes, flags, frames, bounce, a cherry picker), and four unit base layouts (Wilmslow Road and Church Street car parks, the bus
+  yard, the pub's loading lane). Plans at locations with a published coordinate carry it, so the sun path works. Interiors are
+  plausible layouts drawn from the scene notes, not surveys. Every kit id, shot and cast member is checked against the data.
 - **Also:** equipment with pack lists, risk assessments for each day, music clearances, deliverables, tasks, key contacts.
 - **Not included by design:** slates, takes and tramlines, so testing starts from a clean log.
 

@@ -7,7 +7,7 @@
  */
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { unzipSync } from 'fflate'
@@ -16,7 +16,13 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { importProductionFromApf } from '@/lib/importExport/importProduction'
 import { loadApfV1ProductionTables } from '@/lib/importExport/exportLoadProductionData'
 import { resetApfImportPragmaCache } from '@/lib/importExport/planImportStatements'
+import { CURRENT_APF_FORMAT_VERSION } from '@/lib/importExport/constants'
 import { APF_V1_TABLE_KEYS } from '@/lib/importExport/tableKeys'
+import { listFloorPlansByProduction, listFloorPlanSetupsByProduction } from '@/lib/db/repositories/floor-plans'
+import { loadDayPackSources } from '@/lib/day-pack/loadDayPackSources'
+import { buildFloorPlanPdfData, generateFloorPlanPdf } from '@/lib/pdf/floorPlan'
+import { loadScheduleExportSources } from '@/lib/schedule/scheduleExportSources'
+import { shotIdsInStripOrder } from '@/lib/schedule/shootingScheduleExport'
 import { setTestDataEncryptionKeyForTests } from '@/lib/security/dataEncryptionContext'
 import { listCalendarShootDayEvents } from '@/lib/db/repositories/calendar'
 import { getCastIdsBySceneIds } from '@/lib/db/repositories/scene-cast'
@@ -37,6 +43,7 @@ import { openMigratedDb, query } from './lib/db'
 import { createCtx } from './build/ctx'
 import { DAYS } from './data/schedule'
 import { SCENES } from './data/scenes'
+import { FLOOR_PLANS } from './data/floorPlans'
 import { OUTPUT_FILE } from './lib/paths'
 
 let workDir = ''
@@ -49,15 +56,15 @@ afterAll(async () => {
 })
 
 describe('Toothpick .apf (fresh-database import)', () => {
-  it('is a valid v9 archive', async () => {
+  it('is a valid archive in the current format', async () => {
     const files = unzipSync(new Uint8Array(await readFile(OUTPUT_FILE)))
     const manifest = JSON.parse(new TextDecoder().decode(files['manifest.json']))
     expect(manifest.kind).toBe('albatross-project-file')
-    expect(manifest.formatVersion).toBe(9)
+    expect(manifest.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
     expect(manifest.production.slug).toBe('demo-toothpick-manchester')
     expect(manifest.export.missingDocumentFileIds ?? []).toEqual([])
     const data = JSON.parse(new TextDecoder().decode(files['data/production.json']))
-    expect(data.formatVersion).toBe(9)
+    expect(data.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
     expect(Object.keys(data.tables).sort()).toEqual([...APF_V1_TABLE_KEYS].sort())
     const bundled = Object.keys(files).filter((p) => p.startsWith('files/documents/'))
     expect(bundled.length).toBe(data.tables.documents.length)
@@ -79,7 +86,7 @@ describe('Toothpick .apf (fresh-database import)', () => {
     const result = await importProductionFromApf(OUTPUT_FILE)
     if (!result.ok) throw result.error
     expect(result.productionId).toBe(pid)
-    expect(result.formatVersion).toBe(9)
+    expect(result.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
     expect(result.warnings).toEqual([])
     const docCount = Number(query(raw, 'SELECT COUNT(*) FROM documents')[0]![0])
     expect(result.filesRestored).toBe(docCount)
@@ -168,5 +175,34 @@ describe('Toothpick .apf (fresh-database import)', () => {
       GROUP BY vi.id HAVING ABS(SUM(e.amount) - vi.amount) > 0.001`)
     expect(invoiceMismatch).toEqual([])
     expect(SCENES).toHaveLength(18)
+
+    // Floor plans: every plan and setup imported, and each location prints. FLOOR_PLAN_PREVIEW=<dir>
+    // writes the PDFs there to look at.
+    const plans = await listFloorPlansByProduction(pid)
+    const setups = await listFloorPlanSetupsByProduction(pid)
+    expect(plans).toHaveLength(FLOOR_PLANS.length)
+    expect(setups).toHaveLength(FLOOR_PLANS.reduce((n, p) => n + p.setups.length, 0))
+    expect(plans.filter((p) => p.name.startsWith('Unit base')).length).toBeGreaterThanOrEqual(3)
+    const sched = await loadScheduleExportSources(pid)
+    const previewDir = process.env.FLOOR_PLAN_PREVIEW
+    if (previewDir) await mkdir(previewDir, { recursive: true })
+    for (const locationId of new Set(plans.map((p) => p.location_id))) {
+      const data = buildFloorPlanPdfData({
+        productionName: sched.productionName, scopeLabel: 'Demo', scope: { kind: 'location', locationId },
+        plans, setups, scenes: sched.scenes, shots: sched.shots, locations: sched.locations,
+      })
+      expect(data.entries.length).toBeGreaterThan(0)
+      const bytes = await generateFloorPlanPdf(data)
+      if (previewDir) await writeFile(join(previewDir, `${data.entries[0]!.locationName.replace(/[^a-z0-9]+/gi, '-')}.pdf`), bytes)
+    }
+    // A shoot day prints its setups in strip order, and the day pack offers them.
+    const day3 = ctx.idOf.dayUnit(3, 'main')
+    const day3Plans = buildFloorPlanPdfData({
+      productionName: sched.productionName, scopeLabel: 'Day 3', scope: { kind: 'day', shotOrder: shotIdsInStripOrder(sched.strips, ctx.idOf.day(3), day3) },
+      plans, setups, scenes: sched.scenes, shots: sched.shots, locations: sched.locations,
+    })
+    expect(day3Plans.entries.map((e) => e.title)[0]).toMatch(/^Scene 14/)
+    const pack = await loadDayPackSources({ productionId: pid, shootDayId: ctx.idOf.day(3), shootDayUnitId: day3, sched })
+    expect(pack.sources.find((s) => s.kind === 'floor_plans')?.status).toBe('ready')
   })
 })

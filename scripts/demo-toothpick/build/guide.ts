@@ -16,6 +16,8 @@ export type GuideStats = {
   cast: number
   crew: number
   budgetEstimated: number
+  floorPlans: number
+  floorPlanSetups: number
 }
 
 const p = (text: string): PdfBlock => ({ kind: 'p', text })
@@ -57,6 +59,7 @@ export async function buildGuide(s: GuideStats): Promise<Uint8Array> {
       li('Floats and receipts: the art and production floats have petty-cash expenses with receipt PDFs. VAT tracking is on at 20%; one legal invoice has its VAT reclaimed.'),
       li('Safety: risk assessments for each day with built-in and project hazards. Days 1–3 are approved, 4–7 are drafts. Hospital and police fields use real Manchester addresses.'),
       li('Music: "Free Bird" (scene 7, a cappella chorus) is pending clearance; the library tracks for scenes 9, 11 and 12 are cleared.'),
+      li(`Floor Plans (experimental; turn on Settings → Developer → Show experimental features, then Schedule → Floor Plans): ${s.floorPlans} plans with ${s.floorPlanSetups} setups. Set plans for the café, the pub, Hugh’s and Maisie’s flats, the park, the club pavement, the bus, the bar and the load-out, with cameras, cast, lights and grip placed for key shots (try the Fisher 11 on track in the pub, scene 14 shot 8, or the 12 m of track in the park, scene 16 shot 2). Unit base plans for the Wilmslow Road and Church Street car parks, the bus yard and the pub’s loading lane. The park, café, pub and club plans know where they are: turn on Sun for Day 6 to see the light on the bench in scene 17. Send Day Pack can include each unit’s floor plans.`),
       li('Equipment: hire kit is out from 30 Oct to 12 Nov with return reminders; per-day pack lists exist for camera, sound, grip, lighting, the bus day, the night exterior, the Second Unit and the script supervisor’s kit.'),
       h1('What the script parser did'),
       p('The script was run through Albatross’s own PDF parser. It found all 18 scenes and their lengths in eighths. A reviewer then corrected what the parser can’t read: sluglines using an en dash ("BAR – EVENING" is read as a location), times of day like EVENING / MORNING / EARLY MORNING, and the "DAY/NIGHT" montage headings.'),

@@ -1,5 +1,5 @@
 /**
- * Builds the Toothpick (Manchester) demo project and exports it as a v9 `.apf`.
+ * Builds the Toothpick (Manchester) demo project and exports it as an `.apf` in the app's current format.
  *
  * Everything runs through the app's own code: an in-memory SQLite database created from the real
  * migrations, the app's PDF parser and script-section generator for the script data, and
@@ -41,6 +41,7 @@ import {
   buildTasks, filePathFor,
 } from './build/ops'
 import { buildGuide } from './build/guide'
+import { buildFloorPlans } from './build/floorPlans'
 import { CAST, CREW } from './data/people'
 import { SHOTS } from './data/shots'
 
@@ -58,7 +59,7 @@ afterAll(async () => {
 })
 
 describe('Toothpick demo project', () => {
-  it('builds the project and writes the v9 .apf', async () => {
+  it('builds the project and writes the .apf', async () => {
     workDir = await mkdtemp(join(tmpdir(), 'toothpick-demo-'))
     apfNodeFsTestContext.appDataRoot = join(workDir, 'appdata')
     await mkdir(apfNodeFsTestContext.appDataRoot, { recursive: true })
@@ -91,6 +92,7 @@ describe('Toothpick demo project', () => {
     buildScenes(ctx)
     buildShots(ctx)
     buildStrips(ctx)
+    const floorPlans = buildFloorPlans(ctx)
     buildBookings(ctx)
     buildVendors(ctx)
     buildBudgetFrame(ctx)
@@ -174,6 +176,7 @@ describe('Toothpick demo project', () => {
       scriptPages: Math.round(sched.eighths / 8), scenes: sched.scenes, shots: sched.shots, sections: counts('script_sections'),
       versionLabel: version?.version_label ?? 'V1', vendors: fin.vendors, pos: fin.pos, invoices: fin.invoices,
       cast: CAST.length, crew: CREW.length, budgetEstimated: budgetTotals.estimated,
+      floorPlans: floorPlans.plans, floorPlanSetups: floorPlans.setups,
     })
     ctx.docs.push({ id: ctx.ids('doc', 'guide'), entity_type: null, entity_id: null, file_name: 'Toothpick-Demo-Guide.pdf', mime_type: 'application/pdf', bytes: guide })
     addDocumentRows(ctx)
@@ -200,5 +203,7 @@ describe('Toothpick demo project', () => {
     console.log('Budget estimated (net of contingency):', Math.round(budgetTotals.estimated))
     expect(summary.script_versions).toBe(1)
     expect(summary.slates ?? 0).toBe(0)
+    expect(summary.floor_plans).toBe(floorPlans.plans)
+    expect(summary.floor_plan_setups).toBe(floorPlans.setups)
   })
 })
