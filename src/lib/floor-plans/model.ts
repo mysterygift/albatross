@@ -6,7 +6,7 @@
  * real scale (40 by default, so the canvas is 30 x 20 m); setting a background's scale changes it.
  */
 
-import { catalogItem } from './catalog'
+import { catalogItem, isArmGlyph } from './catalog'
 
 export const PLAN_WIDTH = 1200
 export const PLAN_HEIGHT = 800
@@ -319,7 +319,9 @@ export function translateShape<T extends FloorPlanShape>(shape: T, dx: number, d
 }
 
 /** Half the item's largest extent in plan units, at least a marker's size so tiny kit stays visible. */
-export function itemReach(item: Pick<FloorPlanItem, 'width' | 'depth'>, unitsPerMetre: number): number {
+export function itemReach(item: Pick<FloorPlanItem, 'type' | 'width' | 'depth'>, unitsPerMetre: number): number {
+  // An arm (jib, crane) reaches its full length out from its base.
+  if (isArmGlyph(catalogItem(item.type)?.glyph)) return Math.max(MARKER_RADIUS, item.depth * unitsPerMetre, (item.width * unitsPerMetre) / 2)
   return Math.max(MARKER_RADIUS, (Math.max(item.width, item.depth) * unitsPerMetre) / 2)
 }
 

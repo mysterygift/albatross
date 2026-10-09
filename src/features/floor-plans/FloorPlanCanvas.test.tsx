@@ -227,7 +227,7 @@ describe('FloorPlanCanvas', () => {
       ['item', 'M18 | HMI'],
     ])
     expect(markers[2]).toMatchObject({ personId: 'p-marta' })
-    expect(markers[3]).toMatchObject({ type: 'arri-m18', width: 0.47, depth: 0.54, rotation: 270 })
+    expect(markers[3]).toMatchObject({ type: 'arri-m18', width: 0.39, depth: 0.39, rotation: 270 })
 
     // Colours: B camera cyan, Marta her booking colour.
     expect(container.querySelector(`[data-marker-id="${markers[1]!.id}"] circle`)?.getAttribute('fill')).toBe('#22d3ee')

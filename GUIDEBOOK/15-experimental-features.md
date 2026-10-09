@@ -46,8 +46,22 @@ With **Layout** selected, pick a tool:
 1. Switch to **Setups**. The scene and its shots run along the bottom: pick the scene (scenes at this location come first), then **Blocking** for the whole scene or a shot. The chosen shot shows its description, camera details and notes.
 2. Click **Camera** and then the plan to place a camera. Cameras are lettered A, B, C… and each letter has its own colour.
 3. Click **Cast**, choose who (the scene's cast come first), then click the plan. Each person shows in their colour from the **Bookings** calendar.
-4. Click **Lights** or **Grip**, choose the kit, then click the plan. Lights are coloured by source: amber for tungsten, blue for HMI, white for LED. Every item has a label you can change.
-5. Drag anything to move it and its round knob to turn it. **Copy from** starts a shot from another setup in the same scene.
+4. Click **Lights** or **Grip**, search or browse the library, then click the plan. Lights are coloured by source: amber for tungsten, blue for HMI, white for LED. Every item has a label you can change.
+5. Drag the round handle at the end of a jib, crane or menace arm to swing it and set how far it reaches.
+6. Drag anything to move it and its round knob to turn it. **Copy from** starts a shot from another setup in the same scene.
+
+### The equipment library
+
+The library holds about 140 items, drawn to their real size so they line up with a map or a measured plan:
+
+| Section | Includes |
+|---|---|
+| **Lights** | Tungsten fresnels from 150 W to 10K, Redheads, Blondes, PAR cans, Maxi-Brutes, space lights and china balls; HMIs from Joker-Bugs and M18s to 18K fresnels and the ARRIMAX; SkyPanels, Geminis, Vortex, Nova and LED mats; COBs and LED fresnels; tubes; balloon lights |
+| **Camera support** | Fisher, PeeWee, Hybrid, doorway and western dollies; straight and curved track; Dana Dolly; sliders; sticks, baby legs and hi-hat; Steadicam and handheld; Porta-Jib, Jimmy Jib and Technocranes; arm car and low loader; drone |
+| **Grip** | Flags, floppies and cutters; frames from 4x4 to 20x20; polyboard, bounce and V-flats; C-stands, combo, roller and wind-up stands; menace arm; apple boxes, sandbags, ladders, scaffold towers and lifts; wind machine and hazer |
+| **Unit base** | Easy-ups and marquees; video village, DIT and sound carts; generators and distro; camera, grip and lighting trucks; artist, make-up and costume trailers; honeywagon, catering and dining bus; vans, minibuses and cars; toilets; barriers, cones and parking bays |
+
+Track, frames, tents, arms, barriers and parking bays can be resized. Use **Unit base** kit on a map background to lay out a unit base or a location recce.
 
 ### See the sun
 

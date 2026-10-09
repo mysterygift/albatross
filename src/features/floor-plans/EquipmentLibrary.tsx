@@ -50,9 +50,13 @@ export function EquipmentLibrary({
     () => searchCatalog(query, category).filter((item) => categories.includes(item.category)),
     [query, category, categories]
   )
-  const groups = categories
-    .map((c) => ({ category: c, items: items.filter((item) => item.category === c) }))
-    .filter((g) => g.items.length > 0)
+  // Grouped by library heading (Tungsten, Dollies...), in catalogue order.
+  const groups: { name: string; items: CatalogItem[] }[] = []
+  for (const item of items) {
+    const group = groups.find((g) => g.name === item.group)
+    if (group) group.items.push(item)
+    else groups.push({ name: item.group, items: [item] })
+  }
 
   return (
     <div className="flex max-h-[min(70vh,520px)] w-[min(92vw,460px)] flex-col gap-3">
@@ -88,8 +92,8 @@ export function EquipmentLibrary({
       <div className="-mx-1 flex-1 space-y-3 overflow-y-auto px-1">
         {groups.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">Nothing matches</p> : null}
         {groups.map((group) => (
-          <div key={group.category} className="space-y-1.5">
-            {categories.length > 1 ? <p className="text-xs text-muted-foreground">{EQUIPMENT_CATEGORY_LABELS[group.category]}</p> : null}
+          <div key={group.name} className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">{group.name}</p>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
               {group.items.map((item) => (
                 <button

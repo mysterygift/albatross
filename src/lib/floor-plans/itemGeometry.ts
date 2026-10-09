@@ -6,7 +6,7 @@
 import { catalogItem, type CatalogItem } from './catalog'
 import { GRIP_COLOR, GRIP_FILL, FLAG_FILL, LIGHT_SOURCE_COLORS, type FloorPlanItem, type Point } from './model'
 
-export type ItemRole = 'lightBody' | 'beam' | 'halo' | 'gripBody' | 'rail' | 'detail' | 'flag' | 'frame' | 'outline'
+export type ItemRole = 'lightBody' | 'beam' | 'halo' | 'gripBody' | 'rail' | 'detail' | 'flag' | 'bounce' | 'frame' | 'outline' | 'reach'
 
 export type ItemPrimitive =
   | { shape: 'rect'; x: number; y: number; w: number; h: number; rx?: number; role: ItemRole }
@@ -36,8 +36,12 @@ export function itemRoleStyle(role: ItemRole, light: string | null): {
       return { fill: null, stroke: GRIP_COLOR, strokeWidth: 1.5 }
     case 'flag':
       return { fill: FLAG_FILL, stroke: GRIP_COLOR, strokeWidth: 1.5 }
+    case 'bounce':
+      return { fill: '#f8fafc', stroke: GRIP_COLOR, strokeWidth: 1.5 }
     case 'frame':
       return { fill: '#e5e7eb', fillOpacity: 0.12, stroke: GRIP_COLOR, strokeWidth: 2 }
+    case 'reach':
+      return { fill: null, stroke: GRIP_COLOR, strokeWidth: 1, dash: [3, 4] }
     case 'outline':
       return { fill: null, stroke: GRIP_COLOR, strokeWidth: 2.5, dash: [8, 6] }
   }
@@ -168,16 +172,72 @@ export function itemPrimitives(item: Pick<FloorPlanItem, 'type' | 'width' | 'dep
       return [...legs, ...arm, { shape: 'circle', cx: 0, cy: 0, r: 3, role: 'gripBody' }]
     }
     case 'jib':
-    case 'crane': {
+    case 'crane':
+    case 'boom': {
+      // The base sits on the item's position; the arm reaches `depth` the way it faces, and a
+      // dashed arc shows where the tip can swing.
       const base = clampMin(w, 10)
+      const reach = clampMin(d, 12)
+      const swing = (40 * Math.PI) / 180
+      const arc: Point[] = Array.from({ length: 13 }, (_, i) => {
+        const a = -swing + (i / 12) * 2 * swing
+        return { x: Math.cos(a) * reach, y: Math.sin(a) * reach }
+      })
+      const footing: ItemPrimitive[] =
+        entry?.glyph === 'boom'
+          ? [0, 120, 240].map((deg) => {
+              const a = ((deg + 180) * Math.PI) / 180
+              return { shape: 'path', closed: false, role: 'rail', points: [{ x: 0, y: 0 }, { x: (Math.cos(a) * base) / 2, y: (Math.sin(a) * base) / 2 }] }
+            })
+          : [{ shape: 'rect', x: -base / 2, y: -base / 2, w: base, h: base, rx: 3, role: 'gripBody' }]
       return [
-        { shape: 'rect', x: -base / 2, y: -base / 2, w: base, h: base, rx: 3, role: 'gripBody' },
-        { shape: 'path', closed: false, role: 'rail', points: [{ x: 0, y: 0 }, { x: d, y: 0 }] },
-        { shape: 'circle', cx: d, cy: 0, r: 5, role: 'gripBody' },
+        { shape: 'path', closed: false, role: 'reach', points: arc },
+        ...footing,
+        { shape: 'path', closed: false, role: 'rail', points: [{ x: 0, y: 0 }, { x: reach, y: 0 }] },
+        { shape: 'circle', cx: reach, cy: 0, r: 5, role: 'gripBody' },
       ]
     }
     case 'flag':
       return [{ shape: 'rect', x: -clampMin(d, 3) / 2, y: -bw / 2, w: clampMin(d, 3), h: bw, rx: 0, role: 'flag' }]
+    case 'board':
+      return [{ shape: 'rect', x: -clampMin(d, 3) / 2, y: -bw / 2, w: clampMin(d, 3), h: bw, rx: 0, role: 'bounce' }]
+    case 'vflat': {
+      // Two boards hinged at the back, opening the way it faces.
+      const leaf = bw / 2
+      return [
+        { shape: 'path', closed: false, role: 'rail', points: [{ x: -bd / 2, y: 0 }, { x: bd / 2, y: -leaf }] },
+        { shape: 'path', closed: false, role: 'rail', points: [{ x: -bd / 2, y: 0 }, { x: bd / 2, y: leaf }] },
+      ]
+    }
+    case 'rig': {
+      const r = clampMin(Math.min(w, d) / 2, 8)
+      return [
+        { shape: 'circle', cx: 0, cy: 0, r, role: 'gripBody' },
+        { shape: 'path', closed: false, role: 'rail', points: [{ x: 0, y: 0 }, { x: r + 6, y: 0 }] },
+      ]
+    }
+    case 'ladder': {
+      const shapes: ItemPrimitive[] = [box('outline', 0)]
+      for (let i = 1; i < 4; i += 1) {
+        const x = -bd / 2 + (bd * i) / 4
+        shapes.push({ shape: 'path', closed: false, role: 'detail', points: [{ x, y: -bw / 2 }, { x, y: bw / 2 }] })
+      }
+      return shapes
+    }
+    case 'barrier': {
+      // A run of barrier with its feet.
+      const shapes: ItemPrimitive[] = [{ shape: 'path', closed: false, role: 'rail', points: [{ x: 0, y: -bw / 2 }, { x: 0, y: bw / 2 }] }]
+      for (const y of [-bw / 2 + 4, bw / 2 - 4]) {
+        shapes.push({ shape: 'path', closed: false, role: 'detail', points: [{ x: -bd / 2, y }, { x: bd / 2, y }] })
+      }
+      return shapes
+    }
+    case 'cone': {
+      const r = clampMin(w / 2, 5)
+      return [{ shape: 'path', closed: true, role: 'gripBody', points: [{ x: r, y: 0 }, { x: -r, y: -r }, { x: -r, y: r }] }]
+    }
+    case 'area':
+      return [box('outline', 0)]
     case 'frame':
       return [
         box('frame', 0),

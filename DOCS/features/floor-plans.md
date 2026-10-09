@@ -29,7 +29,27 @@ Experimental: draw a set or a unit base at a location (to scale, over a map or p
 | `camera` | `label` (letter); colour by letter (A orange, B cyan, C lime, D pink, E yellow, then round again) |
 | `actor` | `personId` (cast), `label` (character name, else the person's name); colour from the booking calendar (`resolvePersonColor`, principal cast colour or the supporting colour) |
 
-**Equipment colours** say the source of a light (tungsten amber, HMI daylight blue, LED white); its shape says the form (fresnel, open face, PAR, COB, panel, tube, balloon, practical). Grip and camera support are grey, flags and floppies black, tents dashed. Items are drawn to the plan's scale with a minimum size so small kit stays visible, and always carry a label (lights default to `M18 | HMI`).
+**Catalogue** (`catalog.ts`). About 140 items in four categories (Lights, Camera support, Grip, Unit base), each in a library `group` (Tungsten, HMI, LED panels, COB and LED fresnels, Tubes, Balloons; Dollies, Track and sliders, Legs and rigs, Jibs and cranes, Camera vehicles; Flags and cutters, Frames and overheads, Bounce, Stands and arms, Rigging and access, Effects; Tents, Village and carts, Power, Trucks and trailers, Facilities, Site). `width` is across and `depth` along the way the item faces; for an arm (`jib`, `crane`, `boom` glyphs, `isArmGlyph`) `depth` is the reach from the base, the selection ring stays on the base and a **Reach** handle at the tip swings and extends it. Ids are stored in plans, so never rename one; sizes can change (placed items keep their own `width`/`depth`).
+
+Sizes come from published specs where available, measured with the yoke from above:
+
+| Item | Source |
+|---|---|
+| SkyPanel S30/S60/S120/S360-C | ARRI and Panavision spec sheets (body 133 mm deep; S60 825 mm, S120 1467 mm) |
+| M18, M40, M90, ARRIMAX 18/12, True Blue T1/T2/T5, L10-C | ARRI data via Panavision, Rule, Camaleon, Adcom and retailer listings |
+| LS 600d Pro, LS 1200d Pro | Aputure help centre; Panavision |
+| Vortex4, Gemini 2x1 | Creamsource (Newsshooter); Panavision |
+| Joker-Bug 800 | K5600 via Panavision and Notes on a Film (head 330 x 230 mm) |
+| Fisher 11, Super PeeWee III/IV, Hybrid IV | Panavision, Service Vision, Cinequipt, VMI |
+| Supertechno 15 and 30 | Panavision (base 1.11 x 0.78 m, 6.04 m reach; base 1.65 x 1.49 m, 11.95 m reach) |
+| C-stand | Matthews (27.5 in / 0.7 m footprint) |
+| Western dolly | Matthews (48 x 66 in platform, 76 in overall) |
+| Magliner Gemini Jr | Magliner (21 x 47.5 in) |
+| Balloon lights | Airstar Crystal envelope sizes (1.3, 1.6, 2 m) |
+
+Everything else uses common sizes: flags, cutters and frames from their names in inches; track gauge 24.5 in (0.62 m) in 8 ft sections; UK vehicles at most 2.55 m wide. These are approximate, and resizable items can be set to the kit actually hired.
+
+**Equipment colours** say the source of a light (tungsten amber, HMI daylight blue, LED white); its shape says the form (fresnel, open face, PAR, COB, panel, tube, balloon, practical). Grip and camera support are grey, flags and floppies black, bounce white, tents and parking bays dashed, arms with a dashed swing arc. Items are drawn to the plan's scale with a minimum size so small kit stays visible, and always carry a label (lights default to `M18 | HMI`).
 
 ## How it works
 

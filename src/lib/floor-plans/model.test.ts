@@ -72,7 +72,7 @@ describe('floor plan model', () => {
     expect(markers).toEqual([
       { id: 'a', kind: 'camera', x: 1, y: 2, rotation: 90, label: 'A' },
       { id: 'c', kind: 'actor', x: 5, y: 6, rotation: 0, label: '', personId: 'p1' },
-      { id: 'd', kind: 'item', type: 'arri-m18', x: 7, y: 8, rotation: 45, label: 'M18 | HMI', width: 0.47, depth: 0.54 },
+      { id: 'd', kind: 'item', type: 'arri-m18', x: 7, y: 8, rotation: 45, label: 'M18 | HMI', width: 0.39, depth: 0.39 },
     ])
   })
 
