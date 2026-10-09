@@ -1,5 +1,9 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Minus, Plus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { isMobilePlatform } from '@/lib/platform'
 import { cn } from '@/lib/utils'
+import { FULL_VIEW, MAX_VIEW_SCALE, PlanViewContext, clampView, viewFractionToPlan, zoomView, type PlanView } from './planView'
 import { catalogItem, defaultItemLabel, isArmGlyph } from '@/lib/floor-plans/catalog'
 import { itemLightColor, itemPrimitives, itemRoleStyle, type ItemPrimitive } from '@/lib/floor-plans/itemGeometry'
 import {
@@ -43,6 +47,14 @@ export type FloorPlanTool = 'select' | 'rect' | 'path' | 'text' | 'camera' | 'ac
 const CLOSE_DISTANCE = 12
 const DOUBLE_CLICK_MS = 500
 const HANDLE = 10
+/** Invisible hit radius round a handle on touch screens, in screen-sized plan units. */
+const TOUCH_HANDLE_HIT = 22
+/** A finger that moves less than this (px) before lifting is a tap. */
+const TAP_SLOP = 10
+const ZOOM_STEP = 1.5
+
+/** Handles stay the same size on screen at any zoom (`k` = 1 / zoom), and grow a hit area on touch. */
+const HandleSizeContext = createContext<{ k: number; touch: boolean }>({ k: 1, touch: false })
 const ROTATE_HANDLE_GAP = 28
 const NUDGE = 1
 const NUDGE_FAST = 10
@@ -62,6 +74,10 @@ type Gesture =
   | { kind: 'reach-item'; id: string; target: 'shape' | 'marker' }
   | { kind: 'measure'; start: Point }
   | { kind: 'move-background'; start: Point; original: FloorPlanBackground }
+  /** A touch on the plan that places something when the finger lifts (unless it became a pinch). */
+  | { kind: 'tap'; start: Point; client: Point }
+  | { kind: 'pan'; client: Point; view: PlanView }
+  | { kind: 'pinch'; distance: number; mid: Point; view: PlanView }
   | { kind: 'resize-background'; original: FloorPlanBackground; unitsPerMetre: number }
 
 export type FloorPlanCanvasProps = {
@@ -129,20 +145,50 @@ export function FloorPlanCanvas({
   const [pathDraft, setPathDraft] = useState<Point[] | null>(null)
   const [measureDraft, setMeasureDraft] = useState<{ a: Point; b: Point } | null>(null)
   const [hover, setHover] = useState<Point | null>(null)
+  const [view, setView] = useState<PlanView>(FULL_VIEW)
+  const [touchUi] = useState(() => isMobilePlatform())
+  /** Fingers on the plan, by pointer id, in client pixels: two make a pinch. */
+  const pointers = useRef(new Map<number, Point>())
+  /** Whether the current gesture has changed anything yet (so a pinch can undo it). */
+  const moved = useRef(false)
 
   const editingLayout = !!onLayoutChange
   const editingMarkers = !!onMarkersChange
   const upm = layout.unitsPerMetre
 
+  /** Pointer position as fractions of the canvas box. */
+  const toFraction = (e: { clientX: number; clientY: number }): Point | null => {
+    const box = svgRef.current?.getBoundingClientRect()
+    if (!box || box.width === 0 || box.height === 0) return null
+    return { x: (e.clientX - box.left) / box.width, y: (e.clientY - box.top) / box.height }
+  }
+
   /** Pointer position in plan units. The SVG keeps the plan's aspect ratio, so its box maps straight on. */
   const toPlan = (e: { clientX: number; clientY: number }, clamp = true): Point => {
-    const box = svgRef.current?.getBoundingClientRect()
-    if (!box || box.width === 0 || box.height === 0) return { x: 0, y: 0 }
-    const x = ((e.clientX - box.left) / box.width) * PLAN_WIDTH
-    const y = ((e.clientY - box.top) / box.height) * PLAN_HEIGHT
-    const p = { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 }
+    const f = toFraction(e)
+    if (!f) return { x: 0, y: 0 }
+    const at = viewFractionToPlan(view, f)
+    const p = { x: Math.round(at.x * 10) / 10, y: Math.round(at.y * 10) / 10 }
     return clamp ? clampToPlan(p) : p
   }
+
+  // Ctrl/⌘ + scroll (and a trackpad pinch, which arrives as one) zooms round the pointer.
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      const box = svg.getBoundingClientRect()
+      if (box.width === 0) return
+      const at = { x: (e.clientX - box.left) / box.width, y: (e.clientY - box.top) / box.height }
+      setView((v) => zoomView(v, v.scale * Math.exp(-e.deltaY * 0.01), at))
+    }
+    svg.addEventListener('wheel', onWheel, { passive: false })
+    return () => svg.removeEventListener('wheel', onWheel)
+  }, [])
+
+  const zoomBy = (factor: number) => setView((v) => zoomView(v, v.scale * factor, { x: 0.5, y: 0.5 }))
 
   const setLayout = (patch: Partial<FloorPlanLayout>, transient: boolean) => onLayoutChange?.({ ...layout, ...patch }, transient)
   const setShapes = (shapes: FloorPlanShape[], transient: boolean) => setLayout({ shapes }, transient)
@@ -167,6 +213,7 @@ export function FloorPlanCanvas({
   }
 
   const capture = (e: ReactPointerEvent) => {
+    moved.current = false
     containerRef.current?.focus({ preventScroll: true })
     try {
       svgRef.current?.setPointerCapture(e.pointerId)
@@ -205,11 +252,28 @@ export function FloorPlanCanvas({
       setRectDraft({ a: p, b: p })
       return
     }
+    const placing = (editingLayout && (tool === 'path' || tool === 'text')) || (tool === 'item' && !!placingItem) || (editingMarkers && (tool === 'camera' || tool === 'actor'))
+    if (placing && e.pointerType === 'touch') {
+      // On touch, place when the finger lifts, so a pinch that starts here zooms instead.
+      gesture.current = { kind: 'tap', start: p, client: { x: e.clientX, y: e.clientY } }
+      return
+    }
+    if (placing) return placeAt(p, e.timeStamp, false)
+    if (view.scale > 1) gesture.current = { kind: 'pan', client: { x: e.clientX, y: e.clientY }, view }
+    onSelect(null)
+  }
+
+  /** Adds a line point, label, item, camera or cast member at `p`, for the current tool. */
+  const placeAt = (p: Point, time: number, touch: boolean) => {
     if (editingLayout && tool === 'path') {
       // The second click of a double-click (which finishes the line) adds no point of its own.
+      // On touch a double tap finishes the line (iOS sends no double-click).
       const prev = lastPathClick.current
-      lastPathClick.current = { at: p, time: e.timeStamp }
-      if (pathDraft && prev && e.timeStamp - prev.time < DOUBLE_CLICK_MS && Math.hypot(p.x - prev.at.x, p.y - prev.at.y) < 6) return
+      lastPathClick.current = { at: p, time }
+      if (pathDraft && prev && time - prev.time < DOUBLE_CLICK_MS && Math.hypot(p.x - prev.at.x, p.y - prev.at.y) < (touch ? 16 / view.scale : 6)) {
+        if (touch) finishPath(pathDraft, false)
+        return
+      }
       const points = pathDraft ?? []
       const first = points[0]
       if (first && points.length > 2 && Math.hypot(p.x - first.x, p.y - first.y) <= CLOSE_DISTANCE) {
@@ -260,14 +324,59 @@ export function FloorPlanCanvas({
       onToolChange('select')
       return
     }
-    onSelect(null)
+  }
+
+  /** Ends the current gesture because a second finger turned it into a pinch. */
+  const cancelGesture = () => {
+    const g = gesture.current
+    gesture.current = null
+    setRectDraft(null)
+    setMeasureDraft(null)
+    if (!g || !moved.current) return
+    if (g.kind === 'move-shape') replaceShape(g.original, false)
+    else if (g.kind === 'move-marker') replaceMarker(g.original, false)
+    else commitGesture(g)
+  }
+
+  const onPointerDownCapture = (e: ReactPointerEvent) => {
+    if (e.pointerType !== 'touch') return
+    // The first finger down starts afresh, in case a lift was missed.
+    if (e.isPrimary) pointers.current.clear()
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size < 2) return
+    // A second finger pinches to zoom and pan, instead of whatever the first one started.
+    e.stopPropagation()
+    if (pointers.current.size > 2) return
+    capture(e)
+    cancelGesture()
+    const [a, b] = [...pointers.current.values()] as [Point, Point]
+    const mid = toFraction({ clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 })
+    if (mid) gesture.current = { kind: 'pinch', distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), mid, view }
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const g = gesture.current
+    if (g?.kind === 'pinch') {
+      const [a, b] = [...pointers.current.values()]
+      if (!a || !b) return
+      const mid = toFraction({ clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 })
+      if (mid) setView(zoomView(g.view, (g.view.scale * Math.hypot(a.x - b.x, a.y - b.y)) / g.distance, g.mid, mid))
+      return
+    }
+    if (g?.kind === 'pan') {
+      const box = svgRef.current?.getBoundingClientRect()
+      if (!box || box.width === 0) return
+      const dx = ((e.clientX - g.client.x) / box.width) * (PLAN_WIDTH / g.view.scale)
+      const dy = ((e.clientY - g.client.y) / box.height) * (PLAN_HEIGHT / g.view.scale)
+      setView(clampView({ ...g.view, x: g.view.x - dx, y: g.view.y - dy }))
+      return
+    }
+    if (g?.kind === 'tap') return
     const p = toPlan(e)
     if (pathDraft) setHover(p)
-    const g = gesture.current
     if (!g) return
+    moved.current = true
     if (g.kind === 'draw-rect') {
       setRectDraft({ a: g.start, b: p })
     } else if (g.kind === 'measure') {
@@ -334,10 +443,22 @@ export function FloorPlanCanvas({
     }
   }
 
+  /** Records a finished drag as one undo step. */
+  const commitGesture = (g: Gesture) => {
+    const onMarker = g.kind === 'move-marker' || ((g.kind === 'rotate' || g.kind === 'resize-item' || g.kind === 'reach-item') && g.target === 'marker')
+    if (onMarker) onMarkersChange?.(markers, false)
+    else onLayoutChange?.(layout, false)
+  }
+
   const onPointerUp = (e: ReactPointerEvent) => {
+    pointers.current.delete(e.pointerId)
     const g = gesture.current
     gesture.current = null
-    if (!g) return
+    if (!g || g.kind === 'pinch' || g.kind === 'pan') return
+    if (g.kind === 'tap') {
+      if (e.type !== 'pointercancel' && Math.hypot(e.clientX - g.client.x, e.clientY - g.client.y) < TAP_SLOP) placeAt(g.start, e.timeStamp, true)
+      return
+    }
     if (g.kind === 'draw-rect') {
       setRectDraft(null)
       const r = rectFromCorners(g.start, toPlan(e))
@@ -354,10 +475,7 @@ export function FloorPlanCanvas({
       if (length >= 10) onMeasure?.(length)
       return
     }
-    // Commit the drag as one undo step.
-    const onMarker = g.kind === 'move-marker' || ((g.kind === 'rotate' || g.kind === 'resize-item' || g.kind === 'reach-item') && g.target === 'marker')
-    if (onMarker) onMarkersChange?.(markers, false)
-    else onLayoutChange?.(layout, false)
+    commitGesture(g)
   }
 
   const interactiveLayout = editingLayout && tool === 'select'
@@ -463,7 +581,9 @@ export function FloorPlanCanvas({
   const previewPoint = lastDraft && hover ? constrainSegment(lastDraft, hover, snap) : null
   const bg = layout.background
   const gridStep = gridStepUnits(upm)
-  const barMetres = scaleBarMetres(upm)
+  // The scale bar is drawn at screen size, so it measures the zoomed plan.
+  const screenUpm = upm * view.scale
+  const barMetres = scaleBarMetres(screenUpm)
 
   return (
     <div
@@ -471,13 +591,15 @@ export function FloorPlanCanvas({
       tabIndex={0}
       role="application"
       aria-label="Floor plan editor"
+      data-slot="floor-plan-canvas"
       onKeyDown={onKeyDown}
       className={cn('relative overflow-hidden rounded-xl border bg-card outline-none focus-visible:ring-2 focus-visible:ring-ring/40', className)}
     >
       <svg
         ref={svgRef}
-        viewBox={`0 0 ${PLAN_WIDTH} ${PLAN_HEIGHT}`}
+        viewBox={`${view.x} ${view.y} ${PLAN_WIDTH / view.scale} ${PLAN_HEIGHT / view.scale}`}
         className={cn('block aspect-[3/2] h-auto w-full touch-none select-none text-foreground', drawing ? 'cursor-crosshair' : 'cursor-default')}
+        onPointerDownCapture={onPointerDownCapture}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
@@ -582,16 +704,19 @@ export function FloorPlanCanvas({
           ))}
         </g>
 
-        {sun ? <SunView sun={sun} north={layout.north} /> : null}
+        {/* The sun, north arrow and scale bar stay put on screen while the plan zooms. */}
+        <g transform={`translate(${view.x} ${view.y}) scale(${1 / view.scale})`}>
+          {sun ? <SunView sun={sun} north={layout.north} /> : null}
 
-        <NorthArrow north={layout.north} />
-        <g transform={`translate(24 ${PLAN_HEIGHT - 34})`} pointerEvents="none" data-testid="floor-plan-scale-bar">
-          <rect x={0} y={0} width={barMetres * upm} height={6} className="fill-foreground" />
-          <rect x={0} y={0} width={(barMetres * upm) / 2} height={6} className="fill-muted-foreground" />
-          <text x={0} y={22} className="fill-foreground" style={{ fontSize: 13 }}>0</text>
-          <text x={barMetres * upm} y={22} textAnchor="end" className="fill-foreground" style={{ fontSize: 13 }}>
-            {barMetres} m
-          </text>
+          <NorthArrow north={layout.north} />
+          <g transform={`translate(24 ${PLAN_HEIGHT - 34})`} pointerEvents="none" data-testid="floor-plan-scale-bar">
+            <rect x={0} y={0} width={barMetres * screenUpm} height={6} className="fill-foreground" />
+            <rect x={0} y={0} width={(barMetres * screenUpm) / 2} height={6} className="fill-muted-foreground" />
+            <text x={0} y={22} className="fill-foreground" style={{ fontSize: 13 }}>0</text>
+            <text x={barMetres * screenUpm} y={22} textAnchor="end" className="fill-foreground" style={{ fontSize: 13 }}>
+              {barMetres} m
+            </text>
+          </g>
         </g>
 
         {measureDraft ? (
@@ -614,15 +739,39 @@ export function FloorPlanCanvas({
           </g>
         ) : null}
 
-        {selectedShape && tool === 'select' ? <ShapeHandles shape={selectedShape} upm={upm} startHandle={startHandle} /> : null}
-        {selectedMarker ? <MarkerHandles marker={selectedMarker} upm={upm} startHandle={startHandle} /> : null}
+        <HandleSizeContext.Provider value={{ k: 1 / view.scale, touch: touchUi }}>
+          {selectedShape && tool === 'select' ? <ShapeHandles shape={selectedShape} upm={upm} startHandle={startHandle} /> : null}
+          {selectedMarker ? <MarkerHandles marker={selectedMarker} upm={upm} startHandle={startHandle} /> : null}
+        </HandleSizeContext.Provider>
       </svg>
       {pathDraft ? (
-        <p className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-background/90 px-2 py-1 text-xs text-muted-foreground shadow-sm">
-          Double-click to finish | Esc to cancel
-        </p>
+        <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-background/90 px-2 py-1 shadow-sm">
+          {touchUi ? (
+            <Button type="button" size="sm" variant="ghost" onClick={() => { setPathDraft(null); setHover(null) }}>
+              Cancel
+            </Button>
+          ) : (
+            <span className="text-xs text-muted-foreground">Double-click to finish | Esc to cancel</span>
+          )}
+          <Button type="button" size="sm" disabled={pathDraft.length < 2} onClick={() => finishPath(pathDraft, false)}>
+            Done
+          </Button>
+        </div>
       ) : null}
-      {children}
+      <div className="absolute right-2 bottom-2 flex items-center rounded-lg border bg-background/90 shadow-sm">
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Zoom out" disabled={view.scale <= 1} onClick={() => zoomBy(1 / ZOOM_STEP)}>
+          <Minus />
+        </Button>
+        {view.scale > 1 ? (
+          <Button type="button" size="sm" variant="ghost" aria-label="Show the whole plan" className="px-1.5 tabular-nums" onClick={() => setView(FULL_VIEW)}>
+            {Math.round(view.scale * 100)}%
+          </Button>
+        ) : null}
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Zoom in" disabled={view.scale >= MAX_VIEW_SCALE} onClick={() => zoomBy(ZOOM_STEP)}>
+          <Plus />
+        </Button>
+      </div>
+      <PlanViewContext.Provider value={view}>{children}</PlanViewContext.Provider>
     </div>
   )
 }
@@ -872,11 +1021,18 @@ function Handle({
   label: string
   onPointerDown: (e: ReactPointerEvent) => void
 }) {
-  const common = { className: cn('fill-background stroke-primary', cursor), strokeWidth: 2, onPointerDown, 'aria-label': label }
-  return round ? (
-    <circle cx={at.x} cy={at.y} r={HANDLE / 1.6} {...common} />
-  ) : (
-    <rect x={at.x - HANDLE / 2} y={at.y - HANDLE / 2} width={HANDLE} height={HANDLE} {...common} />
+  const { k, touch } = useContext(HandleSizeContext)
+  const size = HANDLE * k
+  const common = { className: cn('fill-background stroke-primary', cursor), strokeWidth: 2 * k, onPointerDown, 'aria-label': label }
+  return (
+    <>
+      {touch ? <circle cx={at.x} cy={at.y} r={TOUCH_HANDLE_HIT * k} fill="transparent" className={cursor} onPointerDown={onPointerDown} /> : null}
+      {round ? (
+        <circle cx={at.x} cy={at.y} r={size / 1.6} {...common} />
+      ) : (
+        <rect x={at.x - size / 2} y={at.y - size / 2} width={size} height={size} {...common} />
+      )}
+    </>
   )
 }
 

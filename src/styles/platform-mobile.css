@@ -133,3 +133,19 @@ html[data-platform] [data-slot="registry-picker-row"] {
   user-select: none;
   -webkit-touch-callout: none;
 }
+
+/*
+ * Floor Plans (and its equipment library) opt into `data-touch-targets`; its icon-only tool buttons
+ * are made square at 40pt too. A long-press on the plan drags or places, never selects text or opens
+ * the callout. Pinch zoom and taps are handled in `FloorPlanCanvas`.
+ */
+@media (pointer: coarse) {
+  html[data-platform] [data-floor-plans] [data-slot="button"][data-size^="icon"] {
+    min-width: 2.5rem;
+  }
+}
+html[data-platform] [data-slot="floor-plan-canvas"] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}

@@ -55,7 +55,7 @@ export function FloorPlanDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" data-touch-targets>
         <DialogHeader>
           <DialogTitle>{plan ? 'Edit floor plan' : 'New floor plan'}</DialogTitle>
           <DialogDescription>A floor plan is a drawing of one space at a location, such as a room or a yard.</DialogDescription>
@@ -194,7 +194,7 @@ export function ExportFloorPlansDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg" data-touch-targets>
         <DialogHeader>
           <DialogTitle>Export floor plans</DialogTitle>
           <DialogDescription>

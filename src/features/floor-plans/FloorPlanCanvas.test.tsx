@@ -343,4 +343,66 @@ describe('FloorPlanCanvas', () => {
     expect(screen.getByText('15:30 | 30°')).toBeTruthy()
     expect(screen.getByText('12')).toBeTruthy()
   })
+
+  describe('on touch', () => {
+    const touch = (x: number, y: number, pointerId = 1) => ({ ...at(x, y), pointerId, pointerType: 'touch', isPrimary: pointerId === 1 })
+
+    it('places when the finger lifts, not when it lands', () => {
+      const onChange = vi.fn()
+      render(<LayoutHarness tool="text" onChange={onChange} />)
+      fireEvent.pointerDown(background(), touch(300, 300))
+      expect(onChange).not.toHaveBeenCalled()
+      fireEvent.pointerUp(svg(), touch(303, 302))
+      expect(onChange.mock.calls.at(-1)![0].shapes).toEqual([expect.objectContaining({ kind: 'text', text: 'Label' })])
+    })
+
+    it('a second finger pinches to zoom instead of placing', () => {
+      const onChange = vi.fn()
+      render(<LayoutHarness tool="text" onChange={onChange} />)
+      fireEvent.pointerDown(background(), touch(500, 400, 1))
+      fireEvent.pointerDown(background(), touch(700, 400, 2))
+      fireEvent.pointerMove(svg(), touch(400, 400, 1))
+      fireEvent.pointerMove(svg(), touch(800, 400, 2))
+      fireEvent.pointerUp(svg(), touch(400, 400, 1))
+      fireEvent.pointerUp(svg(), touch(800, 400, 2))
+      expect(onChange).not.toHaveBeenCalled()
+      // Fingers twice as far apart: twice the zoom, round the point between them.
+      expect(svg().getAttribute('viewBox')).toBe('300 200 600 400')
+      expect(screen.getByRole('button', { name: 'Show the whole plan' }).textContent).toBe('200%')
+    })
+
+    it('a double tap finishes a line', () => {
+      const onChange = vi.fn()
+      render(<LayoutHarness tool="path" onChange={onChange} />)
+      for (const [x, y] of [[100, 100], [300, 100], [300, 100]]) {
+        fireEvent.pointerDown(background(), touch(x!, y!))
+        fireEvent.pointerUp(svg(), touch(x!, y!))
+      }
+      expect(onChange.mock.calls.at(-1)![0].shapes).toEqual([
+        expect.objectContaining({ kind: 'path', points: [{ x: 100, y: 100 }, { x: 300, y: 100 }], closed: false }),
+      ])
+    })
+  })
+
+  it('zooms with the buttons and maps clicks through the zoom', () => {
+    const onChange = vi.fn()
+    render(<LayoutHarness tool="rect" onChange={onChange} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }))
+    expect(svg().getAttribute('viewBox')).toBe('200 133.33333333333331 800 533.3333333333334')
+    fireEvent.pointerDown(background(), at(0, 0))
+    fireEvent.pointerMove(svg(), at(600, 400))
+    fireEvent.pointerUp(svg(), at(600, 400))
+    expect(onChange.mock.calls.at(-1)![0].shapes).toEqual([expect.objectContaining({ kind: 'rect', x: 200, y: 133.3, width: 400, height: 266.7 })])
+    fireEvent.click(screen.getByRole('button', { name: 'Show the whole plan' }))
+    expect(svg().getAttribute('viewBox')).toBe('0 0 1200 800')
+  })
+
+  it('finishes a line with Done', () => {
+    const onChange = vi.fn()
+    render(<LayoutHarness tool="path" onChange={onChange} />)
+    fireEvent.pointerDown(background(), at(100, 100))
+    fireEvent.pointerDown(background(), { ...at(400, 100), timeStamp: 10_000 })
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(onChange.mock.calls.at(-1)![0].shapes).toEqual([expect.objectContaining({ kind: 'path', closed: false })])
+  })
 })

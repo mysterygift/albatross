@@ -44,6 +44,7 @@ import type { FloorPlanGeo, FloorPlanLayout, FloorPlanMarker, FloorPlanShape } f
 import { formatClock, localTimeZone, sunDay, sunOverlay, type SunOverlay } from '@/lib/floor-plans/sun'
 import { sceneSlugline } from '@/lib/schedule/sceneDisplay'
 import type { ScheduleExportSources } from '@/lib/schedule/scheduleExportSources'
+import { isIosPlatform } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { BackgroundDialog, LocationDialog } from './BackgroundDialog'
 import { EquipmentLibrary } from './EquipmentLibrary'
@@ -153,7 +154,7 @@ const STATUS_TEXT: Record<AutosaveStatus, string> = {
 
 function SaveStatus({ status }: { status: AutosaveStatus }) {
   return (
-    <span className={cn('px-1 text-xs', status === 'error' ? 'text-destructive' : 'text-muted-foreground')} aria-live="polite">
+    <span className={cn('inline-block min-w-16 px-1 text-right text-xs', status === 'error' ? 'text-destructive' : 'text-muted-foreground')} aria-live="polite">
       {STATUS_TEXT[status]}
     </span>
   )
@@ -199,7 +200,16 @@ function LibraryButton({
           {label}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto p-3">
+      <PopoverContent
+        align="start"
+        className="w-auto p-3"
+        data-touch-targets
+        data-floor-plans
+        // On iOS, focusing the search box would bring up the keyboard over the list.
+        onOpenAutoFocus={(e) => {
+          if (isIosPlatform()) e.preventDefault()
+        }}
+      >
         <EquipmentLibrary
           categories={categories}
           onPick={(item) => {
@@ -269,7 +279,7 @@ function SunControl({ sun, day, onSetLocation }: { sun: SunSettings; day: SunDay
           step={5}
           value={value}
           onChange={(e) => sun.setMinutes(Number(e.target.value))}
-          className="w-36 accent-amber-400"
+          className="w-28 accent-amber-400 lg:w-36"
         />
         <span className="w-12 text-sm text-foreground tabular-nums">{formatClock(value)}</span>
       </label>

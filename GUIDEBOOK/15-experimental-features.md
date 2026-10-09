@@ -41,6 +41,8 @@ With **Layout** selected, pick a tool:
 
 **90°** keeps lines straight across or up and down and turns things a quarter at a time. Turn it off to draw and turn freely. Press Delete to remove the selected item, the arrow keys to nudge it, and ⌘Z / Ctrl+Z to undo. Everything saves as you go.
 
+To get in close, use **+** and **−** in the corner of the plan, or pinch on an iPad (two fingers also move the plan around). Tap the percentage to see the whole plan again. On an iPad, tap to place things, double-tap or tap **Done** to finish a line, and drag the round and square handles with your finger.
+
 ### Plot the setups
 
 1. Switch to **Setups**. The scene and its shots run along the bottom: pick the scene (scenes at this location come first), then **Blocking** for the whole scene or a shot. The chosen shot shows its description, camera details and notes.

@@ -196,7 +196,7 @@ function FloorPlansWorkspace() {
   const newPlan = () => setPlanDialog({ plan: null, key: Date.now() })
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-touch-targets data-floor-plans>
       <div className="flex flex-wrap items-center gap-3">
         {plan ? (
           <DropdownMenu>

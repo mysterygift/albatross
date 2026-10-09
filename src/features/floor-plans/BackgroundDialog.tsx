@@ -81,7 +81,7 @@ export function LocationDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" data-touch-targets>
         <DialogHeader>
           <DialogTitle>Location</DialogTitle>
         </DialogHeader>
@@ -178,7 +178,7 @@ export function BackgroundDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg" data-touch-targets>
         <DialogHeader>
           <DialogTitle>Background</DialogTitle>
         </DialogHeader>

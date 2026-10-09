@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Search } from 'lucide-react'
+import { isIosPlatform } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import {
   EQUIPMENT_CATEGORY_LABELS,
@@ -64,7 +65,8 @@ export function EquipmentLibrary({
         <Search className="size-4 text-muted-foreground" aria-hidden />
         <span className="sr-only">Search equipment</span>
         <input
-          autoFocus
+          // On iOS the keyboard would cover the list as soon as it opens.
+          autoFocus={!isIosPlatform()}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search"

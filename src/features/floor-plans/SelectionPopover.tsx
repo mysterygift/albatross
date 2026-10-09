@@ -1,3 +1,4 @@
+import { useContext } from 'react'
 import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -7,8 +8,6 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Textarea } from '@/components/ui/textarea'
 import { catalogItem, isArmGlyph } from '@/lib/floor-plans/catalog'
 import {
-  PLAN_HEIGHT,
-  PLAN_WIDTH,
   cameraColor,
   itemColor,
   normalizeAngle,
@@ -19,6 +18,7 @@ import {
 } from '@/lib/floor-plans/model'
 import { cn } from '@/lib/utils'
 import { formatItemSize } from './floorPlanDisplay'
+import { PlanViewContext, planToViewFraction } from './planView'
 
 export type CastOption = { personId: string; name: string; color: string; inScene: boolean }
 
@@ -94,9 +94,13 @@ export function SelectionPopover({
   textInputRef?: React.Ref<HTMLTextAreaElement>
   onTextCommit?: () => void
 }) {
-  const anchor = selectionAnchor(entity)
-  const flipX = anchor.x > PLAN_WIDTH * 0.6
-  const flipY = anchor.y > PLAN_HEIGHT * 0.55
+  // Where the selection is on screen, as fractions of the canvas (the plan may be zoomed in).
+  const view = useContext(PlanViewContext)
+  const at = planToViewFraction(view, selectionAnchor(entity))
+  const fx = Math.min(1, Math.max(0, at.x))
+  const fy = Math.min(1, Math.max(0, at.y))
+  const flipX = fx > 0.6
+  const flipY = fy > 0.55
   const swatch = (color: string, round = false) => (
     <span className={cn('size-3 shrink-0 border border-black/20', round ? 'rounded-full' : 'rounded-sm')} style={{ background: color }} />
   )
@@ -269,8 +273,8 @@ export function SelectionPopover({
     body = <p className="text-sm text-muted-foreground">{formatItemSize(entity.width / unitsPerMetre, entity.height / unitsPerMetre)}</p>
   }
 
-  const left = `${(anchor.x / PLAN_WIDTH) * 100}%`
-  const top = `${(anchor.y / PLAN_HEIGHT) * 100}%`
+  const left = `${fx * 100}%`
+  const top = `${fy * 100}%`
   return (
     <div
       role="dialog"
