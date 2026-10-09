@@ -24,11 +24,14 @@ export function VendorPicker({
   value,
   onChange,
   placeholder = 'Select vendor',
+  mixed = false,
 }: {
   productionId: string
   value: string | null
   onChange: (vendorId: string | null) => void
   placeholder?: string
+  /** Show the placeholder instead of a value (bulk edit where items have different vendors). */
+  mixed?: boolean
 }) {
   const queryClient = useQueryClient()
   const { data: vendors = [], isLoading } = useQuery({
@@ -55,7 +58,7 @@ export function VendorPicker({
 
   const options = useMemo(() => vendors, [vendors])
 
-  const selectValue = value && value.trim() !== '' ? value : '__no_vendor__'
+  const selectValue = mixed ? '' : value && value.trim() !== '' ? value : '__no_vendor__'
 
   return (
     <div className="flex items-center gap-2">

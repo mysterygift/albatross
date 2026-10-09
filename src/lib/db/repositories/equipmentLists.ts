@@ -215,6 +215,29 @@ export async function getMaxSortOrderForList(listId: string): Promise<number> {
 }
 
 /**
+ * Append several registry items to the end of a list, in the given order.
+ * Equipment already on the list is skipped so an item never appears twice.
+ */
+export async function addEquipmentItemsToList(
+  listId: string,
+  additions: Array<{ equipment_id: string; quantity?: number }>
+): Promise<EquipmentListItem[]> {
+  if (additions.length === 0) return []
+  const existing = new Set((await listEquipmentListItems(listId)).map((i) => i.equipment_id))
+  let sortOrder = await getMaxSortOrderForList(listId)
+  const added: EquipmentListItem[] = []
+  for (const { equipment_id, quantity } of additions) {
+    if (existing.has(equipment_id)) continue
+    added.push(
+      await addEquipmentItemToList({ equipment_list_id: listId, equipment_id, sort_order: sortOrder, quantity })
+    )
+    existing.add(equipment_id)
+    sortOrder += 1
+  }
+  return added
+}
+
+/**
  * Reorder list items by assigning sort_order 0, 1, 2, ... to the given item ids in order.
  * Ids must be exactly the set of item ids on the list (no duplicates, no missing).
  */

@@ -239,6 +239,30 @@ export async function updateEquipmentWithReminderTask(
   return updated
 }
 
+export type BulkEquipmentUpdateResult = {
+  updated: Equipment[]
+  failed: Array<{ equipment: Equipment; error: unknown }>
+}
+
+/**
+ * Apply the same patch to several equipment items, keeping each item's reminder task in sync.
+ * Each item is updated in its own transaction; a failure on one item does not stop the rest.
+ */
+export async function bulkUpdateEquipmentWithReminderTasks(
+  items: Equipment[],
+  patch: UpdateEquipmentPatch
+): Promise<BulkEquipmentUpdateResult> {
+  const result: BulkEquipmentUpdateResult = { updated: [], failed: [] }
+  for (const item of items) {
+    try {
+      result.updated.push(await updateEquipmentWithReminderTask(item.id, patch, item))
+    } catch (error) {
+      result.failed.push({ equipment: item, error })
+    }
+  }
+  return result
+}
+
 function buildEquipmentReminderTaskPatch(
   hierarchy: CrewHierarchyConfig,
   merged: Equipment,
