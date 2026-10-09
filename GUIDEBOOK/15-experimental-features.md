@@ -41,6 +41,8 @@ With **Layout** selected, pick a tool:
 
 **90°** keeps lines straight across or up and down and turns things a quarter at a time. Turn it off to draw and turn freely. Press Delete to remove the selected item, the arrow keys to nudge it, and ⌘Z / Ctrl+Z to undo. Everything saves as you go.
 
+To get in close, hold ⌘ (Ctrl on Windows) and scroll, or pinch on a trackpad. Drag empty floor to move around while zoomed in, and zoom back out to see the whole plan. While drawing a line, click **Done** (or double-click) to finish it.
+
 ### Plot the setups
 
 1. Switch to **Setups**. The scene and its shots run along the bottom: pick the scene (scenes at this location come first), then **Blocking** for the whole scene or a shot. The chosen shot shows its description, camera details and notes.
