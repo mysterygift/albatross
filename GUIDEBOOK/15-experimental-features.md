@@ -1,6 +1,6 @@
 # 15. Experimental features
 
-Experimental features are on-set tools that are still being tested. They are hidden by default so they don't clutter the app. Switch them on when you want to try them. Currently these are **Script Supervisor**, **Overtime** and **Send Day Pack**.
+Experimental features are on-set tools that are still being tested. They are hidden by default so they don't clutter the app. Switch them on when you want to try them. Currently these are **Floor Plans**, **Script Supervisor**, **Overtime** and **Send Day Pack**.
 
 ## Turn them on
 
@@ -9,9 +9,54 @@ Experimental features are on-set tools that are still being tested. They are hid
 
 ![Experimental features card in Settings → Developer](images/15-experimental-toggle.png)
 
-**Script Supervisor** now appears under **Script** in the sidebar, **Overtime** under **People** and **Send Day Pack** under **Deliver**, each marked with a flask icon and an **Experimental** badge. They also appear in search. Untick the box to hide them again. Nothing you have recorded is deleted.
+**Floor Plans** now appears under **Schedule** in the sidebar, **Script Supervisor** under **Script**, **Overtime** under **People** and **Send Day Pack** under **Deliver**, each marked with a flask icon and an **Experimental** badge. They also appear in search. Untick the box to hide them again. Nothing you have recorded is deleted.
 
 > **Note** Experimental features may change between releases. They store their data on this computer only, so they are not available for a production opened from a collaboration server.
+
+## Floor Plans
+
+Floor Plans lets you draw the spaces at your locations and mark where the cameras and actors go for each scene and shot. Open **Schedule → Floor Plans**.
+
+![A floor plan with cameras and actors plotted for a shot](images/15-floor-plans.png)
+
+### Draw a floor plan
+
+1. Click **New floor plan**, give it a name (for example *Kitchen*) and choose its **Location**. A location can have as many plans as it has spaces. Add the location on **Locations** first if it isn't there.
+2. With **Draw layout** selected, pick a tool from the toolbar:
+
+| Tool | How to use it |
+|---|---|
+| **Rectangle** | Click and drag. Good for rooms, tables, beds and doorways |
+| **Line** | Click from point to point. Double-click or press Enter to finish; click the first point again to close the shape. Esc cancels |
+| **Text** | Click where the label goes, then type it in **Label text** |
+| **Select** | Click a shape to select it, drag it to move it. Drag a corner to resize a rectangle, a point to reshape a line. A label has a square corner to resize it and a round knob to rotate it |
+
+3. **Snap to 90°** keeps lines straight across or straight up and down, and turns labels a quarter at a time. Untick it to draw and rotate freely.
+
+Press Delete to remove the selected shape, the arrow keys to nudge it (hold Shift for bigger steps) and ⌘Z / Ctrl+Z to undo. Everything saves as you go.
+
+### Plot the setups
+
+1. Switch to **Plot setups**.
+2. Choose the **Scene** (scenes set at this plan's location are listed first), then the **Shot**, or **Whole scene (blocking)** for positions that apply to every shot. The shot's description, size, lens, support, movement and cast show beneath the plan while you work.
+3. Pick **Camera** or **Actor** and click on the plan to place one. Cameras are labelled A, B, C…; actors 1, 2, 3… Type a different label, such as the character's name, in the box under the plan.
+4. Drag a marker to move it, and drag its round knob to turn it to face the right way. **Snap to 90°** works here too.
+5. Add **Setup notes** if you need them, such as where the dolly track runs.
+
+Shots that already have a setup on the plan show ● in the **Shot** list. **Start from…** copies the markers of another setup in the same scene, so you only move what changes.
+
+### Export floor plans
+
+Click **Export PDF** and choose what to print:
+
+| Choice | Prints |
+|---|---|
+| **Shoot day** | Every setup for the shots on that day, on every unit and at every location, in stripboard order |
+| **Location** | Every floor plan at the location with all its setups. A plan with no setups prints its layout |
+| **Scene** | The scene's blocking, then each shot's setup |
+| **Shots** | Just the shots you tick |
+
+Each setup prints the floor plan with its cameras and actors, and the shot details and notes underneath. A copy is filed under **Documents → Script & sides**, then a save dialog opens.
 
 ## Script Supervisor
 

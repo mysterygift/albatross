@@ -72,10 +72,10 @@ Tests use the default `node` environment; component tests opt in with a `// @vit
 6. Add `DOCS/features/<feature>.md` from the template in [README.md](README.md).
 
 ## Add a migration
-Local SQLite schema changes are numbered files in `src-tauri/migrations/` (currently up to `0106`). For a new one:
+Local SQLite schema changes are numbered files in `src-tauri/migrations/` (currently up to `0108`). For a new one:
 1. Create `src-tauri/migrations/NNNN_short_name.sql` with the next number.
 2. Add a `Migration { version: NNNN, description, sql: include_str!(...), kind: MigrationKind::Up }` entry at the end of the list in `src-tauri/src/lib.rs`. A file without an entry never runs.
-3. Add the matching Postgres migration in `postgres/migrations/` (currently up to `0034`), run `node scripts/postgres/generatePhase2Artifacts.mjs` to refresh `postgres/schema/baseline.sql`, and keep `npm run test:postgres` schema parity passing ([collaboration.md](collaboration.md)).
+3. Add the matching Postgres migration in `postgres/migrations/` (currently up to `0036`), run `node scripts/postgres/generatePhase2Artifacts.mjs` to refresh `postgres/schema/baseline.sql`, and keep `npm run test:postgres` schema parity passing ([collaboration.md](collaboration.md)).
 4. Restart `tauri:dev`. Never edit a migration that has shipped; add a new one.
 
 Rules for writing migrations, SQLite/Postgres differences and the parity tests: [database.md](database.md).

@@ -120,6 +120,8 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     productionCrewHoursSettings,
     crewHoursPersonSettings,
     crewDayHours,
+    floorPlans,
+    floorPlanSetups,
   ] = await Promise.all([
     db.select<Record<string, unknown>[]>(
       `SELECT * FROM productions WHERE id = $1 AND deleted_at IS NULL`,
@@ -574,6 +576,14 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
       `SELECT * FROM crew_day_hours WHERE production_id = $1 AND deleted_at IS NULL`,
       [$1]
     ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM floor_plans WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
+    db.select<Record<string, unknown>[]>(
+      `SELECT * FROM floor_plan_setups WHERE production_id = $1 AND deleted_at IS NULL`,
+      [$1]
+    ),
   ])
 
   const exportedDocumentIds = new Set(documents.map((d) => d.id as string))
@@ -685,6 +695,8 @@ export async function loadApfV1ProductionTables(productionId: string): Promise<A
     production_crew_hours_settings: asRows(productionCrewHoursSettings),
     crew_hours_person_settings: asRows(crewHoursPersonSettings),
     crew_day_hours: asRows(crewDayHours),
+    floor_plans: asRows(floorPlans),
+    floor_plan_setups: asRows(floorPlanSetups),
   }
 
   for (const key of APF_V1_TABLE_KEYS) {

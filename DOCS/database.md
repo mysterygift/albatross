@@ -61,7 +61,7 @@ Reference implementations: `moveShootDayToDate` in `repositories/schedule.ts`, `
 
 ## Migrations
 
-SQLite migrations are plain SQL files in `src-tauri/migrations/` named `NNNN_<entity>_<descriptor>.sql` (currently `0001` to `0107`). Each is registered in `src-tauri/src/lib.rs`, in the `migrations` vec in `run()`:
+SQLite migrations are plain SQL files in `src-tauri/migrations/` named `NNNN_<entity>_<descriptor>.sql` (currently `0001` to `0108`). Each is registered in `src-tauri/src/lib.rs`, in the `migrations` vec in `run()`:
 
 ```rust
 Migration { version: 105, description: "crew_availability_cascade",
@@ -107,7 +107,7 @@ Postgres: `postgres/schema/baseline.sql` is the full baseline and `postgres/migr
 
 ## Schema map
 
-119 tables after migration `0107`, derived by applying all migrations. Almost all rows are production-scoped with `id` (UUID text) and the three timestamps; only notable details are listed.
+121 tables after migration `0108`, derived by applying all migrations. Almost all rows are production-scoped with `id` (UUID text) and the three timestamps; only notable details are listed.
 
 **Productions and episodes**
 
@@ -158,7 +158,7 @@ Postgres: `postgres/schema/baseline.sql` is the full baseline and `postgres/migr
 | `cast_availability`, `crew_availability` | Availability windows |
 | `crew_day_hours`, `crew_hours_person_settings`, `production_crew_hours_settings` | Overtime: hours, per-person exemption, rules |
 
-**Locations**: `locations` (address, what3words, parking, contact; encrypted), `location_scene` (location to scene links).
+**Locations**: `locations` (address, what3words, parking, contact; encrypted), `location_scene` (location to scene links), `floor_plans` and `floor_plan_setups` (drawings of a location's spaces and the camera/actor positions per scene or shot; [Floor Plans](features/floor-plans.md)).
 
 **Equipment**: `equipment` (items, rental/return, invoice link), `equipment_lists`, `equipment_list_items` (checkout lists), `equipment_terms` (shot/prop vocab).
 

@@ -43,6 +43,7 @@ Permits and location release forms are ordinary documents (`entity_type` `permit
 - [Call sheets](call-sheets.md): location name, address, parking, what3words (`pdf/callSheet.ts`).
 - [Movement orders](movement-orders.md): addresses, what3words, maps, pins.
 - [Script](script.md): import creates/links locations (with spelling-variant merge); Breakdown sourcing status.
+- [Floor Plans](floor-plans.md) (experimental): drawings of a location's spaces with camera and actor positions; a deleted location hides its plans.
 - Global search indexes location fields including what3words. Duplicate production and `.apf` export copy `locations` and `location_scene`.
 
 ## Gotchas

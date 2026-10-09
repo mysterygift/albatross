@@ -956,6 +956,34 @@ export async function duplicateProduction(
     })
   }
 
+  // Floor plans follow their copied location; setups follow the copied plan, scene and shot.
+  const [floorPlans, floorPlanSetups] = await Promise.all([
+    db.select<Record<string, unknown>[]>(`SELECT * FROM floor_plans WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+    db.select<Record<string, unknown>[]>(`SELECT * FROM floor_plan_setups WHERE production_id = $1 AND deleted_at IS NULL`, [sourceProductionId]),
+  ])
+  const floorPlanIdMap: IdMap = new Map()
+  for (const r of floorPlans) {
+    const locationId = locationIdMap.get(r.location_id as string)
+    if (!locationId) continue
+    const id = newId()
+    floorPlanIdMap.set(r.id as string, id)
+    statements.push({
+      sql: `INSERT INTO floor_plans (id, production_id, location_id, name, layout_json, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      bindValues: [id, newProdId, locationId, r.name, r.layout_json, ts, ts],
+    })
+  }
+  for (const r of floorPlanSetups) {
+    const planId = floorPlanIdMap.get(r.floor_plan_id as string)
+    const sceneId = sceneIdMap.get(r.scene_id as string)
+    const oldShotId = (r.shot_id as string | null) ?? null
+    const shotId = oldShotId ? shotIdMap.get(oldShotId) : null
+    if (!planId || !sceneId || shotId === undefined) continue
+    statements.push({
+      sql: `INSERT INTO floor_plan_setups (id, production_id, floor_plan_id, scene_id, shot_id, markers_json, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      bindValues: [newId(), newProdId, planId, sceneId, shotId, r.markers_json, r.notes ?? null, ts, ts],
+    })
+  }
+
   // Crew hierarchy is production-specific setup; Crew Manager, task mapping, and call-sheet
   // ordering depend on it. Duplicate any stored config so the new production keeps the same
   // operational structure. If source has no config row, none is created—resolver falls back to default.

@@ -217,6 +217,8 @@ Panels are matched to shots by the number printed on each one, so number your bo
 
 Click **Export PDF** and choose **This scene** (when one scene is selected) or **All scenes**. Panels print three across in shot order, each labelled with its shot number and size, with the shot description underneath. JPG and PNG images print as they are; other formats print as an empty frame. A copy is filed under **Documents → Script & sides**, then a save dialog opens.
 
+> **Tip** To plan where the cameras and actors stand for each shot, try the experimental [Floor Plans](15-experimental-features.md#floor-plans).
+
 ## Episodic productions
 
 In an episodic production, scenes belong to an episode and days belong to a shooting bloc. Shot Lists asks for an **Episode** on scenes. The Calendar and the Stripboard show the bloc on each day and add a bloc filter with **All blocs**, **Outside blocs** and each named bloc. Add episodes and blocs under **Settings → Production**, in the **Episodic production** card. See [Productions](03-productions.md).

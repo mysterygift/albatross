@@ -3,7 +3,12 @@ import { ApfInvalidDataError, ApfMigrationError } from '@/lib/importExport/error
 import type { ApfManifestV1 } from '@/lib/importExport/manifest'
 import type { ApfV1DataFile, ApfV1Tables } from '@/lib/importExport/payload'
 import { assertApfManifestDataFormatVersionAligned } from '@/lib/importExport/payload'
-import { APF_V10_TABLE_KEYS, APF_V11_TABLE_KEYS, APF_V9_TABLE_KEYS } from '@/lib/importExport/tableKeys'
+import {
+  APF_V10_TABLE_KEYS,
+  APF_V11_TABLE_KEYS,
+  APF_V12_TABLE_KEYS,
+  APF_V9_TABLE_KEYS,
+} from '@/lib/importExport/tableKeys'
 
 export type ApfMigrationContext = {
   manifest: ApfManifestV1
@@ -277,6 +282,21 @@ const migrateV10ToV11: ApfFileMigrator = {
   },
 }
 
+/** v12 adds floor plans (`floor_plans`, `floor_plan_setups`). Older payloads get empty tables. */
+const migrateV11ToV12: ApfFileMigrator = {
+  fromVersion: 11,
+  toVersion: 12,
+  migrate: (ctx) => {
+    const next = cloneCtx(ctx)
+    next.manifest.formatVersion = 12
+    next.data.formatVersion = 12
+    for (const key of APF_V12_TABLE_KEYS) {
+      if (!Array.isArray(next.data.tables[key])) next.data.tables[key] = []
+    }
+    return next
+  },
+}
+
 /** Registered migrators for older `.apf` payloads (sequential v → v+1). */
 export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [
   migrateV1ToV2,
@@ -289,6 +309,7 @@ export const APF_FILE_MIGRATIONS: ApfFileMigrator[] = [
   migrateV8ToV9,
   migrateV9ToV10,
   migrateV10ToV11,
+  migrateV11ToV12,
 ]
 
 /**

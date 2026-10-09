@@ -11,6 +11,7 @@ Offline-first. Your data stays on your machine. Here's what's new.
 - 📋 **Call sheets** – industry-standard A4 layout.
 - 📅 **Calendar** – brand new look. Drag a whole shoot day, or just one unit, by mouse or touch (press and hold, then drag). Drop a unit on another unit to swap Main/Second.
 - 📨 **Send Day Pack** (experimental, under Deliver) – email everyone called to a unit their own name-watermarked call sheet, movement order, sides, shooting schedule, shot list, risk assessments and storyboard. On a Mac, Apple Mail or Outlook opens each draft with the files attached; you check it and press Send.
+- 📐 **Floor Plans** (experimental, under Schedule) – draw the rooms at a location with rectangles, lines and labels, then mark where the cameras and actors go for each scene and shot, with the shot description shown as you work. Snap to 90° or draw freely. Export a PDF for a shoot day, a location, a scene or chosen shots.
 - 🖨️ **Export PDF** on the Stripboard (shooting schedule), Shot Lists and Storyboard.
 - 👥 **Book crew to a unit** – on days with several units, a booking can be for one unit, so each unit's call sheet lists only its own crew.
 - 🎥 **Up to five units a day** – Main, Second, Third, Fourth and Fifth Unit. **Add Second Unit** on the Stripboard is now **Add unit**.

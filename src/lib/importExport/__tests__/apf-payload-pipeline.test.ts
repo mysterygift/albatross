@@ -16,7 +16,7 @@ import { ApfInvalidDataError, ApfUnknownFormatVersionError, ApfUnsupportedFormat
 import { migrateApfToCurrentVersion, migrateScenesDropHeading } from '@/lib/importExport/migrate'
 import { normalizeApfManifestAndData } from '@/lib/importExport/pipeline'
 import { parseApfV1DataFileJson } from '@/lib/importExport/payload'
-import { APF_V9_TABLE_KEYS } from '@/lib/importExport/tableKeys'
+import { APF_V12_TABLE_KEYS, APF_V9_TABLE_KEYS } from '@/lib/importExport/tableKeys'
 import { buildFixtureDataAndManifest, emptyApfTables, minimalProductionRow, TEST_PRODUCTION_ID } from '@/test/apf/fixtures'
 
 describe('getApfFormatCompatibility', () => {
@@ -240,6 +240,20 @@ describe('migrateApfToCurrentVersion', () => {
     const out = migrateApfToCurrentVersion({ manifest, data: data as typeof d9 })
     expect(out.manifest.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
     for (const key of APF_V9_TABLE_KEYS) expect(out.data.tables[key]).toEqual([])
+  })
+
+  it('v11→v12 adds the floor plan tables as empty arrays', () => {
+    const tables = emptyApfTables()
+    tables.productions = [minimalProductionRow()]
+    const { manifest: m12, dataFile: d12 } = buildFixtureDataAndManifest({ tables })
+    const manifest = { ...m12, formatVersion: 11 as const }
+    const data = JSON.parse(JSON.stringify(d12)) as (typeof d12 & { formatVersion: number })
+    data.formatVersion = 11
+    for (const key of APF_V12_TABLE_KEYS) delete (data.tables as Record<string, unknown>)[key]
+
+    const out = migrateApfToCurrentVersion({ manifest, data: data as typeof d12 })
+    expect(out.manifest.formatVersion).toBe(CURRENT_APF_FORMAT_VERSION)
+    for (const key of APF_V12_TABLE_KEYS) expect(out.data.tables[key]).toEqual([])
   })
 
   it('normalizes a v8 file that has none of the v9 table keys', () => {
