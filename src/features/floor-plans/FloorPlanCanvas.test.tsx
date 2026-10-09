@@ -397,6 +397,31 @@ describe('FloorPlanCanvas', () => {
     expect(svg().getAttribute('viewBox')).toBe('0 0 1200 800')
   })
 
+  it('zooms round the pointer with Ctrl or Cmd + scroll, and maps clicks through the zoom', () => {
+    const onChange = vi.fn()
+    render(<LayoutHarness tool="rect" onChange={onChange} />)
+    // A plain scroll is left to the page.
+    fireEvent.wheel(svg(), { clientX: 600, clientY: 400, deltaY: -100 })
+    expect(svg().getAttribute('viewBox')).toBe('0 0 1200 800')
+    fireEvent.wheel(svg(), { clientX: 600, clientY: 400, deltaY: -100 * Math.log(2), metaKey: true })
+    expect(svg().getAttribute('viewBox')).toBe('300 200 600 400')
+    fireEvent.pointerDown(background(), at(0, 0))
+    fireEvent.pointerMove(svg(), at(600, 400))
+    fireEvent.pointerUp(svg(), at(600, 400))
+    expect(onChange.mock.calls.at(-1)![0].shapes).toEqual([expect.objectContaining({ kind: 'rect', x: 300, y: 200, width: 300, height: 200 })])
+    fireEvent.wheel(svg(), { clientX: 600, clientY: 400, deltaY: 1000, ctrlKey: true })
+    expect(svg().getAttribute('viewBox')).toBe('0 0 1200 800')
+  })
+
+  it('pans by dragging empty floor when zoomed in', () => {
+    render(<LayoutHarness tool="select" onChange={vi.fn()} />)
+    fireEvent.wheel(svg(), { clientX: 600, clientY: 400, deltaY: -100 * Math.log(2), ctrlKey: true })
+    fireEvent.pointerDown(background(), at(600, 400))
+    fireEvent.pointerMove(svg(), at(400, 300))
+    fireEvent.pointerUp(svg(), at(400, 300))
+    expect(svg().getAttribute('viewBox')).toBe('400 250 600 400')
+  })
+
   it('finishes a line with Done', () => {
     const onChange = vi.fn()
     render(<LayoutHarness tool="path" onChange={onChange} />)

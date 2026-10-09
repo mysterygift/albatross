@@ -41,7 +41,7 @@ With **Layout** selected, pick a tool:
 
 **90°** keeps lines straight across or up and down and turns things a quarter at a time. Turn it off to draw and turn freely. Press Delete to remove the selected item, the arrow keys to nudge it, and ⌘Z / Ctrl+Z to undo. Everything saves as you go.
 
-To get in close, use **+** and **−** in the corner of the plan, or pinch on an iPad (two fingers also move the plan around). Tap the percentage to see the whole plan again. On an iPad, tap to place things, double-tap or tap **Done** to finish a line, and drag the round and square handles with your finger.
+To get in close, use **+** and **−** in the corner of the plan, hold ⌘ (Ctrl on Windows) and scroll, or pinch on an iPad or trackpad. Drag empty floor (or use two fingers on an iPad) to move around while zoomed in, and click or tap the percentage to see the whole plan again. Click **Done** (or double-click) to finish a line. On an iPad, tap to place things, double-tap or tap **Done** to finish a line, and drag the round and square handles with your finger.
 
 ### Plot the setups
 
