@@ -125,7 +125,7 @@ export async function renderLocationMap(args: {
 /** A map background covering the plan; its scale is the plan's new scale. */
 export function mapBackground(lat: number, lon: number, metresAcross: number, opacity = 0.8): { background: FloorPlanBackground; unitsPerMetre: number } {
   return {
-    background: { source: 'map', x: 0, y: 0, width: PLAN_WIDTH, height: PLAN_HEIGHT, opacity, map: { lat, lon, metresAcross } },
+    background: { source: 'map', x: 0, y: 0, width: PLAN_WIDTH, height: PLAN_HEIGHT, opacity, rotation: 0, map: { lat, lon, metresAcross } },
     unitsPerMetre: PLAN_WIDTH / metresAcross,
   }
 }

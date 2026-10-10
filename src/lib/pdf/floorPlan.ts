@@ -14,6 +14,8 @@ import {
   CAMERA_VIEW_LENGTH,
   DEFAULT_ACTOR_COLOR,
   DEFAULT_SHAPE_FILL_OPACITY,
+  backgroundCentre,
+  backgroundCorners,
   cameraColor,
   drawingBounds,
   itemReach,
@@ -224,7 +226,14 @@ function planBounds(plan: FloorPlan, markers: FloorPlanMarker[]): Bounds | null 
   const drawn = drawingBounds(plan.layout, markers)
   const bg = plan.background_image ? plan.layout.background : null
   if (!bg) return drawn
-  const pic = { minX: bg.x, minY: bg.y, maxX: bg.x + bg.width, maxY: bg.y + bg.height }
+  // A turned picture covers its turned corners.
+  const corners = backgroundCorners(bg)
+  const pic = {
+    minX: Math.min(...corners.map((p) => p.x)),
+    minY: Math.min(...corners.map((p) => p.y)),
+    maxX: Math.max(...corners.map((p) => p.x)),
+    maxY: Math.max(...corners.map((p) => p.y)),
+  }
   if (!drawn) return pic
   return {
     minX: Math.min(drawn.minX, pic.minX),
@@ -434,9 +443,22 @@ function drawPlanBox(layout: PdfLayout, entry: FloorPlanPdfEntry, background: PD
 
   const bg = plan.background
   if (background && bg) {
-    const a = t.local({ x: bg.x, y: bg.y })
-    const b = t.local({ x: bg.x + bg.width, y: bg.y + bg.height })
-    page.drawImage(background, { x: t.originX + a.x, y: t.originY - b.y, width: b.x - a.x, height: b.y - a.y, opacity: bg.opacity })
+    // pdf-lib turns an image about its bottom-left corner, anticlockwise with y up; the plan turns
+    // it clockwise about its centre. Place the corner so the centre lands where it should.
+    const c = t.local(backgroundCentre(bg))
+    const w = bg.width * scale
+    const h = bg.height * scale
+    const a = (-bg.rotation * Math.PI) / 180
+    const cornerX = Math.cos(a) * (-w / 2) - Math.sin(a) * (-h / 2)
+    const cornerY = Math.sin(a) * (-w / 2) + Math.cos(a) * (-h / 2)
+    page.drawImage(background, {
+      x: t.originX + c.x + cornerX,
+      y: t.originY - c.y + cornerY,
+      width: w,
+      height: h,
+      rotate: degrees(-bg.rotation),
+      opacity: bg.opacity,
+    })
   }
 
   for (const shape of plan.shapes) {

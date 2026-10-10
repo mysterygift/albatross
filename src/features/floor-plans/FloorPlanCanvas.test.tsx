@@ -282,7 +282,7 @@ describe('FloorPlanCanvas', () => {
     const initial: FloorPlanLayout = {
       ...emptyLayout(),
       unitsPerMetre: 20,
-      background: { source: 'image', x: 100, y: 100, width: 600, height: 400, opacity: 0.6, map: null },
+      background: { source: 'image', x: 100, y: 100, width: 600, height: 400, opacity: 0.6, rotation: 0, map: null },
     }
     function BackgroundHarness() {
       const [layout, setLayout] = useState(initial)
@@ -311,11 +311,61 @@ describe('FloorPlanCanvas', () => {
     fireEvent.pointerUp(svg(), at(350, 320))
     expect(onChange.mock.calls.at(-1)![0].background).toMatchObject({ x: 150, y: 120 })
     // Double the width from the corner: the height and the scale double too.
-    fireEvent.pointerDown(screen.getByLabelText('Resize background'), at(750, 520))
-    fireEvent.pointerMove(svg(), at(1350, 900))
-    const last = onChange.mock.calls.at(-1)![0] as FloorPlanLayout
-    expect(last.background).toMatchObject({ width: 1200, height: 800 })
+    // Four corner dots and a turn dot.
+    expect(screen.getAllByLabelText(/^Scale from /)).toHaveLength(4)
+    // Double the size from the bottom-right corner: the top-left stays, the scale doubles too.
+    fireEvent.pointerDown(screen.getByLabelText('Scale from bottom right'), at(750, 520))
+    fireEvent.pointerMove(svg(), at(1350, 920))
+    fireEvent.pointerUp(svg(), at(1350, 920))
+    let last = onChange.mock.calls.at(-1)![0] as FloorPlanLayout
+    expect(last.background).toMatchObject({ x: 150, y: 120, width: 1200, height: 800 })
     expect(last.unitsPerMetre).toBe(40)
+    // Shrink back from the top-left corner: now the bottom-right stays.
+    fireEvent.pointerDown(screen.getByLabelText('Scale from top left'), at(150, 120))
+    fireEvent.pointerMove(svg(), at(750, 520))
+    fireEvent.pointerUp(svg(), at(750, 520))
+    last = onChange.mock.calls.at(-1)![0] as FloorPlanLayout
+    expect(last.background).toMatchObject({ x: 750, y: 520, width: 600, height: 400 })
+    expect(last.unitsPerMetre).toBe(20)
+  })
+
+  it('turns the background about its centre, and north turns with it', () => {
+    const onChange = vi.fn()
+    const initial: FloorPlanLayout = {
+      ...emptyLayout(),
+      north: 10,
+      background: { source: 'map', x: 150, y: 120, width: 600, height: 400, opacity: 0.6, rotation: 0, map: null },
+    }
+    function BackgroundHarness() {
+      const [layout, setLayout] = useState(initial)
+      return (
+        <FloorPlanCanvas
+          layout={layout}
+          backgroundImage="data:image/jpeg;base64,AAAA"
+          onLayoutChange={(next, transient) => {
+            setLayout(next)
+            onChange(next, transient)
+          }}
+          tool="background"
+          onToolChange={() => {}}
+          snap
+          selectedId={null}
+          onSelect={() => {}}
+          onUndo={() => {}}
+          onRedo={() => {}}
+        />
+      )
+    }
+    render(<BackgroundHarness />)
+    // The turn dot sits above the top edge; swing it a quarter turn round the centre (450, 320).
+    fireEvent.pointerDown(screen.getByLabelText('Rotate background'), at(450, 92))
+    fireEvent.pointerMove(svg(), at(678, 320))
+    fireEvent.pointerUp(svg(), at(678, 320))
+    const [last, transient] = onChange.mock.calls.at(-1)! as [FloorPlanLayout, boolean]
+    expect(transient).toBe(false)
+    expect(last.background?.rotation).toBe(90)
+    expect(last.north).toBe(100)
+    expect(screen.getByTestId('floor-plan-background-image').getAttribute('transform')).toBe('rotate(90 450 320)')
   })
 
   it('draws the sun path and where the sun is', () => {

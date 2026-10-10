@@ -15,6 +15,8 @@ import {
   PLAN_HEIGHT,
   PLAN_WIDTH,
   angleBetween,
+  backgroundCentre,
+  backgroundCorners,
   cameraColor,
   clampToPlan,
   constrainSegment,
@@ -24,7 +26,9 @@ import {
   pathData,
   planAngleForBearing,
   rectFromCorners,
+  rotateBackground,
   rotatePoint,
+  scaleBackgroundFromCorner,
   scaleBarMetres,
   snapAngle,
   textCentre,
@@ -69,7 +73,8 @@ type Gesture =
   | { kind: 'measure'; start: Point }
   | { kind: 'move-background'; start: Point; original: FloorPlanBackground }
   | { kind: 'pan'; client: Point; view: PlanView }
-  | { kind: 'resize-background'; original: FloorPlanBackground; unitsPerMetre: number }
+  | { kind: 'resize-background'; original: FloorPlanBackground; corner: number; unitsPerMetre: number }
+  | { kind: 'rotate-background'; original: FloorPlanBackground; north: number; start: Point }
 
 export type FloorPlanCanvasProps = {
   layout: FloorPlanLayout
@@ -370,13 +375,17 @@ export function FloorPlanCanvas({
       const free = toPlan(e, false)
       setLayout({ background: { ...g.original, x: g.original.x + free.x - g.start.x, y: g.original.y + free.y - g.start.y } }, true)
     } else if (g.kind === 'resize-background') {
-      // The top-left corner stays put and the picture keeps its shape. The plan's scale was set on
+      // The opposite corner stays put and the picture keeps its shape. The plan's scale was set on
       // the picture, so it grows and shrinks with it.
-      const free = toPlan(e, false)
-      const o = g.original
-      const width = Math.max(60, free.x - o.x)
-      const factor = width / o.width
-      setLayout({ background: { ...o, width, height: o.height * factor }, unitsPerMetre: g.unitsPerMetre * factor }, true)
+      const { background, factor } = scaleBackgroundFromCorner(g.original, g.corner, toPlan(e, false))
+      setLayout({ background, unitsPerMetre: g.unitsPerMetre * factor }, true)
+    } else if (g.kind === 'rotate-background') {
+      // Turns about the picture's centre by how far the pointer has swung round it; north follows.
+      // Shift snaps to 15° steps.
+      const c = backgroundCentre(g.original)
+      let rotation = g.original.rotation + angleBetween(c, toPlan(e, false)) - angleBetween(c, g.start)
+      if (e.shiftKey) rotation = Math.round(rotation / 15) * 15
+      setLayout(rotateBackground({ ...layout, background: g.original, north: g.north }, rotation), true)
     }
   }
 
@@ -552,6 +561,7 @@ export function FloorPlanCanvas({
             width={bg.width}
             height={bg.height}
             opacity={bg.opacity}
+            transform={bg.rotation ? `rotate(${bg.rotation} ${bg.x + bg.width / 2} ${bg.y + bg.height / 2})` : undefined}
             preserveAspectRatio="none"
             data-testid="floor-plan-background-image"
           />
@@ -658,19 +668,14 @@ export function FloorPlanCanvas({
           </g>
         ) : null}
 
-        {tool === 'background' && bg ? (
-          <g>
-            <rect x={bg.x} y={bg.y} width={bg.width} height={bg.height} fill="none" className="stroke-primary" strokeWidth={2} strokeDasharray="10 6" pointerEvents="none" />
-            <Handle
-              at={{ x: Math.min(bg.x + bg.width, PLAN_WIDTH - 6), y: Math.min(bg.y + bg.height, PLAN_HEIGHT - 6) }}
-              cursor="cursor-nwse-resize"
-              label="Resize background"
-              onPointerDown={(e) => startHandle(e, { kind: 'resize-background', original: bg, unitsPerMetre: upm })}
-            />
-          </g>
-        ) : null}
-
         <HandleSizeContext.Provider value={{ k: 1 / view.scale }}>
+          {tool === 'background' && bg ? (
+            <BackgroundHandles
+              bg={bg}
+              onScale={(e, corner) => startHandle(e, { kind: 'resize-background', original: bg, corner, unitsPerMetre: upm })}
+              onRotate={(e) => startHandle(e, { kind: 'rotate-background', original: bg, north: layout.north, start: toPlan(e, false) })}
+            />
+          ) : null}
           {selectedShape && tool === 'select' ? <ShapeHandles shape={selectedShape} upm={upm} startHandle={startHandle} /> : null}
           {selectedMarker ? <MarkerHandles marker={selectedMarker} upm={upm} startHandle={startHandle} /> : null}
         </HandleSizeContext.Provider>
@@ -927,6 +932,53 @@ function ItemHandles({
       {catalogItem(item.type)?.resizable ? (
         <Handle at={corner} cursor="cursor-nwse-resize" label="Resize" onPointerDown={(e) => startHandle(e, { kind: 'resize-item', id: item.id, target })} />
       ) : null}
+    </g>
+  )
+}
+
+const BACKGROUND_CORNER_LABELS = ['Scale from top left', 'Scale from top right', 'Scale from bottom right', 'Scale from bottom left']
+
+/**
+ * The background's outline with a dot on each corner (scale, keeping its shape) and one on a stalk
+ * above its top edge (turn). Handles that would fall off the plan are kept just inside it.
+ */
+function BackgroundHandles({
+  bg,
+  onScale,
+  onRotate,
+}: {
+  bg: FloorPlanBackground
+  onScale: (e: ReactPointerEvent, corner: number) => void
+  onRotate: (e: ReactPointerEvent) => void
+}) {
+  const { k } = useContext(HandleSizeContext)
+  const inside = (p: Point) => ({ x: Math.min(Math.max(p.x, 8 * k), PLAN_WIDTH - 8 * k), y: Math.min(Math.max(p.y, 8 * k), PLAN_HEIGHT - 8 * k) })
+  const corners = backgroundCorners(bg)
+  const c = backgroundCentre(bg)
+  const topMid = rotatePoint({ x: c.x, y: bg.y }, c, bg.rotation)
+  const knob = inside(rotatePoint({ x: c.x, y: bg.y - ROTATE_HANDLE_GAP * k }, c, bg.rotation))
+  const stalkFrom = inside(topMid)
+  return (
+    <g data-testid="floor-plan-background-handles">
+      <polygon
+        points={corners.map((p) => `${p.x},${p.y}`).join(' ')}
+        fill="none"
+        className="stroke-primary"
+        strokeWidth={2 * k}
+        strokeDasharray={`${10 * k} ${6 * k}`}
+        pointerEvents="none"
+      />
+      <line x1={stalkFrom.x} y1={stalkFrom.y} x2={knob.x} y2={knob.y} className="stroke-primary" strokeWidth={1.5 * k} pointerEvents="none" />
+      <Handle at={knob} round cursor="cursor-grab" label="Rotate background" onPointerDown={onRotate} />
+      {corners.map((p, i) => (
+        <Handle
+          key={i}
+          at={inside(p)}
+          cursor={i % 2 === 0 ? 'cursor-nwse-resize' : 'cursor-nesw-resize'}
+          label={BACKGROUND_CORNER_LABELS[i]!}
+          onPointerDown={(e) => onScale(e, i)}
+        />
+      ))}
     </g>
   )
 }
