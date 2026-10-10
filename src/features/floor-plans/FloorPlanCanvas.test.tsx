@@ -397,6 +397,66 @@ describe('FloorPlanCanvas', () => {
   describe('on touch', () => {
     const touch = (x: number, y: number, pointerId = 1) => ({ ...at(x, y), pointerId, pointerType: 'touch', isPrimary: pointerId === 1 })
 
+    it('spreads and twists the background with two fingers; north and the scale follow', () => {
+      const onChange = vi.fn()
+      const initial: FloorPlanLayout = {
+        ...emptyLayout(),
+        unitsPerMetre: 20,
+        north: 5,
+        background: { source: 'map', x: 400, y: 300, width: 400, height: 200, opacity: 0.6, rotation: 0, map: null },
+      }
+      function BackgroundHarness() {
+        const [layout, setLayout] = useState(initial)
+        return (
+          <FloorPlanCanvas
+            layout={layout}
+            backgroundImage="data:image/jpeg;base64,AAAA"
+            onLayoutChange={(next, transient) => {
+              setLayout(next)
+              onChange(next, transient)
+            }}
+            tool="background"
+            onToolChange={() => {}}
+            snap
+            selectedId={null}
+            onSelect={() => {}}
+            onUndo={() => {}}
+            onRedo={() => {}}
+          />
+        )
+      }
+      render(<BackgroundHarness />)
+      // Fingers either side of the centre (600, 400), then twice as far apart and a quarter turn round.
+      fireEvent.pointerDown(background(), touch(550, 400, 1))
+      fireEvent.pointerDown(background(), touch(650, 400, 2))
+      fireEvent.pointerMove(svg(), touch(600, 300, 1))
+      fireEvent.pointerMove(svg(), touch(600, 500, 2))
+      fireEvent.pointerUp(svg(), touch(600, 300, 1))
+      fireEvent.pointerUp(svg(), touch(600, 500, 2))
+      const [last, transient] = onChange.mock.calls.at(-1)! as [FloorPlanLayout, boolean]
+      expect(transient).toBe(false)
+      expect(last.background).toMatchObject({ x: 200, y: 200, width: 800, height: 400, rotation: 90 })
+      expect(last.north).toBe(95)
+      expect(last.unitsPerMetre).toBe(40)
+    })
+
+    it('twists a light with two fingers, starting on it', () => {
+      const onChange = vi.fn()
+      const initial: FloorPlanLayout = {
+        ...emptyLayout(),
+        shapes: [{ id: 'm18', kind: 'item', type: 'arri-m18', x: 600, y: 400, rotation: 0, label: 'M18 | HMI', width: 0.39, depth: 0.39 }],
+      }
+      render(<LayoutHarness initial={initial} tool="select" snap={false} onChange={onChange} />)
+      const light = document.querySelector('[data-item-id="m18"]')!
+      fireEvent.pointerDown(light, touch(600, 400, 1))
+      fireEvent.pointerDown(background(), touch(700, 400, 2))
+      fireEvent.pointerMove(svg(), touch(700, 500, 2))
+      fireEvent.pointerUp(svg(), touch(700, 500, 2))
+      const [last, transient] = onChange.mock.calls.at(-1)! as [FloorPlanLayout, boolean]
+      expect(transient).toBe(false)
+      expect(last.shapes[0]).toMatchObject({ rotation: 45 })
+    })
+
     it('places when the finger lifts, not when it lands', () => {
       const onChange = vi.fn()
       render(<LayoutHarness tool="text" onChange={onChange} />)

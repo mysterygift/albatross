@@ -3,6 +3,7 @@ import { Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isMobilePlatform } from '@/lib/platform'
 import { cn } from '@/lib/utils'
+import { applyTwoFinger, twoFingerTransform, type TwoFingerTransform } from './twoFinger'
 import { FULL_VIEW, MAX_VIEW_SCALE, PlanViewContext, clampView, viewFractionToPlan, zoomView, type PlanView } from './planView'
 import { catalogItem, defaultItemLabel, isArmGlyph } from '@/lib/floor-plans/catalog'
 import { itemLightColor, itemPrimitives, itemRoleStyle, type ItemPrimitive } from '@/lib/floor-plans/itemGeometry'
@@ -83,6 +84,10 @@ type Gesture =
   | { kind: 'tap'; start: Point; client: Point }
   | { kind: 'pan'; client: Point; view: PlanView }
   | { kind: 'pinch'; distance: number; mid: Point; view: PlanView }
+  /** Two fingers on the background (Background tool): spread to scale it, twist to turn it. */
+  | { kind: 'pinch-background'; a0: Point; b0: Point; original: FloorPlanBackground; north: number; unitsPerMetre: number }
+  /** Two fingers on a shape or marker: twist to turn it, spread to scale it where it has a size. */
+  | { kind: 'pinch-target'; a0: Point; b0: Point; original: FloorPlanShape | FloorPlanMarker; target: 'shape' | 'marker' }
   | { kind: 'resize-background'; original: FloorPlanBackground; corner: number; unitsPerMetre: number }
   | { kind: 'rotate-background'; original: FloorPlanBackground; north: number; start: Point }
 
@@ -354,15 +359,98 @@ export function FloorPlanCanvas({
     e.stopPropagation()
     if (pointers.current.size > 2) return
     capture(e)
-    cancelGesture()
     const [a, b] = [...pointers.current.values()] as [Point, Point]
+    const a0 = toPlan({ clientX: a.x, clientY: a.y }, false)
+    const b0 = toPlan({ clientX: b.x, clientY: b.y }, false)
+    const first = gesture.current
+    // With the Background tool, two fingers scale and turn the picture.
+    if (tool === 'background' && layout.background) {
+      const original = first?.kind === 'move-background' ? first.original : layout.background
+      if (first?.kind === 'move-background' && moved.current) setLayout({ background: original }, true)
+      gesture.current = { kind: 'pinch-background', a0, b0, original, north: layout.north, unitsPerMetre: upm }
+      return
+    }
+    // The first finger on a shape or marker: the second one twists and scales it, from where it was.
+    if (first?.kind === 'move-shape' || first?.kind === 'move-marker') {
+      const target = first.kind === 'move-shape' ? 'shape' : 'marker'
+      if (moved.current) replaceTarget(first.original as FloorPlanItem, target, true)
+      gesture.current = { kind: 'pinch-target', a0, b0, original: first.original, target }
+      return
+    }
+    // Anywhere else, two fingers zoom and pan the view.
+    cancelGesture()
     const mid = toFraction({ clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 })
     if (mid) gesture.current = { kind: 'pinch', distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), mid, view }
+  }
+
+  /** The current two-finger transform, in plan units. */
+  const fingers = (a0: Point, b0: Point): TwoFingerTransform | null => {
+    const [a, b] = [...pointers.current.values()]
+    if (!a || !b) return null
+    return twoFingerTransform(a0, b0, toPlan({ clientX: a.x, clientY: a.y }, false), toPlan({ clientX: b.x, clientY: b.y }, false))
+  }
+
+  const pinchBackground = (g: Extract<Gesture, { kind: 'pinch-background' }>) => {
+    const t = fingers(g.a0, g.b0)
+    if (!t) return
+    const o = g.original
+    const scale = Math.max(60 / o.width, t.scale)
+    const centre = applyTwoFinger({ ...t, scale }, t.turn, backgroundCentre(o))
+    const width = o.width * scale
+    const height = o.height * scale
+    const background = { ...o, x: centre.x - width / 2, y: centre.y - height / 2, width, height }
+    // The picture set the plan's scale, so it follows; north turns with the picture.
+    setLayout(
+      { ...rotateBackground({ ...layout, background, north: g.north }, o.rotation + t.turn), unitsPerMetre: g.unitsPerMetre * scale },
+      true
+    )
+  }
+
+  const pinchTarget = (g: Extract<Gesture, { kind: 'pinch-target' }>) => {
+    const t = fingers(g.a0, g.b0)
+    if (!t) return
+    const o = g.original
+    const turnTo = (rotation: number) => (snap ? snapAngle(rotation + t.turn) : Math.round(rotation + t.turn))
+    const carry = (p: Point, turn = t.turn, scale = t.scale) => applyTwoFinger({ ...t, scale }, turn, p)
+    let next: FloorPlanShape | FloorPlanMarker
+    if (o.kind === 'item') {
+      const rotation = turnTo(o.rotation)
+      const sized = catalogItem(o.type)?.resizable
+      const size = (m: number) => Math.max(0.1, Math.round(m * t.scale * 10) / 10)
+      next = {
+        ...o,
+        ...clampToPlan(carry(o, rotation - o.rotation, 1)),
+        rotation,
+        ...(sized ? { width: size(o.width), depth: size(o.depth) } : {}),
+      }
+    } else if (o.kind === 'camera' || o.kind === 'actor') {
+      const rotation = turnTo(o.rotation)
+      next = { ...o, ...clampToPlan(carry(o, rotation - o.rotation, 1)), rotation }
+    } else if (o.kind === 'text') {
+      const rotation = turnTo(o.rotation)
+      const scale = Math.max(MIN_TEXT_SIZE / Math.min(o.width, o.height), t.scale)
+      const c = carry(textCentre(o), rotation - o.rotation, 1)
+      const width = o.width * scale
+      const height = o.height * scale
+      next = { ...o, x: c.x - width / 2, y: c.y - height / 2, width, height, rotation, fontSize: Math.round(o.fontSize * scale) }
+    } else if (o.kind === 'rect') {
+      // Rectangles stay square to the plan: two fingers scale them about their centre.
+      const c = carry({ x: o.x + o.width / 2, y: o.y + o.height / 2 }, 0)
+      const width = Math.max(4, o.width * t.scale)
+      const height = Math.max(4, o.height * t.scale)
+      next = { ...o, x: c.x - width / 2, y: c.y - height / 2, width, height }
+    } else {
+      const turn = snap ? snapAngle(t.turn) : t.turn
+      next = { ...o, points: o.points.map((p) => carry(p, turn)) }
+    }
+    replaceTarget(next as FloorPlanItem, g.target, true)
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     const g = gesture.current
+    if (g?.kind === 'pinch-background') return pinchBackground(g)
+    if (g?.kind === 'pinch-target') return pinchTarget(g)
     if (g?.kind === 'pinch') {
       const [a, b] = [...pointers.current.values()]
       if (!a || !b) return
@@ -465,6 +553,13 @@ export function FloorPlanCanvas({
     const g = gesture.current
     gesture.current = null
     if (!g || g.kind === 'pinch' || g.kind === 'pan') return
+    // Lifting a finger ends a two-finger change as one undo step.
+    if (g.kind === 'pinch-background') return void onLayoutChange?.(layout, false)
+    if (g.kind === 'pinch-target') {
+      if (g.target === 'marker') onMarkersChange?.(markers, false)
+      else onLayoutChange?.(layout, false)
+      return
+    }
     if (g.kind === 'tap') {
       if (e.type !== 'pointercancel' && Math.hypot(e.clientX - g.client.x, e.clientY - g.client.y) < TAP_SLOP) placeAt(g.start, e.timeStamp, true)
       return
