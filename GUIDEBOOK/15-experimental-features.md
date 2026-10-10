@@ -24,7 +24,7 @@ Floor Plans lets you draw a set or a unit base at a location, to scale, and mark
 1. Click **New floor plan**, give it a name (for example *Kitchen* or *Unit base*) and choose its **Location**. Add the location on **Locations** first if it isn't there. To switch plans later, click the plan's name at the top of the page.
 2. Click **Background** in the toolbar if you want something to draw over:
    - **Map of location** draws a map of the location's address, north up and to scale (choose 100, 200 or 500 m across). It needs a map key in **Settings**.
-   - **Image** uses a picture you have, such as a map screenshot or a recce photo. Then choose **Fit**, **Fill** or **Move** (drag it, or drag its corner to resize it) and set its **Opacity**.
+   - **Image** uses a picture you have, such as a map screenshot or a recce photo. Then choose **Fit**, **Fill** or **Adjust**, and set its **Opacity**. With **Adjust**, drag the picture to move it, drag a corner dot to scale it, or drag the dot above it to turn it (hold Shift for 15° steps). You can also type a **Rotation**. North turns with the picture, so a map stays true.
 3. Set the scale: type the **Plan width** in metres, or click the ruler, drag along something you know the length of (a doorway, a road) and type its length. Set **North** so the arrow points north on your picture.
 
 ### Draw the layout

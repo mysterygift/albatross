@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_UNITS_PER_METRE,
   angleBetween,
+  backgroundCorners,
   cameraColor,
   emptyLayout,
   itemColor,
@@ -13,6 +14,8 @@ import {
   parseLayout,
   parseMarkers,
   rectFromCorners,
+  rotateBackground,
+  scaleBackgroundFromCorner,
   snapAngle,
   textCorners,
   translateShape,
@@ -54,6 +57,26 @@ describe('floor plan model', () => {
       { id: 'r', kind: 'rect', x: 0, y: 0, width: 10, height: 10, stroke: '#ef4444', fill: '#22c55e', fillOpacity: 1 },
       { id: 'p', kind: 'path', points: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 }], closed: true, fillOpacity: 0.25 },
     ])
+  })
+
+  it('turns a background with north, and scales it from a corner', () => {
+    const bg = { source: 'image' as const, x: 100, y: 100, width: 400, height: 200, opacity: 0.6, rotation: 0, map: null }
+    const layout = { ...emptyLayout(), north: 350, background: bg }
+    expect(rotateBackground(layout, 30)).toEqual({ background: { ...bg, rotation: 30 }, north: 20 })
+    expect(rotateBackground({ ...layout, background: { ...bg, rotation: 30 }, north: 20 }, -10)).toMatchObject({ background: { rotation: 350 }, north: 340 })
+    // Turned a quarter, the top-left corner swings round to the top-right of the centre.
+    const turned = { ...bg, rotation: 90 }
+    const [tl] = backgroundCorners(turned)
+    expect(tl.x).toBeCloseTo(400)
+    expect(tl.y).toBeCloseTo(0)
+    // Scaling from a corner of the turned picture keeps the opposite corner in place.
+    const fixed = backgroundCorners(turned)[0]
+    const { background, factor } = scaleBackgroundFromCorner(turned, 2, { x: 0, y: 800 })
+    expect(factor).toBeCloseTo(2)
+    expect(backgroundCorners(background)[0].x).toBeCloseTo(fixed.x)
+    expect(backgroundCorners(background)[0].y).toBeCloseTo(fixed.y)
+    expect(background).toMatchObject({ rotation: 90, width: 800, height: 400 })
+    expect(parseLayout(JSON.stringify({ shapes: [], background: { ...bg, rotation: -90 } })).background?.rotation).toBe(270)
   })
 
   it('parses scale, north, background, location and equipment', () => {

@@ -71,6 +71,11 @@ export type FloorPlanBackground = {
   height: number
   /** 0 to 1. */
   opacity: number
+  /**
+   * Degrees clockwise about the picture's centre. Turning the picture turns north with it (see
+   * `rotateBackground`): a map rendered north up has north = rotation.
+   */
+  rotation: number
   /** Map backgrounds: what was rendered, so it can be rendered again. */
   map?: { lat: number; lon: number; metresAcross: number } | null
 }
@@ -218,6 +223,7 @@ function parseBackground(v: unknown): FloorPlanBackground | null {
     width: b.width,
     height: b.height,
     opacity: isNum(b.opacity) ? Math.min(1, Math.max(0, b.opacity)) : 0.6,
+    rotation: isNum(b.rotation) ? normalizeAngle(b.rotation) : 0,
     map: m && isNum(m.lat) && isNum(m.lon) && isNum(m.metresAcross) ? { lat: m.lat, lon: m.lon, metresAcross: m.metresAcross } : null,
   }
 }
@@ -423,4 +429,60 @@ export function scaleBarMetres(unitsPerMetre: number): number {
  */
 export function planAngleForBearing(north: number, bearing: number): number {
   return normalizeAngle(north + bearing - 90)
+}
+
+/** Centre of the background picture, which it turns about. */
+export function backgroundCentre(bg: Pick<FloorPlanBackground, 'x' | 'y' | 'width' | 'height'>): Point {
+  return { x: bg.x + bg.width / 2, y: bg.y + bg.height / 2 }
+}
+
+/** The picture's corners on the plan, turned with it: top-left, top-right, bottom-right, bottom-left. */
+export function backgroundCorners(bg: FloorPlanBackground): [Point, Point, Point, Point] {
+  const c = backgroundCentre(bg)
+  const at = (x: number, y: number) => rotatePoint({ x, y }, c, bg.rotation || 0)
+  return [at(bg.x, bg.y), at(bg.x + bg.width, bg.y), at(bg.x + bg.width, bg.y + bg.height), at(bg.x, bg.y + bg.height)]
+}
+
+/**
+ * Turns the background to `rotation` degrees, turning north by the same amount: north is a fact
+ * about the picture (where the map's top points), so it follows the picture round.
+ */
+export function rotateBackground(layout: FloorPlanLayout, rotation: number): Pick<FloorPlanLayout, 'background' | 'north'> {
+  const bg = layout.background
+  if (!bg) return { background: null, north: layout.north }
+  const next = normalizeAngle(Math.round(rotation * 10) / 10)
+  return {
+    background: { ...bg, rotation: next },
+    // Plans saved before backgrounds could turn have no rotation: that is 0.
+    north: normalizeAngle(Math.round((layout.north + next - (bg.rotation || 0)) * 10) / 10),
+  }
+}
+
+/** Corner signs from the centre, in the picture's own frame: top-left, top-right, bottom-right, bottom-left. */
+const CORNER_SIGNS: ReadonlyArray<readonly [number, number]> = [[-1, -1], [1, -1], [1, 1], [-1, 1]]
+
+/**
+ * Scales the background from one corner towards `p`, keeping its shape and the opposite corner
+ * where it was (in the picture's turned frame). Returns the new placement and the scale factor,
+ * which the plan's scale follows when the picture set it.
+ */
+export function scaleBackgroundFromCorner(
+  bg: FloorPlanBackground,
+  corner: number,
+  p: Point,
+  minWidth = 60
+): { background: FloorPlanBackground; factor: number } {
+  const [sx, sy] = CORNER_SIGNS[corner] ?? CORNER_SIGNS[2]!
+  const rotation = bg.rotation || 0
+  const fixed = backgroundCorners(bg)[(corner + 2) % 4]!
+  // The pointer, seen from the fixed corner in the picture's own frame, projected on the diagonal.
+  const local = rotatePoint({ x: p.x - fixed.x, y: p.y - fixed.y }, { x: 0, y: 0 }, -rotation)
+  const diagonal = { x: sx * bg.width, y: sy * bg.height }
+  const along = (local.x * diagonal.x + local.y * diagonal.y) / (diagonal.x ** 2 + diagonal.y ** 2)
+  const factor = Math.max(minWidth / bg.width, along)
+  const width = bg.width * factor
+  const height = bg.height * factor
+  const half = rotatePoint({ x: (sx * width) / 2, y: (sy * height) / 2 }, { x: 0, y: 0 }, rotation)
+  const centre = { x: fixed.x + half.x, y: fixed.y + half.y }
+  return { background: { ...bg, x: centre.x - width / 2, y: centre.y - height / 2, width, height }, factor }
 }
