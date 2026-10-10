@@ -112,6 +112,8 @@ describe('markerSummary', () => {
     const track: FloorPlanMarker = { id: 't', kind: 'item', type: 'track-straight', x: 0, y: 0, rotation: 0, label: 'Track', width: 0.62, depth: 3.6 }
     expect(markerSummary([cam, { ...cam, id: 'c2', label: 'B' }, marta, hmi, track])).toBe('Cameras A, B | Cast Marta | Light M18 | Grip Track')
     expect(markerSummary([])).toBeNull()
+    const stand: FloorPlanMarker = { id: 's', kind: 'item', type: 'c-stand', x: 0, y: 0, rotation: 0, label: '', width: 0.7, depth: 0.7 }
+    expect(markerSummary([hmi, stand])).toBe('Light M18 | Grip C-stand')
   })
 })
 
@@ -134,7 +136,7 @@ describe('generateFloorPlanPdf', () => {
         ...layout,
         shapes: [...layout.shapes, tent],
         north: 15,
-        background: { source: 'image' as const, x: 0, y: 0, width: 1200, height: 800, opacity: 0.5, map: null },
+        background: { source: 'image' as const, x: 0, y: 0, width: 1200, height: 800, opacity: 0.5, rotation: 0, map: null },
       },
     }
     const data = buildFloorPlanPdfData({
@@ -178,6 +180,18 @@ describe('generateFloorPlanPdf', () => {
     const text = await extractPdfText(bytes)
     expect(text).toContain('Techno 30')
     expect(text).toContain('Honeywagon')
+  })
+
+  it('frames a turned background by its turned corners', async () => {
+    const turned = {
+      ...plans[0]!,
+      background_image: PNG_1x1,
+      layout: { ...emptyLayout(), background: { source: 'image' as const, x: 200, y: 200, width: 400, height: 200, opacity: 0.5, rotation: 90, map: null } },
+    }
+    const data = buildFloorPlanPdfData({ ...base, plans: [turned], setups: [], scope: { kind: 'location', locationId: 'diner' } })
+    // Centre (400, 300): a quarter turn makes it 200 wide and 400 tall.
+    expect(data.entries[0]!.bounds).toEqual({ minX: 300, minY: 100, maxX: 500, maxY: 500 })
+    expect((await PDFDocument.load(await generateFloorPlanPdf(data))).getPageCount()).toBe(1)
   })
 
   it('draws shapes in their own colours', async () => {

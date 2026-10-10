@@ -8,7 +8,7 @@ import { toast } from '@/components/ui/sonner'
 import { cn } from '@/lib/utils'
 import { fitBackground, mapBackground, prepareBackgroundImage, renderLocationMap } from '@/lib/floor-plans/background'
 import { resolvePlanGeo } from '@/lib/floor-plans/geo'
-import { PLAN_WIDTH, normalizeAngle, type FloorPlanGeo, type FloorPlanLayout } from '@/lib/floor-plans/model'
+import { PLAN_WIDTH, normalizeAngle, rotateBackground, type FloorPlanGeo, type FloorPlanLayout } from '@/lib/floor-plans/model'
 import { getMapTileConfig, isMapTileConfigIncomplete } from '@/lib/maps/tileConfig'
 
 const MAP_WIDTHS = [100, 200, 500]
@@ -136,7 +136,7 @@ export function BackgroundDialog({
       await onImage(prepared.dataUrl)
       onLayoutChange({
         ...layout,
-        background: { source: 'image', opacity: 0.6, map: null, ...fitBackground(prepared.width, prepared.height, 'fit') },
+        background: { source: 'image', opacity: 0.6, rotation: 0, map: null, ...fitBackground(prepared.width, prepared.height, 'fit') },
       })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -261,7 +261,7 @@ export function BackgroundDialog({
                     onClick={() => onArmTool('background')}
                   >
                     <Move className="size-3.5" aria-hidden />
-                    Move
+                    Adjust
                   </button>
                 </div>
                 <Button type="button" variant="ghost" size="sm" className="ml-auto text-destructive" onClick={() => void onImage(null).then(() => onLayoutChange({ ...layout, background: null }))}>
@@ -279,6 +279,24 @@ export function BackgroundDialog({
                   className="flex-1 accent-primary"
                 />
               </label>
+              <div className="flex items-center gap-3 text-sm">
+                <Label htmlFor="fp-bg-rotation" className="w-16 font-normal text-muted-foreground">
+                  Rotation
+                </Label>
+                <Input
+                  id="fp-bg-rotation"
+                  type="number"
+                  step={0.5}
+                  className="h-8 w-24"
+                  value={bg.rotation}
+                  onChange={(e) => {
+                    const r = Number(e.target.value)
+                    // North turns with the picture.
+                    if (Number.isFinite(r)) onLayoutChange({ ...layout, ...rotateBackground(layout, r) })
+                  }}
+                />
+                <span className="text-xs text-muted-foreground">North turns with it</span>
+              </div>
             </div>
           ) : null}
 

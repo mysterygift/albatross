@@ -115,7 +115,7 @@ describe('floor plans repository', () => {
       unitsPerMetre: 25,
       north: 15,
       geo: { lat: 51.5, lon: -0.12, timezone: 'Europe/London' },
-      background: { source: 'image' as const, x: 0, y: 0, width: 1200, height: 800, opacity: 0.5, map: null },
+      background: { source: 'image' as const, x: 0, y: 0, width: 1200, height: 800, opacity: 0.5, rotation: 0, map: null },
       shapes: [
         { id: 'r1', kind: 'rect' as const, x: 10, y: 20, width: 300, height: 200 },
         { id: 'p1', kind: 'path' as const, points: [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 50 }], closed: true },
